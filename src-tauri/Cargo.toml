@@ -1,0 +1,25 @@
+
+[package]
+name = "visionode"
+version = "1.0.0"
+description = "VisioNode Precision Engine Desktop"
+authors = ["CCP Industrial Vision"]
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", features = ["json"] }
+dotenvy = "0.15"
+tokio = { version = "1", features = ["full"] }
+chrono = "0.4"
+
+
+[features]
+# default enables all features
+default = [ "custom-protocol" ]
+custom-protocol = [ "tauri/custom-protocol" ]

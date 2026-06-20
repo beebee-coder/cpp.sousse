@@ -1,0 +1,52 @@
+
+name: Release Tauri Application
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'src-tauri/**'
+      - 'src/**'
+      - 'package.json'
+      - '.github/workflows/release-tauri.yml'
+
+jobs:
+  release:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [windows-latest]
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build Next.js Static
+        run: npm run build:tauri
+
+      - name: Build Tauri Action
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: v${{ github.run_number }}
+          releaseName: "VisioNode Release v${{ github.run_number }}"
+          releaseBody: "Automated Forge from VisioNode Control Center. Build ID: ${{ github.run_id }}"
+          releaseDraft: false
+          prerelease: false

@@ -1,0 +1,23 @@
+
+{
+  "placeholderImages": [
+    {
+      "id": "industrial-control",
+      "description": "Industrial control panel with valves and gauges",
+      "imageUrl": "https://picsum.photos/seed/industrial1/800/600",
+      "imageHint": "industrial control"
+    },
+    {
+      "id": "pump-system",
+      "description": "Centrifugal pump system in a factory",
+      "imageUrl": "https://picsum.photos/seed/pump1/800/600",
+      "imageHint": "industrial pump"
+    },
+    {
+      "id": "factory-floor",
+      "description": "Automated factory production line",
+      "imageUrl": "https://picsum.photos/seed/factory1/800/600",
+      "imageHint": "factory floor"
+    }
+  ]
+}
