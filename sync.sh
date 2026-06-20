@@ -1,14 +1,15 @@
+
 #!/bin/bash
 
-# VisioNode Precision Sync Engine v2.6
-# Optimized for Hybrid Transformation Pipelines with robust error handling
+# VisioNode Precision Sync Engine v2.7
+# Support hybride complet : web (uplink), desktop (forge), pull (downlink)
 
 REPO_URL="https://github.com/beebee-coder/cpp.sousse.git"
 BRANCH="main"
 MODE=${1:-"web"} 
 
 echo "🚀 VisioNode Sync Engine"
-echo "🛠️  Pipeline Mode: ${MODE^^}"
+echo "🛠️  Mode Pipeline : ${MODE^^}"
 echo "------------------------------------------"
 
 # 1. Identity & Environment
@@ -21,36 +22,37 @@ if [ -n "$GITHUB_TOKEN" ]; then
     git remote set-url origin "$AUTH_URL" 2>/dev/null || git remote add origin "$AUTH_URL"
 fi
 
-# 2. Logic Check
-if [ "$MODE" == "desktop" ]; then
-    echo "🔍 Mode: DESKTOP FORGE"
-    COMMIT_PREFIX="[DESKTOP_FORGE]"
-else
-    echo "🔍 Mode: WEB UPLINK"
-    COMMIT_PREFIX="[WEB_UPLINK]"
+# 2. Logique de Mode
+if [ "$MODE" == "pull" ]; then
+    echo "📡 Initiation DOWNLINK depuis Registre..."
+    git fetch origin "$BRANCH"
+    git reset --hard "origin/$BRANCH"
+    echo "✅ Downlink Successful!"
+    exit 0
 fi
 
-# 3. Forced Staging
-echo "📦 Staging all files..."
+if [ "$MODE" == "desktop" ]; then
+    echo "🏗️  Initiation FORGE DESKTOP..."
+    # Note: On laisse le script forge-desktop.sh ou tauri gérer le build lourd
+    echo "📦 Staging current state for build traceability..."
+fi
+
+# 3. Forced Staging (Uplink / Web)
+echo "📦 Analyse des modifications..."
 git add .
 
 TIMESTAMP=$(date +'%Y-%m-%d %H:%M:%S')
-VERSION=$(node -p "require('./package.json').version" 2>/dev/null || echo "1.0.0")
+COMMIT_MSG="[${MODE^^}_SESSION] v1.0 - Sync ($TIMESTAMP)"
 
-COMMIT_MSG="$COMMIT_PREFIX v$VERSION - Sync Session ($TIMESTAMP)"
-
-# Only commit if there are changes
 if git diff-index --quiet HEAD --; then
-    echo "ℹ️ Registry already synchronized. No new changes detected."
+    echo "ℹ️ Registre déjà synchronisé."
 else
-    echo "💾 Committing changes: $COMMIT_MSG"
+    echo "💾 Création du point de restauration : $COMMIT_MSG"
     git commit -m "$COMMIT_MSG"
 fi
 
-# 4. Physical Uplink
-# We redirect stderr to stdout for the push to prevent false 'Critical Error' flags in the UI,
-# but we preserve the exit code.
-echo "📡 Initiating physical transfer to $BRANCH..."
+# 4. physical transfer
+echo "📡 Transmission vers $BRANCH..."
 git fetch origin "$BRANCH" 2>/dev/null
 git push origin "$BRANCH" --force 2>&1
 
@@ -59,9 +61,9 @@ PUSH_STATUS=$?
 if [ $PUSH_STATUS -eq 0 ]; then
     echo "------------------------------------------"
     echo "✅ ${MODE^^} Uplink Successful!"
-    echo "🔗 Registry updated at: $REPO_URL"
+    echo "🔗 Registre à jour : $REPO_URL"
 else
     echo "------------------------------------------"
-    echo "❌ Uplink failed with exit code $PUSH_STATUS."
+    echo "❌ Échec de transmission (Code $PUSH_STATUS)."
     exit 1
 fi
