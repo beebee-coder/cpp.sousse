@@ -1,11 +1,6 @@
-export const dynamic = 'force-static';
-
-import { createHybridRoute } from '@/lib/api-hybrid';
+import { createHybridRoute } from '@/lib/api-route-creator';
 import { postgresClient } from '@/lib/db/postgres-client';
 
-/**
- * Route API pour l'upload de données de synchronisation.
- */
 export const POST = createHybridRoute<{ userId: string; projectId: string; items: any[] }, any>({
   name: 'SYNC_UPLOAD',
   webHandler: async (req, body) => {
@@ -16,11 +11,7 @@ export const POST = createHybridRoute<{ userId: string; projectId: string; items
         headers: { 'Content-Type': 'application/json' }
       });
     }
-    
     await postgresClient.upsertCloudData(items);
     return { success: true };
-  },
-  desktopFallback: async () => {
-    return { success: true, message: 'Sync upload simulated offline' };
   }
 });

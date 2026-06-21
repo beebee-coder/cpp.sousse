@@ -1,7 +1,11 @@
 import { LocalVectorPoint } from './types';
-import { upsertDocuments } from '../chroma';
+import { apiClient } from '../api-client';
 
-// Local ChromaDB client wrapper with offline mock capability
+/**
+ * Client ChromaDB optimisé pour l'environnement hybride.
+ * Utilise localStorage pour le mock offline et appelle l'API standard pour la vectorisation réelle.
+ * Ne contient aucun import serveur direct pour éviter les erreurs de bundle.
+ */
 export const chromaClient = {
   getPoints: async (collectionName: string): Promise<LocalVectorPoint[]> => {
     if (typeof window === 'undefined') return [];
@@ -13,6 +17,7 @@ export const chromaClient = {
   upsertPoints: async (collectionName: string, points: LocalVectorPoint[]): Promise<void> => {
     if (typeof window === 'undefined') return;
     
+    // 1. Mise à jour du mock local (LocalStorage)
     const storageKey = `visionode_chroma_mock_vectors_${collectionName}`;
     const raw = localStorage.getItem(storageKey);
     const existing: LocalVectorPoint[] = raw ? JSON.parse(raw) : [];
@@ -28,7 +33,7 @@ export const chromaClient = {
 
     localStorage.setItem(storageKey, JSON.stringify(existing));
 
-    // Try real ChromaDB upsert if running
+    // 2. Synchronisation avec le vrai ChromaDB via l'API Route (si disponible)
     try {
       const docs = points.map(p => ({
         id: p.id,
@@ -40,9 +45,14 @@ export const chromaClient = {
           timestamp: new Date(p.metadata.timestamp).toISOString()
         }
       }));
-      await upsertDocuments(collectionName, docs);
+
+      await apiClient.post('/api/vector/documents', {
+        collection: collectionName,
+        documents: docs,
+        upsert: true
+      });
     } catch (e) {
-      console.warn('⚠️ Real ChromaDB not available. Fallback to localStorage vector mock.', e);
+      console.warn('⚠️ Synchronisation vectorielle réelle ignorée ou échouée (Mode Offline).');
     }
   }
 };
