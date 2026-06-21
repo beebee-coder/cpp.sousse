@@ -16,6 +16,8 @@ export interface IngestPayload {
 /**
  * API Route d'ingestion hybride.
  * Vercel -> Weaviate | Dev -> ChromaDB
+ * 
+ * Priorité : Weaviate sur Vercel pour éviter de charger ChromaDB/Transformers.
  */
 export const POST = createHybridRoute<IngestPayload, any>({
   name: 'VECTOR_INGEST',
@@ -25,7 +27,7 @@ export const POST = createHybridRoute<IngestPayload, any>({
     const timestamp = new Date().toLocaleTimeString();
     const isCloud = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
 
-    // 📡 MODE CLOUD : Weaviate
+    // 📡 MODE CLOUD : Weaviate (Aucune utilisation de ChromaDB)
     if (isCloud) {
       try {
         console.log(`📡 [${timestamp}] [WEAVIATE_CLOUD] Indexation de ${items.length} éléments...`);
@@ -48,10 +50,11 @@ export const POST = createHybridRoute<IngestPayload, any>({
         return { success: true, message: 'INDEXATION_CLOUD_SUCCES', provider: 'WEAVIATE' };
       } catch (e: any) {
         console.error(`❌ [WEAVIATE] Échec :`, e.message);
+        return { success: false, error: 'CLOUD_INGEST_FAILED', details: e.message };
       }
     }
 
-    // 🧠 MODE LOCAL : ChromaDB
+    // 🧠 MODE LOCAL : ChromaDB (Uniquement en local)
     try {
       console.log(`🧠 [${timestamp}] [CHROMA_LOCAL] Vectorisation de ${items.length} éléments...`);
       const docs = items.map((item, index) => ({

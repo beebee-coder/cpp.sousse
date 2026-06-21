@@ -6,6 +6,9 @@ import { getWeaviateClient } from '@/lib/weaviate-client';
 /**
  * API Route de recherche sémantique hybride.
  * Vercel (Cloud) -> Weaviate | Dev (Local) -> ChromaDB
+ * 
+ * Note: En mode Cloud, on évite strictement d'appeler ou d'importer ChromaDB
+ * pour réduire la taille de la fonction serverless.
  */
 export const POST = createHybridRoute<{ collection: string; query: string; nResults?: number }, any>({
   name: 'VECTOR_SEARCH',
@@ -14,7 +17,7 @@ export const POST = createHybridRoute<{ collection: string; query: string; nResu
     const timestamp = new Date().toLocaleTimeString();
     const isCloud = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
 
-    // 📡 MODE CLOUD : Weaviate
+    // 📡 MODE CLOUD : Weaviate en priorité absolue
     if (isCloud) {
       try {
         console.log(`📡 [${timestamp}] [WEAVIATE_CLOUD] Recherche sémantique...`);
@@ -40,10 +43,11 @@ export const POST = createHybridRoute<{ collection: string; query: string; nResu
         return { success: true, results: formatted, provider: 'WEAVIATE_CLOUD' };
       } catch (e: any) {
         console.error(`⚠️ [WEAVIATE] Échec :`, e.message);
+        return { success: false, error: 'CLOUD_SEARCH_FAILED', results: [] };
       }
     }
 
-    // 🧠 MODE LOCAL : ChromaDB
+    // 🧠 MODE LOCAL : ChromaDB (uniquement en local/desktop)
     try {
       console.log(`🧠 [${timestamp}] [CHROMA_LOCAL] Recherche sémantique...`);
       const results = await semanticSearch({
