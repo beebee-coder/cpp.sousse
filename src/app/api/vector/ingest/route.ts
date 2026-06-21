@@ -9,14 +9,13 @@ export interface IngestItem {
 }
 
 export interface IngestPayload {
-  filename: string;
   items: IngestItem[];
   metadata: Record<string, any>;
 }
 
 /**
  * API Route d'ingestion hybride.
- * Web : Indexation Weaviate | Dev : Vectorisation ChromaDB
+ * Vercel -> Weaviate | Dev -> ChromaDB
  */
 export const POST = createHybridRoute<IngestPayload, any>({
   name: 'VECTOR_INGEST',
@@ -24,11 +23,12 @@ export const POST = createHybridRoute<IngestPayload, any>({
     const { items, metadata } = body;
     const collectionName = String(metadata.collection || 'industrial_manuals');
     const timestamp = new Date().toLocaleTimeString();
+    const isCloud = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
 
-    // Mode Web -> Ingestion Weaviate Cloud
-    if (process.env.VERCEL || process.env.USE_CLOUD_VECTOR) {
+    // 📡 MODE CLOUD : Weaviate
+    if (isCloud) {
       try {
-        console.log(`📡 [${timestamp}] [WEAVIATE] Ingestion de ${items.length} éléments vers le Cloud...`);
+        console.log(`📡 [${timestamp}] [WEAVIATE_CLOUD] Indexation de ${items.length} éléments...`);
         const client = await getWeaviateClient();
         const className = collectionName.charAt(0).toUpperCase() + collectionName.slice(1);
 
@@ -47,13 +47,13 @@ export const POST = createHybridRoute<IngestPayload, any>({
         await batcher.do();
         return { success: true, message: 'INDEXATION_CLOUD_SUCCES', provider: 'WEAVIATE' };
       } catch (e: any) {
-        console.error(`❌ [WEAVIATE] Échec ingestion :`, e.message);
+        console.error(`❌ [WEAVIATE] Échec :`, e.message);
       }
     }
 
-    // Mode Local -> ChromaDB
+    // 🧠 MODE LOCAL : ChromaDB
     try {
-      console.log(`🧠 [${timestamp}] [CHROMA] Vectorisation locale de ${items.length} éléments...`);
+      console.log(`🧠 [${timestamp}] [CHROMA_LOCAL] Vectorisation de ${items.length} éléments...`);
       const docs = items.map((item, index) => ({
         id: `local-${Date.now()}-${index}`,
         content: `Question: ${item.question}\nRéponse: ${item.answer}`,
