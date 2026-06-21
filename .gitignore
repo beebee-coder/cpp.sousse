@@ -86,6 +86,12 @@ temp/
 .genkit/
 *.genkit
 
+# ChromaDB (données vectorielles locales)
+data/chromadb/
+
+# HuggingFace Transformers - cache des modèles locaux
+.cache/
+
 # Firebase
 .firebase/
 .firebaserc.*

@@ -11,6 +11,7 @@ import { VisionAssistantDescriptionOutput } from '@/ai/flows/vision-assistant-de
 import { VisualDocumentRetrievalOutput } from '@/ai/flows/visual-document-retrieval';
 import { PlaceHolderImages } from '@/lib/placeholder-images';
 import { cn } from '@/lib/utils';
+import { apiClient } from '@/lib/api-client';
 
 export function VisionTerminal() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -37,24 +38,18 @@ export function VisionTerminal() {
     try {
       console.log(`📡 [${timestamp}] [CLIENT_UPLINK] Transmission vers le centre de vision...`);
       
-      // Analyse descriptive
-      const analysisRes = await fetch('/api/vision/description', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ photoDataUri: currentImage })
+      // Analyse descriptive via le client hybride
+      const analysis = await apiClient.post<VisionAssistantDescriptionOutput>('/api/vision/description', {
+        photoDataUri: currentImage
       });
-      if (!analysisRes.ok) throw new Error("ERREUR_ANALYSE_VISION");
-      const analysis = await analysisRes.json();
+      if (analysis.error) throw new Error(analysis.error);
       setResult(analysis);
       
-      // Récupération RAG
-      const retrievalRes = await fetch('/api/vision/retrieval', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageDataUri: currentImage })
+      // Récupération RAG via le client hybride
+      const retrieved = await apiClient.post<VisualDocumentRetrievalOutput>('/api/vision/retrieval', {
+        imageDataUri: currentImage
       });
-      if (!retrievalRes.ok) throw new Error("ERREUR_REGISTRE_RAG");
-      const retrieved = await retrievalRes.json();
+      if (retrieved.error) throw new Error(retrieved.error);
       setDocs(retrieved);
 
       console.log(`✅ [${timestamp}] [CLIENT_SUCCESS] Analyse et RAG terminés avec succès.`);

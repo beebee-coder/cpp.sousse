@@ -4,6 +4,8 @@
  * Gère les appels vers les API Routes Next.js avec audit iconographié et mode dégradé.
  */
 
+import { executeHybridRequest } from './api-hybrid';
+
 export type ApiResponse<T> = T & {
   error?: string;
   offline?: boolean;
@@ -32,19 +34,26 @@ class ApiClient {
     console.log(`🚀 [${timestamp}] [API_CLIENT] Transmission vers ${endpoint}...`);
 
     try {
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(data),
-      });
+      const result = await executeHybridRequest<any, any>(
+        endpoint,
+        data,
+        async () => {
+          const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(data),
+          });
 
-      if (!response.ok) {
-        throw new Error(`HTTP_ERROR_${response.status}`);
-      }
+          if (!response.ok) {
+            throw new Error(`HTTP_ERROR_${response.status}`);
+          }
 
-      const result = await response.json();
+          return await response.json();
+        }
+      );
+
       console.log(`✅ [${timestamp}] [API_CLIENT] Réponse reçue de ${endpoint}.`);
       
       return {

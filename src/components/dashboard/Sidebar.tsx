@@ -8,27 +8,23 @@ import {
   Cloud, 
   Monitor,
   Camera,
-  Activity,
   MessageSquare,
   Cpu,
-  RefreshCw,
-  Hammer,
-  Clock,
   ShieldCheck,
   Rocket,
   ChevronRight
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { usePlatform } from '@/components/PlatformProvider';
+import { SyncPanel } from '@/components/dashboard/SyncPanel';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useState, useEffect } from 'react';
 
 const navItems = [
   { icon: LayoutDashboard, label: 'Tableau de Bord', href: '/dashboard' },
   { icon: MessageSquare, label: 'Chat Neural', href: '/chat' },
+  { icon: Database, label: 'Base RAG', href: '/dataset' },
   { icon: Camera, label: 'Flux Vidéo', href: '#' },
-  { icon: Database, label: 'Assets & Datas', href: '#' },
   { icon: Terminal, label: 'Console Audit', href: '#' },
 ];
 
@@ -97,20 +93,22 @@ export function DashboardSidebar() {
         )}
       </nav>
 
-      <div className="p-4 border-t border-border bg-black/20">
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-widest">État Système</span>
-          <div className="flex items-center gap-1">
+      <div className="p-4 border-t border-border bg-black/20 space-y-3">
+        {/* Platform indicator */}
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-widest">Mode</span>
+          <div className="flex items-center gap-1.5">
             <div className={cn("w-1.5 h-1.5 rounded-full animate-pulse", isDesktop ? "bg-secondary" : "bg-primary")} />
-            <span className={cn("text-[10px] font-code uppercase", isDesktop ? "text-secondary" : "text-primary")}>
-              {isDesktop ? "NATIF" : "CLOUD"}
-            </span>
+            <div className="flex items-center gap-1.5 p-1 bg-background/50 border border-border rounded-sm">
+              {isDesktop ? <Cpu className="w-3 h-3 text-secondary" /> : <Cloud className="w-3 h-3 text-primary" />}
+              <span className={cn("text-[10px] font-code uppercase font-bold", isDesktop ? "text-secondary" : "text-primary")}>
+                {isDesktop ? "NATIF" : "CLOUD"}
+              </span>
+            </div>
           </div>
         </div>
-        <div className="flex items-center gap-2 p-2 bg-background/50 border border-border rounded-sm">
-          {isDesktop ? <Cpu className="w-3 h-3 text-secondary" /> : <Cloud className="w-3 h-3 text-primary" />}
-          <span className="text-[10px] font-code text-muted-foreground truncate">{platform}</span>
-        </div>
+        {/* Live Sync Panel */}
+        <SyncPanel />
       </div>
     </div>
   );

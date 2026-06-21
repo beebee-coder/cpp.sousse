@@ -1,4 +1,6 @@
-import { NextResponse } from 'next/server';
+export const dynamic = 'force-static';
+
+import { createHybridRoute } from '@/lib/api-hybrid';
 import { visionAssistantDescription } from '@/ai/flows/vision-assistant-description';
 import { config } from 'dotenv';
 
@@ -6,37 +8,33 @@ import { config } from 'dotenv';
 config();
 
 /**
- * API Route pour l'analyse visuelle industrielle.
- * Audit : ⚡ [VISION_AUDIT] Traitement par Gemini 1.5 Flash.
+ * API Route pour l'analyse visuelle industrielle hybride.
+ * Audit : ⚡ [VISION_AUDIT] Traitement par Gemini 1.5 Flash Hybride.
  */
-export async function POST(req: Request) {
-  const timestamp = new Date().toLocaleTimeString();
-  
-  try {
-    const body = await req.json();
+export const POST = createHybridRoute<{ photoDataUri: string }, any>({
+  name: 'VISION_DESCRIPTION',
+  webHandler: async (req, body) => {
     const { photoDataUri } = body;
-    
-    console.log(`🚀 [${timestamp}] [API_VISION] Réception d'une trame pour analyse...`);
 
     if (!photoDataUri) {
-      return NextResponse.json({ error: "DONNEE_VISUELLE_MANQUANTE" }, { status: 400 });
+      return new Response(JSON.stringify({ error: "DONNEE_VISUELLE_MANQUANTE" }), { 
+        status: 400, 
+        headers: { 'Content-Type': 'application/json' } 
+      });
     }
 
     if (!process.env.GOOGLE_GENAI_API_KEY) {
-      console.warn(`⚠️ [${timestamp}] [API_VISION] Clé Google AI manquante dans le .env.`);
+      console.warn(`⚠️ Clé Google AI manquante dans le .env.`);
     }
 
-    console.log(`⚡ [${timestamp}] [NODE_VISION] Engagement du moteur Gemini 1.5...`);
-    const output = await visionAssistantDescription({ photoDataUri });
-
-    console.log(`✅ [${timestamp}] [SUCCÈS] Analyse visuelle terminée.`);
-    return NextResponse.json(output);
-
-  } catch (error: any) {
-    console.error(`❌ [${timestamp}] [ERREUR_VISION] Échec de la liaison :`, error.message);
-    return NextResponse.json({ 
-      error: "ERREUR_LIAISON_VISION",
-      details: error.message 
-    }, { status: 500 });
+    return await visionAssistantDescription({ photoDataUri });
+  },
+  desktopFallback: async (body) => {
+    return {
+      description: "🤖 [VisioNode Offline] Analyse visuelle simulée en mode local. Statut : Composants industriels OK.",
+      tags: ["offline", "simulated", "industrial-board"],
+      offline: true,
+      provider: 'local-mock'
+    };
   }
-}
+});

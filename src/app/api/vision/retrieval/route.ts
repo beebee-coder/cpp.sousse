@@ -1,4 +1,6 @@
-import { NextResponse } from 'next/server';
+export const dynamic = 'force-static';
+
+import { createHybridRoute } from '@/lib/api-hybrid';
 import { visualDocumentRetrieval } from '@/ai/flows/visual-document-retrieval';
 import { config } from 'dotenv';
 
@@ -6,37 +8,30 @@ import { config } from 'dotenv';
 config();
 
 /**
- * API Route pour la récupération de documents RAG (Visual Retrieval).
+ * API Route pour la récupération de documents RAG hybride.
  * Audit : ⚡ [RAG_AUDIT] Recherche vectorielle indexée.
  */
-export async function POST(req: Request) {
-  const timestamp = new Date().toLocaleTimeString();
-  
-  try {
-    const body = await req.json();
+export const POST = createHybridRoute<{ imageDataUri: string }, any>({
+  name: 'VISION_RETRIEVAL',
+  webHandler: async (req, body) => {
     const { imageDataUri } = body;
-    
-    console.log(`🚀 [${timestamp}] [API_RAG] Interrogation du registre documentaire...`);
 
     if (!imageDataUri) {
-      return NextResponse.json({ error: "IMAGE_RAG_MANQUANTE" }, { status: 400 });
+      return new Response(JSON.stringify({ error: "IMAGE_RAG_MANQUANTE" }), { 
+        status: 400, 
+        headers: { 'Content-Type': 'application/json' } 
+      });
     }
 
     if (!process.env.GOOGLE_GENAI_API_KEY) {
-      console.warn(`⚠️ [${timestamp}] [API_RAG] Clé Google AI manquante pour le registre RAG.`);
+      console.warn(`⚠️ Clé Google AI manquante pour le registre RAG.`);
     }
 
-    console.log(`⚡ [${timestamp}] [NODE_RAG] Recherche de schémas techniques correspondants...`);
-    const output = await visualDocumentRetrieval({ imageDataUri });
-
-    console.log(`✅ [${timestamp}] [SUCCÈS] Documents récupérés du registre.`);
-    return NextResponse.json(output);
-
-  } catch (error: any) {
-    console.error(`❌ [${timestamp}] [ERREUR_RAG] Échec du registre :`, error.message);
-    return NextResponse.json({ 
-      error: "ERREUR_REGISTRE_CRITIQUE",
-      details: error.message 
-    }, { status: 500 });
+    return await visualDocumentRetrieval({ imageDataUri });
+  },
+  desktopFallback: async (body) => {
+    const { imageDataUri } = body;
+    return await visualDocumentRetrieval({ imageDataUri: imageDataUri || '' });
   }
-}
+});
+

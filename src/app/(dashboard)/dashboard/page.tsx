@@ -113,9 +113,9 @@ export default function DashboardPage() {
                       <span className="text-muted-foreground">{cap.name}</span>
                       <span className={cn(
                         "px-1.5 py-0.5 rounded-sm uppercase font-bold",
-                        cap.status === 'active' ? "bg-secondary/20 text-secondary" : "bg-primary/20 text-primary"
+                        cap.status === 'actif' ? "bg-secondary/20 text-secondary" : "bg-primary/20 text-primary"
                       )}>
-                        {cap.status === 'active' ? 'actif' : cap.status}
+                        {cap.status === 'actif' ? 'actif' : cap.status}
                       </span>
                     </div>
                   ))}
