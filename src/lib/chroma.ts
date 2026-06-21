@@ -33,8 +33,7 @@ let _pipeline: any = null;
 async function getPipeline(): Promise<any> {
   if (_pipeline) return _pipeline;
   try {
-    const { pipeline, env } = await import('@huggingface/transformers');
-    // Ne pas toucher à env.cacheDir ici pour éviter les erreurs de permissions sur Vercel
+    const { pipeline } = await import('@huggingface/transformers');
     _pipeline = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
     return _pipeline;
   } catch (e) {
@@ -62,19 +61,19 @@ export function getLocalEmbedder(): LocalEmbeddingFunction {
 let _chromaClient: any = null;
 
 export async function getChromaClient(): Promise<ChromaClient> {
-  if (!_chromaClient) {
-    const { ChromaClient } = await import('chromadb');
-    const chromaUrl = process.env.CHROMA_URL ?? 'http://127.0.0.1:8000';
-    try {
-      const url = new URL(chromaUrl);
-      _chromaClient = new ChromaClient({ 
-        ssl: url.protocol === 'https:', 
-        host: url.hostname, 
-        port: url.port ? parseInt(url.port) : (url.protocol === 'https:' ? 443 : 80) 
-      });
-    } catch {
-      _chromaClient = new ChromaClient({ path: chromaUrl });
-    }
+  if (_chromaClient) return _chromaClient;
+  const { ChromaClient } = await import('chromadb');
+  const chromaUrl = process.env.CHROMA_URL ?? 'http://127.0.0.1:8000';
+  
+  try {
+    const url = new URL(chromaUrl);
+    _chromaClient = new ChromaClient({ 
+      ssl: url.protocol === 'https:', 
+      host: url.hostname, 
+      port: url.port ? parseInt(url.port) : (url.protocol === 'https:' ? 443 : 80) 
+    });
+  } catch {
+    _chromaClient = new ChromaClient({ path: chromaUrl });
   }
   return _chromaClient;
 }
@@ -89,6 +88,20 @@ export async function getOrCreateCollection(name: string, embeddingFunction: Emb
   return client.getOrCreateCollection({ name, embeddingFunction });
 }
 
+export async function deleteCollection(name: string) {
+  const client = await getChromaClient();
+  return client.deleteCollection({ name });
+}
+
+export async function addDocuments(collectionName: string, documents: DocumentToAdd[], embeddingFunction: EmbeddingFunction = getLocalEmbedder()) {
+  const col = await getOrCreateCollection(collectionName, embeddingFunction);
+  await col.add({
+    ids: documents.map(d => d.id),
+    documents: documents.map(d => d.content),
+    metadatas: documents.map(d => d.metadata ?? {})
+  });
+}
+
 export async function upsertDocuments(collectionName: string, documents: DocumentToAdd[]) {
   const col = await getOrCreateCollection(collectionName);
   await col.upsert({
@@ -98,9 +111,9 @@ export async function upsertDocuments(collectionName: string, documents: Documen
   });
 }
 
-export async function semanticSearch(options: SearchOptions): Promise<SearchResult[]> {
+export async function semanticSearch(options: SearchOptions, embeddingFunction: EmbeddingFunction = getLocalEmbedder()): Promise<SearchResult[]> {
   const { collectionName, query, nResults = 5, whereFilter } = options;
-  const col = await getOrCreateCollection(collectionName);
+  const col = await getOrCreateCollection(collectionName, embeddingFunction);
   
   const results = await col.query({
     queryTexts: [query],
@@ -122,9 +135,42 @@ export async function semanticSearch(options: SearchOptions): Promise<SearchResu
   }));
 }
 
-// ─── Fallback Local (Simulé) ────────────────────────────────────────────────
+export async function seedIndustrialManuals() {
+  const timestamp = new Date().toLocaleTimeString();
+  try {
+    const collectionName = 'industrial_manuals';
+    const col = await getOrCreateCollection(collectionName);
+    const count = await col.count();
+    
+    if (count === 0) {
+      console.log(`🌱 [${timestamp}] [CHROMA] Peuplement initial des manuels industriels...`);
+      const seedData: DocumentToAdd[] = [
+        {
+          id: 'man-001',
+          content: 'Procédure de maintenance du panneau de contrôle : Vérifier les vannes de pression et l\'état du bouton d\'arrêt d\'urgence.',
+          metadata: { title: 'Manuel Panneau de Contrôle', component: 'industrial-control', url: '/docs/control-panel.pdf' }
+        },
+        {
+          id: 'man-002',
+          content: 'Guide d\'entretien pompe centrifuge : Lubrification des roulements toutes les 500 heures. Inspection visuelle des brides.',
+          metadata: { title: 'Manuel Pompe Centrifuge', component: 'pump-system', url: '/docs/pump-guide.pdf' }
+        },
+        {
+          id: 'man-003',
+          content: 'Sécurité ligne de production : Les bras robotiques doivent être calibrés hebdomadairement. Vérifier les capteurs de proximité.',
+          metadata: { title: 'Sécurité Robotique', component: 'factory-floor', url: '/docs/safety-robot.pdf' }
+        }
+      ];
+      await addDocuments(collectionName, seedData);
+      console.log(`✅ [${timestamp}] [CHROMA] 3 manuels indexés.`);
+    }
+  } catch (e) {
+    console.warn(`⚠️ [${timestamp}] [CHROMA] Échec ou saut du peuplement :`, e);
+  }
+}
+
 export function fallbackSemanticSearch(query: string, nResults = 3, componentFilter?: string): SearchResult[] {
-  return []; // Fallback minimal
+  return []; 
 }
 
 export async function searchAcrossCollections(query: string, nResultsPerCollection = 3): Promise<SearchResult[]> {
