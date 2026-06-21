@@ -1,9 +1,10 @@
 
 /**
  * @fileOverview Client Weaviate Cloud pour le RAG en mode Web.
+ * Utilise des imports dynamiques pour optimiser le bundle.
  */
 
-import weaviate, { type WeaviateClient } from 'weaviate-client';
+import type { WeaviateClient } from 'weaviate-client';
 
 let _client: WeaviateClient | null = null;
 
@@ -17,13 +18,16 @@ export async function getWeaviateClient(): Promise<WeaviateClient> {
     throw new Error('CONFIG_MANQUANTE : WEAVIATE_URL et WEAVIATE_API_KEY doivent être configurées pour le mode Web.');
   }
 
+  // Import dynamique pour le client cloud
+  const weaviate = (await import('weaviate-client')).default;
+
   // Nettoyage de l'URL pour Weaviate Client v3+
   const host = weaviateURL.replace('https://', '').replace('http://', '');
 
   _client = await weaviate.connectToWeaviateCloud(host, {
     authCredentials: new weaviate.ApiKey(weaviateApiKey),
     headers: {
-      'X-OpenAI-Api-Key': process.env.OPENAI_API_KEY || '', // Optionnel selon le vectorizer
+      'X-OpenAI-Api-Key': process.env.OPENAI_API_KEY || '',
     }
   });
 

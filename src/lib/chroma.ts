@@ -1,7 +1,8 @@
 
 /**
  * @fileOverview Gestionnaire ChromaDB sécurisé pour l'environnement hybride.
- * Les bibliothèques lourdes sont importées dynamiquement pour éviter les erreurs de bundle client.
+ * Les bibliothèques lourdes sont importées dynamiquement pour éviter les erreurs de bundle client
+ * et réduire la taille des fonctions serverless sur Vercel.
  */
 
 import type { ChromaClient, Collection, EmbeddingFunction } from 'chromadb';
@@ -31,6 +32,9 @@ export interface SearchResult {
 let _pipeline: any = null;
 
 async function getPipeline(): Promise<any> {
+  // Sur Vercel, on ne charge jamais le pipeline local (trop lourd)
+  if (process.env.VERCEL) return null;
+  
   if (_pipeline) return _pipeline;
   try {
     const { pipeline } = await import('@huggingface/transformers');
@@ -62,6 +66,8 @@ let _chromaClient: any = null;
 
 export async function getChromaClient(): Promise<ChromaClient> {
   if (_chromaClient) return _chromaClient;
+  
+  // Import dynamique pour éviter d'inclure chromadb dans le bundle cloud
   const { ChromaClient } = await import('chromadb');
   const chromaUrl = process.env.CHROMA_URL ?? 'http://127.0.0.1:8000';
   
