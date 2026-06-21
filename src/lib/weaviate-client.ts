@@ -1,6 +1,6 @@
 
 /**
- * @fileOverview Client Weaviate Cloud optimisé pour le build Vercel.
+ * @fileOverview Client Weaviate Cloud optimisé pour le build Vercel et le dev local.
  */
 
 let _client: any = null;
@@ -16,9 +16,9 @@ export async function getWeaviateClient(): Promise<any> {
   }
 
   try {
-    // Masquage de l'import pour le bundler si nécessaire
     const modName = 'weaviate-client';
-    const weaviate = (await import(modName)).default;
+    const weaviateModule = await import(modName);
+    const weaviate = weaviateModule.default || weaviateModule;
 
     const host = weaviateURL.replace('https://', '').replace('http://', '');
 

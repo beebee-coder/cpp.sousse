@@ -6,7 +6,6 @@ const isDesktop = process.env.TAURI_ENV === 'true';
 /** @type {import('next').NextConfig} */
 const nextConfig: NextConfig = {
   // Modules natifs lourds à exclure strictement du bundle d'exécution
-  // Cela empêche Vercel de tenter de zipper ces packages (ex: Transformers = 350MB)
   serverExternalPackages: [
     'onnxruntime-node', 
     '@huggingface/transformers', 
