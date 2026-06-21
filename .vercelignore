@@ -1,19 +1,24 @@
 
-# Exclure les bibliothèques lourdes du déploiement Cloud (Vercel)
-# Limite stricte de 250MB pour les fonctions Serverless
-
+# .vercelignore
+# Exclure ChromaDB uniquement lors du déploiement Vercel
 node_modules/chromadb/
 node_modules/chromadb/**
 **/chromadb/**
-node_modules/@huggingface/
-node_modules/@huggingface/**
-node_modules/onnxruntime-node/
 chroma-data/
-*.sqlite
 *.db
+*.sqlite
 
-# Exclure les artefacts de build desktop
+# Exclure les fichiers de build local
 src-tauri/
-src-tauri/target/
 out/
 .next/
+
+# Exclure les dépendances lourdes (chargées dynamiquement en local)
+node_modules/better-sqlite3/
+node_modules/@huggingface/transformers/
+node_modules/onnxruntime-node/
+
+# Exclure les installateurs lourds du build cloud (distribués via redirection API)
+public/installers/*.exe
+public/installers/*.dmg
+public/installers/*.AppImage

@@ -1,3 +1,4 @@
+
 "use client";
 
 import { 
@@ -12,19 +13,22 @@ import {
   ShieldCheck,
   Rocket,
   ChevronRight,
-  HardDrive
+  HardDrive,
+  Download
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { usePlatform } from '@/components/PlatformProvider';
 import { SyncPanel } from '@/components/dashboard/SyncPanel';
-import Link from 'next/link';
+import Link from 'next/navigation';
 import { usePathname } from 'next/navigation';
+import LinkActual from 'next/link';
 
 const navItems = [
   { icon: LayoutDashboard, label: 'Tableau de Bord', href: '/dashboard' },
   { icon: MessageSquare, label: 'Chat Neural', href: '/chat' },
   { icon: Database, label: 'Base RAG', href: '/dataset' },
   { icon: HardDrive, label: 'Explorateur BDD', href: '/bdd' },
+  { icon: Download, label: 'Installateur Desktop', href: '/download' },
   { icon: Camera, label: 'Flux Vidéo', href: '#' },
   { icon: Terminal, label: 'Console Audit', href: '#' },
 ];
@@ -37,12 +41,12 @@ export function DashboardSidebar() {
   return (
     <div className="w-64 border-r border-border bg-card flex flex-col h-full">
       <div className="p-6 border-b border-border">
-        <Link href="/dashboard" className="flex items-center gap-3 mb-1">
+        <LinkActual href="/dashboard" className="flex items-center gap-3 mb-1">
           <div className="w-8 h-8 bg-primary rounded flex items-center justify-center shadow-[0_0_15px_rgba(50,181,212,0.3)]">
             <Monitor className="w-5 h-5 text-primary-foreground" />
           </div>
           <h1 className="font-headline font-bold text-lg tracking-tighter uppercase">VISIONODE</h1>
-        </Link>
+        </LinkActual>
         <p className="text-[10px] text-muted-foreground font-code uppercase tracking-[0.2em]">PRECISION_ENGINE v1.0</p>
       </div>
 
@@ -52,7 +56,7 @@ export function DashboardSidebar() {
           {navItems.map((item) => {
             const isActive = pathname === item.href;
             return (
-              <Link
+              <LinkActual
                 key={item.label}
                 href={item.href}
                 className={cn(
@@ -64,7 +68,7 @@ export function DashboardSidebar() {
               >
                 <item.icon className={cn("w-4 h-4", isActive ? "text-primary" : "text-muted-foreground group-hover:text-primary")} />
                 <span className="font-headline tracking-wide uppercase text-[11px]">{item.label}</span>
-              </Link>
+              </LinkActual>
             );
           })}
         </div>
@@ -75,7 +79,7 @@ export function DashboardSidebar() {
               <ShieldCheck className="w-3 h-3" />
               Zone Forge (DEV)
             </p>
-            <Link
+            <LinkActual
               href="/pipeline"
               className={cn(
                 "w-full flex items-center justify-between px-3 py-2 text-sm font-medium rounded-sm transition-all group border border-dashed border-primary/20",
@@ -89,7 +93,7 @@ export function DashboardSidebar() {
                 <span className="font-headline tracking-wide uppercase text-[11px]">Pilotage Pipeline</span>
               </div>
               <ChevronRight className="w-3 h-3 opacity-50" />
-            </Link>
+            </LinkActual>
           </div>
         )}
       </nav>
