@@ -1,134 +1,111 @@
 import { sqliteClient } from './sqlite-client';
-import { postgresClient } from './postgres-client';
-import { LocalMetadata, CloudData, SyncState } from './types';
+import { SyncState, LocalMetadata, CloudData } from './types';
 import { apiClient } from '../api-client';
 
-// Synchronization engine handling bidirectional sync
+/**
+ * Moteur de synchronisation bidirectionnelle multi-environnements.
+ */
 export const syncEngine = {
-  getSyncState: async (userId: string): Promise<SyncState> => {
-    if (typeof window === 'undefined') {
-      return {
-        userId,
-        deviceId: 'server',
-        lastSync: new Date(),
-        pendingUploads: 0,
-        pendingDownloads: 0,
-        status: 'idle'
-      };
-    }
-    const raw = localStorage.getItem(`visionode_sync_state_${userId}`);
+  async getSyncState(userId: string): Promise<SyncState> {
+    const raw = typeof window !== 'undefined' ? localStorage.getItem(`visionode_sync_state_${userId}`) : null;
     if (raw) {
       const parsed = JSON.parse(raw);
-      parsed.lastSync = new Date(parsed.lastSync);
-      return parsed;
+      return { ...parsed, lastSync: new Date(parsed.lastSync) };
     }
-    
     return {
       userId,
-      deviceId: 'dev-station-001',
-      lastSync: new Date(0), // Never synced
-      pendingUploads: 0,
+      deviceId: 'dev-station',
+      lastSync: new Date(0),
+      pendingUploads: (await sqliteClient.getPending()).length,
       pendingDownloads: 0,
       status: 'idle'
     };
   },
 
-  setSyncState: async (state: SyncState): Promise<void> => {
-    if (typeof window === 'undefined') return;
-    localStorage.setItem(`visionode_sync_state_${state.userId}`, JSON.stringify(state));
-  },
-
-  /**
-   * Run the upload phase of local-to-cloud synchronization.
-   * Finds all local items with status 'pending' and uploads them to PostgreSQL.
-   */
-  uploadPending: async (userId: string, projectId: string): Promise<number> => {
-    const metadataList = await sqliteClient.getAll();
-    const pendingMetadata = metadataList.filter(m => m.syncStatus === 'pending');
-    
-    if (pendingMetadata.length === 0) return 0;
-    
-    const uploadPayload = pendingMetadata.map(meta => ({
-      id: meta.id,
-      projectId,
-      type: 'metadata' as const,
-      content: JSON.stringify({ key: meta.key, value: meta.value, vectorId: meta.vectorId }),
-      tags: [meta.key],
-      createdAt: new Date()
-    }));
-
-    const result = await apiClient.post<{ success: boolean }>('/api/sync/upload', {
-      userId,
-      projectId,
-      items: uploadPayload
-    });
-
-    if (result.success) {
-      for (const meta of pendingMetadata) {
-        meta.syncStatus = 'synced';
-        await sqliteClient.upsert(meta);
-      }
-      return pendingMetadata.length;
-    } else {
-      throw new Error('Upload sync API failed');
+  async saveSyncState(state: SyncState) {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(`visionode_sync_state_${state.userId}`, JSON.stringify(state));
     }
   },
 
   /**
-   * Run the download phase of local-to-cloud synchronization.
-   * Downloads newer cloud modifications and updates SQLite.
+   * Phase 1 : Upload des modifications locales vers le Cloud
    */
-  downloadUpdates: async (userId: string, projectId: string): Promise<number> => {
-    const state = await syncEngine.getSyncState(userId);
-    
-    const result = await apiClient.post<{ items: CloudData[] }>('/api/sync/download', {
+  async uploadPhase(userId: string, projectId: string): Promise<number> {
+    const pending = await sqliteClient.getPending();
+    if (pending.length === 0) return 0;
+
+    const payload = pending.map(m => ({
+      id: m.id,
+      projectId,
+      type: 'metadata' as const,
+      content: JSON.stringify({ key: m.key, value: m.value, vectorId: m.vectorId }),
+      tags: [m.key],
+      createdAt: new Date()
+    }));
+
+    const res = await apiClient.post<{ success: boolean }>('/api/sync/upload', { userId, projectId, items: payload });
+
+    if (res.success) {
+      for (const m of pending) {
+        await sqliteClient.upsert({ ...m, syncStatus: 'synced' });
+      }
+      return pending.length;
+    }
+    throw new Error("Echec de l'upload cloud.");
+  },
+
+  /**
+   * Phase 2 : Download des nouvelles données cloud vers le local (Delta Sync)
+   */
+  async downloadPhase(userId: string, projectId: string): Promise<number> {
+    const state = await this.getSyncState(userId);
+    const res = await apiClient.post<{ items: CloudData[] }>('/api/sync/download', {
       userId,
       projectId,
       lastSync: state.lastSync.toISOString()
     });
 
-    if (!result.items || result.items.length === 0) return 0;
+    if (!res.items || res.items.length === 0) return 0;
 
-    for (const item of result.items) {
+    for (const item of res.items) {
       if (item.type === 'metadata') {
         const parsed = JSON.parse(item.content);
-        const meta: LocalMetadata = {
+        await sqliteClient.upsert({
           id: item.id,
-          vectorId: parsed.vectorId || 'vector-none',
+          vectorId: parsed.vectorId || 'none',
           key: parsed.key || 'unknown',
           value: parsed.value || '',
           syncStatus: 'synced'
-        };
-        await sqliteClient.upsert(meta);
+        });
       }
     }
-
-    return result.items.length;
+    return res.items.length;
   },
 
   /**
-   * Performs a full synchronization cycle: Upload then Download.
+   * Cycle complet de synchronisation
    */
-  syncAll: async (userId: string, projectId: string): Promise<void> => {
-    const state = await syncEngine.getSyncState(userId);
+  async syncAll(userId: string, projectId: string) {
+    const state = await this.getSyncState(userId);
     state.status = 'syncing';
-    await syncEngine.setSyncState(state);
+    await this.saveSyncState(state);
 
     try {
-      const uploaded = await syncEngine.uploadPending(userId, projectId);
-      const downloaded = await syncEngine.downloadUpdates(userId, projectId);
+      const upCount = await this.uploadPhase(userId, projectId);
+      const downCount = await this.downloadPhase(userId, projectId);
 
       state.lastSync = new Date();
+      state.status = 'idle';
       state.pendingUploads = 0;
       state.pendingDownloads = 0;
-      state.status = 'idle';
-      await syncEngine.setSyncState(state);
+      await this.saveSyncState(state);
 
-      console.log(`🔄 [SYNC_ENGINE] Cycle terminé. Uploads: ${uploaded}, Downloads: ${downloaded}.`);
+      console.log(`✅ [SYNC_ENGINE] Cycle terminé. Up: ${upCount}, Down: ${downCount}`);
     } catch (e: any) {
-      console.error('❌ [SYNC_ENGINE] Échec de la synchronisation:', e.message);
+      console.error(`❌ [SYNC_ENGINE] Erreur :`, e.message);
       state.status = 'error';
-      await syncEngine.setSyncState(state);
+      await this.saveSyncState(state);
       throw e;
     }
   }

@@ -1,6 +1,6 @@
 // src/lib/db/types.ts
 
-// Cloud PostgreSQL
+// Cloud PostgreSQL (Entités Centrales)
 export interface CloudUser {
   id: string;
   email: string;
@@ -22,36 +22,26 @@ export interface CloudData {
   id: string;
   projectId: string;
   type: 'image' | 'video' | 'document' | 'metadata';
-  content: string; // JSON ou URL
-  embedding?: number[]; // Vector embedding
+  content: string; // JSON stringified ou URL
+  embedding?: number[]; // Vecteur associé
   tags: string[];
   createdAt: Date;
 }
 
-// Local ChromaDB
-export interface LocalVectorCollection {
-  name: string;
-  metadata: {
-    userId: string;
-    projectId: string;
-    syncStatus: 'synced' | 'pending' | 'conflict';
-    lastSync: Date;
-  };
-}
-
+// Local Vector Data (ChromaDB)
 export interface LocalVectorPoint {
   id: string;
-  values: number[]; // Vector embedding
+  values: number[];
   metadata: {
-    cloudId?: string; // Référence à l'ID cloud
+    cloudId?: string;
     type: string;
     tags: string[];
-    timestamp: Date;
+    timestamp: number;
     syncStatus: 'synced' | 'pending' | 'conflict';
   };
 }
 
-// SQLite Local (Métadonnées)
+// Local Metadata (SQLite / Persistence Locale)
 export interface LocalMetadata {
   id: string;
   vectorId: string;
@@ -60,7 +50,7 @@ export interface LocalMetadata {
   syncStatus: 'synced' | 'pending' | 'conflict';
 }
 
-// État de synchronisation
+// État de synchronisation UI
 export interface SyncState {
   userId: string;
   deviceId: string;
@@ -69,3 +59,5 @@ export interface SyncState {
   pendingDownloads: number;
   status: 'idle' | 'syncing' | 'error';
 }
+
+export type SyncProfile = 'admin-pc' | 'admin-mobile' | 'user-web' | 'user-local-web';

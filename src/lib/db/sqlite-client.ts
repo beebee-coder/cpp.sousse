@@ -1,61 +1,39 @@
 import { LocalMetadata } from './types';
 
-// Browser-safe local metadata database store using localStorage
-const STORAGE_KEY = 'visionode_local_sqlite_metadata';
+/**
+ * Client persistant local (simule SQLite via LocalStorage pour le mode hybride).
+ * En mode Desktop pur, pourrait être remplacé par le plugin Tauri SQL.
+ */
+const STORAGE_KEY = 'visionode_local_metadata_db';
 
-function loadLocalData(): LocalMetadata[] {
+function load(): LocalMetadata[] {
   if (typeof window === 'undefined') return [];
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch (e) {
-    console.error('Failed to load local SQLite metadata:', e);
-    return [];
-  }
+  const raw = localStorage.getItem(STORAGE_KEY);
+  return raw ? JSON.parse(raw) : [];
 }
 
-function saveLocalData(data: LocalMetadata[]): void {
+function save(data: LocalMetadata[]) {
   if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-  } catch (e) {
-    console.error('Failed to save local SQLite metadata:', e);
-  }
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 }
 
 export const sqliteClient = {
-  getAll: async (): Promise<LocalMetadata[]> => {
-    return loadLocalData();
+  getAll: async () => load(),
+  
+  getPending: async () => {
+    return load().filter(m => m.syncStatus === 'pending');
   },
 
-  getById: async (id: string): Promise<LocalMetadata | null> => {
-    const list = loadLocalData();
-    return list.find(m => m.id === id) || null;
-  },
-
-  getByVectorId: async (vectorId: string): Promise<LocalMetadata[]> => {
-    const list = loadLocalData();
-    return list.filter(m => m.vectorId === vectorId);
-  },
-
-  upsert: async (item: LocalMetadata): Promise<void> => {
-    const list = loadLocalData();
-    const idx = list.findIndex(m => m.id === item.id);
+  upsert: async (item: LocalMetadata) => {
+    const data = load();
+    const idx = data.findIndex(m => m.id === item.id);
     if (idx !== -1) {
-      list[idx] = item;
+      data[idx] = item;
     } else {
-      list.push(item);
+      data.push(item);
     }
-    saveLocalData(list);
+    save(data);
   },
 
-  delete: async (id: string): Promise<void> => {
-    const list = loadLocalData();
-    const filtered = list.filter(m => m.id !== id);
-    saveLocalData(filtered);
-  },
-
-  clear: async (): Promise<void> => {
-    saveLocalData([]);
-  }
+  clear: async () => save([])
 };
