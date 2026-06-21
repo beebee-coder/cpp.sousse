@@ -1,11 +1,8 @@
 
 /**
  * @fileOverview Gestionnaire ChromaDB sécurisé pour l'environnement hybride.
- * Les bibliothèques lourdes sont importées dynamiquement pour éviter les erreurs de bundle client
- * et réduire la taille des fonctions serverless sur Vercel.
+ * Utilise des techniques d'importation masquées pour éviter les erreurs de build sur Vercel.
  */
-
-import type { ChromaClient, Collection, EmbeddingFunction } from 'chromadb';
 
 export interface DocumentToAdd {
   id: string;
@@ -32,27 +29,26 @@ export interface SearchResult {
 let _pipeline: any = null;
 
 async function getPipeline(): Promise<any> {
-  // PROTECTION CRITIQUE : Ne jamais tenter de charger Transformers sur Vercel
   const isCloud = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
   if (isCloud) return null;
   
   if (_pipeline) return _pipeline;
   try {
-    // Import dynamique strict pour éviter le traçage par le bundler Vercel
-    const { pipeline } = await import('@huggingface/transformers');
+    // Masquage de l'import pour le bundler Vercel
+    const modName = '@huggingface/transformers';
+    const { pipeline } = await import(modName);
     _pipeline = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
     return _pipeline;
   } catch (e) {
-    console.warn("⚠️ Pipeline embedding local indisponible (normal en cloud).");
+    console.warn("⚠️ Pipeline embedding local indisponible.");
     return null;
   }
 }
 
 /**
- * Fonction d'embedding locale.
- * Ne fait rien en mode Cloud pour éviter d'importer Transformers.
+ * Fonction d'embedding locale (Mockée en Cloud).
  */
-export class LocalEmbeddingFunction implements EmbeddingFunction {
+export class LocalEmbeddingFunction {
   async generate(texts: string[]): Promise<number[][]> {
     const isCloud = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
     if (isCloud) return texts.map(() => []);
@@ -74,14 +70,16 @@ export function getLocalEmbedder(): LocalEmbeddingFunction {
 // ─── Client ChromaDB Singleton (Uniquement en Local) ─────────────────────────
 let _chromaClient: any = null;
 
-export async function getChromaClient(): Promise<ChromaClient | null> {
+export async function getChromaClient(): Promise<any> {
   const isCloud = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
   if (isCloud) return null;
 
   if (_chromaClient) return _chromaClient;
   
   try {
-    const { ChromaClient } = await import('chromadb');
+    // Masquage de l'import pour le bundler Vercel
+    const modName = 'chromadb';
+    const { ChromaClient } = await import(modName);
     const chromaUrl = process.env.CHROMA_URL ?? 'http://127.0.0.1:8000';
     
     try {
@@ -101,36 +99,28 @@ export async function getChromaClient(): Promise<ChromaClient | null> {
 }
 
 export async function listCollections() {
-  const isCloud = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
-  if (isCloud) return [];
-
+  if (process.env.VERCEL) return [];
   const client = await getChromaClient();
   if (!client) return [];
   return client.listCollections();
 }
 
-export async function getOrCreateCollection(name: string, embeddingFunction: EmbeddingFunction = getLocalEmbedder()) {
-  const isCloud = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
-  if (isCloud) throw new Error("ChromaDB indisponible en environnement cloud.");
-
+export async function getOrCreateCollection(name: string, embeddingFunction: any = getLocalEmbedder()) {
+  if (process.env.VERCEL) throw new Error("ChromaDB indisponible en Cloud.");
   const client = await getChromaClient();
-  if (!client) throw new Error("Impossible d'initialiser le client ChromaDB.");
+  if (!client) throw new Error("Client ChromaDB non initialisé.");
   return client.getOrCreateCollection({ name, embeddingFunction });
 }
 
 export async function deleteCollection(name: string) {
-  const isCloud = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
-  if (isCloud) return;
-
+  if (process.env.VERCEL) return;
   const client = await getChromaClient();
   if (!client) return;
   return client.deleteCollection({ name });
 }
 
-export async function addDocuments(collectionName: string, documents: DocumentToAdd[], embeddingFunction: EmbeddingFunction = getLocalEmbedder()) {
-  const isCloud = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
-  if (isCloud) return;
-
+export async function addDocuments(collectionName: string, documents: DocumentToAdd[], embeddingFunction: any = getLocalEmbedder()) {
+  if (process.env.VERCEL) return;
   const col = await getOrCreateCollection(collectionName, embeddingFunction);
   await col.add({
     ids: documents.map(d => d.id),
@@ -140,9 +130,7 @@ export async function addDocuments(collectionName: string, documents: DocumentTo
 }
 
 export async function upsertDocuments(collectionName: string, documents: DocumentToAdd[]) {
-  const isCloud = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
-  if (isCloud) return;
-
+  if (process.env.VERCEL) return;
   const col = await getOrCreateCollection(collectionName);
   await col.upsert({
     ids: documents.map(d => d.id),
@@ -151,10 +139,8 @@ export async function upsertDocuments(collectionName: string, documents: Documen
   });
 }
 
-export async function semanticSearch(options: SearchOptions, embeddingFunction: EmbeddingFunction = getLocalEmbedder()): Promise<SearchResult[]> {
-  const isCloud = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
-  if (isCloud) return [];
-
+export async function semanticSearch(options: SearchOptions, embeddingFunction: any = getLocalEmbedder()): Promise<SearchResult[]> {
+  if (process.env.VERCEL) return [];
   const { collectionName, query, nResults = 5, whereFilter } = options;
   const col = await getOrCreateCollection(collectionName, embeddingFunction);
   
@@ -169,7 +155,7 @@ export async function semanticSearch(options: SearchOptions, embeddingFunction: 
   const metas = results.metadatas?.[0] ?? [];
   const distances = results.distances?.[0] ?? [];
 
-  return ids.map((id, i) => ({
+  return ids.map((id: string, i: number) => ({
     id,
     document: String(docs[i] || ''),
     metadata: (metas[i] as any) || null,
@@ -179,10 +165,7 @@ export async function semanticSearch(options: SearchOptions, embeddingFunction: 
 }
 
 export async function seedIndustrialManuals() {
-  const isCloud = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
-  if (isCloud) return;
-
-  const timestamp = new Date().toLocaleTimeString();
+  if (process.env.VERCEL) return;
   try {
     const collectionName = 'industrial_manuals';
     const client = await getChromaClient();
@@ -192,7 +175,6 @@ export async function seedIndustrialManuals() {
     const count = await col.count();
     
     if (count === 0) {
-      console.log(`🌱 [${timestamp}] [CHROMA] Peuplement initial...`);
       const seedData: DocumentToAdd[] = [
         {
           id: 'man-001',
@@ -215,10 +197,9 @@ export async function seedIndustrialManuals() {
         documents: seedData.map(d => d.content),
         metadatas: seedData.map(d => d.metadata ?? {})
       });
-      console.log(`✅ [${timestamp}] [CHROMA] 3 manuels indexés.`);
     }
   } catch (e) {
-    console.warn(`⚠️ [${timestamp}] [CHROMA] Saut du peuplement :`, e);
+    // Ignoré en build
   }
 }
 
@@ -227,9 +208,7 @@ export function fallbackSemanticSearch(query: string, nResults = 3, componentFil
 }
 
 export async function searchAcrossCollections(query: string, nResultsPerCollection = 3): Promise<SearchResult[]> {
-  const isCloud = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
-  
-  if (isCloud) {
+  if (process.env.VERCEL) {
     try {
       const { getWeaviateClient } = await import('./weaviate-client');
       const client = await getWeaviateClient();

@@ -1,35 +1,37 @@
 
 /**
- * @fileOverview Client Weaviate Cloud pour le RAG en mode Web.
- * Utilise des imports dynamiques pour optimiser le bundle.
+ * @fileOverview Client Weaviate Cloud optimisé pour le build Vercel.
  */
 
-import type { WeaviateClient } from 'weaviate-client';
+let _client: any = null;
 
-let _client: WeaviateClient | null = null;
-
-export async function getWeaviateClient(): Promise<WeaviateClient> {
+export async function getWeaviateClient(): Promise<any> {
   if (_client) return _client;
 
   const weaviateURL = process.env.WEAVIATE_URL;
   const weaviateApiKey = process.env.WEAVIATE_API_KEY;
 
   if (!weaviateURL || !weaviateApiKey) {
-    throw new Error('CONFIG_MANQUANTE : WEAVIATE_URL et WEAVIATE_API_KEY doivent être configurées pour le mode Web.');
+    throw new Error('CONFIG_MANQUANTE : WEAVIATE_URL et WEAVIATE_API_KEY requises.');
   }
 
-  // Import dynamique pour le client cloud
-  const weaviate = (await import('weaviate-client')).default;
+  try {
+    // Masquage de l'import pour le bundler si nécessaire
+    const modName = 'weaviate-client';
+    const weaviate = (await import(modName)).default;
 
-  // Nettoyage de l'URL pour Weaviate Client v3+
-  const host = weaviateURL.replace('https://', '').replace('http://', '');
+    const host = weaviateURL.replace('https://', '').replace('http://', '');
 
-  _client = await weaviate.connectToWeaviateCloud(host, {
-    authCredentials: new weaviate.ApiKey(weaviateApiKey),
-    headers: {
-      'X-OpenAI-Api-Key': process.env.OPENAI_API_KEY || '',
-    }
-  });
+    _client = await weaviate.connectToWeaviateCloud(host, {
+      authCredentials: new weaviate.ApiKey(weaviateApiKey),
+      headers: {
+        'X-OpenAI-Api-Key': process.env.OPENAI_API_KEY || '',
+      }
+    });
 
-  return _client;
+    return _client;
+  } catch (error: any) {
+    console.error("❌ Erreur connexion Weaviate:", error.message);
+    throw error;
+  }
 }
