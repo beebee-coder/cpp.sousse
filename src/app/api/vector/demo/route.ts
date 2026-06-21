@@ -1,15 +1,17 @@
-export const dynamic = 'force-static';
 
-import { createHybridRoute } from '@/lib/api-hybrid';
+export const dynamic = 'force-dynamic';
+
+import { createHybridRoute } from '@/lib/api-route-creator';
 import { runChromaDemo } from '@/lib/chroma-example';
 
 export const GET = createHybridRoute<any, any>({
   name: 'VECTOR_DEMO_GET',
   webHandler: async () => {
-    const results = await runChromaDemo();
-    return { success: true, ...results };
-  },
-  desktopFallback: async () => {
-    return { success: true, demo: 'simulated' };
+    try {
+      const results = await runChromaDemo();
+      return { success: true, ...results };
+    } catch (e: any) {
+      return { success: false, error: 'DEMO_FAILED', details: e.message };
+    }
   }
 });

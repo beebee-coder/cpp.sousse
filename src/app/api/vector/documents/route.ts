@@ -1,6 +1,7 @@
-export const dynamic = 'force-static';
 
-import { createHybridRoute } from '@/lib/api-hybrid';
+export const dynamic = 'force-dynamic';
+
+import { createHybridRoute } from '@/lib/api-route-creator';
 import { addDocuments, upsertDocuments } from '@/lib/chroma';
 
 export const POST = createHybridRoute<{ collection: string; documents: any[]; upsert?: boolean }, any>({
@@ -19,26 +20,20 @@ export const POST = createHybridRoute<{ collection: string; documents: any[]; up
         headers: { 'Content-Type': 'application/json' }
       });
     }
-    for (const doc of documents) {
-      if (!doc.id || !doc.content) {
-        return new Response(JSON.stringify({ error: 'Chaque document doit avoir un "id" et un "content".' }), { 
-          status: 400,
-          headers: { 'Content-Type': 'application/json' }
-        });
+    
+    try {
+      if (upsert) {
+        await upsertDocuments(collection, documents);
+      } else {
+        await addDocuments(collection, documents);
       }
+      return {
+        success: true,
+        message: `${documents.length} document(s) ${upsert ? 'mis à jour' : 'ajouté(s)'} dans la collection "${collection}".`,
+        count: documents.length,
+      };
+    } catch (e: any) {
+      return { success: false, error: 'DOC_INDEX_FAILED', details: e.message };
     }
-    if (upsert) {
-      await upsertDocuments(collection, documents);
-    } else {
-      await addDocuments(collection, documents);
-    }
-    return {
-      success: true,
-      message: `${documents.length} document(s) ${upsert ? 'mis à jour' : 'ajouté(s)'} dans la collection "${collection}".`,
-      count: documents.length,
-    };
-  },
-  desktopFallback: async (body) => {
-    return { success: true, message: `${body.documents?.length || 0} document(s) simulés en local.` };
   }
 });

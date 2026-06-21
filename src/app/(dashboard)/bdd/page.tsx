@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect } from 'react';
@@ -129,9 +130,9 @@ export default function BDDPage() {
     
     try {
       if (mode === 'chroma') {
-        // Appel API réel vers ChromaDB
-        const res = await apiClient.post<any>('/api/vector/collections', {});
-        if (res.collections) {
+        // Utilisation de GET pour lister les collections
+        const res = await apiClient.get<any>('/api/vector/collections');
+        if (res && res.collections && Array.isArray(res.collections)) {
           const chromaNodes = res.collections.map((c: any) => ({
             id: `chroma-${c.name}`,
             name: c.name,
@@ -141,8 +142,6 @@ export default function BDDPage() {
           setTree([{ id: 'chroma-root', name: 'CHROMA_DATA', type: 'folder', isOpen: true, children: chromaNodes }]);
         }
       }
-      // Simulation délai pour feedback UI
-      await new Promise(r => setTimeout(r, 800));
       console.log(`✅ [${timestamp}] [BDD_SYNC] État synchronisé.`);
     } catch (e) {
       console.error("Échec sync BDD:", e);

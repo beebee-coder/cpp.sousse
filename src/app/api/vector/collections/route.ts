@@ -1,16 +1,18 @@
-export const dynamic = 'force-static';
 
-import { createHybridRoute } from '@/lib/api-hybrid';
+export const dynamic = 'force-dynamic';
+
+import { createHybridRoute } from '@/lib/api-route-creator';
 import { listCollections, deleteCollection, getOrCreateCollection } from '@/lib/chroma';
 
 export const GET = createHybridRoute<any, any>({
   name: 'VECTOR_COLLECTIONS_GET',
   webHandler: async () => {
-    const collections = await listCollections();
-    return { success: true, count: collections.length, collections };
-  },
-  desktopFallback: async () => {
-    return { success: true, count: 0, collections: [] };
+    try {
+      const collections = await listCollections();
+      return { success: true, count: collections.length, collections };
+    } catch (e: any) {
+      return { success: false, error: 'DB_UNREACHABLE', details: e.message, collections: [] };
+    }
   }
 });
 
@@ -24,16 +26,17 @@ export const POST = createHybridRoute<{ name: string }, any>({
         headers: { 'Content-Type': 'application/json' }
       });
     }
-    const collection = await getOrCreateCollection(name);
-    const count = await collection.count();
-    return { 
-      success: true, 
-      message: `Collection "${name}" créée ou récupérée avec succès.`, 
-      collection: { name, documentCount: count } 
-    };
-  },
-  desktopFallback: async () => {
-    return { success: true, message: 'Collection créée en local.' };
+    try {
+      const collection = await getOrCreateCollection(name);
+      const count = await collection.count();
+      return { 
+        success: true, 
+        message: `Collection "${name}" créée ou récupérée avec succès.`, 
+        collection: { name, documentCount: count } 
+      };
+    } catch (e: any) {
+      return { success: false, error: 'DB_WRITE_FAILED', details: e.message };
+    }
   }
 });
 
