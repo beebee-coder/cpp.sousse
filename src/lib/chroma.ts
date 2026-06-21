@@ -28,20 +28,22 @@ export interface SearchResult {
   score: number;
 }
 
-// ─── Embedding Local ──────────────────────────────────────────────────────────
+// ─── Embedding Local (Uniquement en Développement/Desktop) ──────────────────
 let _pipeline: any = null;
 
 async function getPipeline(): Promise<any> {
-  // Sur Vercel, on ne charge jamais le pipeline local (trop lourd)
-  if (process.env.VERCEL) return null;
+  // PROTECTION CRITIQUE : Ne jamais charger Transformers sur Vercel
+  const isCloud = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
+  if (isCloud) return null;
   
   if (_pipeline) return _pipeline;
   try {
+    // Import dynamique strict pour éviter le traçage par le bundler Vercel
     const { pipeline } = await import('@huggingface/transformers');
     _pipeline = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
     return _pipeline;
   } catch (e) {
-    console.error("Échec chargement pipeline embedding local:", e);
+    console.warn("⚠️ Pipeline embedding local indisponible (normal en cloud).");
     return null;
   }
 }
@@ -61,41 +63,50 @@ export function getLocalEmbedder(): LocalEmbeddingFunction {
   return _localEmbedder;
 }
 
-// ─── Client ChromaDB Singleton ───────────────────────────────────────────────
+// ─── Client ChromaDB Singleton (Uniquement en Local) ─────────────────────────
 let _chromaClient: any = null;
 
-export async function getChromaClient(): Promise<ChromaClient> {
+export async function getChromaClient(): Promise<ChromaClient | null> {
+  const isCloud = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
+  if (isCloud) return null;
+
   if (_chromaClient) return _chromaClient;
   
-  // Import dynamique pour éviter d'inclure chromadb dans le bundle cloud
-  const { ChromaClient } = await import('chromadb');
-  const chromaUrl = process.env.CHROMA_URL ?? 'http://127.0.0.1:8000';
-  
   try {
-    const url = new URL(chromaUrl);
-    _chromaClient = new ChromaClient({ 
-      ssl: url.protocol === 'https:', 
-      host: url.hostname, 
-      port: url.port ? parseInt(url.port) : (url.protocol === 'https:' ? 443 : 80) 
-    });
+    const { ChromaClient } = await import('chromadb');
+    const chromaUrl = process.env.CHROMA_URL ?? 'http://127.0.0.1:8000';
+    
+    try {
+      const url = new URL(chromaUrl);
+      _chromaClient = new ChromaClient({ 
+        ssl: url.protocol === 'https:', 
+        host: url.hostname, 
+        port: url.port ? parseInt(url.port) : (url.protocol === 'https:' ? 443 : 80) 
+      });
+    } catch {
+      _chromaClient = new ChromaClient({ path: chromaUrl });
+    }
+    return _chromaClient;
   } catch {
-    _chromaClient = new ChromaClient({ path: chromaUrl });
+    return null;
   }
-  return _chromaClient;
 }
 
 export async function listCollections() {
   const client = await getChromaClient();
+  if (!client) return [];
   return client.listCollections();
 }
 
 export async function getOrCreateCollection(name: string, embeddingFunction: EmbeddingFunction = getLocalEmbedder()) {
   const client = await getChromaClient();
+  if (!client) throw new Error("ChromaDB indisponible en environnement cloud.");
   return client.getOrCreateCollection({ name, embeddingFunction });
 }
 
 export async function deleteCollection(name: string) {
   const client = await getChromaClient();
+  if (!client) return;
   return client.deleteCollection({ name });
 }
 
@@ -142,14 +153,20 @@ export async function semanticSearch(options: SearchOptions, embeddingFunction: 
 }
 
 export async function seedIndustrialManuals() {
+  const isCloud = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
+  if (isCloud) return; // Le seeding cloud se fait via Weaviate Ingest
+
   const timestamp = new Date().toLocaleTimeString();
   try {
     const collectionName = 'industrial_manuals';
-    const col = await getOrCreateCollection(collectionName);
+    const client = await getChromaClient();
+    if (!client) return;
+
+    const col = await client.getOrCreateCollection({ name: collectionName, embeddingFunction: getLocalEmbedder() });
     const count = await col.count();
     
     if (count === 0) {
-      console.log(`🌱 [${timestamp}] [CHROMA] Peuplement initial des manuels industriels...`);
+      console.log(`🌱 [${timestamp}] [CHROMA] Peuplement initial...`);
       const seedData: DocumentToAdd[] = [
         {
           id: 'man-001',
@@ -167,19 +184,50 @@ export async function seedIndustrialManuals() {
           metadata: { title: 'Sécurité Robotique', component: 'factory-floor', url: '/docs/safety-robot.pdf' }
         }
       ];
-      await addDocuments(collectionName, seedData);
+      await col.add({
+        ids: seedData.map(d => d.id),
+        documents: seedData.map(d => d.content),
+        metadatas: seedData.map(d => d.metadata ?? {})
+      });
       console.log(`✅ [${timestamp}] [CHROMA] 3 manuels indexés.`);
     }
   } catch (e) {
-    console.warn(`⚠️ [${timestamp}] [CHROMA] Échec ou saut du peuplement :`, e);
+    console.warn(`⚠️ [${timestamp}] [CHROMA] Saut du peuplement :`, e);
   }
 }
 
 export function fallbackSemanticSearch(query: string, nResults = 3, componentFilter?: string): SearchResult[] {
+  // Mock léger pour le mode déconnecté total
   return []; 
 }
 
 export async function searchAcrossCollections(query: string, nResultsPerCollection = 3): Promise<SearchResult[]> {
+  const isCloud = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
+  
+  if (isCloud) {
+    // En mode Cloud, on redirige vers Weaviate via l'API interne ou le client direct
+    try {
+      const { getWeaviateClient } = await import('./weaviate-client');
+      const client = await getWeaviateClient();
+      const result = await client.graphql.get()
+        .withClassName('Industrial_manuals')
+        .withFields('question answer _additional { distance }')
+        .withNearText({ concepts: [query] })
+        .withLimit(nResultsPerCollection * 2)
+        .do();
+        
+      const data = (result.data.Get as any)['Industrial_manuals'] || [];
+      return data.map((item: any) => ({
+        id: 'cloud-id',
+        document: `Question: ${item.question}\nRéponse: ${item.answer}`,
+        metadata: { provider: 'weaviate-cloud' },
+        score: 1 - (item._additional?.distance || 0)
+      }));
+    } catch {
+      return [];
+    }
+  }
+
   try {
     const cols = await listCollections();
     const searchPromises = cols.map(c => 

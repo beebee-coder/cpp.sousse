@@ -12,7 +12,8 @@ const nextConfig: NextConfig = {
     '@huggingface/transformers', 
     'chromadb', 
     'groq-sdk',
-    'weaviate-client'
+    'weaviate-client',
+    'sharp'
   ],
 
   // Mode export pour Tauri, standard pour Vercel
@@ -33,6 +34,9 @@ const nextConfig: NextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
+
+  // Désactivation des sourcemaps en production pour gagner de l'espace
+  productionBrowserSourceMaps: false,
 };
 
 export default nextConfig;
