@@ -11,7 +11,8 @@ import {
   Cpu,
   ShieldCheck,
   Rocket,
-  ChevronRight
+  ChevronRight,
+  HardDrive
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { usePlatform } from '@/components/PlatformProvider';
@@ -23,6 +24,7 @@ const navItems = [
   { icon: LayoutDashboard, label: 'Tableau de Bord', href: '/dashboard' },
   { icon: MessageSquare, label: 'Chat Neural', href: '/chat' },
   { icon: Database, label: 'Base RAG', href: '/dataset' },
+  { icon: HardDrive, label: 'Explorateur BDD', href: '/bdd' },
   { icon: Camera, label: 'Flux Vidéo', href: '#' },
   { icon: Terminal, label: 'Console Audit', href: '#' },
 ];
