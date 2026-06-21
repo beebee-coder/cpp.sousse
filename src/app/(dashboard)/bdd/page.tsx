@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect } from 'react';
@@ -18,7 +17,8 @@ import {
   RefreshCw,
   Search,
   Check,
-  X
+  X,
+  Server
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -44,29 +44,25 @@ export default function BDDPage() {
   const [mode, setMode] = useState<'chroma' | 'web'>('chroma');
   const [tree, setTree] = useState<FSNode[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [activeProvider, setActiveProvider] = useState<string>('DÉCONNECTÉ');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditingValue] = useState('');
 
-  // Initialisation à partir du LocalStorage pour la rapidité
   useEffect(() => {
     const key = mode === 'web' ? STORAGE_KEY_WEB : STORAGE_KEY_CHROMA;
     const saved = localStorage.getItem(key);
     if (saved) {
       setTree(JSON.parse(saved));
     } else {
-      // Structure par défaut si vide
       const defaultTree = mode === 'web' ? [
         { id: 'root', name: 'DATABASE_ROOT', type: 'folder', isOpen: true, children: [] }
       ] : [
-        { id: 'chroma-root', name: 'CHROMA_DATA', type: 'folder', isOpen: true, children: [
-          { id: 'col-1', name: 'industrial_manuals', type: 'folder', children: [] }
-        ] }
+        { id: 'chroma-root', name: 'VECTOR_DATA', type: 'folder', isOpen: true, children: [] }
       ];
       setTree(defaultTree);
     }
   }, [mode]);
 
-  // Sauvegarde auto dans localStorage
   useEffect(() => {
     const key = mode === 'web' ? STORAGE_KEY_WEB : STORAGE_KEY_CHROMA;
     localStorage.setItem(key, JSON.stringify(tree));
@@ -126,25 +122,36 @@ export default function BDDPage() {
   const syncPhysicalState = async () => {
     setIsSyncing(true);
     const timestamp = new Date().toLocaleTimeString();
-    console.log(`🚀 [${timestamp}] [BDD_SYNC] Synchronisation avec l'état physique...`);
     
     try {
       if (mode === 'chroma') {
-        // Utilisation de GET pour lister les collections
         const res = await apiClient.get<any>('/api/vector/collections');
-        if (res && res.collections && Array.isArray(res.collections)) {
+        if (res && res.success && Array.isArray(res.collections)) {
+          const providerName = res.provider || 'CHROMA';
+          setActiveProvider(providerName);
+          
           const chromaNodes = res.collections.map((c: any) => ({
             id: `chroma-${c.name}`,
             name: c.name,
             type: 'folder',
             children: []
           }));
-          setTree([{ id: 'chroma-root', name: 'CHROMA_DATA', type: 'folder', isOpen: true, children: chromaNodes }]);
+          
+          setTree([{ 
+            id: 'chroma-root', 
+            name: providerName === 'WEAVIATE_CLOUD' ? 'CLASSES_CLOUD' : 'COLLECTIONS_LOCALES', 
+            type: 'folder', 
+            isOpen: true, 
+            children: chromaNodes 
+          }]);
+          console.log(`✅ [${timestamp}] [BDD_SYNC] Liaison ${providerName} établie.`);
+        } else {
+          throw new Error(res.error || "Réponse invalide");
         }
       }
-      console.log(`✅ [${timestamp}] [BDD_SYNC] État synchronisé.`);
-    } catch (e) {
-      console.error("Échec sync BDD:", e);
+    } catch (e: any) {
+      console.error("❌ Échec sync BDD:", e.message);
+      setActiveProvider('ERREUR_LIAISON');
     } finally {
       setIsSyncing(false);
     }
@@ -233,7 +240,7 @@ export default function BDDPage() {
                 )}
               >
                 <Zap className="w-3 h-3 inline mr-1.5" />
-                ChromaDB
+                Moteur Vectoriel
               </button>
               <button 
                 onClick={() => setMode('web')}
@@ -257,54 +264,47 @@ export default function BDDPage() {
               className="h-8 text-[10px] font-code uppercase border-primary/30 text-primary hover:bg-primary/5"
             >
               <RefreshCw className={cn("w-3.5 h-3.5 mr-2", isSyncing && "animate-spin")} />
-              {isSyncing ? "Synchronisation..." : "Sync Physique"}
+              {isSyncing ? "Transmission..." : "Sync Physique"}
             </Button>
           </div>
         </header>
 
         <div className="flex-1 p-6 overflow-hidden flex gap-6">
-          {/* File Explorer Panel */}
           <Card className="w-80 flex flex-col bg-black/40 border-border overflow-hidden shadow-2xl">
             <div className="p-3 border-b border-border bg-card/50 flex items-center justify-between">
               <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">Explorateur</span>
               <Badge variant="outline" className="text-[8px] uppercase h-4 px-1 border-primary/30 text-primary">
-                {mode === 'web' ? 'Cloud' : 'Natif'}
+                {mode === 'web' ? 'Logique' : 'Physique'}
               </Badge>
             </div>
             <div className="flex-1 overflow-auto terminal-scroll p-2">
               {renderTree(tree)}
             </div>
-            <div className="p-2 border-t border-border bg-card/20">
-              <div className="text-[9px] font-code text-muted-foreground uppercase leading-tight italic">
-                &gt; Les modifications sont persistées en local via LocalStorage pour une réactivité optimale.
-              </div>
-            </div>
           </Card>
 
-          {/* Details / Editor Panel */}
           <div className="flex-1 flex flex-col gap-6 overflow-hidden">
             <Card className="flex-1 bg-card/30 border-border p-8 flex flex-col items-center justify-center text-center">
-              <Search className="w-12 h-12 text-muted-foreground/20 mb-4" />
-              <h3 className="font-headline font-bold text-lg uppercase tracking-widest mb-2">Sélectionnez une ressource</h3>
+              <Server className="w-12 h-12 text-muted-foreground/20 mb-4" />
+              <h3 className="font-headline font-bold text-lg uppercase tracking-widest mb-2">État du Moteur</h3>
               <p className="text-sm text-muted-foreground font-code max-w-sm">
-                Utilisez l'explorateur à gauche pour naviguer dans l'arborescence {mode === 'web' ? 'de votre BDD Web' : 'de vos collections ChromaDB'}.
+                Liaison active vers le nœud vectoriel distant. Les modifications sont persistées en temps réel.
               </p>
               
               <div className="grid grid-cols-2 gap-4 mt-12 w-full max-w-lg text-left">
                 <div className="p-4 border border-border bg-black/20 rounded-sm">
                   <p className="text-[10px] font-bold text-primary uppercase mb-1">Stockage UI</p>
-                  <p className="text-[11px] font-code text-muted-foreground">Persistance via LocalStorage activée.</p>
+                  <p className="text-[11px] font-code text-muted-foreground">LocalStorage activé (Rapidité).</p>
                 </div>
                 <div className="p-4 border border-border bg-black/20 rounded-sm">
-                  <p className="text-[10px] font-bold text-secondary uppercase mb-1">État Physique</p>
-                  <p className="text-[11px] font-code text-muted-foreground">Liaison vers le moteur {mode.toUpperCase()} active.</p>
+                  <p className="text-[10px] font-bold text-secondary uppercase mb-1">Nœud Actif</p>
+                  <p className="text-[11px] font-code text-muted-foreground">{activeProvider}</p>
                 </div>
               </div>
             </Card>
 
             <footer className="h-24 bg-primary/5 border border-primary/20 rounded-sm p-4 font-code text-[10px] uppercase text-primary/70 leading-relaxed">
               <p>&gt; MOTEUR_LOGIQUE : PRÊT</p>
-              <p>&gt; CACHE_UI : VALIDE (MODE_RAPIDE)</p>
+              <p>&gt; LIAISON_PHYSIQUE : {activeProvider}</p>
               <p>&gt; AUDIT_TRAÇABILITÉ : {isSyncing ? "TRANSMISSION_EN_COURS" : "VEILLE_NOMINALE"}</p>
             </footer>
           </div>

@@ -1,17 +1,47 @@
-
 export const dynamic = 'force-dynamic';
 
 import { createHybridRoute } from '@/lib/api-route-creator';
 import { listCollections, deleteCollection, getOrCreateCollection } from '@/lib/chroma';
+import { getWeaviateClient } from '@/lib/weaviate-client';
 
+/**
+ * Route hybride pour lister les collections (ou classes Cloud).
+ */
 export const GET = createHybridRoute<any, any>({
   name: 'VECTOR_COLLECTIONS_GET',
   webHandler: async () => {
+    const isCloud = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
+
+    if (isCloud) {
+      try {
+        const client = await getWeaviateClient();
+        // Dans le SDK Weaviate v3, on récupère le schéma complet
+        const schema = await client.collections.listAll();
+        
+        // On mappe les classes Weaviate vers le format attendu par l'UI "Collections"
+        const collections = schema.map(c => ({
+          name: c.name,
+          metadata: { provider: 'weaviate-cloud' }
+        }));
+
+        return { 
+          success: true, 
+          count: collections.length, 
+          collections, 
+          provider: 'WEAVIATE_CLOUD' 
+        };
+      } catch (e: any) {
+        console.error("❌ [WEAVIATE] Échec de récupération du schéma :", e.message);
+        return { success: false, error: 'CLOUD_DB_UNREACHABLE', details: e.message, collections: [] };
+      }
+    }
+
+    // Mode Local : ChromaDB
     try {
       const collections = await listCollections();
-      return { success: true, count: collections.length, collections };
+      return { success: true, count: collections.length, collections, provider: 'CHROMA_LOCAL' };
     } catch (e: any) {
-      return { success: false, error: 'DB_UNREACHABLE', details: e.message, collections: [] };
+      return { success: false, error: 'LOCAL_DB_UNREACHABLE', details: e.message, collections: [] };
     }
   }
 });
