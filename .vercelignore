@@ -1,0 +1,28 @@
+# .vercelignore
+# Exclure les bibliothèques lourdes de traitement local pour Vercel
+
+node_modules/chromadb/
+node_modules/chromadb/**
+node_modules/onnxruntime-node/
+node_modules/@huggingface/transformers/
+**/chromadb/**
+chroma-data/
+data/chromadb/
+*.db
+*.sqlite
+*.sqlite3
+
+# Exclure les fichiers de build et de forge
+src-tauri/
+src-tauri/target/
+out/
+.next/
+.cache/
+
+# Exclure les scripts de maintenance
+scratch/
+scripts/
+build-desktop.sh
+forge-desktop.sh
+sync.sh
+deploy.sh
