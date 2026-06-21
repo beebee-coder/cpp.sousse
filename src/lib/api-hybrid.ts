@@ -1,47 +1,37 @@
+
 import { isDesktop } from './platform';
 
 /**
- * Registry of desktop interceptors (lightweight mocks)
- * used only when the app is running in the native Tauri container.
+ * Registre des intercepteurs Desktop (Mocks légers pour la version EXE).
+ * Garantit que l'app ne crashe pas sans backend Node.js.
  */
 const desktopInterceptors: Record<string, (body: any) => any> = {
   '/api/chat': async (body: any) => ({
-    text: `🤖 [VisioNode Offline] Mode bureau actif. Message : "${body.message}"`,
-    provider: 'local-mock'
+    text: `🤖 [Mode Natif] Simulation de réponse IA pour : "${body.message}"`,
+    provider: 'OFFLINE_STATION'
   }),
-  '/api/github': async (body: any) => ({
+  '/api/vector/search': async (body: any) => ({
     success: true,
-    message: `Mode bureau actif. Opération "${body.mode}" simulée.`,
-    logs: 'SUCCÈS : Simulation locale terminée.',
-    offline: true
+    results: [],
+    provider: 'LOCAL_PERSISTENCE',
+    message: 'Recherche simulée en mode dégradé.'
   }),
-  '/api/vision/description': async () => ({
-    description: "Analyse visuelle simulée (Mode Bureau).",
-    categories: ["Industrie", "Offline"],
-    objects: ["Composant détecté"],
-    offline: true,
-    provider: 'local-mock'
-  }),
-  '/api/vision/retrieval': async () => ({
-    componentDescription: "COMPOSANT INDUSTRIEL",
-    relevantDocuments: [],
-    offline: true,
-    provider: 'local-mock'
-  }),
-  '/api/sync/upload': async () => ({ success: true, message: 'Upload simulé' }),
-  '/api/sync/download': async () => ({ items: [], message: 'Download simulé' }),
-  '/api/vector/collections': async () => ({ success: true, count: 0, collections: [] }),
-  '/api/vector/search': async (body: any) => ({ success: true, query: body.query || '', results: [] }),
   '/api/vector/ingest': async (body: any) => ({
     success: true,
-    message: `${body.items?.length || 0} paires sauvegardées localement.`,
-    offline: true
+    message: `${body.items?.length || 0} éléments sauvegardés dans le cache local.`,
+    provider: 'LOCAL_STORAGE'
+  }),
+  '/api/vision/description': async () => ({
+    description: "Analyse visuelle simulée (EXE).",
+    categories: ["Industrie", "Offline"],
+    objects: ["Capteur", "Panneau"],
+    provider: 'LOCAL_VISION'
   })
 };
 
 /**
- * Resolves the route dynamically on Web, or intercepts and executes the offline mock on Desktop.
- * Safe for client-side usage.
+ * Routeur hybride : Exécute le fetch réel sur Web/Vercel, 
+ * et intercepte via les mocks sur Desktop (EXE).
  */
 export async function executeHybridRequest<TReq, TRes>(
   path: string,
@@ -51,7 +41,7 @@ export async function executeHybridRequest<TReq, TRes>(
   if (isDesktop) {
     const localHandler = desktopInterceptors[path];
     if (localHandler) {
-      console.log(`🔌 [API_HYBRID] [DESKTOP] Interception locale : ${path}`);
+      console.log(`🔌 [HYBRID_BRIDGE] Interception EXE : ${path}`);
       return await localHandler(body);
     }
   }
