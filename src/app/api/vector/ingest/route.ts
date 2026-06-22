@@ -1,7 +1,5 @@
 
 import { createHybridRoute } from '@/lib/api-route-creator';
-import { upsertDocuments } from '@/lib/chroma';
-import { getWeaviateClient } from '@/lib/weaviate-client';
 
 export interface IngestItem {
   question: string;
@@ -14,10 +12,8 @@ export interface IngestPayload {
 }
 
 /**
- * API Route d'ingestion hybride.
- * Vercel -> Weaviate | Dev -> ChromaDB
- * 
- * Priorité : Weaviate sur Vercel pour éviter de charger ChromaDB/Transformers.
+ * API Route d'ingestion hybride optimisée pour le poids du bundle.
+ * Sépare physiquement les chemins Cloud (Weaviate) et Local (Chroma).
  */
 export const POST = createHybridRoute<IngestPayload, any>({
   name: 'VECTOR_INGEST',
@@ -27,10 +23,11 @@ export const POST = createHybridRoute<IngestPayload, any>({
     const timestamp = new Date().toLocaleTimeString();
     const isCloud = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
 
-    // 📡 MODE CLOUD : Weaviate (Aucune utilisation de ChromaDB)
+    // 📡 CHEMIN CLOUD : Utilise exclusivement weaviate-client (Plus léger)
     if (isCloud) {
       try {
-        console.log(`📡 [${timestamp}] [WEAVIATE_CLOUD] Indexation de ${items.length} éléments...`);
+        console.log(`📡 [${timestamp}] [CLOUD_TRAINING] Entraînement Weaviate Cloud...`);
+        const { getWeaviateClient } = await import('@/lib/weaviate-client');
         const client = await getWeaviateClient();
         const className = collectionName.charAt(0).toUpperCase() + collectionName.slice(1);
 
@@ -47,23 +44,25 @@ export const POST = createHybridRoute<IngestPayload, any>({
         });
 
         await batcher.do();
-        return { success: true, message: 'INDEXATION_CLOUD_SUCCES', provider: 'WEAVIATE' };
+        return { success: true, message: 'ENTRAINEMENT_CLOUD_REUSSI', provider: 'WEAVIATE' };
       } catch (e: any) {
-        console.error(`❌ [WEAVIATE] Échec :`, e.message);
+        console.error(`❌ [CLOUD_TRAINING] Échec :`, e.message);
         return { success: false, error: 'CLOUD_INGEST_FAILED', details: e.message };
       }
     }
 
-    // 🧠 MODE LOCAL : ChromaDB (Uniquement en local)
+    // 🧠 CHEMIN LOCAL : Utilise ChromaDB et Transformers (Poids lourd)
+    // Ce code ne sera jamais exécuté sur Vercel grâce au court-circuit ci-dessus.
     try {
-      console.log(`🧠 [${timestamp}] [CHROMA_LOCAL] Vectorisation de ${items.length} éléments...`);
+      const { upsertDocuments } = await import('@/lib/chroma');
+      console.log(`🧠 [${timestamp}] [LOCAL_TRAINING] Entraînement ChromaDB Local...`);
       const docs = items.map((item, index) => ({
         id: `local-${Date.now()}-${index}`,
         content: `Question: ${item.question}\nRéponse: ${item.answer}`,
         metadata: { ...metadata, ingested_at: new Date().toISOString() }
       }));
       await upsertDocuments(collectionName, docs);
-      return { success: true, message: 'VECTORISATION_LOCALE_SUCCES', provider: 'CHROMA' };
+      return { success: true, message: 'ENTRAINEMENT_LOCAL_REUSSI', provider: 'CHROMA' };
     } catch (e: any) {
       return { success: false, error: e.message };
     }

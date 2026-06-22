@@ -5,21 +5,24 @@ const isDesktop = process.env.TAURI_ENV === 'true';
 
 /** @type {import('next').NextConfig} */
 const nextConfig: NextConfig = {
-  // Modules natifs lourds à exclure strictement du bundle d'exécution
+  // Modules natifs et lourds à exclure strictement du bundle d'exécution Serverless
+  // Cette liste garantit que le déploiement sur Vercel reste sous les 250 Mo.
   serverExternalPackages: [
     'onnxruntime-node', 
     '@huggingface/transformers', 
     'chromadb', 
     'groq-sdk',
     'weaviate-client',
-    'sharp'
+    'sharp',
+    'canvas',
+    'jsdom'
   ],
 
-  // Mode export pour Tauri, standard pour Vercel
+  // Mode export pour Tauri (Statique), standard pour Vercel (Dynamique)
   output: isDesktop ? 'export' : undefined,
   
   images: {
-    // Désactivation de l'optimisation pour éviter les timeouts sur les placeholders externes (Picsum/Unsplash)
+    // Désactivation de l'optimisation pour éviter les timeouts serveur sur les placeholders
     unoptimized: true,
     remotePatterns: [
       { protocol: 'https', hostname: 'picsum.photos' },
@@ -35,7 +38,7 @@ const nextConfig: NextConfig = {
     ignoreDuringBuilds: true,
   },
 
-  // Désactivation des sourcemaps en production pour gagner de l'espace
+  // Désactivation des sourcemaps en production pour économiser de l'espace disque
   productionBrowserSourceMaps: false,
 };
 

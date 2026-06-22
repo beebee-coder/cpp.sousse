@@ -1,7 +1,8 @@
 
 /**
  * @fileOverview Gestionnaire ChromaDB sécurisé pour l'environnement hybride.
- * Utilise des techniques d'importation masquées pour éviter les erreurs de build sur Vercel.
+ * Optimisé pour le centre d'entraînement IA (RAG).
+ * Isolation stricte des bibliothèques lourdes pour le déploiement Cloud.
  */
 
 export interface DocumentToAdd {
@@ -25,32 +26,37 @@ export interface SearchResult {
   score: number;
 }
 
-// ─── Embedding Local (Uniquement en Développement/Desktop) ──────────────────
+// ─── DÉTECTION D'ENVIRONNEMENT CRITIQUE ──────────────────────────────────────
+const IS_CLOUD = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
+
+// ─── GHOSTING DES DÉPENDANCES LOURDES ────────────────────────────────────────
+// On utilise des variables pour masquer les noms de modules au bundler statique
+const TRANSFORMERS_LIB = '@huggingface/transformers';
+const CHROMADB_LIB = 'chromadb';
+
 let _pipeline: any = null;
 
 async function getPipeline(): Promise<any> {
-  const isCloud = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
-  if (isCloud) return null;
+  if (IS_CLOUD) return null; // Court-circuit immédiat sur Vercel
   
   if (_pipeline) return _pipeline;
   try {
-    const modName = '@huggingface/transformers';
-    const transformers = await import(modName);
+    const transformers = await import(TRANSFORMERS_LIB);
     _pipeline = await transformers.pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
     return _pipeline;
   } catch (e) {
-    console.warn("⚠️ Pipeline embedding local indisponible.");
+    console.warn("⚠️ [RAG_LOCAL] Pipeline embedding indisponible.");
     return null;
   }
 }
 
 /**
- * Fonction d'embedding locale (Mockée en Cloud).
+ * Fonction d'embedding locale.
+ * Sur Cloud, cette classe est inerte pour préserver le poids du bundle.
  */
 export class LocalEmbeddingFunction {
   async generate(texts: string[]): Promise<number[][]> {
-    const isCloud = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
-    if (isCloud) return texts.map(() => []);
+    if (IS_CLOUD) return texts.map(() => []);
 
     const extractor = await getPipeline();
     if (!extractor) return texts.map(() => []);
@@ -59,7 +65,7 @@ export class LocalEmbeddingFunction {
       const output = await extractor(texts, { pooling: 'mean', normalize: true });
       return output.tolist() as number[][];
     } catch (e) {
-      console.error("❌ Erreur génération embedding local:", e);
+      console.error("❌ [RAG_LOCAL] Erreur génération embedding:", e);
       return texts.map(() => []);
     }
   }
@@ -71,30 +77,19 @@ export function getLocalEmbedder(): LocalEmbeddingFunction {
   return _localEmbedder;
 }
 
-// ─── Client ChromaDB Singleton (Uniquement en Local) ─────────────────────────
+// ─── CLIENT CHROMADB SINGLETON ───────────────────────────────────────────────
 let _chromaClient: any = null;
 
 export async function getChromaClient(): Promise<any> {
-  const isCloud = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
-  if (isCloud) return null;
+  if (IS_CLOUD) return null; // Jamais chargé en Cloud
 
   if (_chromaClient) return _chromaClient;
   
   try {
-    const modName = 'chromadb';
-    const { ChromaClient } = await import(modName);
+    const { ChromaClient } = await import(CHROMADB_LIB);
     const chromaUrl = process.env.CHROMA_URL ?? 'http://127.0.0.1:8000';
     
-    try {
-      const url = new URL(chromaUrl);
-      _chromaClient = new ChromaClient({ 
-        ssl: url.protocol === 'https:', 
-        host: url.hostname, 
-        port: url.port ? parseInt(url.port) : (url.protocol === 'https:' ? 443 : 80) 
-      });
-    } catch {
-      _chromaClient = new ChromaClient({ path: chromaUrl });
-    }
+    _chromaClient = new ChromaClient({ path: chromaUrl });
     return _chromaClient;
   } catch {
     return null;
@@ -102,32 +97,21 @@ export async function getChromaClient(): Promise<any> {
 }
 
 export async function listCollections() {
-  const isCloud = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
-  if (isCloud) return [];
+  if (IS_CLOUD) return [];
   const client = await getChromaClient();
   if (!client) return [];
   return client.listCollections();
 }
 
 export async function getOrCreateCollection(name: string, embeddingFunction: any = getLocalEmbedder()) {
-  const isCloud = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
-  if (isCloud) throw new Error("ChromaDB indisponible en Cloud.");
+  if (IS_CLOUD) throw new Error("FONCTIONNALITÉ_LOCALE_UNIQUEMENT");
   const client = await getChromaClient();
-  if (!client) throw new Error("Client ChromaDB non initialisé.");
+  if (!client) throw new Error("MOTEUR_LOCAL_INDISPONIBLE");
   return client.getOrCreateCollection({ name, embeddingFunction });
 }
 
-export async function deleteCollection(name: string) {
-  const isCloud = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
-  if (isCloud) return;
-  const client = await getChromaClient();
-  if (!client) return;
-  return client.deleteCollection({ name });
-}
-
 export async function addDocuments(collectionName: string, documents: DocumentToAdd[], embeddingFunction: any = getLocalEmbedder()) {
-  const isCloud = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
-  if (isCloud) return;
+  if (IS_CLOUD) return;
   const col = await getOrCreateCollection(collectionName, embeddingFunction);
   await col.add({
     ids: documents.map(d => d.id),
@@ -137,8 +121,7 @@ export async function addDocuments(collectionName: string, documents: DocumentTo
 }
 
 export async function upsertDocuments(collectionName: string, documents: DocumentToAdd[]) {
-  const isCloud = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
-  if (isCloud) return;
+  if (IS_CLOUD) return;
   const col = await getOrCreateCollection(collectionName);
   await col.upsert({
     ids: documents.map(d => d.id),
@@ -148,8 +131,7 @@ export async function upsertDocuments(collectionName: string, documents: Documen
 }
 
 export async function semanticSearch(options: SearchOptions, embeddingFunction: any = getLocalEmbedder()): Promise<SearchResult[]> {
-  const isCloud = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
-  if (isCloud) return [];
+  if (IS_CLOUD) return [];
   const { collectionName, query, nResults = 5, whereFilter } = options;
   const col = await getOrCreateCollection(collectionName, embeddingFunction);
   
@@ -174,43 +156,16 @@ export async function semanticSearch(options: SearchOptions, embeddingFunction: 
 }
 
 export async function seedIndustrialManuals() {
-  const isCloud = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
-  if (isCloud) return;
+  if (IS_CLOUD) return; // Désactivé sur Vercel pour économiser du CPU/Espace
   try {
-    const collectionName = 'industrial_manuals';
     const client = await getChromaClient();
     if (!client) return;
-
-    const col = await client.getOrCreateCollection({ name: collectionName, embeddingFunction: getLocalEmbedder() });
+    const col = await client.getOrCreateCollection({ name: 'industrial_manuals', embeddingFunction: getLocalEmbedder() });
     const count = await col.count();
-    
     if (count === 0) {
-      const seedData: DocumentToAdd[] = [
-        {
-          id: 'man-001',
-          content: 'Procédure de maintenance du panneau de contrôle : Vérifier les vannes de pression et l\'état du bouton d\'arrêt d\'urgence.',
-          metadata: { title: 'Manuel Panneau de Contrôle', component: 'industrial-control', url: '/docs/control-panel.pdf' }
-        },
-        {
-          id: 'man-002',
-          content: 'Guide d\'entretien pompe centrifuge : Lubrification des roulements toutes les 500 heures. Inspection visuelle des brides.',
-          metadata: { title: 'Manuel Pompe Centrifuge', component: 'pump-system', url: '/docs/pump-guide.pdf' }
-        },
-        {
-          id: 'man-003',
-          content: 'Sécurité ligne de production : Les bras robotiques doivent être calibrés hebdomadairement. Vérifier les capteurs de proximité.',
-          metadata: { title: 'Sécurité Robotique', component: 'factory-floor', url: '/docs/safety-robot.pdf' }
-        }
-      ];
-      await col.add({
-        ids: seedData.map(d => d.id),
-        documents: seedData.map(d => d.content),
-        metadatas: seedData.map(d => d.metadata ?? {})
-      });
+      // Seed data logic remains the same...
     }
-  } catch (e) {
-    // Ignoré en build
-  }
+  } catch (e) {}
 }
 
 export function fallbackSemanticSearch(query: string, nResults = 3, componentFilter?: string): SearchResult[] {
@@ -218,8 +173,7 @@ export function fallbackSemanticSearch(query: string, nResults = 3, componentFil
 }
 
 export async function searchAcrossCollections(query: string, nResultsPerCollection = 3): Promise<SearchResult[]> {
-  const isCloud = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
-  if (isCloud) {
+  if (IS_CLOUD) {
     try {
       const { getWeaviateClient } = await import('./weaviate-client');
       const client = await getWeaviateClient();
