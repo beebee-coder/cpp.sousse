@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   Database, 
@@ -20,7 +20,8 @@ import {
   RefreshCw,
   Smartphone,
   Info,
-  X
+  X,
+  Check
 } from 'lucide-react';
 
 import { Card } from '@/components/ui/card';
@@ -82,6 +83,11 @@ export default function DatasetPage() {
   // Preview Media State
   const [previewMedia, setPreviewMedia] = useState<{ url: string, type: 'image' | 'video' } | null>(null);
 
+  // Hidden Inputs Refs for Real Capture
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const videoInputRef = useRef<HTMLInputElement>(null);
+  const activeCaptureRef = useRef<{ index: number, type: 'image' | 'video' } | null>(null);
+
   const addStep = () => {
     setProcSteps([...procSteps, { 
       id: (procSteps.length + 1).toString(), 
@@ -109,27 +115,51 @@ export default function DatasetPage() {
     setProcSteps(newSteps);
   };
 
-  const handleCapture = (index: number, type: 'image' | 'video') => {
-    const timestamp = Date.now();
-    // Simulation de capture via WEB_BUFFER
-    // Pour la démo, on utilise des placeholders réels si c'est un navigateur pour pouvoir "voir" quelque chose
-    const mockDataUri = type === 'image' 
-      ? `https://picsum.photos/seed/capture-${timestamp}/800/600`
-      : `data:video/mp4;base64,CAPTURED_VID_${timestamp}`;
-
+  const deleteMedia = (index: number, type: 'image' | 'video') => {
     const newSteps = [...procSteps];
-    if (type === 'image') {
-      newSteps[index].imageUrl = mockDataUri;
-    } else {
-      newSteps[index].videoUrl = mockDataUri;
-    }
-    newSteps[index].isProvisional = true;
+    if (type === 'image') newSteps[index].imageUrl = '';
+    else newSteps[index].videoUrl = '';
     setProcSteps(newSteps);
+    toast({ title: "Média supprimé", description: "L'emplacement est désormais vide." });
+  };
 
-    toast({
-      title: "Asset capturé (WEB_BUFFER)",
-      description: "Le média est placé dans le buffer Cloud provisoire.",
-    });
+  const handleTriggerCapture = (index: number, type: 'image' | 'video') => {
+    activeCaptureRef.current = { index, type };
+    if (type === 'image') {
+      photoInputRef.current?.click();
+    } else {
+      videoInputRef.current?.click();
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !activeCaptureRef.current) return;
+
+    const { index, type } = activeCaptureRef.current;
+    const reader = new FileReader();
+    
+    reader.onloadend = () => {
+      const dataUri = reader.result as string;
+      const newSteps = [...procSteps];
+      if (type === 'image') {
+        newSteps[index].imageUrl = dataUri;
+      } else {
+        newSteps[index].videoUrl = dataUri;
+      }
+      newSteps[index].isProvisional = true;
+      setProcSteps(newSteps);
+      
+      toast({
+        title: type === 'image' ? "Photo capturée" : "Vidéo capturée",
+        description: "Prévisualisation disponible dans l'étape.",
+      });
+      
+      // Reset input for next capture
+      e.target.value = '';
+    };
+
+    reader.readAsDataURL(file);
   };
 
   const handleAddItem = (e: React.FormEvent) => {
@@ -158,8 +188,8 @@ export default function DatasetPage() {
 
       const provisionalAssets = procSteps.flatMap((s, idx) => {
         const assets = [];
-        if (s.imageUrl?.startsWith('http') || s.imageUrl?.startsWith('data:')) assets.push({ type: 'image', content: s.imageUrl, step: idx });
-        if (s.videoUrl?.startsWith('data:')) assets.push({ type: 'video', content: s.videoUrl, step: idx });
+        if (s.imageUrl) assets.push({ type: 'image', content: s.imageUrl, step: idx });
+        if (s.videoUrl) assets.push({ type: 'video', content: s.videoUrl, step: idx });
         return assets;
       });
 
@@ -224,6 +254,24 @@ export default function DatasetPage() {
     <div className="flex flex-col lg:flex-row h-screen bg-background overflow-hidden">
       <DashboardSidebar />
       
+      {/* Hidden inputs for real capture */}
+      <input 
+        type="file" 
+        accept="image/*" 
+        capture="environment" 
+        ref={photoInputRef} 
+        onChange={handleFileChange} 
+        className="hidden" 
+      />
+      <input 
+        type="file" 
+        accept="video/*" 
+        capture="environment" 
+        ref={videoInputRef} 
+        onChange={handleFileChange} 
+        className="hidden" 
+      />
+      
       <main className="flex-1 flex flex-col min-w-0 h-full overflow-y-auto terminal-scroll">
         <header className="h-16 border-b border-border bg-card/30 flex items-center justify-between px-6 shrink-0">
           <div className="flex items-center gap-4">
@@ -236,7 +284,7 @@ export default function DatasetPage() {
             <div className="flex items-center gap-2 px-3 py-1 bg-secondary/10 border border-secondary/20 rounded-sm">
               {!isDesktop ? <Smartphone className="w-3 h-3 text-primary" /> : <Cpu className="w-3 h-3 text-secondary" />}
               <span className="text-[9px] font-code uppercase font-bold text-muted-foreground whitespace-nowrap">
-                {!isDesktop ? "MODE TERRAIN (WEB_BUFFER)" : "STATION FORGE (LOCAL_CHROMA)"}
+                {!isDesktop ? "MODE TERRAIN (CAPTURER_RÉEL)" : "STATION FORGE (LOCAL_CHROMA)"}
               </span>
             </div>
           </div>
@@ -270,7 +318,7 @@ export default function DatasetPage() {
             <Card className="p-3 border-primary/20 bg-primary/5 flex items-center gap-3 rounded-sm">
               <Info className="w-4 h-4 text-primary shrink-0" />
               <p className="text-[9px] font-code uppercase text-primary leading-tight">
-                Capture de terrain active. Les médias seront stockés dans le <strong>WEB_BUFFER</strong> jusqu'à synchronisation Desktop.
+                Capture de terrain active. Visualisez vos médias pour confirmer avant synchronisation.
               </p>
             </Card>
           )}
@@ -389,20 +437,20 @@ export default function DatasetPage() {
                                 variant="outline" 
                                 size="sm" 
                                 className="flex-1 h-8 text-[9px] font-code uppercase border-primary/40 text-primary"
-                                onClick={() => handleCapture(index, 'image')}
+                                onClick={() => handleTriggerCapture(index, 'image')}
                               >
                                 <Camera className="w-3 h-3 mr-2" />
-                                Photo
+                                {step.imageUrl ? "Changer" : "Photo"}
                               </Button>
                               <Button 
                                 type="button" 
                                 variant="outline" 
                                 size="sm" 
                                 className="flex-1 h-8 text-[9px] font-code uppercase border-secondary/40 text-secondary"
-                                onClick={() => handleCapture(index, 'video')}
+                                onClick={() => handleTriggerCapture(index, 'video')}
                               >
                                 <Video className="w-3 h-3 mr-2" />
-                                Vidéo
+                                {step.videoUrl ? "Changer" : "Vidéo"}
                               </Button>
                             </div>
 
@@ -415,12 +463,12 @@ export default function DatasetPage() {
                                     className="text-[8px] font-code text-primary uppercase truncate flex items-center gap-1 hover:underline group"
                                   >
                                     <ImageIcon className="w-2.5 h-2.5 shrink-0" /> 
-                                    <span className="truncate">Photo Buffer</span>
+                                    <span className="truncate">Photo_Prête</span>
                                     <Eye className="w-2.5 h-2.5 ml-1 opacity-50 group-hover:opacity-100" />
                                   </button>
-                                  <Badge variant="outline" className="text-[6px] h-3.5 px-1 uppercase border-yellow-500 text-yellow-500 shrink-0">
-                                    WEB_BUFFER
-                                  </Badge>
+                                  <button onClick={() => deleteMedia(index, 'image')} className="text-destructive p-1 hover:bg-destructive/10 rounded">
+                                    <X className="w-2.5 h-2.5" />
+                                  </button>
                                 </div>
                               )}
                               {step.videoUrl && (
@@ -431,12 +479,12 @@ export default function DatasetPage() {
                                     className="text-[8px] font-code text-secondary uppercase truncate flex items-center gap-1 hover:underline group"
                                   >
                                     <Video className="w-2.5 h-2.5 shrink-0" /> 
-                                    <span className="truncate">Vidéo Buffer</span>
+                                    <span className="truncate">Vidéo_Prête</span>
                                     <Eye className="w-2.5 h-2.5 ml-1 opacity-50 group-hover:opacity-100" />
                                   </button>
-                                  <Badge variant="outline" className="text-[6px] h-3.5 px-1 uppercase border-yellow-500 text-yellow-500 shrink-0">
-                                    WEB_BUFFER
-                                  </Badge>
+                                  <button onClick={() => deleteMedia(index, 'video')} className="text-destructive p-1 hover:bg-destructive/10 rounded">
+                                    <X className="w-2.5 h-2.5" />
+                                  </button>
                                 </div>
                               )}
                               {!step.imageUrl && !step.videoUrl && (
@@ -510,14 +558,19 @@ export default function DatasetPage() {
                       <span className="text-muted-foreground uppercase">{item.label}</span>
                       {item.mediaAssets && item.mediaAssets.length > 0 && (
                         <Badge variant="outline" className="ml-3 text-[7px] border-yellow-500/50 text-yellow-500 bg-yellow-500/5">
-                          {item.mediaAssets.length} MÉDIAS PROVISOIRES
+                          {item.mediaAssets.length} MÉDIAS CAPTURÉS
                         </Badge>
                       )}
                     </div>
                   </div>
-                  <Button variant="ghost" size="icon" onClick={() => setQaItems(prev => prev.filter(i => i.id !== item.id))} className="h-8 w-8 hover:bg-destructive/10">
-                    <Trash2 className="w-3.5 h-3.5 text-destructive" />
-                  </Button>
+                  <div className="flex items-center gap-2">
+                     <Badge variant="outline" className="text-[7px] uppercase border-green-500 text-green-500 bg-green-500/5">
+                       Prêt
+                     </Badge>
+                    <Button variant="ghost" size="icon" onClick={() => setQaItems(prev => prev.filter(i => i.id !== item.id))} className="h-8 w-8 hover:bg-destructive/10">
+                      <Trash2 className="w-3.5 h-3.5 text-destructive" />
+                    </Button>
+                  </div>
                 </Card>
               ))}
             </div>
@@ -531,46 +584,43 @@ export default function DatasetPage() {
           <DialogHeader className="border-b border-border pb-2">
             <DialogTitle className="text-xs uppercase font-headline tracking-widest flex items-center gap-2">
               <Eye className="w-4 h-4 text-primary" />
-              Visualisation du Buffer Multimédia
+              Vérification du Média Capturé
             </DialogTitle>
           </DialogHeader>
           
-          <div className="mt-4 relative aspect-video bg-black/40 rounded-sm overflow-hidden flex items-center justify-center border border-border">
+          <div className="mt-4 relative aspect-video bg-black/40 rounded-sm overflow-hidden flex items-center justify-center border border-border shadow-inner">
             {previewMedia?.type === 'image' ? (
               <img 
                 src={previewMedia.url} 
-                alt="Buffer preview" 
+                alt="Capture réelle" 
                 className="max-w-full max-h-full object-contain"
-                onError={(e) => {
-                  // Fallback visual for simulated base64
-                  if (previewMedia.url.includes('CAPTURED_IMG')) {
-                    (e.target as any).src = "https://picsum.photos/seed/industrial-buffer/800/600";
-                  }
-                }}
               />
             ) : (
-              <div className="flex flex-col items-center gap-4 text-muted-foreground">
-                <div className="w-16 h-16 rounded-full bg-secondary/10 flex items-center justify-center border border-secondary/30">
-                  <Video className="w-8 h-8 text-secondary animate-pulse" />
-                </div>
-                <div className="text-center space-y-1">
-                  <p className="text-[10px] font-code uppercase font-bold text-secondary">Flux Vidéo en Buffer</p>
-                  <p className="text-[8px] font-code uppercase opacity-50">Prêt pour transfert vers ChromaDB</p>
-                </div>
-              </div>
+              <video 
+                src={previewMedia?.url} 
+                controls 
+                autoPlay 
+                className="max-w-full max-h-full"
+              />
             )}
             
             {/* Scanline overlay for aesthetic coherence */}
-            <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.1)_50%)] z-10 bg-[length:100%_4px]" />
+            <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.05)_50%)] z-10 bg-[length:100%_4px]" />
           </div>
 
           <div className="mt-4 flex justify-between items-center">
             <p className="text-[9px] font-code text-muted-foreground uppercase">
-              ID_BUFFER: {Date.now().toString(16).toUpperCase()} | STATUS: PROVISIONAL
+              STATUS: VÉRIFICATION_OPÉRATEUR | TYPE: {previewMedia?.type}
             </p>
-            <Button size="sm" onClick={() => setPreviewMedia(null)} className="h-8 text-[10px] font-code uppercase bg-primary text-primary-foreground">
-              Fermer la vue
-            </Button>
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" onClick={() => setPreviewMedia(null)} className="h-8 text-[10px] font-code uppercase border-border">
+                Annuler
+              </Button>
+              <Button size="sm" onClick={() => setPreviewMedia(null)} className="h-8 text-[10px] font-code uppercase bg-primary text-primary-foreground">
+                <Check className="w-3 h-3 mr-2" />
+                Confirmer l'Asset
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
