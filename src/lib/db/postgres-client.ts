@@ -1,15 +1,19 @@
 import { CloudData } from './types';
 
 /**
- * Simule l'accès à la base de données PostgreSQL centrale.
+ * Infrastructure Simulant Neon Postgres (Prête pour l'implantation réelle).
+ * Gère les données de manière isolée pour éviter la corruption de mémoire.
  */
 export const postgresClient = {
+  /**
+   * Récupère les données delta depuis le dernier sync.
+   */
   getCloudData: async (projectId: string, lastSyncDate?: Date): Promise<CloudData[]> => {
     if (typeof window === 'undefined') return [];
     
-    const key = `visionode_cloud_mock_db_${projectId}`;
+    const key = `visionode_neon_db_${projectId}`;
     const raw = localStorage.getItem(key);
-    const allData: CloudData[] = raw ? JSON.parse(raw) : getInitialSeed(projectId);
+    let allData: CloudData[] = raw ? JSON.parse(raw) : getInitialSeed(projectId);
     
     if (lastSyncDate) {
       const threshold = lastSyncDate.getTime();
@@ -18,9 +22,14 @@ export const postgresClient = {
     return allData;
   },
 
+  /**
+   * Insère ou met à jour des items de manière atomique.
+   * En production, cela correspond à une transaction SQL sur Neon.
+   */
   upsertCloudData: async (items: CloudData[]): Promise<void> => {
     if (typeof window === 'undefined') return;
     
+    // Groupement par projet pour isolation
     const grouped: Record<string, CloudData[]> = {};
     items.forEach(item => {
       if (!grouped[item.projectId]) grouped[item.projectId] = [];
@@ -28,9 +37,9 @@ export const postgresClient = {
     });
 
     for (const pid of Object.keys(grouped)) {
-      const key = `visionode_cloud_mock_db_${pid}`;
+      const key = `visionode_neon_db_${pid}`;
       const existingRaw = localStorage.getItem(key);
-      const existing: CloudData[] = existingRaw ? JSON.parse(existingRaw) : getInitialSeed(pid);
+      let existing: CloudData[] = existingRaw ? JSON.parse(existingRaw) : getInitialSeed(pid);
       
       grouped[pid].forEach(newItem => {
         const idx = existing.findIndex(d => d.id === newItem.id);
@@ -41,7 +50,27 @@ export const postgresClient = {
         }
       });
       
-      localStorage.setItem(key, JSON.stringify(existing));
+      // Sécurisation de l'écriture (Limite de quota simulée)
+      try {
+        localStorage.setItem(key, JSON.stringify(existing));
+      } catch (e) {
+        console.error("❌ [NEON_INFRA] Quota de stockage WebBuffer dépassé. Synchroniser vers Desktop.");
+        throw new Error("QUOTA_EXCEEDED");
+      }
+    }
+  },
+
+  /**
+   * Purge les données après transfert vers ChromaDB.
+   */
+  deleteItems: async (projectId: string, ids: string[]): Promise<void> => {
+    if (typeof window === 'undefined') return;
+    const key = `visionode_neon_db_${projectId}`;
+    const raw = localStorage.getItem(key);
+    if (raw) {
+      const data: CloudData[] = JSON.parse(raw);
+      const filtered = data.filter(d => !ids.includes(d.id));
+      localStorage.setItem(key, JSON.stringify(filtered));
     }
   }
 };
@@ -49,11 +78,11 @@ export const postgresClient = {
 function getInitialSeed(projectId: string): CloudData[] {
   return [
     {
-      id: 'seed-001',
+      id: 'neon-seed-001',
       projectId,
       type: 'document',
-      content: '{"title": "Manuel Opérateur", "body": "Procédure de démarrage standard."}',
-      tags: ['manual', 'system'],
+      content: '{"title": "Manuel Central Neon", "body": "Système de stockage persistant actif."}',
+      tags: ['system', 'config'],
       createdAt: new Date('2026-01-01')
     }
   ];

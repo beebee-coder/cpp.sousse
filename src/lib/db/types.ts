@@ -22,8 +22,14 @@ export interface CloudData {
   id: string;
   projectId: string;
   type: 'image' | 'video' | 'document' | 'metadata' | 'provisional_asset';
-  content: string; // JSON stringified ou Base64 Data URI pour les assets provisoires
-  metadata?: any;
+  content: string; // Base64 Data URI ou JSON stringified
+  metadata?: {
+    type?: 'image' | 'video';
+    step?: number;
+    title?: string;
+    contentType?: string;
+    size?: number;
+  };
   tags: string[];
   createdAt: Date;
 }

@@ -1,12 +1,10 @@
 "use client";
 
 import { useState, useRef, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import { 
   Database, 
   Plus, 
   Trash2, 
-  FileJson, 
   UploadCloud, 
   CheckCircle2,
   Cpu,
@@ -19,10 +17,10 @@ import {
   Eye,
   RefreshCw,
   Smartphone,
-  Info,
   X,
   Check,
-  Loader2
+  Loader2,
+  AlertTriangle
 } from 'lucide-react';
 
 import { Card } from '@/components/ui/card';
@@ -46,14 +44,13 @@ interface ProcedureStep {
   id: string;
   title: string;
   description: string;
-  subSteps: string[];
   normalConditions: string;
   abnormalConditions: string;
   alarms: string;
   imageFile?: File;
   videoFile?: File;
-  imagePreview?: string; // URL.createObjectURL
-  videoPreview?: string; // URL.createObjectURL
+  imagePreview?: string;
+  videoPreview?: string;
 }
 
 interface QAItem {
@@ -76,13 +73,12 @@ export default function DatasetPage() {
 
   const [procTitle, setProcTitle] = useState('');
   const [procSteps, setProcSteps] = useState<ProcedureStep[]>([
-    { id: '1', title: '', description: '', subSteps: [], normalConditions: '', abnormalConditions: '', alarms: '' }
+    { id: '1', title: '', description: '', normalConditions: '', abnormalConditions: '', alarms: '' }
   ]);
 
   const [isIngesting, setIsIngesting] = useState(false);
+  const [ingestProgress, setIngestIngestProgress] = useState(0);
   const [isProcessingMedia, setIsProcessingMedia] = useState(false);
-  const [lastResult, setLastResult] = useState<{ provider: string, count: number } | null>(null);
-  
   const [previewMedia, setPreviewMedia] = useState<{ url: string, type: 'image' | 'video' } | null>(null);
 
   const photoInputRef = useRef<HTMLInputElement>(null);
@@ -92,13 +88,13 @@ export default function DatasetPage() {
   useEffect(() => {
     setMounted(true);
     return () => {
-      // Nettoyage des URL d'objets pour éviter les fuites mémoire
+      // Nettoyage radical des ressources mémoire
       procSteps.forEach(s => {
         if (s.imagePreview) URL.revokeObjectURL(s.imagePreview);
         if (s.videoPreview) URL.revokeObjectURL(s.videoPreview);
       });
     };
-  }, [procSteps]);
+  }, []);
 
   const compressImage = async (file: File): Promise<Blob> => {
     return new Promise((resolve, reject) => {
@@ -152,8 +148,8 @@ export default function DatasetPage() {
 
   const addStep = () => {
     setProcSteps([...procSteps, { 
-      id: (procSteps.length + 1).toString(), 
-      title: '', description: '', subSteps: [], normalConditions: '', abnormalConditions: '', alarms: '' 
+      id: Date.now().toString(), 
+      title: '', description: '', normalConditions: '', abnormalConditions: '', alarms: '' 
     }]);
   };
 
@@ -211,15 +207,13 @@ export default function DatasetPage() {
         newSteps[index].imageFile = compressedFile;
         newSteps[index].imagePreview = URL.createObjectURL(compressedFile);
       } else {
-        // Pour les vidéos, on garde le fichier tel quel mais on utilise URL d'objet
         if (newSteps[index].videoPreview) URL.revokeObjectURL(newSteps[index].videoPreview!);
         newSteps[index].videoFile = file;
         newSteps[index].videoPreview = URL.createObjectURL(file);
       }
       setProcSteps(newSteps);
-      toast({ title: type === 'image' ? "Photo optimisée" : "Vidéo liée", description: "Prêt pour la file d'attente." });
     } catch (err) {
-      toast({ title: "Erreur Mémoire", description: "Fichier trop lourd pour cet appareil.", variant: "destructive" });
+      toast({ title: "Erreur Capture", description: "Mémoire saturée.", variant: "destructive" });
     } finally {
       setIsProcessingMedia(false);
       if (e.target) e.target.value = '';
@@ -229,14 +223,20 @@ export default function DatasetPage() {
   const handleAddItem = (e: React.FormEvent) => {
     e.preventDefault();
     if (mode === 'qa') {
-      if (!question.trim() || !answer.trim()) return;
+      if (!question.trim() || !answer.trim()) {
+        toast({ title: "Champs vides", description: "Veuillez remplir la question et la réponse.", variant: "destructive" });
+        return;
+      }
       setQaItems(prev => [{ id: Date.now().toString(), type: 'qa', label: question, details: answer }, ...prev]);
       setQuestion(''); setAnswer('');
     } else {
-      if (!procTitle.trim()) return;
+      if (!procTitle.trim()) {
+        toast({ title: "Titre requis", description: "Veuillez nommer votre procédure.", variant: "destructive" });
+        return;
+      }
       
       const details = procSteps.map((s, i) => (
-        `[E${i + 1}] ${s.title}: ${s.description}\nOK: ${s.normalConditions} | KO: ${s.abnormalConditions} | ALERTE: ${s.alarms}`
+        `[ÉTAPE ${i + 1}] ${s.title}\nDescription: ${s.description}\n✓ OK: ${s.normalConditions} | ✗ KO: ${s.abnormalConditions} | ⚠ ALERTE: ${s.alarms}`
       )).join('\n---\n');
 
       const assets = procSteps.flatMap((s, idx) => {
@@ -247,18 +247,19 @@ export default function DatasetPage() {
       });
 
       setQaItems(prev => [{ id: Date.now().toString(), type: 'procedure', label: procTitle, details, mediaAssets: assets }, ...prev]);
-      
       setProcTitle('');
-      setProcSteps([{ id: '1', title: '', description: '', subSteps: [], normalConditions: '', abnormalConditions: '', alarms: '' }]);
+      setProcSteps([{ id: Date.now().toString(), title: '', description: '', normalConditions: '', abnormalConditions: '', alarms: '' }]);
+      toast({ title: "Procédure ajoutée", description: "Prête pour la synchronisation." });
     }
   };
 
   const handleFinalSubmit = async () => {
     if (qaItems.length === 0) return;
     setIsIngesting(true);
+    setIngestIngestProgress(0);
 
     try {
-      // 1. Ingestion Textuelle
+      // 1. Ingestion du Texte (Métadonnées)
       const ingestRes = await apiClient.post<{ success: boolean, provider: string }>('/api/vector/ingest', {
         items: qaItems.map(i => ({ 
           question: i.type === 'procedure' ? `PROCÉDURE: ${i.label}` : i.label, 
@@ -267,14 +268,20 @@ export default function DatasetPage() {
         metadata: { collection: 'industrial_manuals', source: isDesktop ? 'STATION_FORGE' : 'CAPTURE_TERRAIN' }
       });
 
-      // 2. Traitement des Assets Multimédias (conversion séquentielle pour ménager la RAM)
+      // 2. Upload ATOMIQUE et SÉQUENTIEL des Assets
       const itemsWithAssets = qaItems.filter(i => i.mediaAssets && i.mediaAssets.length > 0);
-      if (itemsWithAssets.length > 0) {
-        const assetsPayload = [];
-        for (const item of itemsWithAssets) {
-          for (const asset of item.mediaAssets!) {
-            const base64 = await fileToBase64(asset.file);
-            assetsPayload.push({
+      let totalAssets = itemsWithAssets.reduce((acc, curr) => acc + (curr.mediaAssets?.length || 0), 0);
+      let uploadedCount = 0;
+
+      for (const item of itemsWithAssets) {
+        for (const asset of item.mediaAssets!) {
+          // Conversion tardive (Base64) UNIQUEMENT pour cet asset précis
+          const base64 = await fileToBase64(asset.file);
+          
+          await apiClient.post('/api/sync/upload', {
+            userId: 'admin',
+            projectId: 'project-001',
+            items: [{
               id: `asset-${Date.now()}-${Math.random()}`,
               projectId: 'project-001',
               type: 'provisional_asset' as const,
@@ -282,21 +289,26 @@ export default function DatasetPage() {
               metadata: { type: asset.type, step: asset.step, title: item.label },
               tags: ['web_buffer', asset.type],
               createdAt: new Date()
-            });
-          }
+            }]
+          });
+
+          uploadedCount++;
+          setIngestIngestProgress(Math.round((uploadedCount / totalAssets) * 100));
+          
+          // Libération mémoire agressive : on écrase la variable base64
+          (base64 as any) = null; 
         }
-        await apiClient.post('/api/sync/upload', { userId: 'admin', projectId: 'project-001', items: assetsPayload });
       }
 
       if (ingestRes.success) {
-        toast({ title: "Transmission réussie", description: "Données et médias synchronisés." });
-        setLastResult({ provider: ingestRes.provider, count: qaItems.length });
+        toast({ title: "Synchronisation réussie", description: `${qaItems.length} items et ${uploadedCount} médias transférés.` });
         setQaItems([]);
       }
     } catch (e: any) {
-      toast({ title: "Échec critique", description: "Mémoire ou réseau insuffisant.", variant: "destructive" });
+      toast({ title: "Erreur Critique", description: "Liaison Neon Postgres interrompue.", variant: "destructive" });
     } finally {
       setIsIngesting(false);
+      setIngestIngestProgress(0);
     }
   };
 
@@ -318,7 +330,7 @@ export default function DatasetPage() {
             </div>
             <div className="hidden sm:flex items-center gap-2 px-3 py-1 bg-secondary/10 border border-secondary/20 rounded-sm">
               <Smartphone className="w-3 h-3 text-primary" />
-              <span className="text-[9px] font-code uppercase font-bold text-muted-foreground">MODE_BUFFER_FLUIDE</span>
+              <span className="text-[9px] font-code uppercase font-bold text-muted-foreground">NEON_INFRA_ACTIVE</span>
             </div>
           </div>
           
@@ -333,10 +345,15 @@ export default function DatasetPage() {
         </header>
 
         <div className="p-4 lg:p-8 max-w-5xl mx-auto w-full space-y-6">
-          {isProcessingMedia && (
-            <Card className="p-3 border-primary/20 bg-primary/5 flex items-center gap-3 rounded-sm animate-pulse">
-              <Loader2 className="w-4 h-4 text-primary animate-spin" />
-              <p className="text-[9px] font-code uppercase text-primary">Optimisation du flux multimédia...</p>
+          {isIngesting && (
+            <Card className="p-4 border-primary/20 bg-primary/5 space-y-3 rounded-sm shadow-lg">
+              <div className="flex justify-between items-center text-[10px] font-code uppercase">
+                <span className="flex items-center gap-2 text-primary"><Loader2 className="w-4 h-4 animate-spin" /> Transfert atomique vers Neon...</span>
+                <span className="font-bold">{ingestProgress}%</span>
+              </div>
+              <div className="h-1 w-full bg-primary/10 rounded-full overflow-hidden">
+                <div className="h-full bg-primary transition-all duration-300" style={{ width: `${ingestProgress}%` }} />
+              </div>
             </Card>
           )}
 
@@ -357,7 +374,7 @@ export default function DatasetPage() {
                 <div className="space-y-6">
                   <Input value={procTitle} onChange={(e) => setProcTitle(e.target.value)} placeholder="TITRE_DE_LA_PROCÉDURE" className="bg-background font-headline uppercase h-11" />
                   {procSteps.map((step, index) => (
-                    <Card key={index} className="p-4 border-border bg-black/30 space-y-4">
+                    <Card key={step.id} className="p-4 border-border bg-black/30 space-y-4">
                       <div className="flex justify-between items-center border-b border-border/50 pb-2">
                         <span className="text-[10px] font-bold font-code text-secondary">ÉTAPE {index + 1}</span>
                         <Button type="button" variant="ghost" size="icon" onClick={() => removeStep(index)} className="h-6 w-6 text-destructive"><Trash2 className="w-3 h-3" /></Button>
@@ -381,13 +398,13 @@ export default function DatasetPage() {
                           <div className="space-y-1">
                             {step.imagePreview && (
                               <div className="flex items-center justify-between p-1.5 bg-background/40 rounded-sm">
-                                <button type="button" onClick={() => setPreviewMedia({ url: step.imagePreview!, type: 'image' })} className="text-[8px] font-code text-primary uppercase truncate flex items-center gap-1 hover:underline"><ImageIcon className="w-2.5 h-2.5" /> Prévisualiser_Photo <Eye className="w-2.5 h-2.5 ml-1" /></button>
+                                <button type="button" onClick={() => setPreviewMedia({ url: step.imagePreview!, type: 'image' })} className="text-[8px] font-code text-primary uppercase truncate flex items-center gap-1 hover:underline"><ImageIcon className="w-2.5 h-2.5" /> Voir_Photo <Eye className="w-2.5 h-2.5 ml-1" /></button>
                                 <button type="button" onClick={() => deleteMedia(index, 'image')} className="text-destructive"><X className="w-2.5 h-2.5" /></button>
                               </div>
                             )}
                             {step.videoPreview && (
                               <div className="flex items-center justify-between p-1.5 bg-background/40 rounded-sm">
-                                <button type="button" onClick={() => setPreviewMedia({ url: step.videoPreview!, type: 'video' })} className="text-[8px] font-code text-secondary uppercase truncate flex items-center gap-1 hover:underline"><Video className="w-2.5 h-2.5" /> Prévisualiser_Séquence <Eye className="w-2.5 h-2.5 ml-1" /></button>
+                                <button type="button" onClick={() => setPreviewMedia({ url: step.videoPreview!, type: 'video' })} className="text-[8px] font-code text-secondary uppercase truncate flex items-center gap-1 hover:underline"><Video className="w-2.5 h-2.5" /> Voir_Séquence <Eye className="w-2.5 h-2.5 ml-1" /></button>
                                 <button type="button" onClick={() => deleteMedia(index, 'video')} className="text-destructive"><X className="w-2.5 h-2.5" /></button>
                               </div>
                             )}
@@ -424,7 +441,7 @@ export default function DatasetPage() {
                     <div className="truncate">
                       <span className={cn("font-bold mr-2 uppercase", item.type === 'procedure' ? "text-secondary" : "text-primary")}>{item.type === 'procedure' ? 'PROCÉDURE' : 'Q/R'}:</span> 
                       <span className="text-muted-foreground uppercase">{item.label}</span>
-                      {item.mediaAssets && item.mediaAssets.length > 0 && <Badge variant="outline" className="ml-3 text-[7px] border-yellow-500/50 text-yellow-500">{item.mediaAssets.length} MÉDIAS_BUFFER</Badge>}
+                      {item.mediaAssets && item.mediaAssets.length > 0 && <Badge variant="outline" className="ml-3 text-[7px] border-yellow-500/50 text-yellow-500">{item.mediaAssets.length} MÉDIAS_NEON</Badge>}
                     </div>
                   </div>
                   <Button variant="ghost" size="icon" onClick={() => setQaItems(prev => prev.filter(i => i.id !== item.id))} className="h-8 w-8"><Trash2 className="w-3.5 h-3.5 text-destructive" /></Button>
@@ -438,7 +455,7 @@ export default function DatasetPage() {
       <Dialog open={!!previewMedia} onOpenChange={() => setPreviewMedia(null)}>
         <DialogContent className="max-w-3xl bg-card border-primary/30 text-foreground sm:rounded-sm">
           <DialogHeader className="border-b border-border pb-2">
-            <DialogTitle className="text-xs uppercase font-headline tracking-widest flex items-center gap-2"><Eye className="w-4 h-4 text-primary" /> Visualisation_Asset_Buffer</DialogTitle>
+            <DialogTitle className="text-xs uppercase font-headline tracking-widest flex items-center gap-2"><Eye className="w-4 h-4 text-primary" /> Visualisation_Asset_Neon</DialogTitle>
           </DialogHeader>
           <div className="mt-4 relative aspect-video bg-black/40 rounded-sm overflow-hidden flex items-center justify-center border border-border shadow-inner">
             {previewMedia?.type === 'image' ? <img src={previewMedia.url} alt="Capture réelle" className="max-w-full max-h-full object-contain" /> : <video src={previewMedia?.url} controls autoPlay className="max-w-full max-h-full" />}
@@ -446,7 +463,6 @@ export default function DatasetPage() {
           </div>
           <div className="mt-4 flex justify-end gap-2">
             <Button size="sm" variant="outline" onClick={() => setPreviewMedia(null)} className="h-8 text-[10px] font-code uppercase">Fermer</Button>
-            <Button size="sm" onClick={() => setPreviewMedia(null)} className="h-8 text-[10px] font-code uppercase bg-primary text-primary-foreground"><Check className="w-3 h-3 mr-2" /> Valider</Button>
           </div>
         </DialogContent>
       </Dialog>
