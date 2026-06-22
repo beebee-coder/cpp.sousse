@@ -52,16 +52,18 @@ export const POST = createHybridRoute<IngestPayload, any>({
     }
 
     // 🧠 CHEMIN LOCAL : Utilise ChromaDB et Transformers (Poids lourd)
-    // Ce code ne sera jamais exécuté sur Vercel grâce au court-circuit ci-dessus.
+    // On force l'import dynamique pour éviter que Vercel ne tente de l'analyser.
     try {
-      const { upsertDocuments } = await import('@/lib/chroma');
+      const chromaModule = await import('@/lib/chroma');
       console.log(`🧠 [${timestamp}] [LOCAL_TRAINING] Entraînement ChromaDB Local...`);
+      
       const docs = items.map((item, index) => ({
         id: `local-${Date.now()}-${index}`,
         content: `Question: ${item.question}\nRéponse: ${item.answer}`,
         metadata: { ...metadata, ingested_at: new Date().toISOString() }
       }));
-      await upsertDocuments(collectionName, docs);
+      
+      await chromaModule.upsertDocuments(collectionName, docs);
       return { success: true, message: 'ENTRAINEMENT_LOCAL_REUSSI', provider: 'CHROMA' };
     } catch (e: any) {
       return { success: false, error: e.message };

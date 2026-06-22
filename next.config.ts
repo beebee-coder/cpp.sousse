@@ -15,7 +15,9 @@ const nextConfig: NextConfig = {
     'weaviate-client',
     'sharp',
     'canvas',
-    'jsdom'
+    'jsdom',
+    'bufferutil',
+    'utf-8-validate'
   ],
 
   // Mode export pour Tauri (Statique), standard pour Vercel (Dynamique)

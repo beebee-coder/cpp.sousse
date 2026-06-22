@@ -30,7 +30,7 @@ export interface SearchResult {
 const IS_CLOUD = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
 
 // ─── GHOSTING DES DÉPENDANCES LOURDES ────────────────────────────────────────
-// On utilise des variables pour masquer les noms de modules au bundler statique
+// On utilise des constantes pour les noms de modules pour éviter l'analyse statique agressive
 const TRANSFORMERS_LIB = '@huggingface/transformers';
 const CHROMADB_LIB = 'chromadb';
 
@@ -41,11 +41,11 @@ async function getPipeline(): Promise<any> {
   
   if (_pipeline) return _pipeline;
   try {
-    const transformers = await import(TRANSFORMERS_LIB);
-    _pipeline = await transformers.pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
+    const { pipeline } = await import(TRANSFORMERS_LIB);
+    _pipeline = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
     return _pipeline;
   } catch (e) {
-    console.warn("⚠️ [RAG_LOCAL] Pipeline embedding indisponible.");
+    console.warn("⚠️ [RAG_LOCAL] Pipeline embedding indisponible sur cet environnement.");
     return null;
   }
 }
@@ -156,14 +156,14 @@ export async function semanticSearch(options: SearchOptions, embeddingFunction: 
 }
 
 export async function seedIndustrialManuals() {
-  if (IS_CLOUD) return; // Désactivé sur Vercel pour économiser du CPU/Espace
+  if (IS_CLOUD) return; 
   try {
     const client = await getChromaClient();
     if (!client) return;
     const col = await client.getOrCreateCollection({ name: 'industrial_manuals', embeddingFunction: getLocalEmbedder() });
     const count = await col.count();
     if (count === 0) {
-      // Seed data logic remains the same...
+      // Seed data if empty
     }
   } catch (e) {}
 }
