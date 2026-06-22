@@ -21,9 +21,9 @@ export interface CloudProject {
 export interface CloudData {
   id: string;
   projectId: string;
-  type: 'image' | 'video' | 'document' | 'metadata';
-  content: string; // JSON stringified ou URL
-  embedding?: number[]; // Vecteur associé
+  type: 'image' | 'video' | 'document' | 'metadata' | 'provisional_asset';
+  content: string; // JSON stringified ou Base64 Data URI pour les assets provisoires
+  metadata?: any;
   tags: string[];
   createdAt: Date;
 }

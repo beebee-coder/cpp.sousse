@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   Database, 
@@ -15,15 +15,15 @@ import {
   MessageSquare,
   AlertTriangle,
   Check,
-  ChevronDown,
-  ChevronUp,
   Image as ImageIcon,
   Video,
   Layers,
   ArrowRight,
-  Link as LinkIcon,
+  Camera,
   Lock,
-  Eye
+  Eye,
+  RefreshCw,
+  Loader2
 } from 'lucide-react';
 
 import { Card } from '@/components/ui/card';
@@ -48,6 +48,7 @@ interface ProcedureStep {
   alarms: string;
   imageUrl?: string;
   videoUrl?: string;
+  isProvisional?: boolean;
 }
 
 interface Procedure {
@@ -60,6 +61,7 @@ interface QAItem {
   id: string;
   question: string;
   answer: string;
+  mediaAssets?: any[];
 }
 
 export default function DatasetPage() {
@@ -67,7 +69,6 @@ export default function DatasetPage() {
   const { isDesktop } = usePlatform();
   
   const [mode, setMode] = useState<'qa' | 'procedure'>('qa');
-  
   const [qaItems, setQaItems] = useState<QAItem[]>([]);
   const [question, setQuestion] = useState('');
   const [answer, setAnswer] = useState('');
@@ -79,6 +80,9 @@ export default function DatasetPage() {
 
   const [isIngesting, setIsIngesting] = useState(false);
   const [lastResult, setLastResult] = useState<{ provider: string, count: number } | null>(null);
+
+  // État pour la capture multimédia
+  const [capturingForStep, setCapturingForStep] = useState<{ index: number, type: 'image' | 'video' } | null>(null);
 
   const addStep = () => {
     setProcSteps([...procSteps, { 
@@ -107,6 +111,28 @@ export default function DatasetPage() {
     setProcSteps(newSteps);
   };
 
+  // Simule une capture multimédia (Provisoire sur Web, Réelle sur Natif)
+  const handleCapture = (index: number, type: 'image' | 'video') => {
+    const timestamp = Date.now();
+    const mockDataUri = type === 'image' 
+      ? `data:image/jpeg;base64,CAPTURED_IMG_${timestamp}`
+      : `data:video/mp4;base64,CAPTURED_VID_${timestamp}`;
+
+    const newSteps = [...procSteps];
+    if (type === 'image') {
+      newSteps[index].imageUrl = mockDataUri;
+    } else {
+      newSteps[index].videoUrl = mockDataUri;
+    }
+    newSteps[index].isProvisional = !isDesktop;
+    setProcSteps(newSteps);
+
+    toast({
+      title: isDesktop ? "Asset Local lié" : "Asset Provisoire capturé",
+      description: `Le support ${type} sera synchronisé avec le moteur de vision.`,
+    });
+  };
+
   const handleAddItem = (e: React.FormEvent) => {
     e.preventDefault();
     if (mode === 'qa') {
@@ -127,14 +153,23 @@ export default function DatasetPage() {
           (s.normalConditions ? `Conditions Normales: ${s.normalConditions}\n` : '') +
           (s.abnormalConditions ? `Conditions Anormales: ${s.abnormalConditions}\n` : '') +
           (s.alarms ? `⚠ ALERTES: ${s.alarms}\n` : '') +
-          (s.imageUrl && isDesktop ? `[MEDIA_IMAGE]: ${s.imageUrl}\n` : '') +
-          (s.videoUrl && isDesktop ? `[MEDIA_VIDEO]: ${s.videoUrl}\n` : '')
+          (s.imageUrl ? `[MEDIA_IMAGE]: ${s.imageUrl}\n` : '') +
+          (s.videoUrl ? `[MEDIA_VIDEO]: ${s.videoUrl}\n` : '')
         )).join('\n---\n');
+
+      // On prépare les assets à envoyer en provisional si on est sur Web
+      const provisionalAssets = procSteps.flatMap((s, idx) => {
+        const assets = [];
+        if (s.imageUrl?.startsWith('data:') && !isDesktop) assets.push({ type: 'image', content: s.imageUrl, step: idx });
+        if (s.videoUrl?.startsWith('data:') && !isDesktop) assets.push({ type: 'video', content: s.videoUrl, step: idx });
+        return assets;
+      });
 
       setQaItems(prev => [{ 
         id: Date.now().toString(), 
         question: `PROCÉDURE : ${procTitle}`, 
-        answer: serializedProcedure 
+        answer: serializedProcedure,
+        mediaAssets: provisionalAssets
       }, ...prev]);
       
       setProcTitle('');
@@ -149,11 +184,29 @@ export default function DatasetPage() {
     setIsIngesting(true);
 
     try {
+      // 1. Envoyer les textes au RAG (Weaviate ou Chroma)
       const res = await apiClient.post<{ success: boolean; message: string; provider: string }>('/api/vector/ingest', {
         filename: `dataset-${Date.now()}.jsonl`,
         items: qaItems.map(i => ({ question: i.question, answer: i.answer })),
         metadata: { collection: 'industrial_manuals', source: 'UI_UPLOAD' }
       });
+
+      // 2. Si assets provisoires (Mode Web), les envoyer au Buffer Cloud
+      const itemsWithAssets = qaItems.filter(i => i.mediaAssets && i.mediaAssets.length > 0);
+      if (itemsWithAssets.length > 0 && !isDesktop) {
+        const assetsPayload = itemsWithAssets.flatMap(i => i.mediaAssets!.map(a => ({
+          id: `provisional-${Date.now()}-${Math.random()}`,
+          projectId: 'project-001',
+          type: 'provisional_asset' as const,
+          content: a.content,
+          metadata: { type: a.type, parentId: i.id, step: a.step },
+          tags: ['capture_web', a.type],
+          createdAt: new Date()
+        })));
+
+        await apiClient.post('/api/sync/upload', { userId: 'admin', projectId: 'project-001', items: assetsPayload });
+        toast({ title: "Assets Provisoires", description: "Média uploadés sur le Cloud. Prêts pour sync locale." });
+      }
 
       if (res.success) {
         toast({
@@ -186,7 +239,7 @@ export default function DatasetPage() {
             <div className="hidden sm:flex items-center gap-2 px-3 py-1 bg-secondary/10 border border-secondary/20 rounded-sm">
               {isDesktop ? <Cpu className="w-3 h-3 text-secondary" /> : <Globe className="w-3 h-3 text-primary" />}
               <span className="text-[9px] font-code uppercase font-bold text-muted-foreground whitespace-nowrap">
-                {isDesktop ? "LOCAL (CHROMA)" : "CLOUD (WEAVIATE)"}
+                {isDesktop ? "STATION LOCALE (CHROMA)" : "ENTRAÎNEMENT CLOUD (WEAVIATE)"}
               </span>
             </div>
           </div>
@@ -222,6 +275,7 @@ export default function DatasetPage() {
               <div className="font-code text-[10px] lg:text-xs">
                 <p className="font-bold uppercase text-secondary">Indexation Réussie</p>
                 <p className="text-muted-foreground">{lastResult.count} éléments via <span className="text-primary font-bold">{lastResult.provider}</span></p>
+                {!isDesktop && <p className="text-[8px] text-primary/70 mt-1 italic">* Assets multimédias en attente de purge locale.</p>}
               </div>
             </Card>
           )}
@@ -277,10 +331,10 @@ export default function DatasetPage() {
                         <div className="flex items-center justify-between border-b border-border/50 pb-2">
                           <div className="flex items-center gap-3">
                             <span className="text-[10px] font-bold font-code text-secondary">ÉTAPE {index + 1}</span>
-                            {isDesktop && (step.imageUrl || step.videoUrl) && (
+                            {(step.imageUrl || step.videoUrl) && (
                               <div className="flex gap-1">
-                                {step.imageUrl && <ImageIcon className="w-3 h-3 text-primary/50" />}
-                                {step.videoUrl && <Video className="w-3 h-3 text-secondary/50" />}
+                                {step.imageUrl && <ImageIcon className={cn("w-3 h-3", step.isProvisional ? "text-yellow-500" : "text-primary/50")} />}
+                                {step.videoUrl && <Video className={cn("w-3 h-3", step.isProvisional ? "text-yellow-500" : "text-secondary/50")} />}
                               </div>
                             )}
                           </div>
@@ -356,63 +410,67 @@ export default function DatasetPage() {
                           </div>
 
                           <div className="space-y-3 lg:col-span-1 bg-black/20 p-3 rounded-sm border border-border/30 relative overflow-hidden min-h-[180px]">
-                            <label className="text-[8px] font-bold uppercase text-muted-foreground block mb-2 border-b border-border/50 pb-1">Documentation Visuelle</label>
+                            <label className="text-[8px] font-bold uppercase text-muted-foreground block mb-2 border-b border-border/50 pb-1">Capture & Documentation</label>
                             
-                            {!isDesktop ? (
-                              <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-black/60 backdrop-blur-sm p-4 text-center">
-                                <Lock className="w-6 h-6 text-primary/40 mb-2" />
-                                <p className="text-[9px] font-bold font-code text-primary uppercase tracking-widest leading-relaxed">
-                                  MÉDIAS RESTREINTS AU MODE LOCAL
-                                </p>
-                                <p className="text-[7px] text-muted-foreground mt-2 uppercase">
-                                  Synchronisez votre station native pour attacher des assets ChromaDB.
-                                </p>
+                            <div className="space-y-3">
+                              {/* BOUTONS DE CAPTURE (PROVISOIRE WEB / RÉEL LOCAL) */}
+                              <div className="flex gap-2 mb-4">
+                                <Button 
+                                  type="button" 
+                                  variant="outline" 
+                                  size="sm" 
+                                  className="flex-1 h-8 text-[9px] font-code uppercase border-primary/40 text-primary"
+                                  onClick={() => handleCapture(index, 'image')}
+                                >
+                                  <Camera className="w-3 h-3 mr-2" />
+                                  Capture Photo
+                                </Button>
+                                <Button 
+                                  type="button" 
+                                  variant="outline" 
+                                  size="sm" 
+                                  className="flex-1 h-8 text-[9px] font-code uppercase border-secondary/40 text-secondary"
+                                  onClick={() => handleCapture(index, 'video')}
+                                >
+                                  <Video className="w-3 h-3 mr-2" />
+                                  Capture Vidéo
+                                </Button>
                               </div>
-                            ) : (
-                              <div className="space-y-3">
-                                <div className="flex flex-col gap-2">
-                                  <div className="flex items-center justify-between">
-                                    <span className="text-[9px] font-code uppercase text-primary flex items-center gap-1.5">
-                                      <ImageIcon className="w-3 h-3" /> Image Bank
-                                    </span>
-                                    {step.imageUrl && <Badge variant="outline" className="text-[7px] h-4 uppercase border-secondary text-secondary">Lié</Badge>}
-                                  </div>
-                                  <Input 
-                                    placeholder="URL_OU_PATH_CHROMA"
-                                    value={step.imageUrl}
-                                    onChange={(e) => updateStep(index, 'imageUrl', e.target.value)}
-                                    className="h-7 text-[9px] font-code bg-background/20"
-                                  />
-                                  {step.imageUrl && step.imageUrl.startsWith('http') && (
-                                    <div className="relative h-16 w-full rounded-sm overflow-hidden border border-border bg-black/40">
-                                      <Image src={step.imageUrl} alt="Preview" fill className="object-cover opacity-50" unoptimized />
-                                      <div className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity bg-black/40">
-                                        <Eye className="w-4 h-4" />
-                                      </div>
-                                    </div>
-                                  )}
-                                </div>
 
-                                <div className="flex flex-col gap-2">
-                                  <div className="flex items-center justify-between">
-                                    <span className="text-[9px] font-code uppercase text-secondary flex items-center gap-1.5">
-                                      <Video className="w-3 h-3" /> Video Bank
-                                    </span>
-                                    {step.videoUrl && <Badge variant="outline" className="text-[7px] h-4 uppercase border-secondary text-secondary">Lié</Badge>}
-                                  </div>
-                                  <Input 
-                                    placeholder="URL_OU_PATH_CHROMA"
-                                    value={step.videoUrl}
-                                    onChange={(e) => updateStep(index, 'videoUrl', e.target.value)}
-                                    className="h-7 text-[9px] font-code bg-background/20"
-                                  />
+                              <div className="flex flex-col gap-2">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[9px] font-code uppercase text-primary flex items-center gap-1.5">
+                                    <ImageIcon className="w-3 h-3" /> {isDesktop ? "Chemin Asset" : "Asset Provisoire"}
+                                  </span>
+                                  {step.imageUrl && <Badge variant="outline" className={cn("text-[7px] h-4 uppercase border-primary text-primary", step.isProvisional && "border-yellow-500 text-yellow-500")}>{step.isProvisional ? 'WEB_BUFFER' : 'LIÉ'}</Badge>}
                                 </div>
-                                
-                                <p className="text-[7px] text-muted-foreground italic mt-1 text-center uppercase">
-                                  Liaison automatique aux banques d'actifs locale active.
-                                </p>
+                                <Input 
+                                  placeholder={isDesktop ? "URL_OU_PATH_CHROMA" : "Capture requise"}
+                                  value={step.imageUrl}
+                                  onChange={(e) => updateStep(index, 'imageUrl', e.target.value)}
+                                  className="h-7 text-[9px] font-code bg-background/20"
+                                />
                               </div>
-                            )}
+
+                              <div className="flex flex-col gap-2">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[9px] font-code uppercase text-secondary flex items-center gap-1.5">
+                                    <Video className="w-3 h-3" /> {isDesktop ? "Chemin Vidéo" : "Buffer Vidéo"}
+                                  </span>
+                                  {step.videoUrl && <Badge variant="outline" className={cn("text-[7px] h-4 uppercase border-secondary text-secondary", step.isProvisional && "border-yellow-500 text-yellow-500")}>{step.isProvisional ? 'WEB_BUFFER' : 'LIÉ'}</Badge>}
+                                </div>
+                                <Input 
+                                  placeholder={isDesktop ? "URL_OU_PATH_CHROMA" : "Capture requise"}
+                                  value={step.videoUrl}
+                                  onChange={(e) => updateStep(index, 'videoUrl', e.target.value)}
+                                  className="h-7 text-[9px] font-code bg-background/20"
+                                />
+                              </div>
+                              
+                              <p className="text-[7px] text-muted-foreground italic mt-1 text-center uppercase">
+                                {isDesktop ? "Liaison directe aux banques d'actifs locale." : "Assets stockés provisoirement (Nettoyage post-sync)."}
+                              </p>
+                            </div>
                           </div>
                         </div>
                       </Card>
@@ -435,7 +493,7 @@ export default function DatasetPage() {
                   "font-headline font-bold uppercase text-[10px] h-9 px-8 shadow-lg",
                   mode === 'qa' ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground"
                 )}>
-                  Ajouter à la file d'attente RAG
+                  Ajouter à la file d'attente d'entraînement
                 </Button>
               </div>
             </form>
@@ -449,7 +507,7 @@ export default function DatasetPage() {
               </h3>
               {qaItems.length > 0 && (
                 <Button onClick={handleFinalSubmit} disabled={isIngesting} className="bg-primary text-primary-foreground font-headline font-bold uppercase text-[10px] h-9 px-6 animate-pulse">
-                  <UploadCloud className="w-3.5 h-3.5 mr-2" />
+                  {isIngesting ? <RefreshCw className="w-3.5 h-3.5 mr-2 animate-spin" /> : <UploadCloud className="w-3.5 h-3.5 mr-2" />}
                   {isIngesting ? "Transmission..." : "Synchroniser vers le Moteur"}
                 </Button>
               )}
@@ -477,6 +535,11 @@ export default function DatasetPage() {
                         {item.question.split(':')[0]}:
                       </span> 
                       <span className="text-muted-foreground">{item.question.split(':').slice(1).join(':')}</span>
+                      {item.mediaAssets && item.mediaAssets.length > 0 && (
+                        <Badge variant="outline" className="ml-3 text-[7px] border-yellow-500/50 text-yellow-500 bg-yellow-500/5">
+                          {item.mediaAssets.length} ASSETS PROVISOIRES
+                        </Badge>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-2 ml-4">
