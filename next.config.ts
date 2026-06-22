@@ -19,7 +19,8 @@ const nextConfig: NextConfig = {
   output: isDesktop ? 'export' : undefined,
   
   images: {
-    unoptimized: isDesktop ? true : false,
+    // Désactivation de l'optimisation pour éviter les timeouts sur les placeholders externes
+    unoptimized: true,
     remotePatterns: [
       { protocol: 'https', hostname: 'picsum.photos' },
       { protocol: 'https', hostname: 'images.unsplash.com' },

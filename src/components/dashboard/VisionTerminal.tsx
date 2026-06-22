@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect } from 'react';
@@ -77,16 +78,15 @@ export function VisionTerminal() {
 
   return (
     <div className="flex flex-col lg:grid lg:grid-cols-3 gap-4 h-full">
-      <Card className="lg:col-span-2 bg-black border-primary/20 relative overflow-hidden group min-h-[300px] lg:min-h-0 shrink-0">
+      {/* Flux Vidéo Principal */}
+      <Card className="lg:col-span-2 bg-black border-primary/20 relative overflow-hidden group min-h-[350px] lg:min-h-0 shrink-0">
         <div className="absolute top-4 left-4 lg:left-4 z-10 flex gap-2">
-          {/* On mobile, we might want to offset badges if the menu button is nearby, 
-              but since we put the button at left-4, we handle it in Sidebar.tsx trigger position */}
           <div className="lg:hidden w-10" /> 
           <StatusBadge status="online" label="CAM_01" />
           <StatusBadge status={isAnalyzing ? "busy" : "online"} label={isAnalyzing ? "BUSY" : "READY"} />
         </div>
         
-        <div className="relative w-full h-full min-h-[300px]">
+        <div className="relative w-full h-full min-h-[350px]">
           {currentImage ? (
             <Image 
               src={currentImage} 
@@ -132,7 +132,7 @@ export function VisionTerminal() {
           <Button 
             size="sm" 
             variant="outline" 
-            className="bg-background/80 hover:bg-background border-border text-[10px] uppercase font-bold" 
+            className="bg-background/80 hover:bg-background border-border text-[10px] uppercase font-bold h-8" 
             onClick={cycleImage} 
             disabled={!hasMultipleImages || isAnalyzing}
           >
@@ -142,7 +142,7 @@ export function VisionTerminal() {
           <Button 
             disabled={isAnalyzing || !currentImage}
             onClick={handleAnalyze}
-            className="bg-primary text-primary-foreground hover:bg-primary/90 font-headline font-bold uppercase tracking-wider text-[10px] h-8 lg:h-10"
+            className="bg-primary text-primary-foreground hover:bg-primary/90 font-headline font-bold uppercase tracking-wider text-[10px] h-9 lg:h-10"
           >
             {isAnalyzing ? (
               <RefreshCcw className="w-3.5 h-3.5 mr-2 animate-spin" />
@@ -154,8 +154,9 @@ export function VisionTerminal() {
         </div>
       </Card>
 
-      <div className="flex flex-col gap-4 min-h-0 flex-1 lg:h-full">
-        <Card className="flex-1 bg-card/50 border-border p-3 lg:p-4 overflow-auto terminal-scroll min-h-[150px]">
+      {/* Panneaux d'analyse latéraux / empilés */}
+      <div className="flex flex-col gap-4 min-h-0 flex-1">
+        <Card className="flex-1 bg-card/50 border-border p-4 overflow-auto terminal-scroll min-h-[180px]">
           <div className="flex items-center gap-2 mb-3 border-b border-border pb-2 shrink-0">
             <Layers className="w-3.5 h-3.5 text-primary" />
             <h3 className="font-headline text-[10px] lg:text-xs font-bold uppercase tracking-widest">Journaux d'Analyse</h3>
@@ -185,7 +186,7 @@ export function VisionTerminal() {
           )}
         </Card>
 
-        <Card className="flex-1 bg-card/50 border-border p-3 lg:p-4 overflow-auto terminal-scroll min-h-[150px]">
+        <Card className="flex-1 bg-card/50 border-border p-4 overflow-auto terminal-scroll min-h-[180px]">
           <div className="flex items-center gap-2 mb-3 border-b border-border pb-2 shrink-0">
             <Search className="w-3.5 h-3.5 text-primary" />
             <h3 className="font-headline text-[10px] lg:text-xs font-bold uppercase tracking-widest">Registre RAG</h3>
@@ -200,7 +201,7 @@ export function VisionTerminal() {
                 {docs.relevantDocuments.map((doc, i) => (
                   <div key={doc.title + i} className="p-2 border border-border bg-background/40 hover:border-primary/50 transition-colors cursor-pointer group rounded-sm">
                     <span className="text-primary font-bold uppercase text-[9px] block truncate">{doc.title}</span>
-                    <p className="text-[9px] text-muted-foreground leading-tight italic truncate">{doc.summary}</p>
+                    <p className="text-[9px] text-muted-foreground leading-tight italic line-clamp-2">{doc.summary}</p>
                   </div>
                 ))}
               </div>

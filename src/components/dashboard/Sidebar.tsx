@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState } from 'react';
@@ -39,7 +40,7 @@ const navItems = [
 export function DashboardSidebar() {
   const { isDesktop } = usePlatform();
   const pathname = usePathname();
-  const isDev = process.env.NODE_ENV === 'development';
+  const isDev = typeof process !== 'undefined' && process.env.NODE_ENV === 'development';
   const [open, setOpen] = useState(false);
 
   const SidebarContent = () => (
