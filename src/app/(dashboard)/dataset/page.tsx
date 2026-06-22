@@ -24,7 +24,8 @@ import {
   Eye,
   RefreshCw,
   Loader2,
-  Smartphone
+  Smartphone,
+  Info
 } from 'lucide-react';
 
 import { Card } from '@/components/ui/card';
@@ -106,7 +107,7 @@ export default function DatasetPage() {
 
   const handleCapture = (index: number, type: 'image' | 'video') => {
     const timestamp = Date.now();
-    // En production, cela ouvrirait la caméra native via l'API Browser ou Tauri
+    // Simulation de capture via WEB_BUFFER
     const mockDataUri = type === 'image' 
       ? `data:image/jpeg;base64,CAPTURED_IMG_${timestamp}`
       : `data:video/mp4;base64,CAPTURED_VID_${timestamp}`;
@@ -117,15 +118,13 @@ export default function DatasetPage() {
     } else {
       newSteps[index].videoUrl = mockDataUri;
     }
-    // Si on n'est pas sur desktop, l'asset est marqué comme provisoire (sera sync puis purgé)
-    newSteps[index].isProvisional = !isDesktop;
+    // Marquer l'asset comme provisoire pour déclencher le flux WEB_BUFFER
+    newSteps[index].isProvisional = true;
     setProcSteps(newSteps);
 
     toast({
-      title: isDesktop ? "Asset Local lié" : "Capture Web réussie",
-      description: isDesktop 
-        ? "L'asset a été lié au stockage ChromaDB." 
-        : "Asset stocké dans le buffer Cloud. Il sera purgé après synchronisation locale.",
+      title: "Asset capturé (WEB_BUFFER)",
+      description: "Le média est placé dans le buffer Cloud. Il sera transféré vers ChromaDB lors de votre prochaine connexion Desktop.",
     });
   };
 
@@ -155,8 +154,8 @@ export default function DatasetPage() {
 
       const provisionalAssets = procSteps.flatMap((s, idx) => {
         const assets = [];
-        if (s.imageUrl?.startsWith('data:') && !isDesktop) assets.push({ type: 'image', content: s.imageUrl, step: idx });
-        if (s.videoUrl?.startsWith('data:') && !isDesktop) assets.push({ type: 'video', content: s.videoUrl, step: idx });
+        if (s.imageUrl?.startsWith('data:') && s.isProvisional) assets.push({ type: 'image', content: s.imageUrl, step: idx });
+        if (s.videoUrl?.startsWith('data:') && s.isProvisional) assets.push({ type: 'video', content: s.videoUrl, step: idx });
         return assets;
       });
 
@@ -186,24 +185,24 @@ export default function DatasetPage() {
           question: i.type === 'procedure' ? `PROCÉDURE: ${i.label}` : i.label, 
           answer: i.details 
         })),
-        metadata: { collection: 'industrial_manuals', source: 'UI_BUFFER' }
+        metadata: { collection: 'industrial_manuals', source: isDesktop ? 'STATION_FORGE' : 'CAPTURE_TERRAIN' }
       });
 
-      // 2. Transfert des Assets Provisoires (Buffer Cloud)
+      // 2. Transfert des Assets Provisoires (WEB_BUFFER)
       const itemsWithAssets = qaItems.filter(i => i.mediaAssets && i.mediaAssets.length > 0);
-      if (itemsWithAssets.length > 0 && !isDesktop) {
+      if (itemsWithAssets.length > 0) {
         const assetsPayload = itemsWithAssets.flatMap(i => i.mediaAssets!.map(a => ({
           id: `provisional-${Date.now()}-${Math.random()}`,
           projectId: 'project-001',
           type: 'provisional_asset' as const,
           content: a.content,
           metadata: { type: a.type, parentId: i.id, step: a.step, title: i.label },
-          tags: ['capture_web_buffer', a.type],
+          tags: ['web_buffer_capture', a.type],
           createdAt: new Date()
         })));
 
         await apiClient.post('/api/sync/upload', { userId: 'admin', projectId: 'project-001', items: assetsPayload });
-        toast({ title: "Buffer Multimédia", description: "Les médias sont en attente de purge locale." });
+        toast({ title: "Sync Buffer", description: "Médias transférés vers le buffer cloud pour purge locale." });
       }
 
       if (res.success) {
@@ -231,10 +230,10 @@ export default function DatasetPage() {
               <span className="font-headline font-bold text-xs lg:text-sm uppercase tracking-widest text-primary">Entraînement RAG</span>
             </div>
             <div className="hidden sm:block h-4 w-px bg-border mx-2" />
-            <div className="hidden sm:flex items-center gap-2 px-3 py-1 bg-secondary/10 border border-secondary/20 rounded-sm">
+            <div className="flex items-center gap-2 px-3 py-1 bg-secondary/10 border border-secondary/20 rounded-sm">
               {!isDesktop ? <Smartphone className="w-3 h-3 text-primary" /> : <Cpu className="w-3 h-3 text-secondary" />}
-              <span className="text-[9px] font-code uppercase font-bold text-muted-foreground">
-                {!isDesktop ? "CAPTURE TERRAIN (WEB BUFFER)" : "STATION FORGE (CHROMA)"}
+              <span className="text-[9px] font-code uppercase font-bold text-muted-foreground whitespace-nowrap">
+                {!isDesktop ? "MODE TERRAIN (WEB_BUFFER)" : "STATION FORGE (LOCAL_CHROMA)"}
               </span>
             </div>
           </div>
@@ -264,6 +263,16 @@ export default function DatasetPage() {
         </header>
 
         <div className="p-4 lg:p-8 max-w-5xl mx-auto w-full space-y-6">
+          {/* Info Banner for WEB_BUFFER */}
+          {!isDesktop && (
+            <Card className="p-3 border-primary/20 bg-primary/5 flex items-center gap-3 rounded-sm">
+              <Info className="w-4 h-4 text-primary shrink-0" />
+              <p className="text-[9px] font-code uppercase text-primary leading-tight">
+                Capture de terrain active. Les médias seront stockés dans le <strong>WEB_BUFFER</strong> provisoire jusqu'à synchronisation avec votre station Desktop.
+              </p>
+            </Card>
+          )}
+
           {lastResult && (
             <Card className="p-4 border-secondary/30 bg-secondary/5 flex items-center gap-3 rounded-sm">
               <CheckCircle2 className="w-5 h-5 text-secondary shrink-0" />
@@ -487,7 +496,7 @@ export default function DatasetPage() {
                       <span className="text-muted-foreground uppercase">{item.label}</span>
                       {item.mediaAssets && item.mediaAssets.length > 0 && (
                         <Badge variant="outline" className="ml-3 text-[7px] border-yellow-500/50 text-yellow-500 bg-yellow-500/5">
-                          {item.mediaAssets.length} MÉDIAS PROVISOIRES
+                          {item.mediaAssets.length} MÉDIAS PROVISOIRES (WEB_BUFFER)
                         </Badge>
                       )}
                     </div>
