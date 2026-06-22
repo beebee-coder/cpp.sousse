@@ -21,7 +21,9 @@ import {
   Video,
   Layers,
   ArrowRight,
-  Link as LinkIcon
+  Link as LinkIcon,
+  Lock,
+  Eye
 } from 'lucide-react';
 
 import { Card } from '@/components/ui/card';
@@ -34,6 +36,7 @@ import { apiClient } from '@/lib/api-client';
 import { usePlatform } from '@/components/PlatformProvider';
 import { DashboardSidebar } from '@/components/dashboard/Sidebar';
 import { cn } from '@/lib/utils';
+import Image from 'next/image';
 
 interface ProcedureStep {
   id: string;
@@ -63,15 +66,12 @@ export default function DatasetPage() {
   const { toast } = useToast();
   const { isDesktop } = usePlatform();
   
-  // Modes: 'qa' or 'procedure'
   const [mode, setMode] = useState<'qa' | 'procedure'>('qa');
   
-  // Q&A State
   const [qaItems, setQaItems] = useState<QAItem[]>([]);
   const [question, setQuestion] = useState('');
   const [answer, setAnswer] = useState('');
 
-  // Procedure State
   const [procTitle, setProcTitle] = useState('');
   const [procSteps, setProcSteps] = useState<ProcedureStep[]>([
     { id: '1', title: '', description: '', subSteps: [], normalConditions: '', abnormalConditions: '', alarms: '', imageUrl: '', videoUrl: '' }
@@ -120,7 +120,6 @@ export default function DatasetPage() {
         return;
       }
       
-      // Convert procedure to a specialized QA format for indexing
       const serializedProcedure = `PROCÉDURE TECHNIQUE : ${procTitle}\n\n` + 
         procSteps.map((s, i) => (
           `Étape ${i + 1}: ${s.title}\n` +
@@ -128,8 +127,8 @@ export default function DatasetPage() {
           (s.normalConditions ? `Conditions Normales: ${s.normalConditions}\n` : '') +
           (s.abnormalConditions ? `Conditions Anormales: ${s.abnormalConditions}\n` : '') +
           (s.alarms ? `⚠ ALERTES: ${s.alarms}\n` : '') +
-          (s.imageUrl ? `[MEDIA_IMAGE]: ${s.imageUrl}\n` : '') +
-          (s.videoUrl ? `[MEDIA_VIDEO]: ${s.videoUrl}\n` : '')
+          (s.imageUrl && isDesktop ? `[MEDIA_IMAGE]: ${s.imageUrl}\n` : '') +
+          (s.videoUrl && isDesktop ? `[MEDIA_VIDEO]: ${s.videoUrl}\n` : '')
         )).join('\n---\n');
 
       setQaItems(prev => [{ 
@@ -278,7 +277,7 @@ export default function DatasetPage() {
                         <div className="flex items-center justify-between border-b border-border/50 pb-2">
                           <div className="flex items-center gap-3">
                             <span className="text-[10px] font-bold font-code text-secondary">ÉTAPE {index + 1}</span>
-                            {(step.imageUrl || step.videoUrl) && (
+                            {isDesktop && (step.imageUrl || step.videoUrl) && (
                               <div className="flex gap-1">
                                 {step.imageUrl && <ImageIcon className="w-3 h-3 text-primary/50" />}
                                 {step.videoUrl && <Video className="w-3 h-3 text-secondary/50" />}
@@ -297,7 +296,6 @@ export default function DatasetPage() {
                         </div>
 
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                          {/* Colonne 1: Infos de base */}
                           <div className="space-y-3 lg:col-span-1">
                             <div>
                               <label className="text-[8px] font-bold uppercase text-muted-foreground block mb-1">Titre de l'action</label>
@@ -319,7 +317,6 @@ export default function DatasetPage() {
                             </div>
                           </div>
 
-                          {/* Colonne 2: Conditions & Alarmes */}
                           <div className="space-y-3 lg:col-span-1">
                             <div className="grid grid-cols-2 gap-2">
                               <div className="space-y-1">
@@ -358,60 +355,77 @@ export default function DatasetPage() {
                             </div>
                           </div>
 
-                          {/* Colonne 3: Médias (Futur) */}
-                          <div className="space-y-3 lg:col-span-1 bg-black/20 p-3 rounded-sm border border-border/30">
+                          <div className="space-y-3 lg:col-span-1 bg-black/20 p-3 rounded-sm border border-border/30 relative overflow-hidden min-h-[180px]">
                             <label className="text-[8px] font-bold uppercase text-muted-foreground block mb-2 border-b border-border/50 pb-1">Documentation Visuelle</label>
                             
-                            <div className="space-y-3">
-                              <div className="flex flex-col gap-2">
-                                <div className="flex items-center justify-between">
-                                  <span className="text-[9px] font-code uppercase text-primary flex items-center gap-1.5">
-                                    <ImageIcon className="w-3 h-3" /> Image Bank
-                                  </span>
-                                  <Badge variant="outline" className="text-[7px] h-4 uppercase opacity-50">Prévu</Badge>
-                                </div>
-                                <Input 
-                                  placeholder="URL_IMAGE_TEMP"
-                                  value={step.imageUrl}
-                                  onChange={(e) => updateStep(index, 'imageUrl', e.target.value)}
-                                  className="h-7 text-[9px] font-code bg-background/20"
-                                />
+                            {!isDesktop ? (
+                              <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-black/60 backdrop-blur-sm p-4 text-center">
+                                <Lock className="w-6 h-6 text-primary/40 mb-2" />
+                                <p className="text-[9px] font-bold font-code text-primary uppercase tracking-widest leading-relaxed">
+                                  MÉDIAS RESTREINTS AU MODE LOCAL
+                                </p>
+                                <p className="text-[7px] text-muted-foreground mt-2 uppercase">
+                                  Synchronisez votre station native pour attacher des assets ChromaDB.
+                                </p>
                               </div>
+                            ) : (
+                              <div className="space-y-3">
+                                <div className="flex flex-col gap-2">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[9px] font-code uppercase text-primary flex items-center gap-1.5">
+                                      <ImageIcon className="w-3 h-3" /> Image Bank
+                                    </span>
+                                    {step.imageUrl && <Badge variant="outline" className="text-[7px] h-4 uppercase border-secondary text-secondary">Lié</Badge>}
+                                  </div>
+                                  <Input 
+                                    placeholder="URL_OU_PATH_CHROMA"
+                                    value={step.imageUrl}
+                                    onChange={(e) => updateStep(index, 'imageUrl', e.target.value)}
+                                    className="h-7 text-[9px] font-code bg-background/20"
+                                  />
+                                  {step.imageUrl && step.imageUrl.startsWith('http') && (
+                                    <div className="relative h-16 w-full rounded-sm overflow-hidden border border-border bg-black/40">
+                                      <Image src={step.imageUrl} alt="Preview" fill className="object-cover opacity-50" unoptimized />
+                                      <div className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity bg-black/40">
+                                        <Eye className="w-4 h-4" />
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
 
-                              <div className="flex flex-col gap-2">
-                                <div className="flex items-center justify-between">
-                                  <span className="text-[9px] font-code uppercase text-secondary flex items-center gap-1.5">
-                                    <Video className="w-3 h-3" /> Video Bank
-                                  </span>
-                                  <Badge variant="outline" className="text-[7px] h-4 uppercase opacity-50">Prévu</Badge>
+                                <div className="flex flex-col gap-2">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[9px] font-code uppercase text-secondary flex items-center gap-1.5">
+                                      <Video className="w-3 h-3" /> Video Bank
+                                    </span>
+                                    {step.videoUrl && <Badge variant="outline" className="text-[7px] h-4 uppercase border-secondary text-secondary">Lié</Badge>}
+                                  </div>
+                                  <Input 
+                                    placeholder="URL_OU_PATH_CHROMA"
+                                    value={step.videoUrl}
+                                    onChange={(e) => updateStep(index, 'videoUrl', e.target.value)}
+                                    className="h-7 text-[9px] font-code bg-background/20"
+                                  />
                                 </div>
-                                <Input 
-                                  placeholder="URL_VIDEO_TEMP"
-                                  value={step.videoUrl}
-                                  onChange={(e) => updateStep(index, 'videoUrl', e.target.value)}
-                                  className="h-7 text-[9px] font-code bg-background/20"
-                                />
+                                
+                                <p className="text-[7px] text-muted-foreground italic mt-1 text-center uppercase">
+                                  Liaison automatique aux banques d'actifs locale active.
+                                </p>
                               </div>
-                            </div>
-                            
-                            <p className="text-[7px] text-muted-foreground italic mt-2 text-center uppercase">
-                              Liaison automatique aux banques d'actifs lors de la phase finale.
-                            </p>
+                            )}
                           </div>
                         </div>
                       </Card>
                     ))}
                     
-                    <Button 
+                    <button 
                       type="button" 
-                      variant="outline" 
-                      size="sm" 
                       onClick={addStep}
-                      className="w-full border-dashed border-secondary/30 text-secondary h-9 text-[10px] uppercase font-code"
+                      className="w-full border border-dashed border-secondary/30 text-secondary hover:bg-secondary/5 h-9 text-[10px] uppercase font-code rounded-sm transition-colors flex items-center justify-center"
                     >
                       <Plus className="w-3.5 h-3.5 mr-2" />
                       Ajouter une Étape de Procédure
-                    </Button>
+                    </button>
                   </div>
                 </div>
               )}
