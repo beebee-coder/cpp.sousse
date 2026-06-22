@@ -4,7 +4,7 @@ import { DashboardSidebar } from '@/components/dashboard/Sidebar';
 import { VisionTerminal } from '@/components/dashboard/VisionTerminal';
 import { CommandPalette } from '@/components/dashboard/CommandPalette';
 import { StatusBadge } from '@/components/dashboard/StatusBadge';
-import { Activity, Bell, User, Cpu, ShieldCheck, HeartPulse } from 'lucide-react';
+import { Activity, Bell, User, Cpu, ShieldCheck, HeartPulse, Menu } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { usePlatform } from '@/components/PlatformProvider';
 import { Card } from '@/components/ui/card';
@@ -28,21 +28,23 @@ export default function DashboardPage() {
   }, []);
 
   return (
-    <div className="flex h-screen bg-background overflow-hidden">
+    <div className="flex flex-col lg:flex-row h-screen bg-background overflow-hidden">
       <DashboardSidebar />
       
-      <main className="flex-1 flex flex-col min-w-0">
-        <header className="h-16 border-b border-border bg-card/30 flex items-center justify-between px-6">
+      <main className="flex-1 flex flex-col min-w-0 overflow-y-auto lg:overflow-hidden">
+        <header className="h-16 border-b border-border bg-card/30 flex items-center justify-between px-6 shrink-0">
           <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
+            <div className="hidden lg:flex items-center gap-2">
               <Activity className="w-4 h-4 text-primary" />
               <span className="font-headline font-bold text-sm uppercase tracking-widest">Moniteur Système</span>
             </div>
-            <div className="h-4 w-px bg-border mx-2" />
-            <div className="flex gap-4">
-              <StatusBadge status="online" label="AWS_US_EAST" />
-              <StatusBadge status="online" label="NEON_DB" />
-              <StatusBadge status={health?.healthy ? "online" : "alert"} label="SANTÉ_SYS" />
+            {/* Mobile Title Spacer */}
+            <div className="lg:hidden w-10" /> 
+            
+            <div className="hidden sm:flex gap-2 lg:gap-4 overflow-x-auto no-scrollbar">
+              <StatusBadge status="online" label="AWS" />
+              <StatusBadge status="online" label="DB" />
+              <StatusBadge status={health?.healthy ? "online" : "alert"} label="SANTÉ" />
             </div>
           </div>
           
@@ -57,28 +59,28 @@ export default function DashboardPage() {
           </div>
         </header>
 
-        <div className="flex-1 p-6 overflow-hidden flex flex-col gap-6">
-          <div className="flex justify-between items-end">
+        <div className="flex-1 p-4 lg:p-6 overflow-y-auto lg:overflow-hidden flex flex-col gap-4 lg:gap-6">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-2 shrink-0">
             <div>
-              <h2 className="font-headline text-2xl font-bold tracking-tight mb-1 uppercase">Cockpit Visuel</h2>
-              <p className="text-sm text-muted-foreground font-code">
-                MOTEUR_HYBRIDE : {platform.toUpperCase()} | STATUT : NOMINAL
+              <h2 className="font-headline text-xl lg:text-2xl font-bold tracking-tight mb-1 uppercase">Cockpit Visuel</h2>
+              <p className="text-xs text-muted-foreground font-code">
+                {platform.toUpperCase()} | NOMINAL
               </p>
             </div>
-            <div className="text-right font-code">
-              <p className="text-[10px] text-muted-foreground uppercase">Horloge Système</p>
+            <div className="text-left sm:text-right font-code">
+              <p className="text-[9px] text-muted-foreground uppercase">Horloge Système</p>
               <p className="text-sm text-primary font-bold">
                 {mounted ? (time || '--:--:--') : '--:--:--'}
               </p>
             </div>
           </div>
           
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 flex-1 min-h-0">
-            <div className="lg:col-span-3 min-h-0">
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 lg:gap-6 flex-1 min-h-0">
+            <div className="lg:col-span-3 min-h-[400px] lg:min-h-0">
               <VisionTerminal />
             </div>
             
-            <aside className="space-y-4 overflow-y-auto pr-2 terminal-scroll">
+            <aside className="space-y-4 lg:overflow-y-auto lg:pr-2 terminal-scroll shrink-0">
               <Card className="p-4 border-primary/20 bg-black/20">
                 <div className="flex items-center gap-2 mb-3">
                   <HeartPulse className={cn("w-4 h-4", health?.healthy ? "text-secondary" : "text-destructive")} />
@@ -94,62 +96,50 @@ export default function DashboardPage() {
                       {health?.healthy ? "Optimal" : "Dégradé"}
                     </span>
                   </div>
-                  {health?.issues.map((issue, i) => (
-                    <div key={issue + i} className="text-[9px] font-code text-destructive uppercase">
-                      ! Erreur : {issue}
-                    </div>
-                  ))}
                 </div>
               </Card>
 
               <Card className="p-4 border-primary/20 bg-black/20">
                 <div className="flex items-center gap-2 mb-3">
                   <Cpu className="w-4 h-4 text-primary" />
-                  <h3 className="text-xs font-bold uppercase tracking-widest font-headline">Capacités Hybrides</h3>
+                  <h3 className="text-xs font-bold uppercase tracking-widest font-headline">Capacités</h3>
                 </div>
                 <div className="space-y-2">
-                  {capabilities.map((cap, i) => (
+                  {capabilities.slice(0, 4).map((cap, i) => (
                     <div key={cap.name + i} className="flex items-center justify-between text-[10px] font-code">
-                      <span className="text-muted-foreground">{cap.name}</span>
+                      <span className="text-muted-foreground truncate mr-2">{cap.name}</span>
                       <span className={cn(
-                        "px-1.5 py-0.5 rounded-sm uppercase font-bold",
+                        "px-1.5 py-0.5 rounded-sm uppercase font-bold whitespace-nowrap",
                         cap.status === 'actif' ? "bg-secondary/20 text-secondary" : "bg-primary/20 text-primary"
                       )}>
-                        {cap.status === 'actif' ? 'actif' : cap.status}
+                        {cap.status}
                       </span>
                     </div>
                   ))}
                 </div>
               </Card>
 
-              <Card className="p-4 border-secondary/20 bg-black/20">
+              <Card className="p-4 border-secondary/20 bg-black/20 hidden sm:block">
                 <div className="flex items-center gap-2 mb-3">
                   <ShieldCheck className="w-4 h-4 text-secondary" />
-                  <h3 className="text-xs font-bold uppercase tracking-widest font-headline">Couche Sécurité</h3>
+                  <h3 className="text-xs font-bold uppercase tracking-widest font-headline">Sécurité</h3>
                 </div>
-                <div className="space-y-3 font-code text-[10px]">
-                  <div className="p-2 border border-border bg-background/50 rounded-sm">
-                    <p className="text-muted-foreground mb-1">&gt; CHIFFREMENT</p>
-                    <p className="text-secondary">AES-256-GCM ACTIF</p>
-                  </div>
-                  <div className="p-2 border border-border bg-background/50 rounded-sm">
-                    <p className="text-muted-foreground mb-1">&gt; JOURNAUX D'AUDIT</p>
-                    <p className="text-primary">FLUX VERS NEON</p>
-                  </div>
+                <div className="space-y-2 font-code text-[9px]">
+                  <p className="text-secondary">AES-256-GCM ACTIF</p>
+                  <p className="text-primary">FLUX VERS NEON</p>
                 </div>
               </Card>
             </aside>
           </div>
         </div>
         
-        <footer className="h-8 border-t border-border bg-black/40 flex items-center justify-between px-6 text-[10px] font-code text-muted-foreground uppercase tracking-widest">
+        <footer className="h-8 border-t border-border bg-black/40 hidden sm:flex items-center justify-between px-6 text-[9px] font-code text-muted-foreground uppercase tracking-widest shrink-0">
           <div className="flex gap-6">
-            <span>Uptime : 14j 05h 22m</span>
-            <span>Mode : {isDesktop ? "STATION_PRO" : "WEB_DISTANT"}</span>
+            <span>Uptime : 14j 05h</span>
+            <span>Mode : {isDesktop ? "NATIF" : "WEB"}</span>
           </div>
           <div className="flex gap-4">
             <span className="text-secondary">AI PIPE : PRÊT</span>
-            <span>MEM : {isDesktop ? "32.0GB" : "12.4GB"}</span>
           </div>
         </footer>
       </main>

@@ -162,10 +162,10 @@ export default function BDDPage() {
       <div key={node.id} className="select-none">
         <div 
           className={cn(
-            "flex items-center gap-2 py-1 px-2 hover:bg-primary/5 cursor-pointer group rounded-sm transition-colors",
+            "flex items-center gap-2 py-1.5 lg:py-1 px-2 hover:bg-primary/5 cursor-pointer group rounded-sm transition-colors",
             editingId === node.id && "bg-primary/10"
           )}
-          style={{ paddingLeft: `${depth * 1.2 + 0.5}rem` }}
+          style={{ paddingLeft: `${depth * 1 + 0.5}rem` }}
         >
           {node.type === 'folder' ? (
             <button onClick={() => toggleFolder(node.id)} className="p-0.5 hover:bg-muted rounded text-muted-foreground">
@@ -188,10 +188,9 @@ export default function BDDPage() {
                 value={editValue}
                 onChange={(e) => setEditingValue(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && saveRename()}
-                className="h-6 py-0 px-1 text-[11px] font-code uppercase bg-background border-primary"
+                className="h-7 py-0 px-1 text-[11px] font-code uppercase bg-background border-primary"
               />
-              <button onClick={saveRename} className="text-secondary hover:text-secondary/80"><Check className="w-3 h-3" /></button>
-              <button onClick={() => setEditingId(null)} className="text-destructive hover:text-destructive/80"><X className="w-3 h-3" /></button>
+              <button onClick={saveRename} className="text-secondary p-1"><Check className="w-4 h-4" /></button>
             </div>
           ) : (
             <span className="text-[11px] font-code uppercase flex-1 truncate py-0.5" onClick={() => node.type === 'folder' && toggleFolder(node.id)}>
@@ -201,13 +200,9 @@ export default function BDDPage() {
 
           <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 transition-opacity">
             {node.type === 'folder' && (
-              <>
-                <button onClick={() => addNode(node.id, 'folder')} className="p-1 hover:text-primary" title="Ajouter dossier"><FolderPlus className="w-3 h-3" /></button>
-                <button onClick={() => addNode(node.id, 'file')} className="p-1 hover:text-secondary" title="Ajouter fichier"><FilePlus className="w-3 h-3" /></button>
-              </>
+              <button onClick={() => addNode(node.id, 'folder')} className="p-1 hover:text-primary"><FolderPlus className="w-3.5 h-3.5" /></button>
             )}
-            <button onClick={() => startRename(node.id, node.name)} className="p-1 hover:text-primary" title="Renommer"><Edit3 className="w-3 h-3" /></button>
-            <button onClick={() => deleteNode(node.id)} className="p-1 hover:text-destructive" title="Supprimer"><Trash2 className="w-3 h-3" /></button>
+            <button onClick={() => deleteNode(node.id)} className="p-1 hover:text-destructive"><Trash2 className="w-3.5 h-3.5" /></button>
           </div>
         </div>
         {node.type === 'folder' && node.isOpen && node.children && (
@@ -220,58 +215,44 @@ export default function BDDPage() {
   };
 
   return (
-    <div className="flex h-screen bg-background overflow-hidden">
+    <div className="flex flex-col lg:flex-row h-screen bg-background overflow-hidden">
       <DashboardSidebar />
       
-      <main className="flex-1 flex flex-col min-w-0">
-        <header className="h-16 border-b border-border bg-card/30 flex items-center justify-between px-6">
+      <main className="flex-1 flex flex-col min-w-0 h-full">
+        <header className="h-16 border-b border-border bg-card/30 flex items-center justify-between px-6 shrink-0">
           <div className="flex items-center gap-4">
+            <div className="lg:hidden w-10" />
             <div className="flex items-center gap-2">
               <Database className="w-4 h-4 text-primary animate-pulse" />
-              <span className="font-headline font-bold text-sm uppercase tracking-widest text-primary">Gestionnaire BDD Hybride</span>
-            </div>
-            <div className="h-4 w-px bg-border mx-2" />
-            <div className="flex bg-muted/30 p-1 rounded-sm border border-border">
-              <button 
-                onClick={() => setMode('chroma')}
-                className={cn(
-                  "px-3 py-1 text-[10px] font-code uppercase rounded-sm transition-all",
-                  mode === 'chroma' ? "bg-primary text-primary-foreground shadow-lg" : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <Zap className="w-3 h-3 inline mr-1.5" />
-                Moteur Vectoriel
-              </button>
-              <button 
-                onClick={() => setMode('web')}
-                className={cn(
-                  "px-3 py-1 text-[10px] font-code uppercase rounded-sm transition-all",
-                  mode === 'web' ? "bg-secondary text-secondary-foreground shadow-lg" : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <Globe className="w-3 h-3 inline mr-1.5" />
-                Architecture Web
-              </button>
+              <span className="font-headline font-bold text-xs lg:text-sm uppercase tracking-widest text-primary truncate max-w-[120px] lg:max-w-none">BDD Hybride</span>
             </div>
           </div>
           
-          <div className="flex items-center gap-3">
-            <Button 
-              variant="outline" 
-              size="sm" 
-              onClick={syncPhysicalState}
-              disabled={isSyncing}
-              className="h-8 text-[10px] font-code uppercase border-primary/30 text-primary hover:bg-primary/5"
+          <div className="flex bg-muted/30 p-1 rounded-sm border border-border shrink-0">
+            <button 
+              onClick={() => setMode('chroma')}
+              className={cn(
+                "px-2 sm:px-3 py-1 text-[9px] lg:text-[10px] font-code uppercase rounded-sm transition-all",
+                mode === 'chroma' ? "bg-primary text-primary-foreground" : "text-muted-foreground"
+              )}
             >
-              <RefreshCw className={cn("w-3.5 h-3.5 mr-2", isSyncing && "animate-spin")} />
-              {isSyncing ? "Transmission..." : "Sync Physique"}
-            </Button>
+              Vecteur
+            </button>
+            <button 
+              onClick={() => setMode('web')}
+              className={cn(
+                "px-2 sm:px-3 py-1 text-[9px] lg:text-[10px] font-code uppercase rounded-sm transition-all",
+                mode === 'web' ? "bg-secondary text-secondary-foreground" : "text-muted-foreground"
+              )}
+            >
+              Web
+            </button>
           </div>
         </header>
 
-        <div className="flex-1 p-6 overflow-hidden flex gap-6">
-          <Card className="w-80 flex flex-col bg-black/40 border-border overflow-hidden shadow-2xl">
-            <div className="p-3 border-b border-border bg-card/50 flex items-center justify-between">
+        <div className="flex-1 p-4 lg:p-6 overflow-y-auto lg:overflow-hidden flex flex-col lg:flex-row gap-4 lg:gap-6">
+          <Card className="w-full lg:w-80 flex flex-col bg-black/40 border-border overflow-hidden shadow-2xl shrink-0 max-h-[400px] lg:max-h-none">
+            <div className="p-3 border-b border-border bg-card/50 flex items-center justify-between shrink-0">
               <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">Explorateur</span>
               <Badge variant="outline" className="text-[8px] uppercase h-4 px-1 border-primary/30 text-primary">
                 {mode === 'web' ? 'Logique' : 'Physique'}
@@ -282,30 +263,41 @@ export default function BDDPage() {
             </div>
           </Card>
 
-          <div className="flex-1 flex flex-col gap-6 overflow-hidden">
-            <Card className="flex-1 bg-card/30 border-border p-8 flex flex-col items-center justify-center text-center">
-              <Server className="w-12 h-12 text-muted-foreground/20 mb-4" />
-              <h3 className="font-headline font-bold text-lg uppercase tracking-widest mb-2">État du Moteur</h3>
-              <p className="text-sm text-muted-foreground font-code max-w-sm">
-                Liaison active vers le nœud vectoriel distant. Les modifications sont persistées en temps réel.
+          <div className="flex-1 flex flex-col gap-4 lg:gap-6 overflow-hidden min-h-0">
+            <Card className="flex-1 bg-card/30 border-border p-6 lg:p-8 flex flex-col items-center justify-center text-center overflow-auto">
+              <Server className="w-10 h-10 lg:w-12 lg:h-12 text-muted-foreground/20 mb-4" />
+              <h3 className="font-headline font-bold text-base lg:text-lg uppercase tracking-widest mb-2">État du Moteur</h3>
+              <p className="text-xs lg:text-sm text-muted-foreground font-code max-w-sm">
+                Liaison active vers le nœud vectoriel distant. Les modifications sont persistées.
               </p>
               
-              <div className="grid grid-cols-2 gap-4 mt-12 w-full max-w-lg text-left">
-                <div className="p-4 border border-border bg-black/20 rounded-sm">
-                  <p className="text-[10px] font-bold text-primary uppercase mb-1">Stockage UI</p>
-                  <p className="text-[11px] font-code text-muted-foreground">LocalStorage activé (Rapidité).</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-6 lg:mt-12 w-full max-w-lg text-left">
+                <div className="p-3 lg:p-4 border border-border bg-black/20 rounded-sm">
+                  <p className="text-[9px] lg:text-[10px] font-bold text-primary uppercase mb-1">Stockage UI</p>
+                  <p className="text-[10px] lg:text-[11px] font-code text-muted-foreground">LocalStorage activé.</p>
                 </div>
-                <div className="p-4 border border-border bg-black/20 rounded-sm">
-                  <p className="text-[10px] font-bold text-secondary uppercase mb-1">Nœud Actif</p>
-                  <p className="text-[11px] font-code text-muted-foreground">{activeProvider}</p>
+                <div className="p-3 lg:p-4 border border-border bg-black/20 rounded-sm">
+                  <p className="text-[9px] lg:text-[10px] font-bold text-secondary uppercase mb-1">Nœud Actif</p>
+                  <p className="text-[10px] lg:text-[11px] font-code text-muted-foreground truncate">{activeProvider}</p>
                 </div>
               </div>
+              
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={syncPhysicalState}
+                disabled={isSyncing}
+                className="mt-6 h-9 text-[10px] font-code uppercase border-primary/30 text-primary w-full max-w-[200px]"
+              >
+                <RefreshCw className={cn("w-3.5 h-3.5 mr-2", isSyncing && "animate-spin")} />
+                {isSyncing ? "Transmission..." : "Sync Physique"}
+              </Button>
             </Card>
 
-            <footer className="h-24 bg-primary/5 border border-primary/20 rounded-sm p-4 font-code text-[10px] uppercase text-primary/70 leading-relaxed">
+            <footer className="h-20 lg:h-24 bg-primary/5 border border-primary/20 rounded-sm p-3 lg:p-4 font-code text-[9px] lg:text-[10px] uppercase text-primary/70 overflow-hidden shrink-0">
               <p>&gt; MOTEUR_LOGIQUE : PRÊT</p>
-              <p>&gt; LIAISON_PHYSIQUE : {activeProvider}</p>
-              <p>&gt; AUDIT_TRAÇABILITÉ : {isSyncing ? "TRANSMISSION_EN_COURS" : "VEILLE_NOMINALE"}</p>
+              <p className="truncate">&gt; LIAISON_PHYSIQUE : {activeProvider}</p>
+              <p>&gt; AUDIT : {isSyncing ? "TRANSMISSION" : "VEILLE"}</p>
             </footer>
           </div>
         </div>

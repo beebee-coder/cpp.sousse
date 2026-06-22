@@ -1,6 +1,6 @@
-
 "use client";
 
+import { useState } from 'react';
 import { 
   LayoutDashboard, 
   Terminal, 
@@ -14,14 +14,17 @@ import {
   Rocket,
   ChevronRight,
   HardDrive,
-  Download
+  Download,
+  Menu,
+  X
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { usePlatform } from '@/components/PlatformProvider';
 import { SyncPanel } from '@/components/dashboard/SyncPanel';
-import Link from 'next/navigation';
 import { usePathname } from 'next/navigation';
 import LinkActual from 'next/link';
+import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import { Button } from '@/components/ui/button';
 
 const navItems = [
   { icon: LayoutDashboard, label: 'Tableau de Bord', href: '/dashboard' },
@@ -34,14 +37,15 @@ const navItems = [
 ];
 
 export function DashboardSidebar() {
-  const { platform, isDesktop } = usePlatform();
+  const { isDesktop } = usePlatform();
   const pathname = usePathname();
   const isDev = process.env.NODE_ENV === 'development';
+  const [open, setOpen] = useState(false);
 
-  return (
-    <div className="w-64 border-r border-border bg-card flex flex-col h-full">
+  const SidebarContent = () => (
+    <div className="flex flex-col h-full bg-card">
       <div className="p-6 border-b border-border">
-        <LinkActual href="/dashboard" className="flex items-center gap-3 mb-1">
+        <LinkActual href="/dashboard" className="flex items-center gap-3 mb-1" onClick={() => setOpen(false)}>
           <div className="w-8 h-8 bg-primary rounded flex items-center justify-center shadow-[0_0_15px_rgba(50,181,212,0.3)]">
             <Monitor className="w-5 h-5 text-primary-foreground" />
           </div>
@@ -59,6 +63,7 @@ export function DashboardSidebar() {
               <LinkActual
                 key={item.label}
                 href={item.href}
+                onClick={() => setOpen(false)}
                 className={cn(
                   "w-full flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-sm transition-all group",
                   isActive 
@@ -81,6 +86,7 @@ export function DashboardSidebar() {
             </p>
             <LinkActual
               href="/pipeline"
+              onClick={() => setOpen(false)}
               className={cn(
                 "w-full flex items-center justify-between px-3 py-2 text-sm font-medium rounded-sm transition-all group border border-dashed border-primary/20",
                 pathname === '/pipeline' 
@@ -99,7 +105,6 @@ export function DashboardSidebar() {
       </nav>
 
       <div className="p-4 border-t border-border bg-black/20 space-y-3">
-        {/* Platform indicator */}
         <div className="flex items-center justify-between">
           <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-widest">Mode</span>
           <div className="flex items-center gap-1.5">
@@ -112,9 +117,31 @@ export function DashboardSidebar() {
             </div>
           </div>
         </div>
-        {/* Live Sync Panel */}
         <SyncPanel />
       </div>
     </div>
+  );
+
+  return (
+    <>
+      {/* Mobile Nav Button */}
+      <div className="lg:hidden fixed top-4 left-4 z-50">
+        <Sheet open={open} onOpenChange={setOpen}>
+          <SheetTrigger asChild>
+            <Button variant="outline" size="icon" className="bg-card/80 backdrop-blur-sm border-primary/30 text-primary">
+              <Menu className="w-5 h-5" />
+            </Button>
+          </SheetTrigger>
+          <SheetContent side="left" className="p-0 w-64 border-r border-border">
+            <SidebarContent />
+          </SheetContent>
+        </Sheet>
+      </div>
+
+      {/* Desktop Fixed Sidebar */}
+      <div className="hidden lg:flex w-64 border-r border-border bg-card flex-col h-full shrink-0">
+        <SidebarContent />
+      </div>
+    </>
   );
 }

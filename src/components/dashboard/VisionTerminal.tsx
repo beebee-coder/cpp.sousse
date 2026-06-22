@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect } from 'react';
@@ -38,14 +37,12 @@ export function VisionTerminal() {
     try {
       console.log(`📡 [${timestamp}] [CLIENT_UPLINK] Transmission vers le centre de vision...`);
       
-      // Analyse descriptive via le client hybride
       const analysis = await apiClient.post<VisionAssistantDescriptionOutput>('/api/vision/description', {
         photoDataUri: currentImage
       });
       if (analysis.error) throw new Error(analysis.error);
       setResult(analysis);
       
-      // Récupération RAG via le client hybride
       const retrieved = await apiClient.post<VisualDocumentRetrievalOutput>('/api/vision/retrieval', {
         imageDataUri: currentImage
       });
@@ -79,14 +76,17 @@ export function VisionTerminal() {
   const hasMultipleImages = Array.isArray(PlaceHolderImages) && PlaceHolderImages.length > 1;
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 h-full">
-      <Card className="lg:col-span-2 bg-black border-primary/20 relative overflow-hidden group">
-        <div className="absolute top-4 left-4 z-10 flex gap-2">
-          <StatusBadge status="online" label="FLUX_CAM_01" />
-          <StatusBadge status={isAnalyzing ? "busy" : "online"} label={isAnalyzing ? "AI_OCCUPÉE" : "AI_EN_ATTENTE"} />
+    <div className="flex flex-col lg:grid lg:grid-cols-3 gap-4 h-full">
+      <Card className="lg:col-span-2 bg-black border-primary/20 relative overflow-hidden group min-h-[300px] lg:min-h-0 shrink-0">
+        <div className="absolute top-4 left-4 lg:left-4 z-10 flex gap-2">
+          {/* On mobile, we might want to offset badges if the menu button is nearby, 
+              but since we put the button at left-4, we handle it in Sidebar.tsx trigger position */}
+          <div className="lg:hidden w-10" /> 
+          <StatusBadge status="online" label="CAM_01" />
+          <StatusBadge status={isAnalyzing ? "busy" : "online"} label={isAnalyzing ? "BUSY" : "READY"} />
         </div>
         
-        <div className="relative w-full h-full min-h-[400px]">
+        <div className="relative w-full h-full min-h-[300px]">
           {currentImage ? (
             <Image 
               src={currentImage} 
@@ -100,17 +100,17 @@ export function VisionTerminal() {
             <div className="w-full h-full flex flex-col items-center justify-center bg-muted/10">
               <Camera className="w-12 h-12 text-muted-foreground mb-4 opacity-20" />
               <p className="text-muted-foreground font-code text-[10px] uppercase tracking-widest">
-                Aucune entrée visuelle détectée
+                Aucune entrée détectée
               </p>
             </div>
           )}
           
           <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] z-2 bg-[length:100%_4px,3px_100%] opacity-30" />
           
-          {result?.objects.map((obj, i) => (
+          {result?.objects.slice(0, 3).map((obj, i) => (
             <div 
               key={obj + i} 
-              className="absolute border border-primary/50 bg-primary/10 text-primary text-[10px] p-1 font-code animate-in fade-in zoom-in duration-300"
+              className="absolute border border-primary/50 bg-primary/10 text-primary text-[9px] lg:text-[10px] p-1 font-code animate-in fade-in zoom-in duration-300"
               style={{ top: `${20 + (i * 12)}%`, left: `${15 + (i * 8)}%` }}
             >
               [DET] : {obj}
@@ -118,121 +118,98 @@ export function VisionTerminal() {
           ))}
 
           {error && (
-            <div className="absolute inset-0 flex items-center justify-center bg-destructive/20 backdrop-blur-sm z-20">
-              <div className="bg-background border border-destructive p-4 flex flex-col items-center gap-3 max-w-xs text-center">
-                <AlertTriangle className="w-8 h-8 text-destructive" />
-                <p className="text-[10px] font-code text-destructive uppercase font-bold">{error}</p>
-                <Button size="sm" variant="outline" onClick={handleAnalyze} className="h-7 text-[9px] uppercase font-code">Réessayer Liaison</Button>
+            <div className="absolute inset-0 flex items-center justify-center bg-destructive/20 backdrop-blur-sm z-20 p-4">
+              <div className="bg-background border border-destructive p-4 flex flex-col items-center gap-3 max-w-xs text-center rounded-sm">
+                <AlertTriangle className="w-6 h-6 text-destructive" />
+                <p className="text-[9px] font-code text-destructive uppercase font-bold">{error}</p>
+                <Button size="sm" variant="outline" onClick={handleAnalyze} className="h-7 text-[9px] uppercase font-code">Réessayer</Button>
               </div>
             </div>
           )}
         </div>
 
-        <div className="absolute bottom-4 left-4 right-4 flex justify-between items-center z-10">
-          <div className="flex gap-2">
-            <Button 
-              size="sm" 
-              variant="outline" 
-              className="bg-background/80 hover:bg-background border-border" 
-              onClick={cycleImage} 
-              disabled={!hasMultipleImages || isAnalyzing}
-            >
-              <RefreshCcw className="w-4 h-4 mr-2" />
-              CHANGER SOURCE
-            </Button>
-          </div>
+        <div className="absolute bottom-4 left-4 right-4 flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-2 z-10">
+          <Button 
+            size="sm" 
+            variant="outline" 
+            className="bg-background/80 hover:bg-background border-border text-[10px] uppercase font-bold" 
+            onClick={cycleImage} 
+            disabled={!hasMultipleImages || isAnalyzing}
+          >
+            <RefreshCcw className="w-3.5 h-3.5 mr-2" />
+            SOURCE
+          </Button>
           <Button 
             disabled={isAnalyzing || !currentImage}
             onClick={handleAnalyze}
-            className="bg-primary text-primary-foreground hover:bg-primary/90 font-headline font-bold uppercase tracking-wider text-xs"
+            className="bg-primary text-primary-foreground hover:bg-primary/90 font-headline font-bold uppercase tracking-wider text-[10px] h-8 lg:h-10"
           >
             {isAnalyzing ? (
-              <RefreshCcw className="w-4 h-4 mr-2 animate-spin" />
+              <RefreshCcw className="w-3.5 h-3.5 mr-2 animate-spin" />
             ) : (
-              <Cpu className="w-4 h-4 mr-2" />
+              <Cpu className="w-3.5 h-3.5 mr-2" />
             )}
-            {isAnalyzing ? "Traitement..." : "Lancer l'Analyse"}
+            {isAnalyzing ? "Traitement..." : "Analyser"}
           </Button>
         </div>
       </Card>
 
-      <div className="space-y-4 h-full flex flex-col">
-        <Card className="flex-1 bg-card/50 border-border p-4 overflow-auto terminal-scroll">
-          <div className="flex items-center gap-2 mb-4 border-b border-border pb-2">
-            <Layers className="w-4 h-4 text-primary" />
-            <h3 className="font-headline text-xs font-bold uppercase tracking-widest">Journaux d'Analyse</h3>
+      <div className="flex flex-col gap-4 min-h-0 flex-1 lg:h-full">
+        <Card className="flex-1 bg-card/50 border-border p-3 lg:p-4 overflow-auto terminal-scroll min-h-[150px]">
+          <div className="flex items-center gap-2 mb-3 border-b border-border pb-2 shrink-0">
+            <Layers className="w-3.5 h-3.5 text-primary" />
+            <h3 className="font-headline text-[10px] lg:text-xs font-bold uppercase tracking-widest">Journaux d'Analyse</h3>
           </div>
           
           {result ? (
-            <div className="space-y-4 font-code text-[11px] leading-relaxed">
-              <div className="text-secondary opacity-80 uppercase tracking-tighter animate-pulse">
-                [SUCCÈS] Traitement visuel terminé
-              </div>
+            <div className="space-y-3 font-code text-[10px] lg:text-[11px] leading-relaxed">
               <div className="p-2 bg-background/50 border border-border rounded-sm">
-                <p className="text-muted-foreground mb-2 text-[10px] uppercase font-bold tracking-widest">&gt; Description</p>
+                <p className="text-muted-foreground mb-1 text-[9px] uppercase font-bold">&gt; Description</p>
                 <p>{result.description}</p>
               </div>
-              <div className="grid grid-cols-1 gap-4">
-                <div>
-                  <p className="text-muted-foreground mb-2 text-[10px] uppercase font-bold tracking-widest">&gt; Objets Identifiés</p>
-                  <div className="flex flex-wrap gap-1">
-                    {result.objects.map((o, i) => (
-                      <span key={o + i} className="px-1.5 py-0.5 bg-primary/10 border border-primary/20 text-primary rounded-sm">
-                        {o}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <p className="text-muted-foreground mb-2 text-[10px] uppercase font-bold tracking-widest">&gt; Catégories</p>
-                  <div className="flex flex-wrap gap-1">
-                    {result.categories.map((c, i) => (
-                      <span key={c + i} className="px-1.5 py-0.5 bg-secondary/10 border border-secondary/20 text-secondary rounded-sm">
-                        {c}
-                      </span>
-                    ))}
-                  </div>
-                </div>
+              <div className="flex flex-wrap gap-1">
+                {result.objects.map((o, i) => (
+                  <span key={o + i} className="px-1.5 py-0.5 bg-primary/10 border border-primary/20 text-primary rounded-sm text-[9px]">
+                    {o}
+                  </span>
+                ))}
               </div>
             </div>
           ) : (
-            <div className="h-full flex flex-col items-center justify-center text-muted-foreground/30">
-              <Search className={cn("w-8 h-8 mb-2", isAnalyzing && "animate-spin text-primary")} />
-              <p className="font-code text-[10px] uppercase tracking-widest">
-                {isAnalyzing ? "Traitement Liaison..." : "En attente d'Analyse"}
+            <div className="h-full flex flex-col items-center justify-center text-muted-foreground/30 py-8">
+              <Search className={cn("w-6 h-6 mb-2", isAnalyzing && "animate-spin text-primary")} />
+              <p className="font-code text-[9px] uppercase tracking-widest text-center">
+                {isAnalyzing ? "Traitement..." : "En attente"}
               </p>
             </div>
           )}
         </Card>
 
-        <Card className="flex-1 bg-card/50 border-border p-4 overflow-auto terminal-scroll">
-          <div className="flex items-center gap-2 mb-4 border-b border-border pb-2">
-            <Search className="w-4 h-4 text-primary" />
-            <h3 className="font-headline text-xs font-bold uppercase tracking-widest">Registre RAG Visuel</h3>
+        <Card className="flex-1 bg-card/50 border-border p-3 lg:p-4 overflow-auto terminal-scroll min-h-[150px]">
+          <div className="flex items-center gap-2 mb-3 border-b border-border pb-2 shrink-0">
+            <Search className="w-3.5 h-3.5 text-primary" />
+            <h3 className="font-headline text-[10px] lg:text-xs font-bold uppercase tracking-widest">Registre RAG</h3>
           </div>
 
           {docs ? (
-            <div className="space-y-3 font-code text-[11px]">
-              <div className="p-2 border border-primary/20 bg-primary/5 rounded-sm mb-4">
-                <p className="text-muted-foreground text-[10px] uppercase font-bold tracking-widest mb-1">Correspondance Composant</p>
-                <p className="text-primary font-bold uppercase">{docs.componentDescription}</p>
+            <div className="space-y-2 font-code text-[10px] lg:text-[11px]">
+              <div className="p-1.5 border border-primary/20 bg-primary/5 rounded-sm">
+                <p className="text-primary font-bold uppercase text-[9px]">{docs.componentDescription}</p>
               </div>
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 {docs.relevantDocuments.map((doc, i) => (
                   <div key={doc.title + i} className="p-2 border border-border bg-background/40 hover:border-primary/50 transition-colors cursor-pointer group rounded-sm">
-                    <div className="flex justify-between items-start mb-1">
-                      <span className="text-primary font-bold uppercase tracking-tighter">{doc.title}</span>
-                    </div>
-                    <p className="text-[10px] text-muted-foreground leading-tight italic">{doc.summary}</p>
+                    <span className="text-primary font-bold uppercase text-[9px] block truncate">{doc.title}</span>
+                    <p className="text-[9px] text-muted-foreground leading-tight italic truncate">{doc.summary}</p>
                   </div>
                 ))}
               </div>
             </div>
           ) : (
-            <div className="h-full flex flex-col items-center justify-center text-muted-foreground/30">
-              <Layers className={cn("w-8 h-8 mb-2", isAnalyzing && "animate-bounce text-secondary")} />
-              <p className="font-code text-[10px] uppercase tracking-widest">
-                {isAnalyzing ? "Récupération Schémas..." : "Registre en Veille"}
+            <div className="h-full flex flex-col items-center justify-center text-muted-foreground/30 py-8">
+              <Layers className={cn("w-6 h-6 mb-2", isAnalyzing && "animate-bounce text-secondary")} />
+              <p className="font-code text-[9px] uppercase tracking-widest text-center">
+                {isAnalyzing ? "Récupération..." : "Registre en Veille"}
               </p>
             </div>
           )}
