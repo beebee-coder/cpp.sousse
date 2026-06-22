@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   LayoutDashboard, 
   Terminal, 
@@ -44,11 +44,15 @@ interface SidebarContentProps {
 }
 
 function SidebarContent({ pathname, isDesktop, isReady, onNavigate }: SidebarContentProps) {
+  const [mounted, setMounted] = useState(false);
   const isDev = process.env.NODE_ENV === 'development';
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   return (
     <div className="flex flex-col h-full bg-card overflow-hidden">
-      {/* Header fixe */}
       <div className="p-6 border-b border-border shrink-0">
         <Link href="/dashboard" className="flex items-center gap-3 mb-1" onClick={onNavigate}>
           <div className="w-8 h-8 bg-primary rounded flex items-center justify-center shadow-[0_0_15px_rgba(50,181,212,0.3)] shrink-0">
@@ -59,7 +63,6 @@ function SidebarContent({ pathname, isDesktop, isReady, onNavigate }: SidebarCon
         <p className="text-[10px] text-muted-foreground font-code uppercase tracking-[0.2em] truncate">PRECISION_ENGINE v1.0</p>
       </div>
 
-      {/* Zone de navigation défilante */}
       <nav className="flex-1 p-4 space-y-1 overflow-y-auto terminal-scroll min-h-0">
         <div className="mb-4">
           <p className="px-3 text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">Navigation</p>
@@ -110,11 +113,10 @@ function SidebarContent({ pathname, isDesktop, isReady, onNavigate }: SidebarCon
         )}
       </nav>
 
-      {/* Footer fixe avec protection contre le layout shift */}
       <div className="p-4 border-t border-border bg-black/20 space-y-3 shrink-0">
         <div className="flex items-center justify-between h-8">
           <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-widest">Mode</span>
-          {!isReady ? (
+          {!mounted || !isReady ? (
             <div className="flex items-center gap-2 px-2 py-1 bg-muted/20 rounded-sm min-w-[90px] justify-center h-7">
               <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />
             </div>
@@ -140,7 +142,7 @@ function SidebarContent({ pathname, isDesktop, isReady, onNavigate }: SidebarCon
             </div>
           )}
         </div>
-        <SyncPanel />
+        {mounted && <SyncPanel />}
       </div>
     </div>
   );
@@ -155,7 +157,6 @@ export function DashboardSidebar() {
 
   return (
     <>
-      {/* Mobile Nav Button */}
       <div className="lg:hidden fixed top-4 left-4 z-50">
         <Sheet open={open} onOpenChange={setOpen}>
           <SheetTrigger asChild>
@@ -174,7 +175,6 @@ export function DashboardSidebar() {
         </Sheet>
       </div>
 
-      {/* Desktop Fixed Sidebar */}
       <div className="hidden lg:flex w-64 border-r border-border bg-card flex-col h-full shrink-0 overflow-hidden">
         <SidebarContent 
           pathname={pathname} 
