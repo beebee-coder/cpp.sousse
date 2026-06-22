@@ -18,8 +18,10 @@ import {
   ChevronDown,
   ChevronUp,
   Image as ImageIcon,
+  Video,
   Layers,
-  ArrowRight
+  ArrowRight,
+  Link as LinkIcon
 } from 'lucide-react';
 
 import { Card } from '@/components/ui/card';
@@ -42,6 +44,7 @@ interface ProcedureStep {
   abnormalConditions: string;
   alarms: string;
   imageUrl?: string;
+  videoUrl?: string;
 }
 
 interface Procedure {
@@ -71,7 +74,7 @@ export default function DatasetPage() {
   // Procedure State
   const [procTitle, setProcTitle] = useState('');
   const [procSteps, setProcSteps] = useState<ProcedureStep[]>([
-    { id: '1', title: '', description: '', subSteps: [], normalConditions: '', abnormalConditions: '', alarms: '' }
+    { id: '1', title: '', description: '', subSteps: [], normalConditions: '', abnormalConditions: '', alarms: '', imageUrl: '', videoUrl: '' }
   ]);
 
   const [isIngesting, setIsIngesting] = useState(false);
@@ -85,7 +88,9 @@ export default function DatasetPage() {
       subSteps: [], 
       normalConditions: '', 
       abnormalConditions: '', 
-      alarms: '' 
+      alarms: '',
+      imageUrl: '',
+      videoUrl: ''
     }]);
   };
 
@@ -122,7 +127,9 @@ export default function DatasetPage() {
           `Détail: ${s.description}\n` +
           (s.normalConditions ? `Conditions Normales: ${s.normalConditions}\n` : '') +
           (s.abnormalConditions ? `Conditions Anormales: ${s.abnormalConditions}\n` : '') +
-          (s.alarms ? `⚠ ALERTES: ${s.alarms}\n` : '')
+          (s.alarms ? `⚠ ALERTES: ${s.alarms}\n` : '') +
+          (s.imageUrl ? `[MEDIA_IMAGE]: ${s.imageUrl}\n` : '') +
+          (s.videoUrl ? `[MEDIA_VIDEO]: ${s.videoUrl}\n` : '')
         )).join('\n---\n');
 
       setQaItems(prev => [{ 
@@ -132,7 +139,7 @@ export default function DatasetPage() {
       }, ...prev]);
       
       setProcTitle('');
-      setProcSteps([{ id: '1', title: '', description: '', subSteps: [], normalConditions: '', abnormalConditions: '', alarms: '' }]);
+      setProcSteps([{ id: '1', title: '', description: '', subSteps: [], normalConditions: '', abnormalConditions: '', alarms: '', imageUrl: '', videoUrl: '' }]);
       setMode('qa');
       toast({ title: "Ajouté", description: "La procédure a été ajoutée à la file d'attente." });
     }
@@ -269,7 +276,15 @@ export default function DatasetPage() {
                     {procSteps.map((step, index) => (
                       <Card key={index} className="p-4 border-border bg-black/30 space-y-4 relative group">
                         <div className="flex items-center justify-between border-b border-border/50 pb-2">
-                          <span className="text-[10px] font-bold font-code text-secondary">ÉTAPE {index + 1}</span>
+                          <div className="flex items-center gap-3">
+                            <span className="text-[10px] font-bold font-code text-secondary">ÉTAPE {index + 1}</span>
+                            {(step.imageUrl || step.videoUrl) && (
+                              <div className="flex gap-1">
+                                {step.imageUrl && <ImageIcon className="w-3 h-3 text-primary/50" />}
+                                {step.videoUrl && <Video className="w-3 h-3 text-secondary/50" />}
+                              </div>
+                            )}
+                          </div>
                           <Button 
                             type="button" 
                             variant="ghost" 
@@ -281,25 +296,33 @@ export default function DatasetPage() {
                           </Button>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div className="space-y-3">
-                            <Input 
-                              placeholder="TITRE_ACTION"
-                              value={step.title}
-                              onChange={(e) => updateStep(index, 'title', e.target.value)}
-                              className="h-8 text-[11px] font-code uppercase bg-background"
-                            />
-                            <Textarea 
-                              placeholder="DESCRIPTION_DÉTAILLÉE"
-                              value={step.description}
-                              onChange={(e) => updateStep(index, 'description', e.target.value)}
-                              className="text-[10px] uppercase font-code bg-background min-h-[80px]"
-                            />
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                          {/* Colonne 1: Infos de base */}
+                          <div className="space-y-3 lg:col-span-1">
+                            <div>
+                              <label className="text-[8px] font-bold uppercase text-muted-foreground block mb-1">Titre de l'action</label>
+                              <Input 
+                                placeholder="TITRE_ACTION"
+                                value={step.title}
+                                onChange={(e) => updateStep(index, 'title', e.target.value)}
+                                className="h-8 text-[11px] font-code uppercase bg-background"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[8px] font-bold uppercase text-muted-foreground block mb-1">Description détaillée</label>
+                              <Textarea 
+                                placeholder="DESCRIPTION_DÉTAILLÉE"
+                                value={step.description}
+                                onChange={(e) => updateStep(index, 'description', e.target.value)}
+                                className="text-[10px] uppercase font-code bg-background min-h-[100px]"
+                              />
+                            </div>
                           </div>
 
-                          <div className="grid grid-cols-1 gap-3">
-                            <div className="flex gap-2">
-                              <div className="flex-1 space-y-1">
+                          {/* Colonne 2: Conditions & Alarmes */}
+                          <div className="space-y-3 lg:col-span-1">
+                            <div className="grid grid-cols-2 gap-2">
+                              <div className="space-y-1">
                                 <label className="text-[8px] font-bold text-secondary uppercase flex items-center gap-1">
                                   <Check className="w-2.5 h-2.5" /> Normal
                                 </label>
@@ -307,9 +330,10 @@ export default function DatasetPage() {
                                   value={step.normalConditions}
                                   onChange={(e) => updateStep(index, 'normalConditions', e.target.value)}
                                   className="h-7 text-[9px] font-code bg-background/30"
+                                  placeholder="Statut OK"
                                 />
                               </div>
-                              <div className="flex-1 space-y-1">
+                              <div className="space-y-1">
                                 <label className="text-[8px] font-bold text-destructive uppercase flex items-center gap-1">
                                   <AlertTriangle className="w-2.5 h-2.5" /> Anormal
                                 </label>
@@ -317,6 +341,7 @@ export default function DatasetPage() {
                                   value={step.abnormalConditions}
                                   onChange={(e) => updateStep(index, 'abnormalConditions', e.target.value)}
                                   className="h-7 text-[9px] font-code bg-background/30"
+                                  placeholder="Anomalie"
                                 />
                               </div>
                             </div>
@@ -328,8 +353,50 @@ export default function DatasetPage() {
                                 value={step.alarms}
                                 onChange={(e) => updateStep(index, 'alarms', e.target.value)}
                                 className="h-7 text-[9px] font-code bg-background/30"
+                                placeholder="Déclencher purge..."
                               />
                             </div>
+                          </div>
+
+                          {/* Colonne 3: Médias (Futur) */}
+                          <div className="space-y-3 lg:col-span-1 bg-black/20 p-3 rounded-sm border border-border/30">
+                            <label className="text-[8px] font-bold uppercase text-muted-foreground block mb-2 border-b border-border/50 pb-1">Documentation Visuelle</label>
+                            
+                            <div className="space-y-3">
+                              <div className="flex flex-col gap-2">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[9px] font-code uppercase text-primary flex items-center gap-1.5">
+                                    <ImageIcon className="w-3 h-3" /> Image Bank
+                                  </span>
+                                  <Badge variant="outline" className="text-[7px] h-4 uppercase opacity-50">Prévu</Badge>
+                                </div>
+                                <Input 
+                                  placeholder="URL_IMAGE_TEMP"
+                                  value={step.imageUrl}
+                                  onChange={(e) => updateStep(index, 'imageUrl', e.target.value)}
+                                  className="h-7 text-[9px] font-code bg-background/20"
+                                />
+                              </div>
+
+                              <div className="flex flex-col gap-2">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[9px] font-code uppercase text-secondary flex items-center gap-1.5">
+                                    <Video className="w-3 h-3" /> Video Bank
+                                  </span>
+                                  <Badge variant="outline" className="text-[7px] h-4 uppercase opacity-50">Prévu</Badge>
+                                </div>
+                                <Input 
+                                  placeholder="URL_VIDEO_TEMP"
+                                  value={step.videoUrl}
+                                  onChange={(e) => updateStep(index, 'videoUrl', e.target.value)}
+                                  className="h-7 text-[9px] font-code bg-background/20"
+                                />
+                              </div>
+                            </div>
+                            
+                            <p className="text-[7px] text-muted-foreground italic mt-2 text-center uppercase">
+                              Liaison automatique aux banques d'actifs lors de la phase finale.
+                            </p>
                           </div>
                         </div>
                       </Card>
@@ -343,7 +410,7 @@ export default function DatasetPage() {
                       className="w-full border-dashed border-secondary/30 text-secondary h-9 text-[10px] uppercase font-code"
                     >
                       <Plus className="w-3.5 h-3.5 mr-2" />
-                      Ajouter une Étape
+                      Ajouter une Étape de Procédure
                     </Button>
                   </div>
                 </div>
@@ -354,7 +421,7 @@ export default function DatasetPage() {
                   "font-headline font-bold uppercase text-[10px] h-9 px-8 shadow-lg",
                   mode === 'qa' ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground"
                 )}>
-                  Ajouter à la file d'attente
+                  Ajouter à la file d'attente RAG
                 </Button>
               </div>
             </form>
@@ -369,7 +436,7 @@ export default function DatasetPage() {
               {qaItems.length > 0 && (
                 <Button onClick={handleFinalSubmit} disabled={isIngesting} className="bg-primary text-primary-foreground font-headline font-bold uppercase text-[10px] h-9 px-6 animate-pulse">
                   <UploadCloud className="w-3.5 h-3.5 mr-2" />
-                  {isIngesting ? "Transmission..." : "Synchroniser vers RAG"}
+                  {isIngesting ? "Transmission..." : "Synchroniser vers le Moteur"}
                 </Button>
               )}
             </div>
@@ -385,7 +452,10 @@ export default function DatasetPage() {
               {qaItems.map((item) => (
                 <Card key={item.id} className="p-4 border-border bg-black/20 font-code text-[10px] flex justify-between items-center group rounded-sm hover:border-primary/30 transition-colors">
                   <div className="flex items-center gap-4 flex-1 min-w-0">
-                    <div className="h-8 w-8 rounded-sm bg-primary/10 flex items-center justify-center shrink-0 border border-primary/20">
+                    <div className={cn(
+                      "h-8 w-8 rounded-sm flex items-center justify-center shrink-0 border",
+                      item.question.startsWith('PROCÉDURE') ? "bg-secondary/10 border-secondary/20" : "bg-primary/10 border-primary/20"
+                    )}>
                       {item.question.startsWith('PROCÉDURE') ? <ListOrdered className="w-4 h-4 text-secondary" /> : <MessageSquare className="w-4 h-4 text-primary" />}
                     </div>
                     <div className="truncate">
