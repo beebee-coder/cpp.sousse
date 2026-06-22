@@ -15,7 +15,8 @@ import {
   RefreshCw,
   Loader2,
   Circle,
-  Eye
+  Eye,
+  AlertTriangle
 } from 'lucide-react';
 
 import { Card } from '@/components/ui/card';
@@ -80,7 +81,6 @@ export default function DatasetPage() {
   const [isRecording, setIsRecording] = useState(false);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
 
-  // État pour la prévisualisation du buffer
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewAsset, setPreviewAsset] = useState<{ url: string, type: 'image' | 'video' } | null>(null);
   
@@ -98,9 +98,50 @@ export default function DatasetPage() {
         if (s.imagePreview) URL.revokeObjectURL(s.imagePreview);
         if (s.videoPreview) URL.revokeObjectURL(s.videoPreview);
       });
-      if (cameraStream) cameraStream.getTracks().forEach(track => track.stop());
     };
-  }, [procSteps, cameraStream]);
+  }, []);
+
+  // Effet stabilisé pour la caméra
+  useEffect(() => {
+    let currentStream: MediaStream | null = null;
+
+    const startCamera = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          video: { facingMode: 'environment' }, 
+          audio: cameraType === 'video' 
+        });
+        currentStream = stream;
+        setCameraStream(stream);
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+        }
+      } catch (err: any) {
+        console.error("Camera Access Error:", err);
+        toast({ 
+          title: "Accès Caméra Refusé", 
+          description: "Vérifiez les permissions de votre navigateur ou si vous êtes en HTTPS.", 
+          variant: "destructive" 
+        });
+        setCameraModalOpen(false);
+      }
+    };
+
+    if (cameraOpen) {
+      startCamera();
+    } else {
+      if (cameraStream) {
+        cameraStream.getTracks().forEach(t => t.stop());
+        setCameraStream(null);
+      }
+    }
+
+    return () => {
+      if (currentStream) {
+        currentStream.getTracks().forEach(t => t.stop());
+      }
+    };
+  }, [cameraOpen, cameraType]);
 
   const compressImage = async (file: File): Promise<Blob> => {
     return new Promise((resolve, reject) => {
@@ -150,7 +191,7 @@ export default function DatasetPage() {
       }
       setProcSteps(newSteps);
     } catch (err) {
-      toast({ title: "Erreur Traitement", description: "Mémoire saturée.", variant: "destructive" });
+      toast({ title: "Erreur Traitement", description: "Fichier trop lourd ou corrompu.", variant: "destructive" });
     }
   };
 
@@ -168,33 +209,11 @@ export default function DatasetPage() {
     }
   };
 
-  const startCamera = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: 'environment' }, 
-        audio: cameraType === 'video' 
-      });
-      setCameraStream(stream);
-      if (videoRef.current) videoRef.current.srcObject = stream;
-    } catch (err) {
-      toast({ title: "Accès Caméra Refusé", description: "Vérifiez vos permissions.", variant: "destructive" });
-      setCameraModalOpen(false);
-    }
-  };
-
-  useEffect(() => {
-    if (cameraOpen) {
-      startCamera();
-    } else {
-      if (cameraStream) {
-        cameraStream.getTracks().forEach(track => track.stop());
-        setCameraStream(null);
-      }
-    }
-  }, [cameraOpen]);
-
-  const capturePhoto = () => {
+  const capturePhoto = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
     if (!videoRef.current || activeStepIndex === null) return;
+    
     const canvas = document.createElement('canvas');
     canvas.width = videoRef.current.videoWidth;
     canvas.height = videoRef.current.videoHeight;
@@ -208,7 +227,9 @@ export default function DatasetPage() {
     }, 'image/jpeg', 0.9);
   };
 
-  const toggleRecording = () => {
+  const toggleRecording = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
     if (!isRecording) {
       if (!cameraStream) return;
       recordedChunksRef.current = [];
@@ -235,7 +256,7 @@ export default function DatasetPage() {
     e.preventDefault();
     if (mode === 'qa') {
       if (!question.trim() || !answer.trim()) {
-        toast({ title: "Champs Requis", description: "La question et la réponse sont obligatoires.", variant: "destructive" });
+        toast({ title: "Champs Requis", description: "Symptôme et résolution requis.", variant: "destructive" });
         return;
       }
       setQaItems(prev => [{ id: Date.now().toString(), type: 'qa', label: question, details: answer }, ...prev]);
@@ -258,7 +279,7 @@ export default function DatasetPage() {
       setProcTitle('');
       setProcSteps([{ id: '1', title: '', description: '', normalConditions: '', abnormalConditions: '', alarms: '' }]);
     }
-    toast({ title: "Ajouté", description: "Élément placé dans la file d'attente." });
+    toast({ title: "Ajouté", description: "Élément en file d'attente." });
   };
 
   const handleFinalSubmit = async () => {
@@ -266,11 +287,13 @@ export default function DatasetPage() {
     setIsIngesting(true);
     setIngestProgress(0);
     try {
+      // 1. Envoi du texte
       await apiClient.post('/api/vector/ingest', {
         items: qaItems.map(i => ({ question: i.label, answer: i.details })),
         metadata: { collection: 'industrial_manuals' }
       });
       
+      // 2. Envoi séquentiel des assets multimédias (Atomic Sync)
       const itemsWithAssets = qaItems.filter(i => i.mediaAssets?.length);
       for (const item of itemsWithAssets) {
         for (const asset of item.mediaAssets!) {
@@ -279,6 +302,7 @@ export default function DatasetPage() {
             reader.onload = () => res(reader.result as string);
             reader.readAsDataURL(asset.file);
           });
+          
           await apiClient.post('/api/sync/upload', {
             userId: 'admin', projectId: 'project-001',
             items: [{ 
@@ -291,10 +315,11 @@ export default function DatasetPage() {
           });
         }
       }
-      toast({ title: "Succès", description: "Données synchronisées vers le moteur." });
+      
+      toast({ title: "Moteur à jour", description: "Synchronisation réussie." });
       setQaItems([]);
     } catch (e) {
-      toast({ title: "Erreur Sync", description: "Liaison perdue ou quota dépassé.", variant: "destructive" });
+      toast({ title: "Erreur Sync", description: "Vérifiez votre connexion.", variant: "destructive" });
     } finally {
       setIsIngesting(false);
     }
@@ -306,6 +331,7 @@ export default function DatasetPage() {
     <div className="flex flex-col lg:flex-row h-screen bg-background overflow-hidden">
       <DashboardSidebar />
       
+      {/* Inputs cachés pour mode Desktop */}
       <input type="file" accept="image/*" ref={desktopPhotoRef} className="hidden" onChange={(e) => {
         const file = e.target.files?.[0];
         if (file && activeStepIndex !== null) processCapturedFile(file, activeStepIndex, 'image');
@@ -328,8 +354,8 @@ export default function DatasetPage() {
             </Badge>
           </div>
           <div className="flex bg-muted/30 p-1 rounded-sm border border-border">
-            <button onClick={() => setMode('qa')} className={cn("px-3 py-1.5 text-[9px] font-code uppercase rounded-sm transition-all", mode === 'qa' ? "bg-primary text-primary-foreground" : "text-muted-foreground")}>Q / R</button>
-            <button onClick={() => setMode('procedure')} className={cn("px-3 py-1.5 text-[9px] font-code uppercase rounded-sm transition-all", mode === 'procedure' ? "bg-secondary text-secondary-foreground" : "text-muted-foreground")}>Procédure</button>
+            <button type="button" onClick={() => setMode('qa')} className={cn("px-3 py-1.5 text-[9px] font-code uppercase rounded-sm transition-all", mode === 'qa' ? "bg-primary text-primary-foreground" : "text-muted-foreground")}>Q / R</button>
+            <button type="button" onClick={() => setMode('procedure')} className={cn("px-3 py-1.5 text-[9px] font-code uppercase rounded-sm transition-all", mode === 'procedure' ? "bg-secondary text-secondary-foreground" : "text-muted-foreground")}>Procédure</button>
           </div>
         </header>
 
@@ -339,17 +365,17 @@ export default function DatasetPage() {
               {mode === 'qa' ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <label className="text-[9px] font-bold uppercase text-muted-foreground ml-1">Question / Symptôme</label>
-                    <Textarea value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="TAPEZ LE PROBLÈME..." className="h-32 bg-background font-code text-xs uppercase border-primary/20" />
+                    <label className="text-[9px] font-bold uppercase text-muted-foreground ml-1">Symptôme Industriel</label>
+                    <Textarea value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="DÉCRIVEZ LE PROBLÈME..." className="h-32 bg-background font-code text-xs uppercase border-primary/20" />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-[9px] font-bold uppercase text-muted-foreground ml-1">Réponse / Solution</label>
-                    <Textarea value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="TAPEZ LA RÉSOLUTION..." className="h-32 bg-background font-code text-xs uppercase border-secondary/20" />
+                    <label className="text-[9px] font-bold uppercase text-muted-foreground ml-1">Résolution / Manuel</label>
+                    <Textarea value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="DÉCRIVEZ LA SOLUTION..." className="h-32 bg-background font-code text-xs uppercase border-secondary/20" />
                   </div>
                 </div>
               ) : (
                 <div className="space-y-6">
-                  <Input value={procTitle} onChange={(e) => setProcTitle(e.target.value)} placeholder="TITRE_DE_LA_PROCÉDURE_INDUSTRIELLE" className="bg-background font-headline uppercase h-11 border-primary/30" />
+                  <Input value={procTitle} onChange={(e) => setProcTitle(e.target.value)} placeholder="TITRE_DE_LA_PROCÉDURE" className="bg-background font-headline uppercase h-11 border-primary/30" />
                   {procSteps.map((step, index) => (
                     <Card key={step.id} className="p-4 border-border bg-black/30 space-y-4">
                       <div className="flex justify-between items-center border-b border-border/50 pb-2">
@@ -358,23 +384,23 @@ export default function DatasetPage() {
                       </div>
                       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                         <div className="space-y-3">
-                          <Input placeholder="ACTION_À_MENER" value={step.title} onChange={(e) => {
+                          <Input placeholder="ACTION" value={step.title} onChange={(e) => {
                             const n = [...procSteps]; n[index].title = e.target.value; setProcSteps(n);
                           }} className="h-8 text-[11px] font-code uppercase bg-background" />
-                          <Textarea placeholder="DESCRIPTION_DÉTAILLÉE" value={step.description} onChange={(e) => {
+                          <Textarea placeholder="DESCRIPTION" value={step.description} onChange={(e) => {
                             const n = [...procSteps]; n[index].description = e.target.value; setProcSteps(n);
                           }} className="text-[10px] uppercase font-code bg-background min-h-[80px]" />
                         </div>
                         <div className="space-y-3">
-                          <Input value={step.normalConditions} placeholder="✓ ÉTAT_NORMAL_ATTENDU" onChange={(e) => {
+                          <Input value={step.normalConditions} placeholder="✓ ÉTAT ATTENDU" onChange={(e) => {
                             const n = [...procSteps]; n[index].normalConditions = e.target.value; setProcSteps(n);
                           }} className="h-8 text-[9px] font-code bg-background/30" />
-                          <Input value={step.abnormalConditions} placeholder="✗ ANOMALIE_POTENTIELLE" onChange={(e) => {
+                          <Input value={step.abnormalConditions} placeholder="✗ ANOMALIE" onChange={(e) => {
                             const n = [...procSteps]; n[index].abnormalConditions = e.target.value; setProcSteps(n);
                           }} className="h-8 text-[9px] font-code bg-background/30" />
                         </div>
                         <div className="bg-black/20 p-3 rounded-sm border border-border/30">
-                          <p className="text-[8px] font-bold uppercase text-muted-foreground mb-3 tracking-widest">Documentation Visuelle</p>
+                          <p className="text-[8px] font-bold uppercase text-muted-foreground mb-3 tracking-widest">Capture Terrain</p>
                           <div className="flex gap-2 mb-3">
                             <Button type="button" variant="outline" size="sm" className="flex-1 h-8 text-[9px] font-code uppercase" onClick={(e) => handleTriggerCapture(e, index, 'image')}>
                               <Camera className="w-3 h-3 mr-2 text-primary" /> {isDesktop ? "IMPORT_PC" : "PHOTO_CAM"}
@@ -386,7 +412,7 @@ export default function DatasetPage() {
                           <div className="space-y-1.5">
                             {step.imagePreview && (
                               <div className="flex items-center justify-between p-1.5 bg-background/40 rounded-sm border border-primary/20">
-                                <span className="text-[8px] font-code text-primary uppercase flex items-center gap-1.5"><ImageIcon className="w-2.5 h-2.5" /> IMAGE_OK</span>
+                                <span className="text-[8px] font-code text-primary uppercase flex items-center gap-1.5"><ImageIcon className="w-2.5 h-2.5" /> IMAGE_CHARGEE</span>
                                 <div className="flex gap-1">
                                   <button type="button" onClick={() => { setPreviewAsset({ url: step.imagePreview!, type: 'image' }); setPreviewOpen(true); }} className="p-1 hover:text-primary"><Eye className="w-3 h-3" /></button>
                                   <button type="button" onClick={() => {
@@ -397,7 +423,7 @@ export default function DatasetPage() {
                             )}
                             {step.videoPreview && (
                               <div className="flex items-center justify-between p-1.5 bg-background/40 rounded-sm border border-secondary/20">
-                                <span className="text-[8px] font-code text-secondary uppercase flex items-center gap-1.5"><Video className="w-2.5 h-2.5" /> VIDÉO_OK</span>
+                                <span className="text-[8px] font-code text-secondary uppercase flex items-center gap-1.5"><Video className="w-2.5 h-2.5" /> VIDEO_CHARGEE</span>
                                 <div className="flex gap-1">
                                   <button type="button" onClick={() => { setPreviewAsset({ url: step.videoPreview!, type: 'video' }); setPreviewOpen(true); }} className="p-1 hover:text-secondary"><Eye className="w-3 h-3" /></button>
                                   <button type="button" onClick={() => {
@@ -415,7 +441,7 @@ export default function DatasetPage() {
                 </div>
               )}
               <div className="flex justify-end pt-4">
-                <Button type="submit" size="sm" className={cn("font-headline font-bold uppercase text-[10px] h-9 px-8 shadow-lg", mode === 'qa' ? "bg-primary" : "bg-secondary")}>Ajouter à la file d'attente d'entraînement</Button>
+                <Button type="submit" size="sm" className={cn("font-headline font-bold uppercase text-[10px] h-9 px-8 shadow-lg", mode === 'qa' ? "bg-primary" : "bg-secondary")}>Ajouter à la file d'attente</Button>
               </div>
             </form>
           </Card>
@@ -423,9 +449,9 @@ export default function DatasetPage() {
           {qaItems.length > 0 && (
             <div className="space-y-4 pb-12">
               <div className="flex justify-between items-center px-2">
-                <h3 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2"><Layers className="w-4 h-4 text-primary" /> File d'attente ({qaItems.length})</h3>
+                <h3 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2"><Layers className="w-4 h-4 text-primary" /> Attente Sync ({qaItems.length})</h3>
                 <Button onClick={handleFinalSubmit} disabled={isIngesting} className="bg-primary text-[10px] uppercase font-bold h-9 px-6 animate-pulse">
-                  {isIngesting ? <RefreshCw className="w-3.5 h-3.5 mr-2 animate-spin" /> : <UploadCloud className="w-3.5 h-3.5 mr-2" />} Synchroniser vers le Moteur
+                  {isIngesting ? <RefreshCw className="w-3.5 h-3.5 mr-2 animate-spin" /> : <UploadCloud className="w-3.5 h-3.5 mr-2" />} Lancer la Synchronisation
                 </Button>
               </div>
               <div className="grid grid-cols-1 gap-2">
@@ -436,9 +462,6 @@ export default function DatasetPage() {
                         {item.type === 'procedure' ? 'PROCÉDURE' : 'Q/R'}
                       </Badge>
                       <span className="text-muted-foreground uppercase">{item.label}</span>
-                      {item.mediaAssets && item.mediaAssets.length > 0 && (
-                        <Badge className="bg-yellow-600/20 text-yellow-500 border-none text-[7px] h-3.5 px-1 uppercase tracking-tighter">Web_Buffer</Badge>
-                      )}
                     </div>
                     <Button variant="ghost" size="icon" onClick={() => setQaItems(qaItems.filter(i => i.id !== item.id))} className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 className="w-3 h-3 text-destructive" /></Button>
                   </Card>
@@ -449,43 +472,54 @@ export default function DatasetPage() {
         </div>
       </main>
 
-      {/* MODAL CAMÉRA WebRTC (Mode Web uniquement) */}
+      {/* MODAL CAMÉRA WebRTC DIRECTE */}
       <Dialog open={cameraOpen} onOpenChange={setCameraModalOpen}>
-        <DialogContent className="max-w-xl bg-card border-primary/30 p-0 sm:rounded-sm overflow-hidden">
+        <DialogContent className="max-w-xl bg-card border-primary/30 p-0 sm:rounded-sm overflow-hidden" onInteractOutside={(e) => e.preventDefault()}>
           <div className="relative aspect-video bg-black flex items-center justify-center">
-            <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+            {cameraStream ? (
+              <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+            ) : (
+              <div className="flex flex-col items-center gap-4 text-muted-foreground">
+                <Loader2 className="w-8 h-8 animate-spin" />
+                <span className="text-[10px] font-code uppercase">Initialisation du matériel...</span>
+              </div>
+            )}
             <div className="absolute inset-0 pointer-events-none border-[12px] border-primary/5 opacity-30" />
             {isRecording && <div className="absolute top-4 right-4 flex items-center gap-2 bg-red-600 px-2 py-1 rounded-full animate-pulse text-[10px] font-bold text-white uppercase"><Circle className="w-3 h-3 fill-white" /> Enregistrement...</div>}
           </div>
           <div className="p-4 flex items-center justify-center gap-6 bg-card/90">
             <Button variant="ghost" onClick={() => setCameraModalOpen(false)} className="text-muted-foreground text-[10px] uppercase font-code">Annuler</Button>
-            {cameraType === 'image' ? (
-              <Button onClick={capturePhoto} className="h-14 w-14 rounded-full bg-primary text-primary-foreground shadow-2xl border-4 border-background hover:scale-105 transition-transform"><Camera className="w-6 h-6" /></Button>
-            ) : (
-              <Button onClick={toggleRecording} className={cn("h-14 w-14 rounded-full shadow-2xl border-4 border-background transition-all", isRecording ? "bg-red-600 animate-pulse" : "bg-secondary")}><Video className="w-6 h-6" /></Button>
+            
+            {cameraStream && (
+              <>
+                {cameraType === 'image' ? (
+                  <Button onClick={capturePhoto} className="h-14 w-14 rounded-full bg-primary text-primary-foreground shadow-2xl border-4 border-background hover:scale-105 transition-transform"><Camera className="w-6 h-6" /></Button>
+                ) : (
+                  <Button onClick={toggleRecording} className={cn("h-14 w-14 rounded-full shadow-2xl border-4 border-background transition-all", isRecording ? "bg-red-600 animate-pulse" : "bg-secondary")}><Video className="w-6 h-6" /></Button>
+                )}
+              </>
             )}
             <div className="w-[60px]" />
           </div>
         </DialogContent>
       </Dialog>
 
-      {/* MODAL PRÉVISUALISATION BUFFER */}
+      {/* MODAL PRÉVISUALISATION RÉELLE */}
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
         <DialogContent className="max-w-3xl bg-black/95 border-primary/50 p-1 sm:rounded-sm overflow-hidden">
           <div className="relative w-full h-full flex flex-col">
             <div className="p-2 border-b border-border bg-card/50 flex justify-between items-center">
-              <span className="text-[10px] font-bold font-code text-primary uppercase">Audit Visuel du Buffer</span>
-              <Badge variant="outline" className="text-[8px] uppercase h-4 border-yellow-600/40 text-yellow-500">Web_Buffer Provisoire</Badge>
+              <span className="text-[10px] font-bold font-code text-primary uppercase">Contrôle Qualité Média</span>
             </div>
             <div className="flex-1 flex items-center justify-center bg-black min-h-[300px] max-h-[70vh]">
               {previewAsset?.type === 'image' ? (
-                <img src={previewAsset.url} alt="Buffer Preview" className="max-w-full max-h-full object-contain" />
+                <img src={previewAsset.url} alt="Aperçu" className="max-w-full max-h-full object-contain" />
               ) : previewAsset?.type === 'video' ? (
                 <video src={previewAsset.url} controls autoPlay className="max-w-full max-h-full" />
               ) : null}
             </div>
-            <div className="p-4 bg-card/80 border-t border-border flex justify-center gap-4">
-              <Button onClick={() => setPreviewOpen(false)} className="bg-primary text-primary-foreground font-bold uppercase text-[10px] h-9 px-8">Confirmer et fermer</Button>
+            <div className="p-4 bg-card/80 border-t border-border flex justify-center">
+              <Button onClick={() => setPreviewOpen(false)} className="bg-primary text-primary-foreground font-bold uppercase text-[10px] h-9 px-8">Valider</Button>
             </div>
           </div>
         </DialogContent>
