@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   Database, 
@@ -10,22 +10,17 @@ import {
   UploadCloud, 
   CheckCircle2,
   Cpu,
-  Globe,
   ListOrdered,
   MessageSquare,
-  AlertTriangle,
-  Check,
   Image as ImageIcon,
   Video,
   Layers,
-  ArrowRight,
   Camera,
-  Lock,
   Eye,
   RefreshCw,
-  Loader2,
   Smartphone,
-  Info
+  Info,
+  X
 } from 'lucide-react';
 
 import { Card } from '@/components/ui/card';
@@ -33,6 +28,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogHeader, 
+  DialogTitle 
+} from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { apiClient } from '@/lib/api-client';
 import { usePlatform } from '@/components/PlatformProvider';
@@ -77,6 +78,9 @@ export default function DatasetPage() {
 
   const [isIngesting, setIsIngesting] = useState(false);
   const [lastResult, setLastResult] = useState<{ provider: string, count: number } | null>(null);
+  
+  // Preview Media State
+  const [previewMedia, setPreviewMedia] = useState<{ url: string, type: 'image' | 'video' } | null>(null);
 
   const addStep = () => {
     setProcSteps([...procSteps, { 
@@ -108,8 +112,9 @@ export default function DatasetPage() {
   const handleCapture = (index: number, type: 'image' | 'video') => {
     const timestamp = Date.now();
     // Simulation de capture via WEB_BUFFER
+    // Pour la démo, on utilise des placeholders réels si c'est un navigateur pour pouvoir "voir" quelque chose
     const mockDataUri = type === 'image' 
-      ? `data:image/jpeg;base64,CAPTURED_IMG_${timestamp}`
+      ? `https://picsum.photos/seed/capture-${timestamp}/800/600`
       : `data:video/mp4;base64,CAPTURED_VID_${timestamp}`;
 
     const newSteps = [...procSteps];
@@ -118,13 +123,12 @@ export default function DatasetPage() {
     } else {
       newSteps[index].videoUrl = mockDataUri;
     }
-    // Marquer l'asset comme provisoire pour déclencher le flux WEB_BUFFER
     newSteps[index].isProvisional = true;
     setProcSteps(newSteps);
 
     toast({
       title: "Asset capturé (WEB_BUFFER)",
-      description: "Le média est placé dans le buffer Cloud. Il sera transféré vers ChromaDB lors de votre prochaine connexion Desktop.",
+      description: "Le média est placé dans le buffer Cloud provisoire.",
     });
   };
 
@@ -154,8 +158,8 @@ export default function DatasetPage() {
 
       const provisionalAssets = procSteps.flatMap((s, idx) => {
         const assets = [];
-        if (s.imageUrl?.startsWith('data:') && s.isProvisional) assets.push({ type: 'image', content: s.imageUrl, step: idx });
-        if (s.videoUrl?.startsWith('data:') && s.isProvisional) assets.push({ type: 'video', content: s.videoUrl, step: idx });
+        if (s.imageUrl?.startsWith('http') || s.imageUrl?.startsWith('data:')) assets.push({ type: 'image', content: s.imageUrl, step: idx });
+        if (s.videoUrl?.startsWith('data:')) assets.push({ type: 'video', content: s.videoUrl, step: idx });
         return assets;
       });
 
@@ -202,7 +206,6 @@ export default function DatasetPage() {
         })));
 
         await apiClient.post('/api/sync/upload', { userId: 'admin', projectId: 'project-001', items: assetsPayload });
-        toast({ title: "Sync Buffer", description: "Médias transférés vers le buffer cloud pour purge locale." });
       }
 
       if (res.success) {
@@ -263,12 +266,11 @@ export default function DatasetPage() {
         </header>
 
         <div className="p-4 lg:p-8 max-w-5xl mx-auto w-full space-y-6">
-          {/* Info Banner for WEB_BUFFER */}
           {!isDesktop && (
             <Card className="p-3 border-primary/20 bg-primary/5 flex items-center gap-3 rounded-sm">
               <Info className="w-4 h-4 text-primary shrink-0" />
               <p className="text-[9px] font-code uppercase text-primary leading-tight">
-                Capture de terrain active. Les médias seront stockés dans le <strong>WEB_BUFFER</strong> provisoire jusqu'à synchronisation avec votre station Desktop.
+                Capture de terrain active. Les médias seront stockés dans le <strong>WEB_BUFFER</strong> jusqu'à synchronisation Desktop.
               </p>
             </Card>
           )}
@@ -278,7 +280,7 @@ export default function DatasetPage() {
               <CheckCircle2 className="w-5 h-5 text-secondary shrink-0" />
               <div className="font-code text-[10px] lg:text-xs">
                 <p className="font-bold uppercase text-secondary">Transmission Terminée</p>
-                <p className="text-muted-foreground">{lastResult.count} éléments injectés dans le pipeline <span className="text-primary font-bold">{lastResult.provider}</span></p>
+                <p className="text-muted-foreground">{lastResult.count} éléments injectés via <span className="text-primary font-bold">{lastResult.provider}</span></p>
               </div>
             </Card>
           )}
@@ -362,19 +364,19 @@ export default function DatasetPage() {
                               value={step.normalConditions}
                               onChange={(e) => updateStep(index, 'normalConditions', e.target.value)}
                               className="h-8 text-[9px] font-code bg-background/30"
-                              placeholder="✓ ÉTAT NORMAL (EX: 2.5 BARS)"
+                              placeholder="✓ ÉTAT NORMAL"
                             />
                             <Input 
                               value={step.abnormalConditions}
                               onChange={(e) => updateStep(index, 'abnormalConditions', e.target.value)}
                               className="h-8 text-[9px] font-code bg-background/30"
-                              placeholder="✗ ANOMALIE (EX: FUITE HUILE)"
+                              placeholder="✗ ANOMALIE"
                             />
                             <Input 
                               value={step.alarms}
                               onChange={(e) => updateStep(index, 'alarms', e.target.value)}
                               className="h-8 text-[9px] font-code bg-background/30 border-primary/30"
-                              placeholder="⚠ ALERTE / ACTION CRITIQUE"
+                              placeholder="⚠ ALERTE"
                             />
                           </div>
 
@@ -407,26 +409,38 @@ export default function DatasetPage() {
                             <div className="space-y-1">
                               {step.imageUrl && (
                                 <div className="flex items-center justify-between p-1.5 bg-background/40 rounded-sm">
-                                  <span className="text-[8px] font-code text-primary uppercase truncate flex items-center gap-1">
-                                    <ImageIcon className="w-2.5 h-2.5" /> Photo liée
-                                  </span>
-                                  <Badge variant="outline" className={cn("text-[6px] h-3.5 px-1 uppercase", step.isProvisional ? "border-yellow-500 text-yellow-500" : "border-secondary text-secondary")}>
-                                    {step.isProvisional ? 'WEB_BUFFER' : 'CHROMA_OK'}
+                                  <button 
+                                    type="button"
+                                    onClick={() => setPreviewMedia({ url: step.imageUrl!, type: 'image' })}
+                                    className="text-[8px] font-code text-primary uppercase truncate flex items-center gap-1 hover:underline group"
+                                  >
+                                    <ImageIcon className="w-2.5 h-2.5 shrink-0" /> 
+                                    <span className="truncate">Photo Buffer</span>
+                                    <Eye className="w-2.5 h-2.5 ml-1 opacity-50 group-hover:opacity-100" />
+                                  </button>
+                                  <Badge variant="outline" className="text-[6px] h-3.5 px-1 uppercase border-yellow-500 text-yellow-500 shrink-0">
+                                    WEB_BUFFER
                                   </Badge>
                                 </div>
                               )}
                               {step.videoUrl && (
                                 <div className="flex items-center justify-between p-1.5 bg-background/40 rounded-sm">
-                                  <span className="text-[8px] font-code text-secondary uppercase truncate flex items-center gap-1">
-                                    <Video className="w-2.5 h-2.5" /> Vidéo liée
-                                  </span>
-                                  <Badge variant="outline" className={cn("text-[6px] h-3.5 px-1 uppercase", step.isProvisional ? "border-yellow-500 text-yellow-500" : "border-secondary text-secondary")}>
-                                    {step.isProvisional ? 'WEB_BUFFER' : 'CHROMA_OK'}
+                                  <button 
+                                    type="button"
+                                    onClick={() => setPreviewMedia({ url: step.videoUrl!, type: 'video' })}
+                                    className="text-[8px] font-code text-secondary uppercase truncate flex items-center gap-1 hover:underline group"
+                                  >
+                                    <Video className="w-2.5 h-2.5 shrink-0" /> 
+                                    <span className="truncate">Vidéo Buffer</span>
+                                    <Eye className="w-2.5 h-2.5 ml-1 opacity-50 group-hover:opacity-100" />
+                                  </button>
+                                  <Badge variant="outline" className="text-[6px] h-3.5 px-1 uppercase border-yellow-500 text-yellow-500 shrink-0">
+                                    WEB_BUFFER
                                   </Badge>
                                 </div>
                               )}
                               {!step.imageUrl && !step.videoUrl && (
-                                <p className="text-[8px] text-muted-foreground italic text-center py-2 uppercase">Aucun média capturé</p>
+                                <p className="text-[8px] text-muted-foreground italic text-center py-2 uppercase">Aucun média</p>
                               )}
                             </div>
                           </div>
@@ -496,7 +510,7 @@ export default function DatasetPage() {
                       <span className="text-muted-foreground uppercase">{item.label}</span>
                       {item.mediaAssets && item.mediaAssets.length > 0 && (
                         <Badge variant="outline" className="ml-3 text-[7px] border-yellow-500/50 text-yellow-500 bg-yellow-500/5">
-                          {item.mediaAssets.length} MÉDIAS PROVISOIRES (WEB_BUFFER)
+                          {item.mediaAssets.length} MÉDIAS PROVISOIRES
                         </Badge>
                       )}
                     </div>
@@ -510,6 +524,56 @@ export default function DatasetPage() {
           </div>
         </div>
       </main>
+
+      {/* Media Preview Dialog */}
+      <Dialog open={!!previewMedia} onOpenChange={() => setPreviewMedia(null)}>
+        <DialogContent className="max-w-3xl bg-card border-primary/30 text-foreground sm:rounded-sm">
+          <DialogHeader className="border-b border-border pb-2">
+            <DialogTitle className="text-xs uppercase font-headline tracking-widest flex items-center gap-2">
+              <Eye className="w-4 h-4 text-primary" />
+              Visualisation du Buffer Multimédia
+            </DialogTitle>
+          </DialogHeader>
+          
+          <div className="mt-4 relative aspect-video bg-black/40 rounded-sm overflow-hidden flex items-center justify-center border border-border">
+            {previewMedia?.type === 'image' ? (
+              <img 
+                src={previewMedia.url} 
+                alt="Buffer preview" 
+                className="max-w-full max-h-full object-contain"
+                onError={(e) => {
+                  // Fallback visual for simulated base64
+                  if (previewMedia.url.includes('CAPTURED_IMG')) {
+                    (e.target as any).src = "https://picsum.photos/seed/industrial-buffer/800/600";
+                  }
+                }}
+              />
+            ) : (
+              <div className="flex flex-col items-center gap-4 text-muted-foreground">
+                <div className="w-16 h-16 rounded-full bg-secondary/10 flex items-center justify-center border border-secondary/30">
+                  <Video className="w-8 h-8 text-secondary animate-pulse" />
+                </div>
+                <div className="text-center space-y-1">
+                  <p className="text-[10px] font-code uppercase font-bold text-secondary">Flux Vidéo en Buffer</p>
+                  <p className="text-[8px] font-code uppercase opacity-50">Prêt pour transfert vers ChromaDB</p>
+                </div>
+              </div>
+            )}
+            
+            {/* Scanline overlay for aesthetic coherence */}
+            <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.1)_50%)] z-10 bg-[length:100%_4px]" />
+          </div>
+
+          <div className="mt-4 flex justify-between items-center">
+            <p className="text-[9px] font-code text-muted-foreground uppercase">
+              ID_BUFFER: {Date.now().toString(16).toUpperCase()} | STATUS: PROVISIONAL
+            </p>
+            <Button size="sm" onClick={() => setPreviewMedia(null)} className="h-8 text-[10px] font-code uppercase bg-primary text-primary-foreground">
+              Fermer la vue
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
