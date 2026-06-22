@@ -20,7 +20,8 @@ import {
   X,
   Check,
   Loader2,
-  AlertTriangle
+  AlertTriangle,
+  Monitor
 } from 'lucide-react';
 
 import { Card } from '@/components/ui/card';
@@ -88,7 +89,6 @@ export default function DatasetPage() {
   useEffect(() => {
     setMounted(true);
     return () => {
-      // Nettoyage radical des ressources mémoire
       procSteps.forEach(s => {
         if (s.imagePreview) URL.revokeObjectURL(s.imagePreview);
         if (s.videoPreview) URL.revokeObjectURL(s.videoPreview);
@@ -213,7 +213,7 @@ export default function DatasetPage() {
       }
       setProcSteps(newSteps);
     } catch (err) {
-      toast({ title: "Erreur Capture", description: "Mémoire saturée.", variant: "destructive" });
+      toast({ title: "Erreur Capture", description: "Mémoire saturée ou format invalide.", variant: "destructive" });
     } finally {
       setIsProcessingMedia(false);
       if (e.target) e.target.value = '';
@@ -259,7 +259,6 @@ export default function DatasetPage() {
     setIngestIngestProgress(0);
 
     try {
-      // 1. Ingestion du Texte (Métadonnées)
       const ingestRes = await apiClient.post<{ success: boolean, provider: string }>('/api/vector/ingest', {
         items: qaItems.map(i => ({ 
           question: i.type === 'procedure' ? `PROCÉDURE: ${i.label}` : i.label, 
@@ -268,14 +267,12 @@ export default function DatasetPage() {
         metadata: { collection: 'industrial_manuals', source: isDesktop ? 'STATION_FORGE' : 'CAPTURE_TERRAIN' }
       });
 
-      // 2. Upload ATOMIQUE et SÉQUENTIEL des Assets
       const itemsWithAssets = qaItems.filter(i => i.mediaAssets && i.mediaAssets.length > 0);
       let totalAssets = itemsWithAssets.reduce((acc, curr) => acc + (curr.mediaAssets?.length || 0), 0);
       let uploadedCount = 0;
 
       for (const item of itemsWithAssets) {
         for (const asset of item.mediaAssets!) {
-          // Conversion tardive (Base64) UNIQUEMENT pour cet asset précis
           const base64 = await fileToBase64(asset.file);
           
           await apiClient.post('/api/sync/upload', {
@@ -293,19 +290,17 @@ export default function DatasetPage() {
           });
 
           uploadedCount++;
-          setIngestIngestProgress(Math.round((uploadedCount / totalAssets) * 100));
-          
-          // Libération mémoire agressive : on écrase la variable base64
+          setIngestIngestProgress(Math.round((uploadedCount / (totalAssets || 1)) * 100));
           (base64 as any) = null; 
         }
       }
 
       if (ingestRes.success) {
-        toast({ title: "Synchronisation réussie", description: `${qaItems.length} items et ${uploadedCount} médias transférés.` });
+        toast({ title: "Synchronisation réussie", description: `${qaItems.length} items transférés.` });
         setQaItems([]);
       }
     } catch (e: any) {
-      toast({ title: "Erreur Critique", description: "Liaison Neon Postgres interrompue.", variant: "destructive" });
+      toast({ title: "Erreur Critique", description: "Liaison Neon interrompue.", variant: "destructive" });
     } finally {
       setIsIngesting(false);
       setIngestIngestProgress(0);
@@ -317,8 +312,24 @@ export default function DatasetPage() {
   return (
     <div className="flex flex-col lg:flex-row h-screen bg-background overflow-hidden">
       <DashboardSidebar />
-      <input type="file" accept="image/*" capture="environment" ref={photoInputRef} onChange={handleFileChange} className="hidden" />
-      <input type="file" accept="video/*" capture="environment" ref={videoInputRef} onChange={handleFileChange} className="hidden" />
+      
+      {/* Hidden inputs with conditional capture based on mode */}
+      <input 
+        type="file" 
+        accept="image/*" 
+        capture={isDesktop ? undefined : "environment"} 
+        ref={photoInputRef} 
+        onChange={handleFileChange} 
+        className="hidden" 
+      />
+      <input 
+        type="file" 
+        accept="video/*" 
+        capture={isDesktop ? undefined : "environment"} 
+        ref={videoInputRef} 
+        onChange={handleFileChange} 
+        className="hidden" 
+      />
       
       <main className="flex-1 flex flex-col min-w-0 h-full overflow-y-auto terminal-scroll">
         <header className="h-16 border-b border-border bg-card/30 flex items-center justify-between px-6 shrink-0">
@@ -329,8 +340,10 @@ export default function DatasetPage() {
               <span className="font-headline font-bold text-xs lg:text-sm uppercase tracking-widest text-primary">Entraînement RAG</span>
             </div>
             <div className="hidden sm:flex items-center gap-2 px-3 py-1 bg-secondary/10 border border-secondary/20 rounded-sm">
-              <Smartphone className="w-3 h-3 text-primary" />
-              <span className="text-[9px] font-code uppercase font-bold text-muted-foreground">NEON_INFRA_ACTIVE</span>
+              {isDesktop ? <Monitor className="w-3 h-3 text-secondary" /> : <Smartphone className="w-3 h-3 text-primary" />}
+              <span className="text-[9px] font-code uppercase font-bold text-muted-foreground">
+                {isDesktop ? "LOCAL_STORAGE_ACTIVE" : "WEB_BUFFER_ACTIVE"}
+              </span>
             </div>
           </div>
           
@@ -348,7 +361,7 @@ export default function DatasetPage() {
           {isIngesting && (
             <Card className="p-4 border-primary/20 bg-primary/5 space-y-3 rounded-sm shadow-lg">
               <div className="flex justify-between items-center text-[10px] font-code uppercase">
-                <span className="flex items-center gap-2 text-primary"><Loader2 className="w-4 h-4 animate-spin" /> Transfert atomique vers Neon...</span>
+                <span className="flex items-center gap-2 text-primary"><Loader2 className="w-4 h-4 animate-spin" /> Transmission des assets...</span>
                 <span className="font-bold">{ingestProgress}%</span>
               </div>
               <div className="h-1 w-full bg-primary/10 rounded-full overflow-hidden">
@@ -392,8 +405,27 @@ export default function DatasetPage() {
                         <div className="bg-black/20 p-3 rounded-sm border border-border/30">
                           <p className="text-[8px] font-bold uppercase text-muted-foreground mb-3">Documentation Visuelle</p>
                           <div className="flex gap-2 mb-3">
-                            <Button type="button" variant="outline" size="sm" className="flex-1 h-8 text-[9px] font-code uppercase" onClick={(e) => handleTriggerCapture(e, index, 'image')} disabled={isProcessingMedia}><Camera className="w-3 h-3 mr-2" /> Photo</Button>
-                            <Button type="button" variant="outline" size="sm" className="flex-1 h-8 text-[9px] font-code uppercase" onClick={(e) => handleTriggerCapture(e, index, 'video')}><Video className="w-3 h-3 mr-2" /> Vidéo</Button>
+                            <Button 
+                              type="button" 
+                              variant="outline" 
+                              size="sm" 
+                              className="flex-1 h-8 text-[9px] font-code uppercase" 
+                              onClick={(e) => handleTriggerCapture(e, index, 'image')} 
+                              disabled={isProcessingMedia}
+                            >
+                              <Camera className="w-3 h-3 mr-2" /> 
+                              {isDesktop ? "PC_FILE" : "PHOTO"}
+                            </Button>
+                            <Button 
+                              type="button" 
+                              variant="outline" 
+                              size="sm" 
+                              className="flex-1 h-8 text-[9px] font-code uppercase" 
+                              onClick={(e) => handleTriggerCapture(e, index, 'video')}
+                            >
+                              <Video className="w-3 h-3 mr-2" /> 
+                              {isDesktop ? "PC_FILE" : "VIDÉO"}
+                            </Button>
                           </div>
                           <div className="space-y-1">
                             {step.imagePreview && (
