@@ -21,7 +21,8 @@ import {
   Smartphone,
   Info,
   X,
-  Check
+  Check,
+  Loader2
 } from 'lucide-react';
 
 import { Card } from '@/components/ui/card';
@@ -78,15 +79,47 @@ export default function DatasetPage() {
   ]);
 
   const [isIngesting, setIsIngesting] = useState(false);
+  const [isProcessingImage, setIsProcessingImage] = useState(false);
   const [lastResult, setLastResult] = useState<{ provider: string, count: number } | null>(null);
   
-  // Preview Media State
   const [previewMedia, setPreviewMedia] = useState<{ url: string, type: 'image' | 'video' } | null>(null);
 
-  // Hidden Inputs Refs for Real Capture
   const photoInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
   const activeCaptureRef = useRef<{ index: number, type: 'image' | 'video' } | null>(null);
+
+  const compressImage = (dataUri: string): Promise<string> => {
+    return new Promise((resolve) => {
+      const img = new window.Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 1200;
+        const MAX_HEIGHT = 1200;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height *= MAX_WIDTH / width;
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width *= MAX_HEIGHT / height;
+            height = MAX_HEIGHT;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, width, height);
+        // Compression en JPEG 0.7 pour passer sous la limite Vercel de 4.5MB
+        resolve(canvas.toDataURL('image/jpeg', 0.7));
+      };
+      img.src = dataUri;
+    });
+  };
 
   const addStep = () => {
     setProcSteps([...procSteps, { 
@@ -120,10 +153,11 @@ export default function DatasetPage() {
     if (type === 'image') newSteps[index].imageUrl = '';
     else newSteps[index].videoUrl = '';
     setProcSteps(newSteps);
-    toast({ title: "Média supprimé", description: "L'emplacement est désormais vide." });
   };
 
-  const handleTriggerCapture = (index: number, type: 'image' | 'video') => {
+  const handleTriggerCapture = (e: React.MouseEvent, index: number, type: 'image' | 'video') => {
+    e.preventDefault();
+    e.stopPropagation();
     activeCaptureRef.current = { index, type };
     if (type === 'image') {
       photoInputRef.current?.click();
@@ -132,30 +166,42 @@ export default function DatasetPage() {
     }
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !activeCaptureRef.current) return;
 
     const { index, type } = activeCaptureRef.current;
-    const reader = new FileReader();
     
-    reader.onloadend = () => {
-      const dataUri = reader.result as string;
+    if (type === 'image') setIsProcessingImage(true);
+
+    const reader = new FileReader();
+    reader.onloadend = async () => {
+      let finalDataUri = reader.result as string;
+      
+      if (type === 'image') {
+        try {
+          finalDataUri = await compressImage(finalDataUri);
+        } catch (err) {
+          console.error("Échec compression image:", err);
+        } finally {
+          setIsProcessingImage(false);
+        }
+      }
+
       const newSteps = [...procSteps];
       if (type === 'image') {
-        newSteps[index].imageUrl = dataUri;
+        newSteps[index].imageUrl = finalDataUri;
       } else {
-        newSteps[index].videoUrl = dataUri;
+        newSteps[index].videoUrl = finalDataUri;
       }
       newSteps[index].isProvisional = true;
       setProcSteps(newSteps);
       
       toast({
         title: type === 'image' ? "Photo capturée" : "Vidéo capturée",
-        description: "Prévisualisation disponible dans l'étape.",
+        description: "Optimisation terminée. Prévisualisation disponible.",
       });
       
-      // Reset input for next capture
       e.target.value = '';
     };
 
@@ -212,9 +258,7 @@ export default function DatasetPage() {
     setIsIngesting(true);
 
     try {
-      // 1. Ingestion Textuelle (RAG)
       const res = await apiClient.post<{ success: boolean; message: string; provider: string }>('/api/vector/ingest', {
-        filename: `dataset-${Date.now()}.jsonl`,
         items: qaItems.map(i => ({ 
           question: i.type === 'procedure' ? `PROCÉDURE: ${i.label}` : i.label, 
           answer: i.details 
@@ -222,7 +266,6 @@ export default function DatasetPage() {
         metadata: { collection: 'industrial_manuals', source: isDesktop ? 'STATION_FORGE' : 'CAPTURE_TERRAIN' }
       });
 
-      // 2. Transfert des Assets Provisoires (WEB_BUFFER)
       const itemsWithAssets = qaItems.filter(i => i.mediaAssets && i.mediaAssets.length > 0);
       if (itemsWithAssets.length > 0) {
         const assetsPayload = itemsWithAssets.flatMap(i => i.mediaAssets!.map(a => ({
@@ -254,7 +297,6 @@ export default function DatasetPage() {
     <div className="flex flex-col lg:flex-row h-screen bg-background overflow-hidden">
       <DashboardSidebar />
       
-      {/* Hidden inputs for real capture */}
       <input 
         type="file" 
         accept="image/*" 
@@ -284,7 +326,7 @@ export default function DatasetPage() {
             <div className="flex items-center gap-2 px-3 py-1 bg-secondary/10 border border-secondary/20 rounded-sm">
               {!isDesktop ? <Smartphone className="w-3 h-3 text-primary" /> : <Cpu className="w-3 h-3 text-secondary" />}
               <span className="text-[9px] font-code uppercase font-bold text-muted-foreground whitespace-nowrap">
-                {!isDesktop ? "MODE TERRAIN (CAPTURER_RÉEL)" : "STATION FORGE (LOCAL_CHROMA)"}
+                {!isDesktop ? "MODE TERRAIN (WEB_BUFFER)" : "STATION FORGE (LOCAL_CHROMA)"}
               </span>
             </div>
           </div>
@@ -314,11 +356,11 @@ export default function DatasetPage() {
         </header>
 
         <div className="p-4 lg:p-8 max-w-5xl mx-auto w-full space-y-6">
-          {!isDesktop && (
-            <Card className="p-3 border-primary/20 bg-primary/5 flex items-center gap-3 rounded-sm">
-              <Info className="w-4 h-4 text-primary shrink-0" />
+          {isProcessingImage && (
+            <Card className="p-3 border-primary/20 bg-primary/5 flex items-center gap-3 rounded-sm animate-pulse">
+              <Loader2 className="w-4 h-4 text-primary animate-spin" />
               <p className="text-[9px] font-code uppercase text-primary leading-tight">
-                Capture de terrain active. Visualisez vos médias pour confirmer avant synchronisation.
+                Optimisation du flux visuel en cours (Compression industrielle)...
               </p>
             </Card>
           )}
@@ -429,7 +471,7 @@ export default function DatasetPage() {
                           </div>
 
                           <div className="space-y-3 lg:col-span-1 bg-black/20 p-3 rounded-sm border border-border/30">
-                            <label className="text-[8px] font-bold uppercase text-muted-foreground block mb-2 border-b border-border/50 pb-1">Support Multimédia</label>
+                            <label className="text-[8px] font-bold uppercase text-muted-foreground block mb-2 border-b border-border/50 pb-1">Documentation Visuelle</label>
                             
                             <div className="flex gap-2 mb-3">
                               <Button 
@@ -437,9 +479,10 @@ export default function DatasetPage() {
                                 variant="outline" 
                                 size="sm" 
                                 className="flex-1 h-8 text-[9px] font-code uppercase border-primary/40 text-primary"
-                                onClick={() => handleTriggerCapture(index, 'image')}
+                                onClick={(e) => handleTriggerCapture(e, index, 'image')}
+                                disabled={isProcessingImage}
                               >
-                                <Camera className="w-3 h-3 mr-2" />
+                                {isProcessingImage ? <Loader2 className="w-3 h-3 animate-spin" /> : <Camera className="w-3 h-3 mr-2" />}
                                 {step.imageUrl ? "Changer" : "Photo"}
                               </Button>
                               <Button 
@@ -447,7 +490,7 @@ export default function DatasetPage() {
                                 variant="outline" 
                                 size="sm" 
                                 className="flex-1 h-8 text-[9px] font-code uppercase border-secondary/40 text-secondary"
-                                onClick={() => handleTriggerCapture(index, 'video')}
+                                onClick={(e) => handleTriggerCapture(e, index, 'video')}
                               >
                                 <Video className="w-3 h-3 mr-2" />
                                 {step.videoUrl ? "Changer" : "Vidéo"}
@@ -463,10 +506,10 @@ export default function DatasetPage() {
                                     className="text-[8px] font-code text-primary uppercase truncate flex items-center gap-1 hover:underline group"
                                   >
                                     <ImageIcon className="w-2.5 h-2.5 shrink-0" /> 
-                                    <span className="truncate">Photo_Prête</span>
+                                    <span className="truncate">Visualiser_Asset</span>
                                     <Eye className="w-2.5 h-2.5 ml-1 opacity-50 group-hover:opacity-100" />
                                   </button>
-                                  <button onClick={() => deleteMedia(index, 'image')} className="text-destructive p-1 hover:bg-destructive/10 rounded">
+                                  <button type="button" onClick={() => deleteMedia(index, 'image')} className="text-destructive p-1 hover:bg-destructive/10 rounded">
                                     <X className="w-2.5 h-2.5" />
                                   </button>
                                 </div>
@@ -479,16 +522,19 @@ export default function DatasetPage() {
                                     className="text-[8px] font-code text-secondary uppercase truncate flex items-center gap-1 hover:underline group"
                                   >
                                     <Video className="w-2.5 h-2.5 shrink-0" /> 
-                                    <span className="truncate">Vidéo_Prête</span>
+                                    <span className="truncate">Visualiser_Séquence</span>
                                     <Eye className="w-2.5 h-2.5 ml-1 opacity-50 group-hover:opacity-100" />
                                   </button>
-                                  <button onClick={() => deleteMedia(index, 'video')} className="text-destructive p-1 hover:bg-destructive/10 rounded">
+                                  <button type="button" onClick={() => deleteMedia(index, 'video')} className="text-destructive p-1 hover:bg-destructive/10 rounded">
                                     <X className="w-2.5 h-2.5" />
                                   </button>
                                 </div>
                               )}
                               {!step.imageUrl && !step.videoUrl && (
-                                <p className="text-[8px] text-muted-foreground italic text-center py-2 uppercase">Aucun média</p>
+                                <div className="p-4 border border-dashed border-border/50 rounded-sm bg-black/10 flex flex-col items-center justify-center opacity-40">
+                                   <ImageIcon className="w-4 h-4 mb-1" />
+                                   <p className="text-[7px] font-code uppercase text-center">Aucun média</p>
+                                </div>
                               )}
                             </div>
                           </div>
@@ -558,7 +604,7 @@ export default function DatasetPage() {
                       <span className="text-muted-foreground uppercase">{item.label}</span>
                       {item.mediaAssets && item.mediaAssets.length > 0 && (
                         <Badge variant="outline" className="ml-3 text-[7px] border-yellow-500/50 text-yellow-500 bg-yellow-500/5">
-                          {item.mediaAssets.length} MÉDIAS CAPTURÉS
+                          {item.mediaAssets.length} MÉDIAS (WEB_BUFFER)
                         </Badge>
                       )}
                     </div>
@@ -578,13 +624,12 @@ export default function DatasetPage() {
         </div>
       </main>
 
-      {/* Media Preview Dialog */}
       <Dialog open={!!previewMedia} onOpenChange={() => setPreviewMedia(null)}>
         <DialogContent className="max-w-3xl bg-card border-primary/30 text-foreground sm:rounded-sm">
           <DialogHeader className="border-b border-border pb-2">
             <DialogTitle className="text-xs uppercase font-headline tracking-widest flex items-center gap-2">
               <Eye className="w-4 h-4 text-primary" />
-              Vérification du Média Capturé
+              Vérification Opérateur
             </DialogTitle>
           </DialogHeader>
           
@@ -604,21 +649,20 @@ export default function DatasetPage() {
               />
             )}
             
-            {/* Scanline overlay for aesthetic coherence */}
             <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.05)_50%)] z-10 bg-[length:100%_4px]" />
           </div>
 
           <div className="mt-4 flex justify-between items-center">
             <p className="text-[9px] font-code text-muted-foreground uppercase">
-              STATUS: VÉRIFICATION_OPÉRATEUR | TYPE: {previewMedia?.type}
+              STATUS: VÉRIFICATION_BUFFER | TYPE: {previewMedia?.type}
             </p>
             <div className="flex gap-2">
               <Button size="sm" variant="outline" onClick={() => setPreviewMedia(null)} className="h-8 text-[10px] font-code uppercase border-border">
-                Annuler
+                Fermer
               </Button>
               <Button size="sm" onClick={() => setPreviewMedia(null)} className="h-8 text-[10px] font-code uppercase bg-primary text-primary-foreground">
                 <Check className="w-3 h-3 mr-2" />
-                Confirmer l'Asset
+                Confirmer
               </Button>
             </div>
           </div>
