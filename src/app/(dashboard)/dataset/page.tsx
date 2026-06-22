@@ -51,16 +51,11 @@ interface ProcedureStep {
   isProvisional?: boolean;
 }
 
-interface Procedure {
-  id: string;
-  title: string;
-  steps: ProcedureStep[];
-}
-
 interface QAItem {
   id: string;
-  question: string;
-  answer: string;
+  type: 'qa' | 'procedure';
+  label: string;
+  details: string;
   mediaAssets?: any[];
 }
 
@@ -80,9 +75,6 @@ export default function DatasetPage() {
 
   const [isIngesting, setIsIngesting] = useState(false);
   const [lastResult, setLastResult] = useState<{ provider: string, count: number } | null>(null);
-
-  // État pour la capture multimédia
-  const [capturingForStep, setCapturingForStep] = useState<{ index: number, type: 'image' | 'video' } | null>(null);
 
   const addStep = () => {
     setProcSteps([...procSteps, { 
@@ -111,7 +103,6 @@ export default function DatasetPage() {
     setProcSteps(newSteps);
   };
 
-  // Simule une capture multimédia (Provisoire sur Web, Réelle sur Natif)
   const handleCapture = (index: number, type: 'image' | 'video') => {
     const timestamp = Date.now();
     const mockDataUri = type === 'image' 
@@ -135,14 +126,34 @@ export default function DatasetPage() {
 
   const handleAddItem = (e: React.FormEvent) => {
     e.preventDefault();
+    
     if (mode === 'qa') {
-      if (!question.trim() || !answer.trim()) return;
-      setQaItems(prev => [{ id: Date.now().toString(), question, answer }, ...prev]);
+      if (!question.trim() || !answer.trim()) {
+        toast({ 
+          title: "Champs requis", 
+          description: "Veuillez remplir la question et la réponse.", 
+          variant: "destructive" 
+        });
+        return;
+      }
+      
+      setQaItems(prev => [{ 
+        id: Date.now().toString(), 
+        type: 'qa',
+        label: question,
+        details: answer 
+      }, ...prev]);
+      
       setQuestion('');
       setAnswer('');
+      toast({ title: "Ajouté", description: "La connaissance a été ajoutée à la file d'attente." });
     } else {
       if (!procTitle.trim() || procSteps.some(s => !s.title.trim())) {
-        toast({ title: "Champs requis", description: "Veuillez nommer la procédure et toutes ses étapes.", variant: "destructive" });
+        toast({ 
+          title: "Champs requis", 
+          description: "Veuillez nommer la procédure et toutes ses étapes.", 
+          variant: "destructive" 
+        });
         return;
       }
       
@@ -157,7 +168,6 @@ export default function DatasetPage() {
           (s.videoUrl ? `[MEDIA_VIDEO]: ${s.videoUrl}\n` : '')
         )).join('\n---\n');
 
-      // On prépare les assets à envoyer en provisional si on est sur Web
       const provisionalAssets = procSteps.flatMap((s, idx) => {
         const assets = [];
         if (s.imageUrl?.startsWith('data:') && !isDesktop) assets.push({ type: 'image', content: s.imageUrl, step: idx });
@@ -167,14 +177,14 @@ export default function DatasetPage() {
 
       setQaItems(prev => [{ 
         id: Date.now().toString(), 
-        question: `PROCÉDURE : ${procTitle}`, 
-        answer: serializedProcedure,
+        type: 'procedure',
+        label: procTitle, 
+        details: serializedProcedure,
         mediaAssets: provisionalAssets
       }, ...prev]);
       
       setProcTitle('');
       setProcSteps([{ id: '1', title: '', description: '', subSteps: [], normalConditions: '', abnormalConditions: '', alarms: '', imageUrl: '', videoUrl: '' }]);
-      setMode('qa');
       toast({ title: "Ajouté", description: "La procédure a été ajoutée à la file d'attente." });
     }
   };
@@ -184,14 +194,15 @@ export default function DatasetPage() {
     setIsIngesting(true);
 
     try {
-      // 1. Envoyer les textes au RAG (Weaviate ou Chroma)
       const res = await apiClient.post<{ success: boolean; message: string; provider: string }>('/api/vector/ingest', {
         filename: `dataset-${Date.now()}.jsonl`,
-        items: qaItems.map(i => ({ question: i.question, answer: i.answer })),
+        items: qaItems.map(i => ({ 
+          question: i.type === 'procedure' ? `PROCÉDURE: ${i.label}` : i.label, 
+          answer: i.details 
+        })),
         metadata: { collection: 'industrial_manuals', source: 'UI_UPLOAD' }
       });
 
-      // 2. Si assets provisoires (Mode Web), les envoyer au Buffer Cloud
       const itemsWithAssets = qaItems.filter(i => i.mediaAssets && i.mediaAssets.length > 0);
       if (itemsWithAssets.length > 0 && !isDesktop) {
         const assetsPayload = itemsWithAssets.flatMap(i => i.mediaAssets!.map(a => ({
@@ -412,8 +423,16 @@ export default function DatasetPage() {
                           <div className="space-y-3 lg:col-span-1 bg-black/20 p-3 rounded-sm border border-border/30 relative overflow-hidden min-h-[180px]">
                             <label className="text-[8px] font-bold uppercase text-muted-foreground block mb-2 border-b border-border/50 pb-1">Capture & Documentation</label>
                             
+                            {!isDesktop ? (
+                              <div className="absolute inset-0 bg-background/60 backdrop-blur-sm z-10 flex flex-col items-center justify-center p-4 text-center">
+                                <Lock className="w-5 h-5 text-primary/50 mb-2" />
+                                <p className="text-[8px] font-code uppercase text-muted-foreground leading-tight">
+                                  MÉDIAS RESTREINTS<br/>PASSER EN MODE LOCAL
+                                </p>
+                              </div>
+                            ) : null}
+
                             <div className="space-y-3">
-                              {/* BOUTONS DE CAPTURE (PROVISOIRE WEB / RÉEL LOCAL) */}
                               <div className="flex gap-2 mb-4">
                                 <Button 
                                   type="button" 
@@ -466,10 +485,6 @@ export default function DatasetPage() {
                                   className="h-7 text-[9px] font-code bg-background/20"
                                 />
                               </div>
-                              
-                              <p className="text-[7px] text-muted-foreground italic mt-1 text-center uppercase">
-                                {isDesktop ? "Liaison directe aux banques d'actifs locale." : "Assets stockés provisoirement (Nettoyage post-sync)."}
-                              </p>
                             </div>
                           </div>
                         </div>
@@ -526,15 +541,15 @@ export default function DatasetPage() {
                   <div className="flex items-center gap-4 flex-1 min-w-0">
                     <div className={cn(
                       "h-8 w-8 rounded-sm flex items-center justify-center shrink-0 border",
-                      item.question.startsWith('PROCÉDURE') ? "bg-secondary/10 border-secondary/20" : "bg-primary/10 border-primary/20"
+                      item.type === 'procedure' ? "bg-secondary/10 border-secondary/20" : "bg-primary/10 border-primary/20"
                     )}>
-                      {item.question.startsWith('PROCÉDURE') ? <ListOrdered className="w-4 h-4 text-secondary" /> : <MessageSquare className="w-4 h-4 text-primary" />}
+                      {item.type === 'procedure' ? <ListOrdered className="w-4 h-4 text-secondary" /> : <MessageSquare className="w-4 h-4 text-primary" />}
                     </div>
                     <div className="truncate">
-                      <span className={cn("font-bold mr-2", item.question.startsWith('PROCÉDURE') ? "text-secondary" : "text-primary")}>
-                        {item.question.split(':')[0]}:
+                      <span className={cn("font-bold mr-2 uppercase", item.type === 'procedure' ? "text-secondary" : "text-primary")}>
+                        {item.type === 'procedure' ? 'PROCÉDURE' : 'Q/R'}:
                       </span> 
-                      <span className="text-muted-foreground">{item.question.split(':').slice(1).join(':')}</span>
+                      <span className="text-muted-foreground uppercase">{item.label}</span>
                       {item.mediaAssets && item.mediaAssets.length > 0 && (
                         <Badge variant="outline" className="ml-3 text-[7px] border-yellow-500/50 text-yellow-500 bg-yellow-500/5">
                           {item.mediaAssets.length} ASSETS PROVISOIRES
