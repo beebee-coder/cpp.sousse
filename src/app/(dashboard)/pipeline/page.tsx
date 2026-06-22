@@ -11,7 +11,6 @@ import {
   Monitor, 
   CheckCircle2, 
   RefreshCw, 
-  ArrowLeft, 
   ShieldCheck, 
   AlertCircle,
   Terminal,
@@ -32,7 +31,6 @@ export default function PipelinePage() {
   const [isDev, setIsDev] = useState(false);
 
   useEffect(() => {
-    // Vérification stricte de l'environnement de développement
     setIsDev(process.env.NODE_ENV === 'development');
   }, []);
 
@@ -88,39 +86,50 @@ export default function PipelinePage() {
   }
 
   return (
-    <div className="flex h-screen bg-background overflow-hidden">
+    <div className="flex flex-col lg:flex-row h-screen bg-background overflow-hidden">
       <DashboardSidebar />
       
-      <main className="flex-1 flex flex-col min-w-0">
-        <header className="h-16 border-b border-border bg-card/30 flex items-center justify-between px-6">
+      <main className="flex-1 flex flex-col min-w-0 h-full overflow-y-auto lg:overflow-hidden">
+        <header className="h-16 border-b border-border bg-card/30 flex items-center justify-between px-6 shrink-0">
           <div className="flex items-center gap-4">
+            <div className="lg:hidden w-10" />
             <div className="flex items-center gap-2">
               <Rocket className="w-4 h-4 text-primary animate-pulse" />
-              <span className="font-headline font-bold text-sm uppercase tracking-widest text-primary">Centre de Pilotage Industriel</span>
+              <span className="font-headline font-bold text-xs lg:text-sm uppercase tracking-widest text-primary">Pilotage Industriel</span>
             </div>
-            <div className="h-4 w-px bg-border mx-2" />
-            <div className="flex items-center gap-2 px-3 py-1 bg-secondary/10 border border-secondary/20 rounded-sm">
+            <div className="hidden sm:block h-4 w-px bg-border mx-2" />
+            <div className="hidden sm:flex items-center gap-2 px-3 py-1 bg-secondary/10 border border-secondary/20 rounded-sm">
               <ShieldCheck className="w-3 h-3 text-secondary" />
-              <span className="text-[9px] font-code text-secondary uppercase font-bold tracking-tighter">Contrôle de Forge Actif</span>
+              <span className="text-[9px] font-code text-secondary uppercase font-bold tracking-tighter">Forge Active</span>
             </div>
           </div>
+          
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={() => router.push('/dashboard')}
+            className="text-[9px] font-code uppercase text-muted-foreground hidden sm:flex"
+          >
+            <ChevronLeft className="w-3 h-3 mr-1" />
+            Fermer
+          </Button>
         </header>
 
-        <div className="flex-1 p-8 overflow-hidden flex flex-col gap-8">
+        <div className="flex-1 p-4 lg:p-8 overflow-y-auto lg:overflow-hidden flex flex-col gap-6 lg:gap-8">
           {/* Visual Pipeline Flow */}
-          <div className="flex items-center justify-between max-w-5xl mx-auto w-full px-12 py-10 relative">
+          <div className="flex items-center justify-between max-w-5xl mx-auto w-full px-4 lg:px-12 py-6 lg:py-10 relative shrink-0">
             <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-border -translate-y-1/2 z-0" />
             
             <PipelineNode 
               icon={Monitor} 
-              label="Source Locale" 
+              label="Source" 
               active={status === 'uplink'} 
               completed={['downlink', 'forge', 'success'].includes(status)} 
             />
             
             <div className="z-10 flex flex-col items-center gap-2">
-              <Github className={cn("w-6 h-6 text-muted-foreground", (status === 'uplink' || status === 'downlink') && "animate-bounce text-primary")} />
-              <span className="text-[8px] font-code uppercase text-muted-foreground">Registre Sync</span>
+              <Github className={cn("w-5 h-5 lg:w-6 lg:h-6 text-muted-foreground", (status === 'uplink' || status === 'downlink') && "animate-bounce text-primary")} />
+              <span className="text-[7px] lg:text-[8px] font-code uppercase text-muted-foreground hidden sm:block">Registre</span>
             </div>
 
             <PipelineNode 
@@ -131,72 +140,72 @@ export default function PipelinePage() {
             />
 
             <div className="z-10 flex flex-col items-center gap-2">
-              <CheckCircle2 className={cn("w-6 h-6 text-muted-foreground", status === 'success' && "text-secondary")} />
-              <span className="text-[8px] font-code uppercase text-muted-foreground">Release</span>
+              <CheckCircle2 className={cn("w-5 h-5 lg:w-6 lg:h-6 text-muted-foreground", status === 'success' && "text-secondary")} />
+              <span className="text-[7px] lg:text-[8px] font-code uppercase text-muted-foreground hidden sm:block">Release</span>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1 min-h-0">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1 min-h-0 overflow-hidden lg:overflow-hidden">
             {/* Actions Panel */}
-            <Card className="p-6 border-border bg-card/40 flex flex-col gap-6">
-              <h3 className="text-xs font-bold uppercase tracking-widest flex items-center gap-2 text-muted-foreground">
+            <Card className="p-4 lg:p-6 border-border bg-card/40 flex flex-col gap-6 overflow-y-auto terminal-scroll h-fit lg:h-full">
+              <h3 className="text-[10px] lg:text-xs font-bold uppercase tracking-widest flex items-center gap-2 text-muted-foreground">
                 <Zap className="w-4 h-4 text-primary" />
                 Actions de Flux
               </h3>
               
               <div className="space-y-4">
-                <div className="p-4 border border-border bg-black/20 rounded-sm">
-                  <p className="text-[10px] text-muted-foreground font-code uppercase mb-3">&gt; Phase Aval (Pull)</p>
+                <div className="p-3 lg:p-4 border border-border bg-black/20 rounded-sm">
+                  <p className="text-[9px] lg:text-[10px] text-muted-foreground font-code uppercase mb-3">&gt; Phase Aval (Pull)</p>
                   <Button 
                     variant="secondary"
-                    className="w-full justify-start font-headline text-[10px] h-9 uppercase shadow-lg shadow-secondary/10" 
+                    className="w-full justify-start font-headline text-[9px] lg:text-[10px] h-8 lg:h-9 uppercase shadow-lg" 
                     onClick={() => runCommand('pull')}
                     disabled={status !== 'idle' && status !== 'success' && status !== 'error'}
                   >
-                    <RefreshCw className={cn("w-3.5 h-3.5 mr-2", status === 'downlink' && "animate-spin")} />
-                    Downlink PC (Pull GitHub)
+                    <RefreshCw className={cn("w-3 h-3 lg:w-3.5 lg:h-3.5 mr-2", status === 'downlink' && "animate-spin")} />
+                    Sync Locale (Pull)
                   </Button>
                 </div>
 
-                <div className="p-4 border border-border bg-black/20 rounded-sm">
-                  <p className="text-[10px] text-muted-foreground font-code uppercase mb-3">&gt; Phase Amont (Push)</p>
+                <div className="p-3 lg:p-4 border border-border bg-black/20 rounded-sm">
+                  <p className="text-[9px] lg:text-[10px] text-muted-foreground font-code uppercase mb-3">&gt; Phase Amont (Push)</p>
                   <Button 
                     variant="outline"
-                    className="w-full justify-start font-headline text-[10px] h-9 uppercase border-primary/50 text-primary hover:bg-primary/5" 
+                    className="w-full justify-start font-headline text-[9px] lg:text-[10px] h-8 lg:h-9 uppercase border-primary/50 text-primary hover:bg-primary/5" 
                     onClick={() => runCommand('web')}
                     disabled={status !== 'idle' && status !== 'success' && status !== 'error'}
                   >
-                    <Rocket className={cn("w-3.5 h-3.5 mr-2", status === 'uplink' && "animate-bounce")} />
+                    <Rocket className={cn("w-3 h-3 lg:w-3.5 lg:h-3.5 mr-2", status === 'uplink' && "animate-bounce")} />
                     Uplink Source (Push)
                   </Button>
                 </div>
 
-                <div className="p-4 border border-primary/20 bg-primary/5 rounded-sm">
-                  <p className="text-[10px] text-primary font-bold font-code uppercase mb-3">&gt; Phase Finale (Build)</p>
+                <div className="p-3 lg:p-4 border border-primary/20 bg-primary/5 rounded-sm">
+                  <p className="text-[9px] lg:text-[10px] text-primary font-bold font-code uppercase mb-3">&gt; Phase Finale (Build)</p>
                   <Button 
-                    className="w-full justify-start font-headline text-[10px] h-9 uppercase bg-primary text-primary-foreground" 
+                    className="w-full justify-start font-headline text-[9px] lg:text-[10px] h-8 lg:h-9 uppercase bg-primary text-primary-foreground" 
                     onClick={() => runCommand('desktop')}
                     disabled={status !== 'idle' && status !== 'success' && status !== 'error'}
                   >
-                    <Hammer className={cn("w-3.5 h-3.5 mr-2", status === 'forge' && "animate-pulse")} />
+                    <Hammer className={cn("w-3 h-3 lg:w-3.5 lg:h-3.5 mr-2", status === 'forge' && "animate-pulse")} />
                     Forger Desktop (EXE)
                   </Button>
                 </div>
               </div>
 
               <div className="mt-auto p-3 bg-black/40 rounded-sm border border-border">
-                <p className="text-[9px] font-code text-muted-foreground leading-tight uppercase italic">
-                  * Assurez-vous que le GITHUB_TOKEN est valide dans votre environnement local pour les transferts.
+                <p className="text-[8px] lg:text-[9px] font-code text-muted-foreground leading-tight uppercase italic">
+                  * GITHUB_TOKEN requis en local.
                 </p>
               </div>
             </Card>
 
             {/* Console Log Panel */}
-            <Card className="lg:col-span-2 border-border bg-black p-4 flex flex-col gap-4 shadow-inner shadow-primary/5">
-              <div className="flex items-center justify-between border-b border-border pb-3">
-                <h3 className="text-xs font-bold uppercase tracking-widest flex items-center gap-2">
+            <Card className="lg:col-span-2 border-border bg-black p-4 flex flex-col gap-4 shadow-inner shadow-primary/5 min-h-[300px] lg:min-h-0 h-full overflow-hidden">
+              <div className="flex items-center justify-between border-b border-border pb-3 shrink-0">
+                <h3 className="text-[10px] lg:text-xs font-bold uppercase tracking-widest flex items-center gap-2">
                   <Terminal className="w-4 h-4 text-muted-foreground" />
-                  Journaux d'Audit Pipeline
+                  Journaux d'Audit
                 </h3>
                 <div className="flex gap-2">
                   <div className="w-2 h-2 rounded-full bg-red-500/20" />
@@ -205,7 +214,7 @@ export default function PipelinePage() {
                 </div>
               </div>
               
-              <ScrollArea className="flex-1 font-code text-[11px] text-foreground/80 leading-relaxed terminal-scroll">
+              <ScrollArea className="flex-1 font-code text-[10px] lg:text-[11px] text-foreground/80 leading-relaxed terminal-scroll overflow-y-auto">
                 <pre className="whitespace-pre-wrap">
                   {logs || '> Système en veille. Prêt pour pilotage.'}
                   {status === 'uplink' && '\n📡 TRANSMISSION_SOURCE_EN_COURS...'}
@@ -223,17 +232,17 @@ export default function PipelinePage() {
 
 function PipelineNode({ icon: Icon, label, active, completed }: { icon: any, label: string, active: boolean, completed: boolean }) {
   return (
-    <div className="flex flex-col items-center gap-3 z-10 relative">
+    <div className="flex flex-col items-center gap-2 lg:gap-3 z-10 relative">
       <div className={cn(
-        "w-12 h-12 rounded-full border-2 flex items-center justify-center transition-all duration-500",
-        completed ? "bg-secondary/20 border-secondary text-secondary shadow-[0_0_20px_rgba(46,184,146,0.3)]" :
-        active ? "bg-primary/20 border-primary text-primary animate-pulse shadow-[0_0_25px_rgba(50,181,212,0.4)] scale-110" :
+        "w-10 h-10 lg:w-12 lg:h-12 rounded-full border-2 flex items-center justify-center transition-all duration-500",
+        completed ? "bg-secondary/20 border-secondary text-secondary shadow-[0_0_15px_rgba(46,184,146,0.3)]" :
+        active ? "bg-primary/20 border-primary text-primary animate-pulse shadow-[0_0_20px_rgba(50,181,212,0.4)] scale-110" :
         "bg-card border-border text-muted-foreground"
       )}>
-        <Icon className="w-6 h-6" />
+        <Icon className="w-5 h-5 lg:w-6 lg:h-6" />
       </div>
       <span className={cn(
-        "text-[10px] font-headline font-bold uppercase tracking-widest text-center",
+        "text-[8px] lg:text-[10px] font-headline font-bold uppercase tracking-widest text-center",
         active ? "text-primary" : completed ? "text-secondary" : "text-muted-foreground"
       )}>
         {label}
