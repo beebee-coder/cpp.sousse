@@ -64,7 +64,7 @@ interface QAItem {
 
 export default function DatasetPage() {
   const { toast } = useToast();
-  const { isDesktop } = usePlatform();
+  const { isDesktop, isReady } = usePlatform();
   const [mounted, setMounted] = useState(false);
   
   const [mode, setMode] = useState<'qa' | 'procedure'>('qa');
@@ -313,8 +313,9 @@ export default function DatasetPage() {
     <div className="flex flex-col lg:flex-row h-screen bg-background overflow-hidden">
       <DashboardSidebar />
       
-      {/* Hidden inputs with conditional capture based on mode */}
+      {/* Hidden inputs - Explicit capture handling for mobile browsers */}
       <input 
+        key={`photo-input-${isDesktop ? 'desktop' : 'web'}`}
         type="file" 
         accept="image/*" 
         capture={isDesktop ? undefined : "environment"} 
@@ -323,6 +324,7 @@ export default function DatasetPage() {
         className="hidden" 
       />
       <input 
+        key={`video-input-${isDesktop ? 'desktop' : 'web'}`}
         type="file" 
         accept="video/*" 
         capture={isDesktop ? undefined : "environment"} 
@@ -342,7 +344,7 @@ export default function DatasetPage() {
             <div className="hidden sm:flex items-center gap-2 px-3 py-1 bg-secondary/10 border border-secondary/20 rounded-sm">
               {isDesktop ? <Monitor className="w-3 h-3 text-secondary" /> : <Smartphone className="w-3 h-3 text-primary" />}
               <span className="text-[9px] font-code uppercase font-bold text-muted-foreground">
-                {isDesktop ? "LOCAL_STORAGE_ACTIVE" : "WEB_BUFFER_ACTIVE"}
+                {isDesktop ? "STATION_PC_ACTIVE" : "WEB_CAMERA_ACTIVE"}
               </span>
             </div>
           </div>
@@ -414,7 +416,7 @@ export default function DatasetPage() {
                               disabled={isProcessingMedia}
                             >
                               <Camera className="w-3 h-3 mr-2" /> 
-                              {isDesktop ? "PC_FILE" : "PHOTO"}
+                              {isDesktop ? "IMPORT_PC" : "PHOTO_CAM"}
                             </Button>
                             <Button 
                               type="button" 
@@ -424,7 +426,7 @@ export default function DatasetPage() {
                               onClick={(e) => handleTriggerCapture(e, index, 'video')}
                             >
                               <Video className="w-3 h-3 mr-2" /> 
-                              {isDesktop ? "PC_FILE" : "VIDÉO"}
+                              {isDesktop ? "FICHIER" : "VIDÉO_CAM"}
                             </Button>
                           </div>
                           <div className="space-y-1">
