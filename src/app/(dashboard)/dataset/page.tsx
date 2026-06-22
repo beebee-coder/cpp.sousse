@@ -16,7 +16,8 @@ import {
   Loader2,
   Circle,
   Eye,
-  AlertTriangle
+  AlertTriangle,
+  Upload
 } from 'lucide-react';
 
 import { Card } from '@/components/ui/card';
@@ -90,6 +91,7 @@ export default function DatasetPage() {
 
   const desktopPhotoRef = useRef<HTMLInputElement>(null);
   const desktopVideoRef = useRef<HTMLInputElement>(null);
+  const fallbackFileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -101,7 +103,6 @@ export default function DatasetPage() {
     };
   }, []);
 
-  // Stabilisation de l'attachement du flux vidéo
   useEffect(() => {
     if (cameraOpen && cameraStream && videoRef.current) {
       videoRef.current.srcObject = cameraStream;
@@ -110,15 +111,29 @@ export default function DatasetPage() {
 
   const startCamera = async () => {
     setCameraError(null);
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setCameraError("Votre navigateur ne supporte pas l'accès caméra.");
+      return;
+    }
+
     try {
+      // Tentative 1 : Caméra arrière (Environment)
       const stream = await navigator.mediaDevices.getUserMedia({ 
         video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }, 
         audio: cameraType === 'video' 
       });
       setCameraStream(stream);
-    } catch (err: any) {
-      console.error("Camera Access Error:", err);
-      setCameraError("Impossible d'accéder à la caméra. Vérifiez les permissions.");
+    } catch (err1) {
+      try {
+        // Tentative 2 : N'importe quelle caméra (souvent nécessaire sur Desktop)
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          video: true, 
+          audio: cameraType === 'video' 
+        });
+        setCameraStream(stream);
+      } catch (err2) {
+        setCameraError("Impossible d'accéder à la caméra. Vérifiez les permissions matérielles.");
+      }
     }
   };
 
@@ -334,6 +349,12 @@ export default function DatasetPage() {
         if (file && activeStepIndex !== null) processCapturedFile(file, activeStepIndex, 'video');
         e.target.value = '';
       }} />
+      <input type="file" accept={cameraType === 'image' ? "image/*" : "video/*"} ref={fallbackFileRef} className="hidden" onChange={(e) => {
+        const file = e.target.files?.[0];
+        if (file && activeStepIndex !== null) processCapturedFile(file, activeStepIndex, cameraType);
+        setCameraModalOpen(false);
+        e.target.value = '';
+      }} />
 
       <main className="flex-1 flex flex-col min-w-0 h-full overflow-y-auto terminal-scroll">
         <header className="h-16 border-b border-border bg-card/30 flex items-center justify-between px-6 shrink-0">
@@ -473,10 +494,18 @@ export default function DatasetPage() {
         >
           <div className="relative aspect-video bg-black flex items-center justify-center">
             {cameraError ? (
-              <div className="p-6 text-center space-y-4">
+              <div className="p-6 text-center space-y-6">
                 <AlertTriangle className="w-10 h-10 text-destructive mx-auto" />
-                <p className="text-[11px] font-code text-destructive uppercase font-bold">{cameraError}</p>
-                <Button variant="outline" size="sm" onClick={startCamera} className="h-8 text-[10px] uppercase font-code">Réessayer</Button>
+                <div className="space-y-2">
+                  <p className="text-[11px] font-code text-destructive uppercase font-bold">{cameraError}</p>
+                  <p className="text-[9px] text-muted-foreground uppercase">Tentez de rafraîchir ou d'importer manuellement.</p>
+                </div>
+                <div className="flex gap-3 justify-center">
+                  <Button variant="outline" size="sm" onClick={startCamera} className="h-8 text-[10px] uppercase font-code">Réessayer</Button>
+                  <Button variant="secondary" size="sm" onClick={() => fallbackFileRef.current?.click()} className="h-8 text-[10px] uppercase font-code">
+                    <Upload className="w-3 h-3 mr-2" /> Choisir Fichier
+                  </Button>
+                </div>
               </div>
             ) : cameraStream ? (
               <video 
