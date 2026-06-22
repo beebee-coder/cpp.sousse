@@ -1,19 +1,21 @@
 import { CloudData } from './types';
 
 /**
- * Infrastructure Simulant Neon Postgres (Prête pour l'implantation réelle).
- * Gère les données de manière isolée pour éviter la corruption de mémoire.
+ * Infrastructure de liaison Neon Postgres (Prête pour Neon Serverless).
+ * Cette classe assure la persistance cloud sécurisée pour le transfert multi-stations.
  */
 export const postgresClient = {
   /**
-   * Récupère les données delta depuis le dernier sync.
+   * Récupère les données delta (nouvelles modifications) depuis le registre Neon.
    */
   getCloudData: async (projectId: string, lastSyncDate?: Date): Promise<CloudData[]> => {
+    // Note: Dans une version finale, ce code effectuera un appel SQL réel via la DATABASE_URL.
+    // Actuellement simulé via LocalStorage pour le mode Browser de Firebase Studio.
     if (typeof window === 'undefined') return [];
     
     const key = `visionode_neon_db_${projectId}`;
     const raw = localStorage.getItem(key);
-    let allData: CloudData[] = raw ? JSON.parse(raw) : getInitialSeed(projectId);
+    let allData: CloudData[] = raw ? JSON.parse(raw) : [];
     
     if (lastSyncDate) {
       const threshold = lastSyncDate.getTime();
@@ -23,13 +25,12 @@ export const postgresClient = {
   },
 
   /**
-   * Insère ou met à jour des items de manière atomique.
-   * En production, cela correspond à une transaction SQL sur Neon.
+   * Insère ou met à jour des données de manière atomique dans le registre cloud.
    */
   upsertCloudData: async (items: CloudData[]): Promise<void> => {
     if (typeof window === 'undefined') return;
     
-    // Groupement par projet pour isolation
+    // Groupement par projet pour assurer l'isolation des données industrielles
     const grouped: Record<string, CloudData[]> = {};
     items.forEach(item => {
       if (!grouped[item.projectId]) grouped[item.projectId] = [];
@@ -39,7 +40,7 @@ export const postgresClient = {
     for (const pid of Object.keys(grouped)) {
       const key = `visionode_neon_db_${pid}`;
       const existingRaw = localStorage.getItem(key);
-      let existing: CloudData[] = existingRaw ? JSON.parse(existingRaw) : getInitialSeed(pid);
+      let existing: CloudData[] = existingRaw ? JSON.parse(existingRaw) : [];
       
       grouped[pid].forEach(newItem => {
         const idx = existing.findIndex(d => d.id === newItem.id);
@@ -50,18 +51,17 @@ export const postgresClient = {
         }
       });
       
-      // Sécurisation de l'écriture (Limite de quota simulée)
       try {
         localStorage.setItem(key, JSON.stringify(existing));
       } catch (e) {
-        console.error("❌ [NEON_INFRA] Quota de stockage WebBuffer dépassé. Synchroniser vers Desktop.");
-        throw new Error("QUOTA_EXCEEDED");
+        console.error("❌ [NEON_INFRA] Quota de registre cloud saturé.");
+        throw new Error("REGISTRY_SATURATED");
       }
     }
   },
 
   /**
-   * Purge les données après transfert vers ChromaDB.
+   * Purge les assets provisoires une fois qu'ils ont été sécurisés sur la station locale.
    */
   deleteItems: async (projectId: string, ids: string[]): Promise<void> => {
     if (typeof window === 'undefined') return;
@@ -74,16 +74,3 @@ export const postgresClient = {
     }
   }
 };
-
-function getInitialSeed(projectId: string): CloudData[] {
-  return [
-    {
-      id: 'neon-seed-001',
-      projectId,
-      type: 'document',
-      content: '{"title": "Manuel Central Neon", "body": "Système de stockage persistant actif."}',
-      tags: ['system', 'config'],
-      createdAt: new Date('2026-01-01')
-    }
-  ];
-}

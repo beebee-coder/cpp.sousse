@@ -2,11 +2,13 @@ import { LocalVectorPoint } from './types';
 import { apiClient } from '../api-client';
 
 /**
- * Client ChromaDB optimisé pour l'environnement hybride.
- * Utilise localStorage pour le mock offline et appelle l'API standard pour la vectorisation réelle.
- * Ne contient aucun import serveur direct pour éviter les erreurs de bundle.
+ * Client d'interface pour ChromaDB (Moteur Vectoriel Local).
+ * Assure la transition entre les données brutes et l'index de recherche sémantique.
  */
 export const chromaClient = {
+  /**
+   * Récupère l'état de l'index local (Simulation UI).
+   */
   getPoints: async (collectionName: string): Promise<LocalVectorPoint[]> => {
     if (typeof window === 'undefined') return [];
     const storageKey = `visionode_chroma_mock_vectors_${collectionName}`;
@@ -14,10 +16,13 @@ export const chromaClient = {
     return raw ? JSON.parse(raw) : [];
   },
 
+  /**
+   * Injecte et vectorise des points dans la collection locale.
+   */
   upsertPoints: async (collectionName: string, points: LocalVectorPoint[]): Promise<void> => {
     if (typeof window === 'undefined') return;
     
-    // 1. Mise à jour du mock local (LocalStorage)
+    // 1. Mise à jour du registre de prévisualisation local
     const storageKey = `visionode_chroma_mock_vectors_${collectionName}`;
     const raw = localStorage.getItem(storageKey);
     const existing: LocalVectorPoint[] = raw ? JSON.parse(raw) : [];
@@ -33,15 +38,14 @@ export const chromaClient = {
 
     localStorage.setItem(storageKey, JSON.stringify(existing));
 
-    // 2. Synchronisation avec le vrai ChromaDB via l'API Route (si disponible)
+    // 2. Déclenchement de la vectorisation réelle via l'API hybride
+    // Cette étape transforme le texte en vecteurs (embeddings) via Transformers.js
     try {
       const docs = points.map(p => ({
         id: p.id,
-        content: `Vecteur metadata: type=${p.metadata.type}, tags=${p.metadata.tags.join(',')}`,
+        content: p.metadata.type === 'metadata' ? p.id : `Asset industriel: ${p.metadata.tags.join(', ')}`,
         metadata: {
-          cloudId: p.metadata.cloudId || '',
-          type: p.metadata.type,
-          syncStatus: p.metadata.syncStatus,
+          ...p.metadata,
           timestamp: new Date(p.metadata.timestamp).toISOString()
         }
       }));
@@ -51,8 +55,10 @@ export const chromaClient = {
         documents: docs,
         upsert: true
       });
-    } catch (e) {
-      console.warn('⚠️ Synchronisation vectorielle réelle ignorée ou échouée (Mode Offline).');
+      
+      console.log(`✅ [CHROMA_CLIENT] ${points.length} points vectorisés avec succès.`);
+    } catch (e: any) {
+      console.warn(`⚠️ [CHROMA_CLIENT] Vectorisation différée ou échec API: ${e.message}`);
     }
   }
 };

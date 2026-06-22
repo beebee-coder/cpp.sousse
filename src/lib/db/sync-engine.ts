@@ -1,10 +1,11 @@
 import { sqliteClient } from './sqlite-client';
 import { SyncState, LocalMetadata, CloudData } from './types';
 import { apiClient } from '../api-client';
+import { chromaClient } from './chroma-client';
 
 /**
- * Moteur de synchronisation atomique optimisé pour Neon Postgres.
- * Gère le transfert séquentiel pour éviter la saturation RAM.
+ * Moteur de synchronisation atomique optimisé pour Neon Postgres & ChromaDB.
+ * Orchestre le transfert des données entre le registre Cloud et le moteur Vectoriel Local.
  */
 export const syncEngine = {
   async getSyncState(userId: string): Promise<SyncState> {
@@ -30,7 +31,7 @@ export const syncEngine = {
   },
 
   /**
-   * Phase 1 : Upload Atomique (Un par un)
+   * Phase 1 : Upload Local -> Cloud (Neon)
    */
   async uploadPhase(userId: string, projectId: string): Promise<number> {
     const pending = await sqliteClient.getPending();
@@ -59,14 +60,14 @@ export const syncEngine = {
           successCount++;
         }
       } catch (e) {
-        console.error(`⚠️ Échec upload item ${m.id}`);
+        console.error(`⚠️ [SYNC_UP] Échec item ${m.id}`);
       }
     }
     return successCount;
   },
 
   /**
-   * Phase 2 : Download Delta (Neon -> Local ChromaDB)
+   * Phase 2 : Download Cloud (Neon) -> Local (ChromaDB + SQLite)
    */
   async downloadPhase(userId: string, projectId: string): Promise<number> {
     const state = await this.getSyncState(userId);
@@ -79,36 +80,57 @@ export const syncEngine = {
     if (!res.items || res.items.length === 0) return 0;
 
     const idsToPurge: string[] = [];
+    let indexedCount = 0;
 
     for (const item of res.items) {
-      // 📥 TRAITEMENT ASSETS PROVISOIRES
+      // 📥 TRAITEMENT DES ASSETS (IMAGES/VIDÉOS)
       if (item.type === 'provisional_asset') {
-        console.log(`📥 [NEON_SYNC] Transfert asset : ${item.id}`);
-        // Dans une app native réelle, on enregistre ici le buffer dans le FS local
+        console.log(`📥 [SYNC_ASSET] Transfert vers stockage local : ${item.id}`);
+        // Ici on simule l'écriture sur le FS local (EXE)
         idsToPurge.push(item.id);
       }
 
-      if (item.type === 'metadata') {
+      // 🧠 INDEXATION VECTORIELLE (METADATA / DOCS)
+      if (item.type === 'metadata' || item.type === 'document') {
         try {
           const parsed = JSON.parse(item.content);
+          
+          // Mise à jour du moteur de recherche local (ChromaDB)
+          await chromaClient.upsertPoints('industrial_manuals', [{
+            id: item.id,
+            values: [], // Sera généré par l'embedder local
+            metadata: {
+              cloudId: item.id,
+              type: item.type,
+              tags: item.tags,
+              timestamp: new Date(item.createdAt).getTime(),
+              syncStatus: 'synced'
+            }
+          }]);
+
+          // Persistance dans le registre de métadonnées local
           await sqliteClient.upsert({
             id: item.id,
-            vectorId: parsed.vectorId || 'none',
-            key: parsed.key || 'unknown',
-            value: parsed.value || '',
+            vectorId: item.id,
+            key: item.tags[0] || 'sync_import',
+            value: item.content,
             syncStatus: 'synced'
           });
-        } catch (e) {}
+          
+          indexedCount++;
+        } catch (e) {
+          console.error(`❌ [SYNC_INDEX] Échec item ${item.id}:`, e);
+        }
       }
     }
 
-    // 🧹 PURGE NÉON : Libération radicale de l'espace Cloud
+    // 🧹 PURGE AUTOMATIQUE DU CLOUD (Libération d'espace Neon)
     if (idsToPurge.length > 0) {
       await apiClient.post('/api/sync/cleanup', { ids: idsToPurge, projectId });
-      console.log(`🧹 [NEON_PURGE] ${idsToPurge.length} assets supprimés du cloud.`);
+      console.log(`🧹 [SYNC_CLEANUP] ${idsToPurge.length} assets purgés du registre cloud.`);
     }
 
-    return res.items.length;
+    return indexedCount;
   },
 
   async syncAll(userId: string, projectId: string) {
@@ -117,6 +139,7 @@ export const syncEngine = {
     await this.saveSyncState(state);
 
     try {
+      console.log(`🚀 [SYNC_START] Initiation du pipeline atomique...`);
       const upCount = await this.uploadPhase(userId, projectId);
       const downCount = await this.downloadPhase(userId, projectId);
 
@@ -125,10 +148,11 @@ export const syncEngine = {
       state.pendingUploads = (await sqliteClient.getPending()).length;
       await this.saveSyncState(state);
 
-      console.log(`✅ [NEON_SYNC_OK] Up: ${upCount}, Down: ${downCount}`);
+      console.log(`✅ [SYNC_COMPLETE] Liaison terminée. Indexés: ${downCount}, Transmis: ${upCount}`);
     } catch (e: any) {
       state.status = 'error';
       await this.saveSyncState(state);
+      console.error(`❌ [SYNC_CRITICAL] Rupture de liaison:`, e.message);
       throw e;
     }
   }
