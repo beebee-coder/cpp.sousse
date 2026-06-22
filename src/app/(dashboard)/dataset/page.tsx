@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { 
   Database, 
   Plus, 
@@ -21,7 +21,8 @@ import {
   Check,
   Loader2,
   AlertTriangle,
-  Monitor
+  Monitor,
+  Circle
 } from 'lucide-react';
 
 import { Card } from '@/components/ui/card';
@@ -33,7 +34,8 @@ import {
   Dialog, 
   DialogContent, 
   DialogHeader, 
-  DialogTitle 
+  DialogTitle,
+  DialogFooter
 } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { apiClient } from '@/lib/api-client';
@@ -64,7 +66,7 @@ interface QAItem {
 
 export default function DatasetPage() {
   const { toast } = useToast();
-  const { isDesktop, isReady } = usePlatform();
+  const { isDesktop } = usePlatform();
   const [mounted, setMounted] = useState(false);
   
   const [mode, setMode] = useState<'qa' | 'procedure'>('qa');
@@ -79,12 +81,21 @@ export default function DatasetPage() {
 
   const [isIngesting, setIsIngesting] = useState(false);
   const [ingestProgress, setIngestIngestProgress] = useState(0);
-  const [isProcessingMedia, setIsProcessingMedia] = useState(false);
-  const [previewMedia, setPreviewMedia] = useState<{ url: string, type: 'image' | 'video' } | null>(null);
+  
+  // États pour la capture WebRTC réelle
+  const [cameraOpen, setCameraModalOpen] = useState(false);
+  const [cameraType, setCameraType] = useState<'image' | 'video'>('image');
+  const [activeStepIndex, setActiveStepIndex] = useState<number | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordedChunksRef = useRef<Blob[]>([]);
 
-  const photoInputRef = useRef<HTMLInputElement>(null);
-  const videoInputRef = useRef<HTMLInputElement>(null);
-  const activeCaptureRef = useRef<{ index: number, type: 'image' | 'video' } | null>(null);
+  // Inputs cachés pour le mode DESKTOP uniquement
+  const desktopPhotoRef = useRef<HTMLInputElement>(null);
+  const desktopVideoRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -93,8 +104,9 @@ export default function DatasetPage() {
         if (s.imagePreview) URL.revokeObjectURL(s.imagePreview);
         if (s.videoPreview) URL.revokeObjectURL(s.videoPreview);
       });
+      if (cameraStream) cameraStream.getTracks().forEach(track => track.stop());
     };
-  }, []);
+  }, [procSteps, cameraStream]);
 
   const compressImage = async (file: File): Promise<Blob> => {
     return new Promise((resolve, reject) => {
@@ -108,101 +120,32 @@ export default function DatasetPage() {
           const MAX_SIZE = 1000;
           let width = img.width;
           let height = img.height;
-
           if (width > height) {
-            if (width > MAX_SIZE) {
-              height *= MAX_SIZE / width;
-              width = MAX_SIZE;
-            }
+            if (width > MAX_SIZE) { height *= MAX_SIZE / width; width = MAX_SIZE; }
           } else {
-            if (height > MAX_SIZE) {
-              width *= MAX_SIZE / height;
-              height = MAX_SIZE;
-            }
+            if (height > MAX_SIZE) { width *= MAX_SIZE / height; height = MAX_SIZE; }
           }
-
           canvas.width = width;
           canvas.height = height;
           const ctx = canvas.getContext('2d');
           ctx?.drawImage(img, 0, 0, width, height);
-          
           canvas.toBlob((blob) => {
             if (blob) resolve(blob);
-            else reject(new Error("Compression failed"));
+            else reject(new Error("Échec compression"));
           }, 'image/jpeg', 0.7);
         };
-        img.onerror = () => reject(new Error("Image load error"));
+        img.onerror = () => reject(new Error("Erreur image"));
       };
-      reader.onerror = () => reject(new Error("File read error"));
+      reader.onerror = () => reject(new Error("Erreur lecture"));
     });
   };
 
-  const fileToBase64 = (file: Blob): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = error => reject(error);
-    });
-  };
-
-  const addStep = () => {
-    setProcSteps([...procSteps, { 
-      id: Date.now().toString(), 
-      title: '', description: '', normalConditions: '', abnormalConditions: '', alarms: '' 
-    }]);
-  };
-
-  const removeStep = (index: number) => {
-    if (procSteps.length <= 1) return;
-    const newSteps = [...procSteps];
-    const removed = newSteps.splice(index, 1)[0];
-    if (removed.imagePreview) URL.revokeObjectURL(removed.imagePreview);
-    if (removed.videoPreview) URL.revokeObjectURL(removed.videoPreview);
-    setProcSteps(newSteps);
-  };
-
-  const updateStep = (index: number, field: keyof ProcedureStep, value: string) => {
-    const newSteps = [...procSteps];
-    (newSteps[index] as any)[field] = value;
-    setProcSteps(newSteps);
-  };
-
-  const deleteMedia = (index: number, type: 'image' | 'video') => {
-    const newSteps = [...procSteps];
-    if (type === 'image') {
-      if (newSteps[index].imagePreview) URL.revokeObjectURL(newSteps[index].imagePreview!);
-      newSteps[index].imageFile = undefined;
-      newSteps[index].imagePreview = undefined;
-    } else {
-      if (newSteps[index].videoPreview) URL.revokeObjectURL(newSteps[index].videoPreview!);
-      newSteps[index].videoFile = undefined;
-      newSteps[index].videoPreview = undefined;
-    }
-    setProcSteps(newSteps);
-  };
-
-  const handleTriggerCapture = (e: React.MouseEvent, index: number, type: 'image' | 'video') => {
-    e.preventDefault();
-    e.stopPropagation();
-    activeCaptureRef.current = { index, type };
-    if (type === 'image') photoInputRef.current?.click();
-    else videoInputRef.current?.click();
-  };
-
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !activeCaptureRef.current) return;
-
-    const { index, type } = activeCaptureRef.current;
-    setIsProcessingMedia(true);
-
+  const processCapturedFile = async (file: File, index: number, type: 'image' | 'video') => {
     try {
       const newSteps = [...procSteps];
       if (type === 'image') {
         const compressedBlob = await compressImage(file);
-        const compressedFile = new File([compressedBlob], file.name, { type: 'image/jpeg' });
-        
+        const compressedFile = new File([compressedBlob], `capture_${Date.now()}.jpg`, { type: 'image/jpeg' });
         if (newSteps[index].imagePreview) URL.revokeObjectURL(newSteps[index].imagePreview!);
         newSteps[index].imageFile = compressedFile;
         newSteps[index].imagePreview = URL.createObjectURL(compressedFile);
@@ -213,43 +156,109 @@ export default function DatasetPage() {
       }
       setProcSteps(newSteps);
     } catch (err) {
-      toast({ title: "Erreur Capture", description: "Mémoire saturée ou format invalide.", variant: "destructive" });
-    } finally {
-      setIsProcessingMedia(false);
-      if (e.target) e.target.value = '';
+      toast({ title: "Erreur Traitement", description: "Mémoire saturée.", variant: "destructive" });
+    }
+  };
+
+  const handleTriggerCapture = (e: React.MouseEvent, index: number, type: 'image' | 'video') => {
+    e.preventDefault();
+    e.stopPropagation();
+    setActiveStepIndex(index);
+    
+    if (isDesktop) {
+      // Mode Desktop : Utilise les inputs fichiers standards
+      if (type === 'image') desktopPhotoRef.current?.click();
+      else desktopVideoRef.current?.click();
+    } else {
+      // Mode Web : Ouvre la caméra réelle via WebRTC
+      setCameraType(type);
+      setCameraModalOpen(true);
+    }
+  };
+
+  // Gestion Caméra WebRTC
+  const startCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { facingMode: 'environment' }, 
+        audio: cameraType === 'video' 
+      });
+      setCameraStream(stream);
+      if (videoRef.current) videoRef.current.srcObject = stream;
+    } catch (err) {
+      toast({ title: "Accès Caméra Refusé", description: "Vérifiez vos permissions navigateur.", variant: "destructive" });
+      setCameraModalOpen(false);
+    }
+  };
+
+  useEffect(() => {
+    if (cameraOpen) {
+      startCamera();
+    } else {
+      if (cameraStream) {
+        cameraStream.getTracks().forEach(t => track.stop());
+        setCameraStream(null);
+      }
+    }
+  }, [cameraOpen]);
+
+  const capturePhoto = () => {
+    if (!videoRef.current || activeStepIndex === null) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = videoRef.current.videoWidth;
+    canvas.height = videoRef.current.videoHeight;
+    canvas.getContext('2d')?.drawImage(videoRef.current, 0, 0);
+    canvas.toBlob(async (blob) => {
+      if (blob) {
+        const file = new File([blob], `snap_${Date.now()}.jpg`, { type: 'image/jpeg' });
+        await processCapturedFile(file, activeStepIndex, 'image');
+        setCameraModalOpen(false);
+      }
+    }, 'image/jpeg', 0.9);
+  };
+
+  const toggleRecording = () => {
+    if (!isRecording) {
+      recordedChunksRef.current = [];
+      const mediaRecorder = new MediaRecorder(cameraStream!);
+      mediaRecorderRef.current = mediaRecorder;
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) recordedChunksRef.current.push(e.data);
+      };
+      mediaRecorder.onstop = async () => {
+        const blob = new Blob(recordedChunksRef.current, { type: 'video/mp4' });
+        const file = new File([blob], `vid_${Date.now()}.mp4`, { type: 'video/mp4' });
+        if (activeStepIndex !== null) await processCapturedFile(file, activeStepIndex, 'video');
+        setCameraModalOpen(false);
+      };
+      mediaRecorder.start();
+      setIsRecording(true);
+    } else {
+      mediaRecorderRef.current?.stop();
+      setIsRecording(false);
     }
   };
 
   const handleAddItem = (e: React.FormEvent) => {
     e.preventDefault();
     if (mode === 'qa') {
-      if (!question.trim() || !answer.trim()) {
-        toast({ title: "Champs vides", description: "Veuillez remplir la question et la réponse.", variant: "destructive" });
-        return;
-      }
+      if (!question.trim() || !answer.trim()) return;
       setQaItems(prev => [{ id: Date.now().toString(), type: 'qa', label: question, details: answer }, ...prev]);
       setQuestion(''); setAnswer('');
     } else {
-      if (!procTitle.trim()) {
-        toast({ title: "Titre requis", description: "Veuillez nommer votre procédure.", variant: "destructive" });
-        return;
-      }
-      
+      if (!procTitle.trim()) return;
       const details = procSteps.map((s, i) => (
-        `[ÉTAPE ${i + 1}] ${s.title}\nDescription: ${s.description}\n✓ OK: ${s.normalConditions} | ✗ KO: ${s.abnormalConditions} | ⚠ ALERTE: ${s.alarms}`
+        `[ÉTAPE ${i + 1}] ${s.title}\nDescription: ${s.description}\n✓ OK: ${s.normalConditions} | ✗ KO: ${s.abnormalConditions}`
       )).join('\n---\n');
-
       const assets = procSteps.flatMap((s, idx) => {
         const items = [];
         if (s.imageFile) items.push({ type: 'image' as const, file: s.imageFile, step: idx });
         if (s.videoFile) items.push({ type: 'video' as const, file: s.videoFile, step: idx });
         return items;
       });
-
       setQaItems(prev => [{ id: Date.now().toString(), type: 'procedure', label: procTitle, details, mediaAssets: assets }, ...prev]);
       setProcTitle('');
-      setProcSteps([{ id: Date.now().toString(), title: '', description: '', normalConditions: '', abnormalConditions: '', alarms: '' }]);
-      toast({ title: "Procédure ajoutée", description: "Prête pour la synchronisation." });
+      setProcSteps([{ id: '1', title: '', description: '', normalConditions: '', abnormalConditions: '', alarms: '' }]);
     }
   };
 
@@ -257,53 +266,32 @@ export default function DatasetPage() {
     if (qaItems.length === 0) return;
     setIsIngesting(true);
     setIngestIngestProgress(0);
-
     try {
-      const ingestRes = await apiClient.post<{ success: boolean, provider: string }>('/api/vector/ingest', {
-        items: qaItems.map(i => ({ 
-          question: i.type === 'procedure' ? `PROCÉDURE: ${i.label}` : i.label, 
-          answer: i.details 
-        })),
-        metadata: { collection: 'industrial_manuals', source: isDesktop ? 'STATION_FORGE' : 'CAPTURE_TERRAIN' }
+      await apiClient.post('/api/vector/ingest', {
+        items: qaItems.map(i => ({ question: i.label, answer: i.details })),
+        metadata: { collection: 'industrial_manuals' }
       });
-
-      const itemsWithAssets = qaItems.filter(i => i.mediaAssets && i.mediaAssets.length > 0);
-      let totalAssets = itemsWithAssets.reduce((acc, curr) => acc + (curr.mediaAssets?.length || 0), 0);
-      let uploadedCount = 0;
-
+      // Upload des assets lourds un par un
+      const itemsWithAssets = qaItems.filter(i => i.mediaAssets?.length);
       for (const item of itemsWithAssets) {
         for (const asset of item.mediaAssets!) {
-          const base64 = await fileToBase64(asset.file);
-          
-          await apiClient.post('/api/sync/upload', {
-            userId: 'admin',
-            projectId: 'project-001',
-            items: [{
-              id: `asset-${Date.now()}-${Math.random()}`,
-              projectId: 'project-001',
-              type: 'provisional_asset' as const,
-              content: base64,
-              metadata: { type: asset.type, step: asset.step, title: item.label },
-              tags: ['web_buffer', asset.type],
-              createdAt: new Date()
-            }]
+          const reader = new FileReader();
+          const base64 = await new Promise<string>((res) => {
+            reader.onload = () => res(reader.result as string);
+            reader.readAsDataURL(asset.file);
           });
-
-          uploadedCount++;
-          setIngestIngestProgress(Math.round((uploadedCount / (totalAssets || 1)) * 100));
-          (base64 as any) = null; 
+          await apiClient.post('/api/sync/upload', {
+            userId: 'admin', projectId: 'project-001',
+            items: [{ id: `asset-${Date.now()}`, type: 'provisional_asset', content: base64, metadata: { type: asset.type, title: item.label }, createdAt: new Date() }]
+          });
         }
       }
-
-      if (ingestRes.success) {
-        toast({ title: "Synchronisation réussie", description: `${qaItems.length} items transférés.` });
-        setQaItems([]);
-      }
-    } catch (e: any) {
-      toast({ title: "Erreur Critique", description: "Liaison Neon interrompue.", variant: "destructive" });
+      toast({ title: "Succès", description: "Données synchronisées." });
+      setQaItems([]);
+    } catch (e) {
+      toast({ title: "Erreur", description: "Liaison perdue.", variant: "destructive" });
     } finally {
       setIsIngesting(false);
-      setIngestIngestProgress(0);
     }
   };
 
@@ -313,76 +301,44 @@ export default function DatasetPage() {
     <div className="flex flex-col lg:flex-row h-screen bg-background overflow-hidden">
       <DashboardSidebar />
       
-      {/* Hidden inputs - Explicit capture handling for mobile browsers */}
-      <input 
-        key={`photo-input-${isDesktop ? 'desktop' : 'web'}`}
-        type="file" 
-        accept="image/*" 
-        capture={isDesktop ? undefined : "environment"} 
-        ref={photoInputRef} 
-        onChange={handleFileChange} 
-        className="hidden" 
-      />
-      <input 
-        key={`video-input-${isDesktop ? 'desktop' : 'web'}`}
-        type="file" 
-        accept="video/*" 
-        capture={isDesktop ? undefined : "environment"} 
-        ref={videoInputRef} 
-        onChange={handleFileChange} 
-        className="hidden" 
-      />
-      
+      {/* Inputs cachés pour le mode DESKTOP (Importation fichier) */}
+      <input type="file" accept="image/*" ref={desktopPhotoRef} className="hidden" onChange={(e) => {
+        const file = e.target.files?.[0];
+        if (file && activeStepIndex !== null) processCapturedFile(file, activeStepIndex, 'image');
+      }} />
+      <input type="file" accept="video/*" ref={desktopVideoRef} className="hidden" onChange={(e) => {
+        const file = e.target.files?.[0];
+        if (file && activeStepIndex !== null) processCapturedFile(file, activeStepIndex, 'video');
+      }} />
+
       <main className="flex-1 flex flex-col min-w-0 h-full overflow-y-auto terminal-scroll">
         <header className="h-16 border-b border-border bg-card/30 flex items-center justify-between px-6 shrink-0">
           <div className="flex items-center gap-4">
             <div className="lg:hidden w-10" />
-            <div className="flex items-center gap-2">
-              <Database className="w-4 h-4 text-primary animate-pulse" />
-              <span className="font-headline font-bold text-xs lg:text-sm uppercase tracking-widest text-primary">Entraînement RAG</span>
-            </div>
-            <div className="hidden sm:flex items-center gap-2 px-3 py-1 bg-secondary/10 border border-secondary/20 rounded-sm">
-              {isDesktop ? <Monitor className="w-3 h-3 text-secondary" /> : <Smartphone className="w-3 h-3 text-primary" />}
-              <span className="text-[9px] font-code uppercase font-bold text-muted-foreground">
-                {isDesktop ? "STATION_PC_ACTIVE" : "WEB_CAMERA_ACTIVE"}
-              </span>
-            </div>
+            <Database className="w-4 h-4 text-primary animate-pulse" />
+            <span className="font-headline font-bold text-xs lg:text-sm uppercase tracking-widest text-primary">Entraînement RAG</span>
+            <Badge variant="outline" className="hidden sm:flex text-[9px] border-secondary/30 text-secondary">
+              {isDesktop ? "STATION_IMPORT_ACTIVE" : "VISION_LIVE_ACTIVE"}
+            </Badge>
           </div>
-          
           <div className="flex bg-muted/30 p-1 rounded-sm border border-border">
-            <button onClick={() => setMode('qa')} className={cn("flex items-center gap-2 px-3 py-1.5 text-[9px] font-code uppercase rounded-sm", mode === 'qa' ? "bg-primary text-primary-foreground" : "text-muted-foreground")}>
-              Q / R
-            </button>
-            <button onClick={() => setMode('procedure')} className={cn("flex items-center gap-2 px-3 py-1.5 text-[9px] font-code uppercase rounded-sm", mode === 'procedure' ? "bg-secondary text-secondary-foreground" : "text-muted-foreground")}>
-              Procédure
-            </button>
+            <button onClick={() => setMode('qa')} className={cn("px-3 py-1.5 text-[9px] font-code uppercase rounded-sm", mode === 'qa' ? "bg-primary text-primary-foreground" : "text-muted-foreground")}>Q / R</button>
+            <button onClick={() => setMode('procedure')} className={cn("px-3 py-1.5 text-[9px] font-code uppercase rounded-sm", mode === 'procedure' ? "bg-secondary text-secondary-foreground" : "text-muted-foreground")}>Procédure</button>
           </div>
         </header>
 
         <div className="p-4 lg:p-8 max-w-5xl mx-auto w-full space-y-6">
-          {isIngesting && (
-            <Card className="p-4 border-primary/20 bg-primary/5 space-y-3 rounded-sm shadow-lg">
-              <div className="flex justify-between items-center text-[10px] font-code uppercase">
-                <span className="flex items-center gap-2 text-primary"><Loader2 className="w-4 h-4 animate-spin" /> Transmission des assets...</span>
-                <span className="font-bold">{ingestProgress}%</span>
-              </div>
-              <div className="h-1 w-full bg-primary/10 rounded-full overflow-hidden">
-                <div className="h-full bg-primary transition-all duration-300" style={{ width: `${ingestProgress}%` }} />
-              </div>
-            </Card>
-          )}
-
           <Card className="p-4 lg:p-6 border-border bg-card/50 space-y-6 rounded-sm shadow-2xl">
             <form onSubmit={handleAddItem} className="space-y-6">
               {mode === 'qa' ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <label className="text-[9px] font-bold uppercase text-muted-foreground ml-1">Symptôme / Question</label>
-                    <Textarea value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="Ex: Panne pompe P-01" className="h-32 bg-background font-code text-xs uppercase" />
+                    <label className="text-[9px] font-bold uppercase text-muted-foreground ml-1">Question</label>
+                    <Textarea value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="SYMPTÔME..." className="h-32 bg-background font-code text-xs uppercase" />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-[9px] font-bold uppercase text-muted-foreground ml-1">Action / Réponse</label>
-                    <Textarea value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="Ex: Vérifier alimentation..." className="h-32 bg-background font-code text-xs uppercase" />
+                    <label className="text-[9px] font-bold uppercase text-muted-foreground ml-1">Réponse</label>
+                    <Textarea value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="SOLUTION..." className="h-32 bg-background font-code text-xs uppercase" />
                   </div>
                 </div>
               ) : (
@@ -392,54 +348,50 @@ export default function DatasetPage() {
                     <Card key={step.id} className="p-4 border-border bg-black/30 space-y-4">
                       <div className="flex justify-between items-center border-b border-border/50 pb-2">
                         <span className="text-[10px] font-bold font-code text-secondary">ÉTAPE {index + 1}</span>
-                        <Button type="button" variant="ghost" size="icon" onClick={() => removeStep(index)} className="h-6 w-6 text-destructive"><Trash2 className="w-3 h-3" /></Button>
+                        <Button type="button" variant="ghost" size="icon" onClick={() => setProcSteps(procSteps.filter(s => s.id !== step.id))} className="h-6 w-6 text-destructive"><Trash2 className="w-3 h-3" /></Button>
                       </div>
                       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                         <div className="space-y-3">
-                          <Input placeholder="ACTION_PRINCIPALE" value={step.title} onChange={(e) => updateStep(index, 'title', e.target.value)} className="h-8 text-[11px] font-code uppercase bg-background" />
-                          <Textarea placeholder="DÉTAILS_TECHNIQUES" value={step.description} onChange={(e) => updateStep(index, 'description', e.target.value)} className="text-[10px] uppercase font-code bg-background min-h-[80px]" />
+                          <Input placeholder="ACTION" value={step.title} onChange={(e) => {
+                            const n = [...procSteps]; n[index].title = e.target.value; setProcSteps(n);
+                          }} className="h-8 text-[11px] font-code uppercase bg-background" />
+                          <Textarea placeholder="DESCRIPTION" value={step.description} onChange={(e) => {
+                            const n = [...procSteps]; n[index].description = e.target.value; setProcSteps(n);
+                          }} className="text-[10px] uppercase font-code bg-background min-h-[80px]" />
                         </div>
                         <div className="space-y-3">
-                          <Input value={step.normalConditions} onChange={(e) => updateStep(index, 'normalConditions', e.target.value)} className="h-8 text-[9px] font-code bg-background/30" placeholder="✓ ÉTAT NORMAL" />
-                          <Input value={step.abnormalConditions} onChange={(e) => updateStep(index, 'abnormalConditions', e.target.value)} className="h-8 text-[9px] font-code bg-background/30" placeholder="✗ ANOMALIE" />
-                          <Input value={step.alarms} onChange={(e) => updateStep(index, 'alarms', e.target.value)} className="h-8 text-[9px] font-code bg-background/30 border-primary/30" placeholder="⚠ ALERTE" />
+                          <Input value={step.normalConditions} placeholder="✓ ÉTAT NORMAL" onChange={(e) => {
+                            const n = [...procSteps]; n[index].normalConditions = e.target.value; setProcSteps(n);
+                          }} className="h-8 text-[9px] font-code bg-background/30" />
+                          <Input value={step.abnormalConditions} placeholder="✗ ANOMALIE" onChange={(e) => {
+                            const n = [...procSteps]; n[index].abnormalConditions = e.target.value; setProcSteps(n);
+                          }} className="h-8 text-[9px] font-code bg-background/30" />
                         </div>
                         <div className="bg-black/20 p-3 rounded-sm border border-border/30">
                           <p className="text-[8px] font-bold uppercase text-muted-foreground mb-3">Documentation Visuelle</p>
                           <div className="flex gap-2 mb-3">
-                            <Button 
-                              type="button" 
-                              variant="outline" 
-                              size="sm" 
-                              className="flex-1 h-8 text-[9px] font-code uppercase" 
-                              onClick={(e) => handleTriggerCapture(e, index, 'image')} 
-                              disabled={isProcessingMedia}
-                            >
-                              <Camera className="w-3 h-3 mr-2" /> 
-                              {isDesktop ? "IMPORT_PC" : "PHOTO_CAM"}
+                            <Button type="button" variant="outline" size="sm" className="flex-1 h-8 text-[9px] font-code uppercase" onClick={(e) => handleTriggerCapture(e, index, 'image')}>
+                              <Camera className="w-3 h-3 mr-2" /> {isDesktop ? "IMPORT_PC" : "PHOTO_CAM"}
                             </Button>
-                            <Button 
-                              type="button" 
-                              variant="outline" 
-                              size="sm" 
-                              className="flex-1 h-8 text-[9px] font-code uppercase" 
-                              onClick={(e) => handleTriggerCapture(e, index, 'video')}
-                            >
-                              <Video className="w-3 h-3 mr-2" /> 
-                              {isDesktop ? "FICHIER" : "VIDÉO_CAM"}
+                            <Button type="button" variant="outline" size="sm" className="flex-1 h-8 text-[9px] font-code uppercase" onClick={(e) => handleTriggerCapture(e, index, 'video')}>
+                              <Video className="w-3 h-3 mr-2" /> {isDesktop ? "FICHIER" : "VIDÉO_CAM"}
                             </Button>
                           </div>
                           <div className="space-y-1">
                             {step.imagePreview && (
                               <div className="flex items-center justify-between p-1.5 bg-background/40 rounded-sm">
-                                <button type="button" onClick={() => setPreviewMedia({ url: step.imagePreview!, type: 'image' })} className="text-[8px] font-code text-primary uppercase truncate flex items-center gap-1 hover:underline"><ImageIcon className="w-2.5 h-2.5" /> Voir_Photo <Eye className="w-2.5 h-2.5 ml-1" /></button>
-                                <button type="button" onClick={() => deleteMedia(index, 'image')} className="text-destructive"><X className="w-2.5 h-2.5" /></button>
+                                <span className="text-[8px] font-code text-primary uppercase truncate"><ImageIcon className="w-2.5 h-2.5 mr-1 inline" /> Image_Ok</span>
+                                <button type="button" onClick={() => {
+                                  const n = [...procSteps]; n[index].imageFile = undefined; n[index].imagePreview = undefined; setProcSteps(n);
+                                }} className="text-destructive"><X className="w-2.5 h-2.5" /></button>
                               </div>
                             )}
                             {step.videoPreview && (
                               <div className="flex items-center justify-between p-1.5 bg-background/40 rounded-sm">
-                                <button type="button" onClick={() => setPreviewMedia({ url: step.videoPreview!, type: 'video' })} className="text-[8px] font-code text-secondary uppercase truncate flex items-center gap-1 hover:underline"><Video className="w-2.5 h-2.5" /> Voir_Séquence <Eye className="w-2.5 h-2.5 ml-1" /></button>
-                                <button type="button" onClick={() => deleteMedia(index, 'video')} className="text-destructive"><X className="w-2.5 h-2.5" /></button>
+                                <span className="text-[8px] font-code text-secondary uppercase truncate"><Video className="w-2.5 h-2.5 mr-1 inline" /> Séquence_Ok</span>
+                                <button type="button" onClick={() => {
+                                  const n = [...procSteps]; n[index].videoFile = undefined; n[index].videoPreview = undefined; setProcSteps(n);
+                                }} className="text-destructive"><X className="w-2.5 h-2.5" /></button>
                               </div>
                             )}
                           </div>
@@ -447,7 +399,7 @@ export default function DatasetPage() {
                       </div>
                     </Card>
                   ))}
-                  <Button type="button" variant="outline" onClick={addStep} className="w-full border-dashed h-9 text-[10px] uppercase font-code"><Plus className="w-3.5 h-3.5 mr-2" /> Ajouter une Étape</Button>
+                  <Button type="button" variant="outline" onClick={() => setProcSteps([...procSteps, { id: Date.now().toString(), title: '', description: '', normalConditions: '', abnormalConditions: '', alarms: '' }])} className="w-full border-dashed h-9 text-[10px] uppercase font-code"><Plus className="w-3.5 h-3.5 mr-2" /> Ajouter une Étape</Button>
                 </div>
               )}
               <div className="flex justify-end pt-4">
@@ -456,47 +408,46 @@ export default function DatasetPage() {
             </form>
           </Card>
 
-          <div className="space-y-4 pb-12">
-            <div className="flex justify-between items-center px-2">
-              <h3 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2"><Layers className="w-4 h-4 text-primary" /> File d'attente ({qaItems.length})</h3>
-              {qaItems.length > 0 && (
+          {qaItems.length > 0 && (
+            <div className="space-y-4 pb-12">
+              <div className="flex justify-between items-center px-2">
+                <h3 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2"><Layers className="w-4 h-4 text-primary" /> File d'attente ({qaItems.length})</h3>
                 <Button onClick={handleFinalSubmit} disabled={isIngesting} className="bg-primary text-[10px] uppercase font-bold h-9 px-6 animate-pulse">
                   {isIngesting ? <RefreshCw className="w-3.5 h-3.5 mr-2 animate-spin" /> : <UploadCloud className="w-3.5 h-3.5 mr-2" />} Synchroniser vers le Moteur
                 </Button>
-              )}
-            </div>
-            <div className="grid grid-cols-1 gap-3">
-              {qaItems.map((item) => (
-                <Card key={item.id} className="p-4 border-border bg-black/20 font-code text-[10px] flex justify-between items-center rounded-sm">
-                  <div className="flex items-center gap-4 truncate">
-                    <div className={cn("h-8 w-8 rounded-sm flex items-center justify-center border", item.type === 'procedure' ? "border-secondary/30" : "border-primary/30")}>
-                      {item.type === 'procedure' ? <ListOrdered className="w-4 h-4 text-secondary" /> : <MessageSquare className="w-4 h-4 text-primary" />}
-                    </div>
+              </div>
+              <div className="grid grid-cols-1 gap-2">
+                {qaItems.map((item) => (
+                  <Card key={item.id} className="p-3 border-border bg-black/20 font-code text-[9px] flex justify-between items-center rounded-sm">
                     <div className="truncate">
                       <span className={cn("font-bold mr-2 uppercase", item.type === 'procedure' ? "text-secondary" : "text-primary")}>{item.type === 'procedure' ? 'PROCÉDURE' : 'Q/R'}:</span> 
                       <span className="text-muted-foreground uppercase">{item.label}</span>
-                      {item.mediaAssets && item.mediaAssets.length > 0 && <Badge variant="outline" className="ml-3 text-[7px] border-yellow-500/50 text-yellow-500">{item.mediaAssets.length} MÉDIAS_NEON</Badge>}
                     </div>
-                  </div>
-                  <Button variant="ghost" size="icon" onClick={() => setQaItems(prev => prev.filter(i => i.id !== item.id))} className="h-8 w-8"><Trash2 className="w-3.5 h-3.5 text-destructive" /></Button>
-                </Card>
-              ))}
+                    <Button variant="ghost" size="icon" onClick={() => setQaItems(qaItems.filter(i => i.id !== item.id))} className="h-7 w-7"><Trash2 className="w-3 h-3 text-destructive" /></Button>
+                  </Card>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </main>
 
-      <Dialog open={!!previewMedia} onOpenChange={() => setPreviewMedia(null)}>
-        <DialogContent className="max-w-3xl bg-card border-primary/30 text-foreground sm:rounded-sm">
-          <DialogHeader className="border-b border-border pb-2">
-            <DialogTitle className="text-xs uppercase font-headline tracking-widest flex items-center gap-2"><Eye className="w-4 h-4 text-primary" /> Visualisation_Asset_Neon</DialogTitle>
-          </DialogHeader>
-          <div className="mt-4 relative aspect-video bg-black/40 rounded-sm overflow-hidden flex items-center justify-center border border-border shadow-inner">
-            {previewMedia?.type === 'image' ? <img src={previewMedia.url} alt="Capture réelle" className="max-w-full max-h-full object-contain" /> : <video src={previewMedia?.url} controls autoPlay className="max-w-full max-h-full" />}
-            <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.05)_50%)] z-10 bg-[length:100%_4px]" />
+      {/* MODAL CAMÉRA WebRTC (Mode Web uniquement) */}
+      <Dialog open={cameraOpen} onOpenChange={setCameraModalOpen}>
+        <DialogContent className="max-w-xl bg-card border-primary/30 p-0 sm:rounded-sm overflow-hidden">
+          <div className="relative aspect-video bg-black flex items-center justify-center">
+            <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+            <div className="absolute inset-0 pointer-events-none border-[12px] border-primary/5 opacity-30" />
+            {isRecording && <div className="absolute top-4 right-4 flex items-center gap-2 bg-red-600 px-2 py-1 rounded-full animate-pulse text-[10px] font-bold text-white uppercase"><Circle className="w-3 h-3 fill-white" /> Rec</div>}
           </div>
-          <div className="mt-4 flex justify-end gap-2">
-            <Button size="sm" variant="outline" onClick={() => setPreviewMedia(null)} className="h-8 text-[10px] font-code uppercase">Fermer</Button>
+          <div className="p-4 flex items-center justify-center gap-6 bg-card/90">
+            <Button variant="ghost" onClick={() => setCameraModalOpen(false)} className="text-muted-foreground text-[10px] uppercase font-code">Annuler</Button>
+            {cameraType === 'image' ? (
+              <Button onClick={capturePhoto} className="h-14 w-14 rounded-full bg-primary text-primary-foreground shadow-2xl border-4 border-background"><Camera className="w-6 h-6" /></Button>
+            ) : (
+              <Button onClick={toggleRecording} className={cn("h-14 w-14 rounded-full shadow-2xl border-4 border-background", isRecording ? "bg-red-600 animate-pulse" : "bg-secondary")}><Video className="w-6 h-6" /></Button>
+            )}
+            <div className="w-[60px]" />
           </div>
         </DialogContent>
       </Dialog>
