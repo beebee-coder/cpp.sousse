@@ -73,13 +73,13 @@ export default function DatasetPage() {
   ]);
 
   const [isIngesting, setIsIngesting] = useState(false);
-  const [ingestProgress, setIngestProgress] = useState(0);
   
   const [cameraOpen, setCameraModalOpen] = useState(false);
   const [cameraType, setCameraType] = useState<'image' | 'video'>('image');
   const [activeStepIndex, setActiveStepIndex] = useState<number | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  const [cameraError, setCameraError] = useState<string | null>(null);
 
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewAsset, setPreviewAsset] = useState<{ url: string, type: 'image' | 'video' } | null>(null);
@@ -101,46 +101,42 @@ export default function DatasetPage() {
     };
   }, []);
 
-  // Effet stabilisé pour la caméra
+  // Stabilisation de l'attachement du flux vidéo
   useEffect(() => {
-    let currentStream: MediaStream | null = null;
+    if (cameraOpen && cameraStream && videoRef.current) {
+      videoRef.current.srcObject = cameraStream;
+    }
+  }, [cameraOpen, cameraStream]);
 
-    const startCamera = async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-          video: { facingMode: 'environment' }, 
-          audio: cameraType === 'video' 
-        });
-        currentStream = stream;
-        setCameraStream(stream);
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-        }
-      } catch (err: any) {
-        console.error("Camera Access Error:", err);
-        toast({ 
-          title: "Accès Caméra Refusé", 
-          description: "Vérifiez les permissions de votre navigateur ou si vous êtes en HTTPS.", 
-          variant: "destructive" 
-        });
-        setCameraModalOpen(false);
-      }
-    };
+  const startCamera = async () => {
+    setCameraError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }, 
+        audio: cameraType === 'video' 
+      });
+      setCameraStream(stream);
+    } catch (err: any) {
+      console.error("Camera Access Error:", err);
+      setCameraError("Impossible d'accéder à la caméra. Vérifiez les permissions.");
+    }
+  };
 
+  const stopCamera = () => {
+    if (cameraStream) {
+      cameraStream.getTracks().forEach(t => t.stop());
+      setCameraStream(null);
+    }
+    setCameraError(null);
+  };
+
+  useEffect(() => {
     if (cameraOpen) {
       startCamera();
     } else {
-      if (cameraStream) {
-        cameraStream.getTracks().forEach(t => t.stop());
-        setCameraStream(null);
-      }
+      stopCamera();
     }
-
-    return () => {
-      if (currentStream) {
-        currentStream.getTracks().forEach(t => t.stop());
-      }
-    };
+    return () => stopCamera();
   }, [cameraOpen, cameraType]);
 
   const compressImage = async (file: File): Promise<Blob> => {
@@ -167,7 +163,7 @@ export default function DatasetPage() {
           canvas.toBlob((blob) => {
             if (blob) resolve(blob);
             else reject(new Error("Échec compression"));
-          }, 'image/jpeg', 0.7);
+          }, 'image/jpeg', 0.8);
         };
         img.onerror = () => reject(new Error("Erreur image"));
       };
@@ -285,15 +281,12 @@ export default function DatasetPage() {
   const handleFinalSubmit = async () => {
     if (qaItems.length === 0) return;
     setIsIngesting(true);
-    setIngestProgress(0);
     try {
-      // 1. Envoi du texte
       await apiClient.post('/api/vector/ingest', {
         items: qaItems.map(i => ({ question: i.label, answer: i.details })),
         metadata: { collection: 'industrial_manuals' }
       });
       
-      // 2. Envoi séquentiel des assets multimédias (Atomic Sync)
       const itemsWithAssets = qaItems.filter(i => i.mediaAssets?.length);
       for (const item of itemsWithAssets) {
         for (const asset of item.mediaAssets!) {
@@ -331,7 +324,6 @@ export default function DatasetPage() {
     <div className="flex flex-col lg:flex-row h-screen bg-background overflow-hidden">
       <DashboardSidebar />
       
-      {/* Inputs cachés pour mode Desktop */}
       <input type="file" accept="image/*" ref={desktopPhotoRef} className="hidden" onChange={(e) => {
         const file = e.target.files?.[0];
         if (file && activeStepIndex !== null) processCapturedFile(file, activeStepIndex, 'image');
@@ -380,7 +372,7 @@ export default function DatasetPage() {
                     <Card key={step.id} className="p-4 border-border bg-black/30 space-y-4">
                       <div className="flex justify-between items-center border-b border-border/50 pb-2">
                         <span className="text-[10px] font-bold font-code text-secondary">ÉTAPE {index + 1}</span>
-                        <Button type="button" variant="ghost" size="icon" onClick={() => setProcSteps(procSteps.filter(s => s.id !== step.id))} className="h-6 w-6 text-destructive hover:bg-destructive/10"><Trash2 className="w-3 h-3" /></Button>
+                        <Button type="button" variant="ghost" size="icon" onClick={(e) => { e.preventDefault(); setProcSteps(procSteps.filter(s => s.id !== step.id)); }} className="h-6 w-6 text-destructive hover:bg-destructive/10"><Trash2 className="w-3 h-3" /></Button>
                       </div>
                       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                         <div className="space-y-3">
@@ -414,8 +406,9 @@ export default function DatasetPage() {
                               <div className="flex items-center justify-between p-1.5 bg-background/40 rounded-sm border border-primary/20">
                                 <span className="text-[8px] font-code text-primary uppercase flex items-center gap-1.5"><ImageIcon className="w-2.5 h-2.5" /> IMAGE_CHARGEE</span>
                                 <div className="flex gap-1">
-                                  <button type="button" onClick={() => { setPreviewAsset({ url: step.imagePreview!, type: 'image' }); setPreviewOpen(true); }} className="p-1 hover:text-primary"><Eye className="w-3 h-3" /></button>
-                                  <button type="button" onClick={() => {
+                                  <button type="button" onClick={(e) => { e.preventDefault(); setPreviewAsset({ url: step.imagePreview!, type: 'image' }); setPreviewOpen(true); }} className="p-1 hover:text-primary"><Eye className="w-3 h-3" /></button>
+                                  <button type="button" onClick={(e) => {
+                                    e.preventDefault();
                                     const n = [...procSteps]; n[index].imageFile = undefined; n[index].imagePreview = undefined; setProcSteps(n);
                                   }} className="p-1 text-destructive"><X className="w-3 h-3" /></button>
                                 </div>
@@ -425,8 +418,9 @@ export default function DatasetPage() {
                               <div className="flex items-center justify-between p-1.5 bg-background/40 rounded-sm border border-secondary/20">
                                 <span className="text-[8px] font-code text-secondary uppercase flex items-center gap-1.5"><Video className="w-2.5 h-2.5" /> VIDEO_CHARGEE</span>
                                 <div className="flex gap-1">
-                                  <button type="button" onClick={() => { setPreviewAsset({ url: step.videoPreview!, type: 'video' }); setPreviewOpen(true); }} className="p-1 hover:text-secondary"><Eye className="w-3 h-3" /></button>
-                                  <button type="button" onClick={() => {
+                                  <button type="button" onClick={(e) => { e.preventDefault(); setPreviewAsset({ url: step.videoPreview!, type: 'video' }); setPreviewOpen(true); }} className="p-1 hover:text-secondary"><Eye className="w-3 h-3" /></button>
+                                  <button type="button" onClick={(e) => {
+                                    e.preventDefault();
                                     const n = [...procSteps]; n[index].videoFile = undefined; n[index].videoPreview = undefined; setProcSteps(n);
                                   }} className="p-1 text-destructive"><X className="w-3 h-3" /></button>
                                 </div>
@@ -437,7 +431,7 @@ export default function DatasetPage() {
                       </div>
                     </Card>
                   ))}
-                  <Button type="button" variant="outline" onClick={() => setProcSteps([...procSteps, { id: Date.now().toString(), title: '', description: '', normalConditions: '', abnormalConditions: '', alarms: '' }])} className="w-full border-dashed h-9 text-[10px] uppercase font-code border-primary/20 hover:bg-primary/5"><Plus className="w-3.5 h-3.5 mr-2" /> Ajouter une Étape</Button>
+                  <Button type="button" variant="outline" onClick={(e) => { e.preventDefault(); setProcSteps([...procSteps, { id: Date.now().toString(), title: '', description: '', normalConditions: '', abnormalConditions: '', alarms: '' }]); }} className="w-full border-dashed h-9 text-[10px] uppercase font-code border-primary/20 hover:bg-primary/5"><Plus className="w-3.5 h-3.5 mr-2" /> Ajouter une Étape</Button>
                 </div>
               )}
               <div className="flex justify-end pt-4">
@@ -472,30 +466,72 @@ export default function DatasetPage() {
         </div>
       </main>
 
-      {/* MODAL CAMÉRA WebRTC DIRECTE */}
-      <Dialog open={cameraOpen} onOpenChange={setCameraModalOpen}>
-        <DialogContent className="max-w-xl bg-card border-primary/30 p-0 sm:rounded-sm overflow-hidden" onInteractOutside={(e) => e.preventDefault()}>
+      <Dialog open={cameraOpen} onOpenChange={(val) => !val && setCameraModalOpen(false)}>
+        <DialogContent 
+          className="max-w-xl bg-card border-primary/30 p-0 sm:rounded-sm overflow-hidden" 
+          onInteractOutside={(e) => e.preventDefault()}
+        >
           <div className="relative aspect-video bg-black flex items-center justify-center">
-            {cameraStream ? (
-              <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+            {cameraError ? (
+              <div className="p-6 text-center space-y-4">
+                <AlertTriangle className="w-10 h-10 text-destructive mx-auto" />
+                <p className="text-[11px] font-code text-destructive uppercase font-bold">{cameraError}</p>
+                <Button variant="outline" size="sm" onClick={startCamera} className="h-8 text-[10px] uppercase font-code">Réessayer</Button>
+              </div>
+            ) : cameraStream ? (
+              <video 
+                ref={videoRef} 
+                autoPlay 
+                playsInline 
+                muted 
+                className="w-full h-full object-cover" 
+              />
             ) : (
               <div className="flex flex-col items-center gap-4 text-muted-foreground">
                 <Loader2 className="w-8 h-8 animate-spin" />
-                <span className="text-[10px] font-code uppercase">Initialisation du matériel...</span>
+                <span className="text-[10px] font-code uppercase">Initialisation flux direct...</span>
               </div>
             )}
-            <div className="absolute inset-0 pointer-events-none border-[12px] border-primary/5 opacity-30" />
-            {isRecording && <div className="absolute top-4 right-4 flex items-center gap-2 bg-red-600 px-2 py-1 rounded-full animate-pulse text-[10px] font-bold text-white uppercase"><Circle className="w-3 h-3 fill-white" /> Enregistrement...</div>}
-          </div>
-          <div className="p-4 flex items-center justify-center gap-6 bg-card/90">
-            <Button variant="ghost" onClick={() => setCameraModalOpen(false)} className="text-muted-foreground text-[10px] uppercase font-code">Annuler</Button>
             
-            {cameraStream && (
+            <div className="absolute inset-0 pointer-events-none border-[12px] border-primary/5 opacity-30" />
+            {isRecording && (
+              <div className="absolute top-4 right-4 flex items-center gap-2 bg-red-600 px-2 py-1 rounded-full animate-pulse text-[10px] font-bold text-white uppercase">
+                <Circle className="w-3 h-3 fill-white" /> Enregistrement...
+              </div>
+            )}
+          </div>
+          
+          <div className="p-4 flex items-center justify-center gap-6 bg-card/90">
+            <Button 
+              type="button" 
+              variant="ghost" 
+              onClick={() => setCameraModalOpen(false)} 
+              className="text-muted-foreground text-[10px] uppercase font-code h-9"
+            >
+              Annuler
+            </Button>
+            
+            {cameraStream && !cameraError && (
               <>
                 {cameraType === 'image' ? (
-                  <Button onClick={capturePhoto} className="h-14 w-14 rounded-full bg-primary text-primary-foreground shadow-2xl border-4 border-background hover:scale-105 transition-transform"><Camera className="w-6 h-6" /></Button>
+                  <Button 
+                    type="button" 
+                    onClick={capturePhoto} 
+                    className="h-14 w-14 rounded-full bg-primary text-primary-foreground shadow-2xl border-4 border-background hover:scale-105 transition-transform"
+                  >
+                    <Camera className="w-6 h-6" />
+                  </Button>
                 ) : (
-                  <Button onClick={toggleRecording} className={cn("h-14 w-14 rounded-full shadow-2xl border-4 border-background transition-all", isRecording ? "bg-red-600 animate-pulse" : "bg-secondary")}><Video className="w-6 h-6" /></Button>
+                  <Button 
+                    type="button" 
+                    onClick={toggleRecording} 
+                    className={cn(
+                      "h-14 w-14 rounded-full shadow-2xl border-4 border-background transition-all", 
+                      isRecording ? "bg-red-600 animate-pulse" : "bg-secondary"
+                    )}
+                  >
+                    <Video className="w-6 h-6" />
+                  </Button>
                 )}
               </>
             )}
@@ -504,12 +540,11 @@ export default function DatasetPage() {
         </DialogContent>
       </Dialog>
 
-      {/* MODAL PRÉVISUALISATION RÉELLE */}
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
         <DialogContent className="max-w-3xl bg-black/95 border-primary/50 p-1 sm:rounded-sm overflow-hidden">
           <div className="relative w-full h-full flex flex-col">
             <div className="p-2 border-b border-border bg-card/50 flex justify-between items-center">
-              <span className="text-[10px] font-bold font-code text-primary uppercase">Contrôle Qualité Média</span>
+              <span className="text-[10px] font-bold font-code text-primary uppercase">Audit Qualité Média</span>
             </div>
             <div className="flex-1 flex items-center justify-center bg-black min-h-[300px] max-h-[70vh]">
               {previewAsset?.type === 'image' ? (
