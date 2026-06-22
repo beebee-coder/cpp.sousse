@@ -40,21 +40,25 @@ export function DashboardSidebar() {
   const { isDesktop } = usePlatform();
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  const isDev = typeof process !== 'undefined' && process.env.NODE_ENV === 'development';
+  
+  // Utilisation sécurisée de l'environnement
+  const isDev = process.env.NODE_ENV === 'development';
 
   const SidebarContent = () => (
-    <div className="flex flex-col h-full bg-card">
-      <div className="p-6 border-b border-border">
+    <div className="flex flex-col h-full bg-card overflow-hidden">
+      {/* Header fixe */}
+      <div className="p-6 border-b border-border shrink-0">
         <Link href="/dashboard" className="flex items-center gap-3 mb-1" onClick={() => setOpen(false)}>
-          <div className="w-8 h-8 bg-primary rounded flex items-center justify-center shadow-[0_0_15px_rgba(50,181,212,0.3)]">
+          <div className="w-8 h-8 bg-primary rounded flex items-center justify-center shadow-[0_0_15px_rgba(50,181,212,0.3)] shrink-0">
             <Monitor className="w-5 h-5 text-primary-foreground" />
           </div>
-          <h1 className="font-headline font-bold text-lg tracking-tighter uppercase">VISIONODE</h1>
+          <h1 className="font-headline font-bold text-lg tracking-tighter uppercase truncate">VISIONODE</h1>
         </Link>
-        <p className="text-[10px] text-muted-foreground font-code uppercase tracking-[0.2em]">PRECISION_ENGINE v1.0</p>
+        <p className="text-[10px] text-muted-foreground font-code uppercase tracking-[0.2em] truncate">PRECISION_ENGINE v1.0</p>
       </div>
 
-      <nav className="flex-1 p-4 space-y-1 overflow-y-auto terminal-scroll">
+      {/* Zone de navigation défilante */}
+      <nav className="flex-1 p-4 space-y-1 overflow-y-auto terminal-scroll min-h-0">
         <div className="mb-4">
           <p className="px-3 text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">Navigation</p>
           {navItems.map((item) => {
@@ -71,8 +75,8 @@ export function DashboardSidebar() {
                     : "text-muted-foreground hover:bg-muted hover:text-foreground"
                 )}
               >
-                <item.icon className={cn("w-4 h-4", isActive ? "text-primary" : "text-muted-foreground group-hover:text-primary")} />
-                <span className="font-headline tracking-wide uppercase text-[11px]">{item.label}</span>
+                <item.icon className={cn("w-4 h-4 shrink-0", isActive ? "text-primary" : "text-muted-foreground group-hover:text-primary")} />
+                <span className="font-headline tracking-wide uppercase text-[11px] truncate">{item.label}</span>
               </Link>
             );
           })}
@@ -94,17 +98,18 @@ export function DashboardSidebar() {
                   : "text-muted-foreground hover:bg-primary/5 hover:text-primary"
               )}
             >
-              <div className="flex items-center gap-3">
-                <Rocket className="w-4 h-4 animate-pulse" />
-                <span className="font-headline tracking-wide uppercase text-[11px]">Pilotage Pipeline</span>
+              <div className="flex items-center gap-3 min-w-0">
+                <Rocket className="w-4 h-4 animate-pulse shrink-0" />
+                <span className="font-headline tracking-wide uppercase text-[11px] truncate">Pilotage Pipeline</span>
               </div>
-              <ChevronRight className="w-3 h-3 opacity-50" />
+              <ChevronRight className="w-3 h-3 opacity-50 shrink-0" />
             </Link>
           </div>
         )}
       </nav>
 
-      <div className="p-4 border-t border-border bg-black/20 space-y-3">
+      {/* Footer fixe */}
+      <div className="p-4 border-t border-border bg-black/20 space-y-3 shrink-0">
         <div className="flex items-center justify-between">
           <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-widest">Mode</span>
           <div className="flex items-center gap-1.5">
@@ -128,18 +133,18 @@ export function DashboardSidebar() {
       <div className="lg:hidden fixed top-4 left-4 z-50">
         <Sheet open={open} onOpenChange={setOpen}>
           <SheetTrigger asChild>
-            <Button variant="outline" size="icon" className="bg-card/80 backdrop-blur-sm border-primary/30 text-primary">
+            <Button variant="outline" size="icon" className="bg-card/80 backdrop-blur-sm border-primary/30 text-primary hover:bg-card">
               <Menu className="w-5 h-5" />
             </Button>
           </SheetTrigger>
-          <SheetContent side="left" className="p-0 w-64 border-r border-border">
+          <SheetContent side="left" className="p-0 w-64 border-r border-border h-full">
             <SidebarContent />
           </SheetContent>
         </Sheet>
       </div>
 
       {/* Desktop Fixed Sidebar */}
-      <div className="hidden lg:flex w-64 border-r border-border bg-card flex-col h-full shrink-0">
+      <div className="hidden lg:flex w-64 border-r border-border bg-card flex-col h-full shrink-0 overflow-hidden">
         <SidebarContent />
       </div>
     </>

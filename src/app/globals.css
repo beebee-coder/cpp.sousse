@@ -34,6 +34,8 @@
   }
   body {
     @apply bg-background text-foreground font-body;
+    /* Empêche le scroll global quand on est en mode dashboard fixe */
+    @apply overflow-x-hidden;
   }
   h1, h2, h3, h4, h5, h6 {
     @apply font-headline tracking-tight;
@@ -43,13 +45,37 @@
   }
 }
 
+/* Scrollbar industrielle stable */
+.terminal-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--muted)) transparent;
+}
+
 .terminal-scroll::-webkit-scrollbar {
   width: 4px;
+  height: 4px;
 }
+
 .terminal-scroll::-webkit-scrollbar-track {
-  background: hsl(var(--background));
+  background: transparent;
 }
+
 .terminal-scroll::-webkit-scrollbar-thumb {
   background: hsl(var(--muted));
-  border-radius: 2px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background-clip: content-box;
+}
+
+.terminal-scroll::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--primary) / 0.5);
+}
+
+/* Utilitaires de suppression de scrollbar */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
