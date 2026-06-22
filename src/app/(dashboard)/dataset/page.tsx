@@ -23,7 +23,8 @@ import {
   Lock,
   Eye,
   RefreshCw,
-  Loader2
+  Loader2,
+  Smartphone
 } from 'lucide-react';
 
 import { Card } from '@/components/ui/card';
@@ -105,6 +106,7 @@ export default function DatasetPage() {
 
   const handleCapture = (index: number, type: 'image' | 'video') => {
     const timestamp = Date.now();
+    // En production, cela ouvrirait la caméra native via l'API Browser ou Tauri
     const mockDataUri = type === 'image' 
       ? `data:image/jpeg;base64,CAPTURED_IMG_${timestamp}`
       : `data:video/mp4;base64,CAPTURED_VID_${timestamp}`;
@@ -115,12 +117,15 @@ export default function DatasetPage() {
     } else {
       newSteps[index].videoUrl = mockDataUri;
     }
+    // Si on n'est pas sur desktop, l'asset est marqué comme provisoire (sera sync puis purgé)
     newSteps[index].isProvisional = !isDesktop;
     setProcSteps(newSteps);
 
     toast({
-      title: isDesktop ? "Asset Local lié" : "Asset Provisoire capturé",
-      description: `Le support ${type} sera synchronisé avec le moteur de vision.`,
+      title: isDesktop ? "Asset Local lié" : "Capture Web réussie",
+      description: isDesktop 
+        ? "L'asset a été lié au stockage ChromaDB." 
+        : "Asset stocké dans le buffer Cloud. Il sera purgé après synchronisation locale.",
     });
   };
 
@@ -129,43 +134,23 @@ export default function DatasetPage() {
     
     if (mode === 'qa') {
       if (!question.trim() || !answer.trim()) {
-        toast({ 
-          title: "Champs requis", 
-          description: "Veuillez remplir la question et la réponse.", 
-          variant: "destructive" 
-        });
+        toast({ title: "Champs requis", description: "Remplissez la question et la réponse.", variant: "destructive" });
         return;
       }
-      
-      setQaItems(prev => [{ 
-        id: Date.now().toString(), 
-        type: 'qa',
-        label: question,
-        details: answer 
-      }, ...prev]);
-      
-      setQuestion('');
-      setAnswer('');
-      toast({ title: "Ajouté", description: "La connaissance a été ajoutée à la file d'attente." });
+      setQaItems(prev => [{ id: Date.now().toString(), type: 'qa', label: question, details: answer }, ...prev]);
+      setQuestion(''); setAnswer('');
     } else {
       if (!procTitle.trim() || procSteps.some(s => !s.title.trim())) {
-        toast({ 
-          title: "Champs requis", 
-          description: "Veuillez nommer la procédure et toutes ses étapes.", 
-          variant: "destructive" 
-        });
+        toast({ title: "Champs requis", description: "Nommez la procédure et ses étapes.", variant: "destructive" });
         return;
       }
       
-      const serializedProcedure = `PROCÉDURE TECHNIQUE : ${procTitle}\n\n` + 
+      const serializedProcedure = `PROCÉDURE: ${procTitle}\n\n` + 
         procSteps.map((s, i) => (
-          `Étape ${i + 1}: ${s.title}\n` +
-          `Détail: ${s.description}\n` +
-          (s.normalConditions ? `Conditions Normales: ${s.normalConditions}\n` : '') +
-          (s.abnormalConditions ? `Conditions Anormales: ${s.abnormalConditions}\n` : '') +
-          (s.alarms ? `⚠ ALERTES: ${s.alarms}\n` : '') +
-          (s.imageUrl ? `[MEDIA_IMAGE]: ${s.imageUrl}\n` : '') +
-          (s.videoUrl ? `[MEDIA_VIDEO]: ${s.videoUrl}\n` : '')
+          `[E${i + 1}] ${s.title}: ${s.description}\n` +
+          (s.normalConditions ? `OK: ${s.normalConditions} | ` : '') +
+          (s.abnormalConditions ? `KO: ${s.abnormalConditions} | ` : '') +
+          (s.alarms ? `ALERTE: ${s.alarms}` : '')
         )).join('\n---\n');
 
       const provisionalAssets = procSteps.flatMap((s, idx) => {
@@ -185,8 +170,8 @@ export default function DatasetPage() {
       
       setProcTitle('');
       setProcSteps([{ id: '1', title: '', description: '', subSteps: [], normalConditions: '', abnormalConditions: '', alarms: '', imageUrl: '', videoUrl: '' }]);
-      toast({ title: "Ajouté", description: "La procédure a été ajoutée à la file d'attente." });
     }
+    toast({ title: "Élément ajouté", description: "Prêt pour l'indexation globale." });
   };
 
   const handleFinalSubmit = async () => {
@@ -194,15 +179,17 @@ export default function DatasetPage() {
     setIsIngesting(true);
 
     try {
+      // 1. Ingestion Textuelle (RAG)
       const res = await apiClient.post<{ success: boolean; message: string; provider: string }>('/api/vector/ingest', {
         filename: `dataset-${Date.now()}.jsonl`,
         items: qaItems.map(i => ({ 
           question: i.type === 'procedure' ? `PROCÉDURE: ${i.label}` : i.label, 
           answer: i.details 
         })),
-        metadata: { collection: 'industrial_manuals', source: 'UI_UPLOAD' }
+        metadata: { collection: 'industrial_manuals', source: 'UI_BUFFER' }
       });
 
+      // 2. Transfert des Assets Provisoires (Buffer Cloud)
       const itemsWithAssets = qaItems.filter(i => i.mediaAssets && i.mediaAssets.length > 0);
       if (itemsWithAssets.length > 0 && !isDesktop) {
         const assetsPayload = itemsWithAssets.flatMap(i => i.mediaAssets!.map(a => ({
@@ -210,25 +197,22 @@ export default function DatasetPage() {
           projectId: 'project-001',
           type: 'provisional_asset' as const,
           content: a.content,
-          metadata: { type: a.type, parentId: i.id, step: a.step },
-          tags: ['capture_web', a.type],
+          metadata: { type: a.type, parentId: i.id, step: a.step, title: i.label },
+          tags: ['capture_web_buffer', a.type],
           createdAt: new Date()
         })));
 
         await apiClient.post('/api/sync/upload', { userId: 'admin', projectId: 'project-001', items: assetsPayload });
-        toast({ title: "Assets Provisoires", description: "Média uploadés sur le Cloud. Prêts pour sync locale." });
+        toast({ title: "Buffer Multimédia", description: "Les médias sont en attente de purge locale." });
       }
 
       if (res.success) {
-        toast({
-          title: "Succès du RAG",
-          description: `${qaItems.length} éléments indexés via ${res.provider}.`,
-        });
+        toast({ title: "Indexation réussie", description: `${qaItems.length} éléments via ${res.provider}.` });
         setLastResult({ provider: res.provider || 'Inconnu', count: qaItems.length });
         setQaItems([]);
       }
     } catch (e: any) {
-      toast({ title: "Erreur", description: e.message, variant: "destructive" });
+      toast({ title: "Échec de transmission", description: e.message, variant: "destructive" });
     } finally {
       setIsIngesting(false);
     }
@@ -244,13 +228,13 @@ export default function DatasetPage() {
             <div className="lg:hidden w-10" />
             <div className="flex items-center gap-2">
               <Database className="w-4 h-4 text-primary animate-pulse" />
-              <span className="font-headline font-bold text-xs lg:text-sm uppercase tracking-widest text-primary">RAG Hybride</span>
+              <span className="font-headline font-bold text-xs lg:text-sm uppercase tracking-widest text-primary">Entraînement RAG</span>
             </div>
             <div className="hidden sm:block h-4 w-px bg-border mx-2" />
             <div className="hidden sm:flex items-center gap-2 px-3 py-1 bg-secondary/10 border border-secondary/20 rounded-sm">
-              {isDesktop ? <Cpu className="w-3 h-3 text-secondary" /> : <Globe className="w-3 h-3 text-primary" />}
-              <span className="text-[9px] font-code uppercase font-bold text-muted-foreground whitespace-nowrap">
-                {isDesktop ? "STATION LOCALE (CHROMA)" : "ENTRAÎNEMENT CLOUD (WEAVIATE)"}
+              {!isDesktop ? <Smartphone className="w-3 h-3 text-primary" /> : <Cpu className="w-3 h-3 text-secondary" />}
+              <span className="text-[9px] font-code uppercase font-bold text-muted-foreground">
+                {!isDesktop ? "CAPTURE TERRAIN (WEB BUFFER)" : "STATION FORGE (CHROMA)"}
               </span>
             </div>
           </div>
@@ -281,12 +265,11 @@ export default function DatasetPage() {
 
         <div className="p-4 lg:p-8 max-w-5xl mx-auto w-full space-y-6">
           {lastResult && (
-            <Card className="p-4 border-secondary/30 bg-secondary/5 flex items-center gap-3 rounded-sm animate-in fade-in slide-in-from-top-2">
+            <Card className="p-4 border-secondary/30 bg-secondary/5 flex items-center gap-3 rounded-sm">
               <CheckCircle2 className="w-5 h-5 text-secondary shrink-0" />
               <div className="font-code text-[10px] lg:text-xs">
-                <p className="font-bold uppercase text-secondary">Indexation Réussie</p>
-                <p className="text-muted-foreground">{lastResult.count} éléments via <span className="text-primary font-bold">{lastResult.provider}</span></p>
-                {!isDesktop && <p className="text-[8px] text-primary/70 mt-1 italic">* Assets multimédias en attente de purge locale.</p>}
+                <p className="font-bold uppercase text-secondary">Transmission Terminée</p>
+                <p className="text-muted-foreground">{lastResult.count} éléments injectés dans le pipeline <span className="text-primary font-bold">{lastResult.provider}</span></p>
               </div>
             </Card>
           )}
@@ -295,11 +278,8 @@ export default function DatasetPage() {
             <div className="flex items-center justify-between border-b border-border pb-4">
               <h3 className="text-[10px] lg:text-xs font-bold uppercase tracking-widest font-headline text-muted-foreground flex items-center gap-2">
                 <Plus className={cn("w-4 h-4", mode === 'qa' ? "text-primary" : "text-secondary")} />
-                {mode === 'qa' ? "Ajouter une Connaissance" : "Définir une Procédure Industrielle"}
+                {mode === 'qa' ? "Ajouter une Connaissance" : "Élaborer une Procédure Industrielle"}
               </h3>
-              <Badge variant="outline" className="font-code text-[8px] uppercase">
-                {mode === 'qa' ? "Format Atomique" : "Format Séquentiel"}
-              </Badge>
             </div>
             
             <form onSubmit={handleAddItem} className="space-y-6">
@@ -310,7 +290,7 @@ export default function DatasetPage() {
                     <Textarea
                       value={question}
                       onChange={(e) => setQuestion(e.target.value)}
-                      placeholder="Ex: Que faire si la pression monte à 5 bars ?"
+                      placeholder="Ex: Vibration anormale moteur P-02"
                       className="w-full h-32 bg-background/50 border-border rounded-sm p-3 font-code text-xs uppercase"
                     />
                   </div>
@@ -319,7 +299,7 @@ export default function DatasetPage() {
                     <Textarea
                       value={answer}
                       onChange={(e) => setAnswer(e.target.value)}
-                      placeholder="Ex: Couper la vanne d'arrivée et vérifier le purgeur..."
+                      placeholder="Ex: Vérifier l'alignement de l'arbre et graisser les paliers."
                       className="w-full h-32 bg-background/50 border-border rounded-sm p-3 font-code text-xs uppercase"
                     />
                   </div>
@@ -327,11 +307,11 @@ export default function DatasetPage() {
               ) : (
                 <div className="space-y-6">
                   <div className="space-y-2">
-                    <label className="text-[9px] font-bold uppercase text-muted-foreground ml-1">Nom de la Procédure</label>
+                    <label className="text-[9px] font-bold uppercase text-muted-foreground ml-1">Titre de la Procédure</label>
                     <Input 
                       value={procTitle}
                       onChange={(e) => setProcTitle(e.target.value)}
-                      placeholder="NOM_MAINTENANCE_POMPE_P12"
+                      placeholder="MAINTENANCE_PRÉVENTIVE_SÉRIE_X"
                       className="bg-background/50 border-border font-headline uppercase text-sm h-11"
                     />
                   </div>
@@ -340,15 +320,7 @@ export default function DatasetPage() {
                     {procSteps.map((step, index) => (
                       <Card key={index} className="p-4 border-border bg-black/30 space-y-4 relative group">
                         <div className="flex items-center justify-between border-b border-border/50 pb-2">
-                          <div className="flex items-center gap-3">
-                            <span className="text-[10px] font-bold font-code text-secondary">ÉTAPE {index + 1}</span>
-                            {(step.imageUrl || step.videoUrl) && (
-                              <div className="flex gap-1">
-                                {step.imageUrl && <ImageIcon className={cn("w-3 h-3", step.isProvisional ? "text-yellow-500" : "text-primary/50")} />}
-                                {step.videoUrl && <Video className={cn("w-3 h-3", step.isProvisional ? "text-yellow-500" : "text-secondary/50")} />}
-                              </div>
-                            )}
-                          </div>
+                          <span className="text-[10px] font-bold font-code text-secondary">ÉTAPE {index + 1}</span>
                           <Button 
                             type="button" 
                             variant="ghost" 
@@ -362,143 +334,106 @@ export default function DatasetPage() {
 
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                           <div className="space-y-3 lg:col-span-1">
-                            <div>
-                              <label className="text-[8px] font-bold uppercase text-muted-foreground block mb-1">Titre de l'action</label>
-                              <Input 
-                                placeholder="TITRE_ACTION"
-                                value={step.title}
-                                onChange={(e) => updateStep(index, 'title', e.target.value)}
-                                className="h-8 text-[11px] font-code uppercase bg-background"
-                              />
-                            </div>
-                            <div>
-                              <label className="text-[8px] font-bold uppercase text-muted-foreground block mb-1">Description détaillée</label>
-                              <Textarea 
-                                placeholder="DESCRIPTION_DÉTAILLÉE"
-                                value={step.description}
-                                onChange={(e) => updateStep(index, 'description', e.target.value)}
-                                className="text-[10px] uppercase font-code bg-background min-h-[100px]"
-                              />
-                            </div>
+                            <Input 
+                              placeholder="ACTION_PRINCIPALE"
+                              value={step.title}
+                              onChange={(e) => updateStep(index, 'title', e.target.value)}
+                              className="h-8 text-[11px] font-code uppercase bg-background"
+                            />
+                            <Textarea 
+                              placeholder="DÉTAILS_TECHNIQUES"
+                              value={step.description}
+                              onChange={(e) => updateStep(index, 'description', e.target.value)}
+                              className="text-[10px] uppercase font-code bg-background min-h-[80px]"
+                            />
                           </div>
 
                           <div className="space-y-3 lg:col-span-1">
-                            <div className="grid grid-cols-2 gap-2">
-                              <div className="space-y-1">
-                                <label className="text-[8px] font-bold text-secondary uppercase flex items-center gap-1">
-                                  <Check className="w-2.5 h-2.5" /> Normal
-                                </label>
-                                <Input 
-                                  value={step.normalConditions}
-                                  onChange={(e) => updateStep(index, 'normalConditions', e.target.value)}
-                                  className="h-7 text-[9px] font-code bg-background/30"
-                                  placeholder="Statut OK"
-                                />
-                              </div>
-                              <div className="space-y-1">
-                                <label className="text-[8px] font-bold text-destructive uppercase flex items-center gap-1">
-                                  <AlertTriangle className="w-2.5 h-2.5" /> Anormal
-                                </label>
-                                <Input 
-                                  value={step.abnormalConditions}
-                                  onChange={(e) => updateStep(index, 'abnormalConditions', e.target.value)}
-                                  className="h-7 text-[9px] font-code bg-background/30"
-                                  placeholder="Anomalie"
-                                />
-                              </div>
-                            </div>
-                            <div className="space-y-1">
-                              <label className="text-[8px] font-bold text-primary uppercase flex items-center gap-1">
-                                <Layers className="w-2.5 h-2.5" /> Alarme / Action Immédiate
-                              </label>
-                              <Input 
-                                value={step.alarms}
-                                onChange={(e) => updateStep(index, 'alarms', e.target.value)}
-                                className="h-7 text-[9px] font-code bg-background/30"
-                                placeholder="Déclencher purge..."
-                              />
-                            </div>
+                            <Input 
+                              value={step.normalConditions}
+                              onChange={(e) => updateStep(index, 'normalConditions', e.target.value)}
+                              className="h-8 text-[9px] font-code bg-background/30"
+                              placeholder="✓ ÉTAT NORMAL (EX: 2.5 BARS)"
+                            />
+                            <Input 
+                              value={step.abnormalConditions}
+                              onChange={(e) => updateStep(index, 'abnormalConditions', e.target.value)}
+                              className="h-8 text-[9px] font-code bg-background/30"
+                              placeholder="✗ ANOMALIE (EX: FUITE HUILE)"
+                            />
+                            <Input 
+                              value={step.alarms}
+                              onChange={(e) => updateStep(index, 'alarms', e.target.value)}
+                              className="h-8 text-[9px] font-code bg-background/30 border-primary/30"
+                              placeholder="⚠ ALERTE / ACTION CRITIQUE"
+                            />
                           </div>
 
-                          <div className="space-y-3 lg:col-span-1 bg-black/20 p-3 rounded-sm border border-border/30 relative overflow-hidden min-h-[180px]">
-                            <label className="text-[8px] font-bold uppercase text-muted-foreground block mb-2 border-b border-border/50 pb-1">Capture & Documentation</label>
+                          <div className="space-y-3 lg:col-span-1 bg-black/20 p-3 rounded-sm border border-border/30">
+                            <label className="text-[8px] font-bold uppercase text-muted-foreground block mb-2 border-b border-border/50 pb-1">Support Multimédia</label>
                             
-                            {!isDesktop ? (
-                              <div className="absolute inset-0 bg-background/60 backdrop-blur-sm z-10 flex flex-col items-center justify-center p-4 text-center">
-                                <Lock className="w-5 h-5 text-primary/50 mb-2" />
-                                <p className="text-[8px] font-code uppercase text-muted-foreground leading-tight">
-                                  MÉDIAS RESTREINTS<br/>PASSER EN MODE LOCAL
-                                </p>
-                              </div>
-                            ) : null}
+                            <div className="flex gap-2 mb-3">
+                              <Button 
+                                type="button" 
+                                variant="outline" 
+                                size="sm" 
+                                className="flex-1 h-8 text-[9px] font-code uppercase border-primary/40 text-primary"
+                                onClick={() => handleCapture(index, 'image')}
+                              >
+                                <Camera className="w-3 h-3 mr-2" />
+                                Photo
+                              </Button>
+                              <Button 
+                                type="button" 
+                                variant="outline" 
+                                size="sm" 
+                                className="flex-1 h-8 text-[9px] font-code uppercase border-secondary/40 text-secondary"
+                                onClick={() => handleCapture(index, 'video')}
+                              >
+                                <Video className="w-3 h-3 mr-2" />
+                                Vidéo
+                              </Button>
+                            </div>
 
-                            <div className="space-y-3">
-                              <div className="flex gap-2 mb-4">
-                                <Button 
-                                  type="button" 
-                                  variant="outline" 
-                                  size="sm" 
-                                  className="flex-1 h-8 text-[9px] font-code uppercase border-primary/40 text-primary"
-                                  onClick={() => handleCapture(index, 'image')}
-                                >
-                                  <Camera className="w-3 h-3 mr-2" />
-                                  Capture Photo
-                                </Button>
-                                <Button 
-                                  type="button" 
-                                  variant="outline" 
-                                  size="sm" 
-                                  className="flex-1 h-8 text-[9px] font-code uppercase border-secondary/40 text-secondary"
-                                  onClick={() => handleCapture(index, 'video')}
-                                >
-                                  <Video className="w-3 h-3 mr-2" />
-                                  Capture Vidéo
-                                </Button>
-                              </div>
-
-                              <div className="flex flex-col gap-2">
-                                <div className="flex items-center justify-between">
-                                  <span className="text-[9px] font-code uppercase text-primary flex items-center gap-1.5">
-                                    <ImageIcon className="w-3 h-3" /> {isDesktop ? "Chemin Asset" : "Asset Provisoire"}
+                            <div className="space-y-1">
+                              {step.imageUrl && (
+                                <div className="flex items-center justify-between p-1.5 bg-background/40 rounded-sm">
+                                  <span className="text-[8px] font-code text-primary uppercase truncate flex items-center gap-1">
+                                    <ImageIcon className="w-2.5 h-2.5" /> Photo liée
                                   </span>
-                                  {step.imageUrl && <Badge variant="outline" className={cn("text-[7px] h-4 uppercase border-primary text-primary", step.isProvisional && "border-yellow-500 text-yellow-500")}>{step.isProvisional ? 'WEB_BUFFER' : 'LIÉ'}</Badge>}
+                                  <Badge variant="outline" className={cn("text-[6px] h-3.5 px-1 uppercase", step.isProvisional ? "border-yellow-500 text-yellow-500" : "border-secondary text-secondary")}>
+                                    {step.isProvisional ? 'WEB_BUFFER' : 'CHROMA_OK'}
+                                  </Badge>
                                 </div>
-                                <Input 
-                                  placeholder={isDesktop ? "URL_OU_PATH_CHROMA" : "Capture requise"}
-                                  value={step.imageUrl}
-                                  onChange={(e) => updateStep(index, 'imageUrl', e.target.value)}
-                                  className="h-7 text-[9px] font-code bg-background/20"
-                                />
-                              </div>
-
-                              <div className="flex flex-col gap-2">
-                                <div className="flex items-center justify-between">
-                                  <span className="text-[9px] font-code uppercase text-secondary flex items-center gap-1.5">
-                                    <Video className="w-3 h-3" /> {isDesktop ? "Chemin Vidéo" : "Buffer Vidéo"}
+                              )}
+                              {step.videoUrl && (
+                                <div className="flex items-center justify-between p-1.5 bg-background/40 rounded-sm">
+                                  <span className="text-[8px] font-code text-secondary uppercase truncate flex items-center gap-1">
+                                    <Video className="w-2.5 h-2.5" /> Vidéo liée
                                   </span>
-                                  {step.videoUrl && <Badge variant="outline" className={cn("text-[7px] h-4 uppercase border-secondary text-secondary", step.isProvisional && "border-yellow-500 text-yellow-500")}>{step.isProvisional ? 'WEB_BUFFER' : 'LIÉ'}</Badge>}
+                                  <Badge variant="outline" className={cn("text-[6px] h-3.5 px-1 uppercase", step.isProvisional ? "border-yellow-500 text-yellow-500" : "border-secondary text-secondary")}>
+                                    {step.isProvisional ? 'WEB_BUFFER' : 'CHROMA_OK'}
+                                  </Badge>
                                 </div>
-                                <Input 
-                                  placeholder={isDesktop ? "URL_OU_PATH_CHROMA" : "Capture requise"}
-                                  value={step.videoUrl}
-                                  onChange={(e) => updateStep(index, 'videoUrl', e.target.value)}
-                                  className="h-7 text-[9px] font-code bg-background/20"
-                                />
-                              </div>
+                              )}
+                              {!step.imageUrl && !step.videoUrl && (
+                                <p className="text-[8px] text-muted-foreground italic text-center py-2 uppercase">Aucun média capturé</p>
+                              )}
                             </div>
                           </div>
                         </div>
                       </Card>
                     ))}
                     
-                    <button 
+                    <Button 
                       type="button" 
+                      variant="outline"
                       onClick={addStep}
-                      className="w-full border border-dashed border-secondary/30 text-secondary hover:bg-secondary/5 h-9 text-[10px] uppercase font-code rounded-sm transition-colors flex items-center justify-center"
+                      className="w-full border-dashed border-muted-foreground/30 text-muted-foreground hover:text-primary h-9 text-[10px] uppercase font-code"
                     >
                       <Plus className="w-3.5 h-3.5 mr-2" />
-                      Ajouter une Étape de Procédure
-                    </button>
+                      Ajouter une Étape
+                    </Button>
                   </div>
                 </div>
               )}
@@ -508,7 +443,7 @@ export default function DatasetPage() {
                   "font-headline font-bold uppercase text-[10px] h-9 px-8 shadow-lg",
                   mode === 'qa' ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground"
                 )}>
-                  Ajouter à la file d'attente d'entraînement
+                  Ajouter à la file d'attente
                 </Button>
               </div>
             </form>
@@ -518,7 +453,7 @@ export default function DatasetPage() {
             <div className="flex justify-between items-center px-2">
               <h3 className="text-[10px] lg:text-xs font-bold uppercase tracking-widest font-headline text-muted-foreground flex items-center gap-2">
                 <Layers className="w-4 h-4 text-primary" />
-                Éléments prêts pour l'indexation ({qaItems.length})
+                Items en attente ({qaItems.length})
               </h3>
               {qaItems.length > 0 && (
                 <Button onClick={handleFinalSubmit} disabled={isIngesting} className="bg-primary text-primary-foreground font-headline font-bold uppercase text-[10px] h-9 px-6 animate-pulse">
@@ -531,7 +466,7 @@ export default function DatasetPage() {
             {qaItems.length === 0 && !lastResult && (
               <div className="p-16 border border-dashed border-border rounded-sm bg-black/10 text-center opacity-30">
                 <FileJson className="w-10 h-10 mx-auto mb-4" />
-                <p className="font-code text-[9px] lg:text-[10px] uppercase tracking-[0.2em]">La file d'attente est vide.</p>
+                <p className="font-code text-[9px] lg:text-[10px] uppercase tracking-[0.2em]">File d'attente vide.</p>
               </div>
             )}
 
@@ -552,16 +487,14 @@ export default function DatasetPage() {
                       <span className="text-muted-foreground uppercase">{item.label}</span>
                       {item.mediaAssets && item.mediaAssets.length > 0 && (
                         <Badge variant="outline" className="ml-3 text-[7px] border-yellow-500/50 text-yellow-500 bg-yellow-500/5">
-                          {item.mediaAssets.length} ASSETS PROVISOIRES
+                          {item.mediaAssets.length} MÉDIAS PROVISOIRES
                         </Badge>
                       )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 ml-4">
-                    <Button variant="ghost" size="icon" onClick={() => setQaItems(prev => prev.filter(i => i.id !== item.id))} className="h-8 w-8 hover:bg-destructive/10">
-                      <Trash2 className="w-3.5 h-3.5 text-destructive" />
-                    </Button>
-                  </div>
+                  <Button variant="ghost" size="icon" onClick={() => setQaItems(prev => prev.filter(i => i.id !== item.id))} className="h-8 w-8 hover:bg-destructive/10">
+                    <Trash2 className="w-3.5 h-3.5 text-destructive" />
+                  </Button>
                 </Card>
               ))}
             </div>
