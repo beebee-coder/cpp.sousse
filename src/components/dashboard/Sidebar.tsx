@@ -6,7 +6,6 @@ import {
   LayoutDashboard, 
   Terminal, 
   Database, 
-  Cloud, 
   Monitor,
   Camera,
   MessageSquare,
@@ -17,13 +16,13 @@ import {
   HardDrive,
   Download,
   Menu,
-  X
+  Cloud
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { usePlatform } from '@/components/PlatformProvider';
 import { SyncPanel } from '@/components/dashboard/SyncPanel';
 import { usePathname } from 'next/navigation';
-import LinkActual from 'next/link';
+import Link from 'next/link';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 
@@ -40,18 +39,18 @@ const navItems = [
 export function DashboardSidebar() {
   const { isDesktop } = usePlatform();
   const pathname = usePathname();
-  const isDev = typeof process !== 'undefined' && process.env.NODE_ENV === 'development';
   const [open, setOpen] = useState(false);
+  const isDev = typeof process !== 'undefined' && process.env.NODE_ENV === 'development';
 
   const SidebarContent = () => (
     <div className="flex flex-col h-full bg-card">
       <div className="p-6 border-b border-border">
-        <LinkActual href="/dashboard" className="flex items-center gap-3 mb-1" onClick={() => setOpen(false)}>
+        <Link href="/dashboard" className="flex items-center gap-3 mb-1" onClick={() => setOpen(false)}>
           <div className="w-8 h-8 bg-primary rounded flex items-center justify-center shadow-[0_0_15px_rgba(50,181,212,0.3)]">
             <Monitor className="w-5 h-5 text-primary-foreground" />
           </div>
           <h1 className="font-headline font-bold text-lg tracking-tighter uppercase">VISIONODE</h1>
-        </LinkActual>
+        </Link>
         <p className="text-[10px] text-muted-foreground font-code uppercase tracking-[0.2em]">PRECISION_ENGINE v1.0</p>
       </div>
 
@@ -61,7 +60,7 @@ export function DashboardSidebar() {
           {navItems.map((item) => {
             const isActive = pathname === item.href;
             return (
-              <LinkActual
+              <Link
                 key={item.label}
                 href={item.href}
                 onClick={() => setOpen(false)}
@@ -74,7 +73,7 @@ export function DashboardSidebar() {
               >
                 <item.icon className={cn("w-4 h-4", isActive ? "text-primary" : "text-muted-foreground group-hover:text-primary")} />
                 <span className="font-headline tracking-wide uppercase text-[11px]">{item.label}</span>
-              </LinkActual>
+              </Link>
             );
           })}
         </div>
@@ -85,7 +84,7 @@ export function DashboardSidebar() {
               <ShieldCheck className="w-3 h-3" />
               Zone Forge (DEV)
             </p>
-            <LinkActual
+            <Link
               href="/pipeline"
               onClick={() => setOpen(false)}
               className={cn(
@@ -100,7 +99,7 @@ export function DashboardSidebar() {
                 <span className="font-headline tracking-wide uppercase text-[11px]">Pilotage Pipeline</span>
               </div>
               <ChevronRight className="w-3 h-3 opacity-50" />
-            </LinkActual>
+            </Link>
           </div>
         )}
       </nav>

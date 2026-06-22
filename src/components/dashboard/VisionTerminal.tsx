@@ -81,6 +81,7 @@ export function VisionTerminal() {
       {/* Flux Vidéo Principal */}
       <Card className="lg:col-span-2 bg-black border-primary/20 relative overflow-hidden group min-h-[350px] lg:min-h-0 shrink-0">
         <div className="absolute top-4 left-4 lg:left-4 z-10 flex gap-2">
+          {/* Spacer for mobile menu button if needed */}
           <div className="lg:hidden w-10" /> 
           <StatusBadge status="online" label="CAM_01" />
           <StatusBadge status={isAnalyzing ? "busy" : "online"} label={isAnalyzing ? "BUSY" : "READY"} />
@@ -105,8 +106,10 @@ export function VisionTerminal() {
             </div>
           )}
           
+          {/* Scanlines Effect */}
           <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] z-2 bg-[length:100%_4px,3px_100%] opacity-30" />
           
+          {/* Detected Objects Overlay */}
           {result?.objects.slice(0, 3).map((obj, i) => (
             <div 
               key={obj + i} 
@@ -154,7 +157,7 @@ export function VisionTerminal() {
         </div>
       </Card>
 
-      {/* Panneaux d'analyse latéraux / empilés */}
+      {/* Analyse Panes - Stacked on mobile */}
       <div className="flex flex-col gap-4 min-h-0 flex-1">
         <Card className="flex-1 bg-card/50 border-border p-4 overflow-auto terminal-scroll min-h-[180px]">
           <div className="flex items-center gap-2 mb-3 border-b border-border pb-2 shrink-0">

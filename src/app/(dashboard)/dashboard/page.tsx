@@ -1,10 +1,11 @@
+
 "use client";
 
 import { DashboardSidebar } from '@/components/dashboard/Sidebar';
 import { VisionTerminal } from '@/components/dashboard/VisionTerminal';
 import { CommandPalette } from '@/components/dashboard/CommandPalette';
 import { StatusBadge } from '@/components/dashboard/StatusBadge';
-import { Activity, Bell, User, Cpu, ShieldCheck, HeartPulse, Menu } from 'lucide-react';
+import { Activity, Bell, User, Cpu, ShieldCheck, HeartPulse } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { usePlatform } from '@/components/PlatformProvider';
 import { Card } from '@/components/ui/card';
@@ -31,29 +32,30 @@ export default function DashboardPage() {
     <div className="flex flex-col lg:flex-row h-screen bg-background overflow-hidden">
       <DashboardSidebar />
       
-      <main className="flex-1 flex flex-col min-w-0 overflow-y-auto lg:overflow-hidden">
+      <main className="flex-1 flex flex-col min-w-0 h-full overflow-y-auto lg:overflow-hidden">
         <header className="h-16 border-b border-border bg-card/30 flex items-center justify-between px-6 shrink-0">
           <div className="flex items-center gap-4">
-            <div className="hidden lg:flex items-center gap-2">
-              <Activity className="w-4 h-4 text-primary" />
-              <span className="font-headline font-bold text-sm uppercase tracking-widest">Moniteur Système</span>
-            </div>
             {/* Mobile Title Spacer */}
             <div className="lg:hidden w-10" /> 
             
-            <div className="hidden sm:flex gap-2 lg:gap-4 overflow-x-auto no-scrollbar">
+            <div className="hidden sm:flex items-center gap-2">
+              <Activity className="w-4 h-4 text-primary" />
+              <span className="font-headline font-bold text-sm uppercase tracking-widest">Moniteur Système</span>
+            </div>
+            
+            <div className="flex gap-2 overflow-x-auto no-scrollbar py-1">
               <StatusBadge status="online" label="AWS" />
               <StatusBadge status="online" label="DB" />
               <StatusBadge status={health?.healthy ? "online" : "alert"} label="SANTÉ" />
             </div>
           </div>
           
-          <div className="flex items-center gap-4">
-            <button className="p-2 text-muted-foreground hover:text-primary transition-colors relative">
+          <div className="flex items-center gap-2 sm:gap-4">
+            <button className="p-2 text-muted-foreground hover:text-primary transition-colors relative hidden sm:block">
               <Bell className="w-5 h-5" />
               <span className="absolute top-1 right-1 w-2 h-2 bg-destructive rounded-full border-2 border-background" />
             </button>
-            <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center border border-border overflow-hidden">
+            <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center border border-border overflow-hidden shrink-0">
               <User className="w-5 h-5 text-muted-foreground" />
             </div>
           </div>
