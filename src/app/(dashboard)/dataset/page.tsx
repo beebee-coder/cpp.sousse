@@ -11,7 +11,8 @@ import {
   RefreshCw,
   Mic,
   MicOff,
-  Sparkles
+  Sparkles,
+  AlertTriangle
 } from 'lucide-react';
 
 import { Card } from '@/components/ui/card';
@@ -58,21 +59,14 @@ export default function DatasetPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [isGuideActive, setIsGuideActive] = useState(false);
   
-  // Référence persistante pour le ciblage vocal (crucial pour éviter les closures React obsolètes)
   const activeVoiceFieldRef = useRef<{ type: string, index?: number } | null>(null);
   const [activeUIField, setActiveUIField] = useState<{ type: string, index?: number } | null>(null);
 
-  // Logic d'insertion vocale atomique
   const handleVoiceResult = useCallback((text: string) => {
     const target = activeVoiceFieldRef.current;
-    if (!target) {
-      console.warn(`[DATASET_AUDIT] ⚠️ Aucun champ cible identifié pour : "${text}"`);
-      return;
-    }
+    if (!target) return;
 
     const cleanText = text.trim();
-    console.log(`[DATASET_AUDIT] 🎯 Injection vers [${target.type}] ${target.index ?? ''} : "${cleanText}"`);
-
     if (target.type === 'question') {
       setQuestion(prev => prev ? `${prev} ${cleanText}` : cleanText);
     } else if (target.type === 'answer') {
@@ -98,25 +92,32 @@ export default function DatasetPage() {
     }
   }, []);
 
-  const { isListening, startListening, stopListening, speak } = useVoice({
+  const { isListening, startListening, stopListening, speak, error: voiceError } = useVoice({
     onResult: handleVoiceResult,
     autoRestart: true
   });
+
+  useEffect(() => {
+    if (voiceError === 'not-allowed') {
+      toast({
+        title: "Microphone Bloqué",
+        description: "L'accès au micro a été refusé. Veuillez vérifier les permissions dans votre navigateur (icône cadenas dans la barre d'adresse).",
+        variant: "destructive"
+      });
+    }
+  }, [voiceError, toast]);
 
   const toggleVoice = (type: string, index?: number) => {
     const target = { type, index };
     const isCurrentlyActive = isListening && activeUIField?.type === type && activeUIField?.index === index;
 
     if (isCurrentlyActive) {
-      console.log(`[DATASET_AUDIT] 🛑 Arrêt micro pour ${type}`);
       stopListening();
       activeVoiceFieldRef.current = null;
       setActiveUIField(null);
     } else {
-      console.log(`[DATASET_AUDIT] 🎙️ Activation micro pour ${type}`);
       if (isListening) stopListening();
       
-      // Mise à jour immédiate de la ref et de l'UI
       activeVoiceFieldRef.current = target;
       setActiveUIField(target);
 
@@ -187,6 +188,11 @@ export default function DatasetPage() {
           </div>
 
           <div className="flex items-center gap-4">
+            {voiceError === 'not-allowed' && (
+              <Badge variant="destructive" className="animate-pulse flex items-center gap-1.5 py-1 px-3 text-[9px] uppercase">
+                <AlertTriangle className="w-3 h-3" /> Micro Bloqué
+              </Badge>
+            )}
             <Button 
               variant="ghost" 
               size="sm" 
@@ -282,22 +288,24 @@ export default function DatasetPage() {
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                          {['Normal', 'Abnormal', 'Alarms'].map((f) => (
-                            <div key={f} className="relative">
-                              <Input 
-                                placeholder={f.toUpperCase()} 
-                                value={(step as any)[`step${f}`] || (step as any)[f.toLowerCase() + 'Conditions'] || (step as any)[f.toLowerCase()]} 
-                                onChange={(e) => { 
-                                  const n = [...procSteps]; 
-                                  const key = f === 'Alarms' ? 'alarms' : f.toLowerCase() + 'Conditions';
-                                  (n[index] as any)[key] = e.target.value; 
-                                  setProcSteps(n); 
-                                }} 
-                                className={cn("h-7 text-[9px]", activeUIField?.type === `step${f}` && activeUIField?.index === index && "ring-1 ring-red-500")}
-                              />
-                              <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice(`step${f}`, index)} className="absolute right-0 top-0 h-7 w-7"><Mic className="w-2.5 h-2.5" /></Button>
-                            </div>
-                          ))}
+                          {['Normal', 'Abnormal', 'Alarms'].map((f) => {
+                            const fieldKey = f === 'Alarms' ? 'alarms' : f.toLowerCase() + 'Conditions';
+                            return (
+                              <div key={f} className="relative">
+                                <Input 
+                                  placeholder={f.toUpperCase()} 
+                                  value={(step as any)[fieldKey]} 
+                                  onChange={(e) => { 
+                                    const n = [...procSteps]; 
+                                    (n[index] as any)[fieldKey] = e.target.value; 
+                                    setProcSteps(n); 
+                                  }} 
+                                  className={cn("h-7 text-[9px]", activeUIField?.type === `step${f}` && activeUIField?.index === index && "ring-1 ring-red-500")}
+                                />
+                                <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice(`step${f}`, index)} className="absolute right-0 top-0 h-7 w-7"><Mic className="w-2.5 h-2.5" /></Button>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     </Card>

@@ -29,7 +29,6 @@ export function useVoice(options: VoiceOptions = {}) {
     transcript: ''
   });
 
-  // Utilisation de refs pour éviter les closures obsolètes dans l'API Speech
   const onResultRef = useRef(options.onResult);
   const onEndRef = useRef(options.onEnd);
   const recognitionRef = useRef<any>(null);
@@ -46,7 +45,7 @@ export function useVoice(options: VoiceOptions = {}) {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     
     if (!SpeechRecognition) {
-      setState(prev => ({ ...prev, isSupported: false, error: 'Non supporté' }));
+      setState(prev => ({ ...prev, isSupported: false, error: 'Non supporté par ce navigateur' }));
       return;
     }
 
@@ -66,7 +65,6 @@ export function useVoice(options: VoiceOptions = {}) {
 
         if (finalSegment.trim()) {
           const cleanText = finalSegment.trim();
-          console.log(`[VOICE_HOOK] 🎙️ Texte final détecté : "${cleanText}"`);
           if (onResultRef.current) {
             onResultRef.current(cleanText);
           }
@@ -75,24 +73,25 @@ export function useVoice(options: VoiceOptions = {}) {
       };
 
       recognition.onstart = () => {
-        console.log('[VOICE_HOOK] 🟢 Moteur actif');
         setState(prev => ({ ...prev, isListening: true, error: null }));
       };
 
       recognition.onend = () => {
-        console.log('[VOICE_HOOK] 🔴 Moteur en veille');
         setState(prev => ({ ...prev, isListening: false }));
         if (onEndRef.current) onEndRef.current();
 
-        if (options.autoRestart && !isManuallyStopped.current) {
+        if (options.autoRestart && !isManuallyStopped.current && !state.error) {
           try { recognition.start(); } catch (e) {}
         }
       };
 
       recognition.onerror = (event: any) => {
-        if (event.error !== 'no-speech') {
+        if (event.error === 'not-allowed') {
+          console.error(`[VOICE_HOOK] ❌ Accès microphone refusé : ${event.error}`);
+          setState(prev => ({ ...prev, error: 'not-allowed', isListening: false }));
+        } else if (event.error !== 'no-speech') {
           console.error(`[VOICE_HOOK] ❌ Erreur : ${event.error}`);
-          setState(prev => ({ ...prev, error: event.error }));
+          setState(prev => ({ ...prev, error: event.error, isListening: false }));
         }
       };
 
@@ -107,17 +106,19 @@ export function useVoice(options: VoiceOptions = {}) {
       if (recognitionRef.current) {
         recognitionRef.current.onresult = null;
         recognitionRef.current.onend = null;
+        recognitionRef.current.onerror = null;
         try { recognitionRef.current.stop(); } catch (e) {}
       }
     };
-  }, [options.lang, options.continuous, options.interimResults, options.autoRestart]);
+  }, [options.lang, options.continuous, options.interimResults, options.autoRestart, state.error]);
 
   const startListening = useCallback(() => {
     isManuallyStopped.current = false;
+    setState(prev => ({ ...prev, error: null }));
     try {
       recognitionRef.current?.start();
     } catch (e) {
-      console.warn('[VOICE_HOOK] Déjà actif ou erreur matériel');
+      console.warn('[VOICE_HOOK] Impossible de démarrer le micro');
     }
   }, []);
 

@@ -1,17 +1,18 @@
 
-/* VisioNode Industrial VSCode Theme Fallback */
+/* VisioNode Dark Industrial Theme */
 :root {
-  --vscode-editor-background: #070c10;
-  --vscode-editor-foreground: #d1d5db;
-  --vscode-editorLineNumber-foreground: #4b5563;
-  --vscode-editorIndentGuide-background: #1f2937;
+  --vscode-editor-background: #0d1216;
+  --vscode-editor-foreground: #e2e8f0;
+  --vscode-editor-selectionBackground: rgba(50, 181, 212, 0.3);
+  --vscode-editorLineNumber-foreground: #4a5568;
+  --vscode-editorActiveLineNumber-foreground: #32b5d4;
+  --vscode-editor-lineHighlightBackground: rgba(50, 181, 212, 0.05);
 }
 
-.vscode-dark {
-  background-color: var(--vscode-editor-background);
-  color: var(--vscode-editor-foreground);
+.monaco-editor {
+  background-color: var(--vscode-editor-background) !important;
 }
 
-pre, code {
-  font-family: 'Source Code Pro', monospace !important;
+.monaco-editor .margin {
+  background-color: var(--vscode-editor-background) !important;
 }
