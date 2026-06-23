@@ -58,18 +58,19 @@ export default function DatasetPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [isGuideActive, setIsGuideActive] = useState(false);
   
+  // Référence immuable pour l'injection vocale instantanée
   const activeVoiceFieldRef = useRef<{ type: string, index?: number } | null>(null);
   const [activeUIField, setActiveUIField] = useState<{ type: string, index?: number } | null>(null);
 
   const handleVoiceResult = useCallback((text: string) => {
     const target = activeVoiceFieldRef.current;
     if (!target) {
-      console.warn(`[DATASET_AUDIT] ⚠️ Aucun champ cible identifié pour le texte: "${text}"`);
+      console.warn(`[DATASET_AUDIT] ⚠️ Aucune cible pour: "${text}"`);
       return;
     }
 
     const cleanText = text.trim();
-    console.log(`[DATASET_AUDIT] 🎯 Injection dans ${target.type}${target.index !== undefined ? ` [index ${target.index}]` : ''}`);
+    console.log(`[DATASET_AUDIT] 🎯 Injection dans ${target.type} -> ${cleanText}`);
 
     if (target.type === 'question') {
       setQuestion(prev => prev ? `${prev} ${cleanText}` : cleanText);
@@ -105,7 +106,7 @@ export default function DatasetPage() {
     if (voiceError === 'not-allowed') {
       toast({
         title: "Microphone Bloqué",
-        description: "L'accès au micro a été refusé. Veuillez vérifier les permissions dans votre navigateur.",
+        description: "L'accès au micro a été refusé par le navigateur.",
         variant: "destructive"
       });
     }
@@ -116,26 +117,22 @@ export default function DatasetPage() {
     const isCurrentlyActive = isListening && activeUIField?.type === type && activeUIField?.index === index;
 
     if (isCurrentlyActive) {
-      console.log(`[DATASET_AUDIT] 🔇 Désactivation vocale`);
       stopListening();
       activeVoiceFieldRef.current = null;
       setActiveUIField(null);
     } else {
       if (isListening) stopListening();
       
-      console.log(`[DATASET_AUDIT] 🎙️ Activation vocale pour: ${type}`);
       activeVoiceFieldRef.current = target;
       setActiveUIField(target);
 
       setTimeout(() => {
         startListening();
         if (isGuideActive) {
-          const guideMsg = type === 'question' ? "Décrivez le symptôme." : 
-                           type === 'answer' ? "Indiquez la résolution." : 
-                           "Complétez ce champ.";
+          const guideMsg = type === 'question' ? "Décrivez le symptôme." : "Complétez ce champ.";
           speak(guideMsg);
         }
-      }, 100);
+      }, 150);
     }
   };
 
@@ -149,12 +146,12 @@ export default function DatasetPage() {
       setQuestion(''); setAnswer('');
     } else {
       if (!procTitle.trim()) return;
-      const details = procSteps.map((s, i) => `[ÉTAPE ${i + 1}] ${s.title}\nDurée: ${s.duration || 'Indéfinie'}\nConditions: ${s.normalConditions}\nDesc: ${s.description}`).join('\n');
+      const details = procSteps.map((s, i) => `[ÉTAPE ${i + 1}] ${s.title}\nDurée: ${s.duration}\nConditions: ${s.normalConditions}`).join('\n');
       setQaItems([{ id: Date.now().toString(), type: 'procedure', label: procTitle, details }, ...qaItems]);
       setProcTitle('');
       setProcSteps([{ id: Date.now().toString(), title: '', description: '', normalConditions: '', abnormalConditions: '', alarms: '', duration: '' }]);
     }
-    toast({ title: "Élément ajouté à la file" });
+    toast({ title: "Ajouté à la file d'audit" });
   };
 
   const handleFinalSubmit = async () => {
@@ -170,7 +167,7 @@ export default function DatasetPage() {
         createdAt: new Date()
       }));
       await apiClient.post('/api/sync/upload', { userId: 'admin', projectId: 'project-001', items });
-      toast({ title: "Synchronisation Réussie", description: `${items.length} éléments envoyés.` });
+      toast({ title: "Synchronisation Réussie", description: `${items.length} éléments en base.` });
       setQaItems([]);
     } catch (e) {
       toast({ title: "Échec Sync", variant: "destructive" });
@@ -195,8 +192,8 @@ export default function DatasetPage() {
 
           <div className="flex items-center gap-4">
             {voiceError === 'not-allowed' && (
-              <Badge variant="destructive" className="animate-pulse flex items-center gap-1.5 py-1 px-3 text-[9px] uppercase">
-                <AlertTriangle className="w-3 h-3" /> Micro Bloqué
+              <Badge variant="destructive" className="animate-pulse text-[9px] uppercase">
+                Micro Bloqué
               </Badge>
             )}
             <Button 
@@ -206,7 +203,7 @@ export default function DatasetPage() {
               className={cn("h-9 text-[9px] font-code uppercase", isGuideActive ? "text-secondary" : "text-muted-foreground")}
             >
               <Sparkles className="w-3.5 h-3.5 mr-2" />
-              Assistant IA {isGuideActive ? "ON" : "OFF"}
+              Guide IA {isGuideActive ? "ON" : "OFF"}
             </Button>
             <div className="flex bg-muted/30 p-1 rounded-sm border border-border">
               <button onClick={() => setMode('qa')} className={cn("px-3 py-1 text-[9px] uppercase rounded-sm", mode === 'qa' ? "bg-primary text-primary-foreground" : "text-muted-foreground")}>FAQ</button>
@@ -228,7 +225,7 @@ export default function DatasetPage() {
                       className={cn("h-32 bg-background font-code text-xs uppercase transition-all", activeUIField?.type === 'question' && "ring-2 ring-red-500 animate-pulse border-red-500")}
                     />
                     <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('question')} className={cn("absolute top-2 right-2 h-7 w-7", activeUIField?.type === 'question' ? "text-red-500" : "text-primary")}>
-                      {activeUIField?.type === 'question' && isListening ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
+                      <Mic className="w-3.5 h-3.5" />
                     </Button>
                   </div>
                   <div className="relative">
@@ -239,7 +236,7 @@ export default function DatasetPage() {
                       className={cn("h-32 bg-background font-code text-xs uppercase transition-all", activeUIField?.type === 'answer' && "ring-2 ring-red-500 animate-pulse border-red-500")}
                     />
                     <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('answer')} className={cn("absolute top-2 right-2 h-7 w-7", activeUIField?.type === 'answer' ? "text-red-500" : "text-primary")}>
-                      {activeUIField?.type === 'answer' && isListening ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
+                      <Mic className="w-3.5 h-3.5" />
                     </Button>
                   </div>
                 </div>
@@ -249,8 +246,8 @@ export default function DatasetPage() {
                     <Input 
                       value={procTitle} 
                       onChange={(e) => setProcTitle(e.target.value)} 
-                      placeholder="TITRE DE LA PROCÉDURE INDUSTRIELLE" 
-                      className={cn("bg-background uppercase h-12 text-sm font-bold tracking-widest", activeUIField?.type === 'procTitle' && "ring-2 ring-red-500 border-red-500")} 
+                      placeholder="TITRE DE LA PROCÉDURE" 
+                      className={cn("bg-background uppercase h-12 text-sm font-bold", activeUIField?.type === 'procTitle' && "ring-2 ring-red-500 border-red-500")} 
                     />
                     <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('procTitle')} className={cn("absolute top-2.5 right-2 h-7 w-7", activeUIField?.type === 'procTitle' ? "text-red-500" : "text-primary")}>
                       <Mic className="w-3.5 h-3.5" />
@@ -258,12 +255,12 @@ export default function DatasetPage() {
                   </div>
 
                   {procSteps.map((step, index) => (
-                    <Card key={step.id} className="p-4 border-border bg-black/30 space-y-4 relative group">
+                    <Card key={step.id} className="p-4 border-border bg-black/30 space-y-4 group">
                       <div className="flex justify-between items-center border-b border-border/50 pb-2">
                         <span className="text-[10px] font-bold text-secondary uppercase">Étape {index + 1}</span>
                         <div className="relative">
                           <Input 
-                            placeholder="DURÉE (ex: 5min)" 
+                            placeholder="DURÉE" 
                             value={step.duration} 
                             onChange={(e) => { const n = [...procSteps]; n[index].duration = e.target.value; setProcSteps(n); }} 
                             className={cn("h-7 w-32 text-[9px] bg-background/20", activeUIField?.type === 'stepDuration' && activeUIField?.index === index && "ring-1 ring-red-500")}
@@ -275,7 +272,7 @@ export default function DatasetPage() {
                       <div className="space-y-3">
                         <div className="relative">
                           <Input 
-                            placeholder="ACTION À RÉALISER" 
+                            placeholder="ACTION" 
                             value={step.title} 
                             onChange={(e) => { const n = [...procSteps]; n[index].title = e.target.value; setProcSteps(n); }} 
                             className={cn("h-8 text-[10px] uppercase", activeUIField?.type === 'stepTitle' && activeUIField?.index === index && "ring-1 ring-red-500")}
@@ -283,36 +280,25 @@ export default function DatasetPage() {
                           <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepTitle', index)} className="absolute top-0.5 right-1 h-7 w-7"><Mic className="w-3 h-3" /></Button>
                         </div>
 
-                        <div className="relative">
-                          <Textarea 
-                            placeholder="DESCRIPTION DU MODE OPÉRATOIRE..." 
-                            value={step.description} 
-                            onChange={(e) => { const n = [...procSteps]; n[index].description = e.target.value; setProcSteps(n); }} 
-                            className={cn("h-16 text-[10px] uppercase", activeUIField?.type === 'stepDesc' && activeUIField?.index === index && "ring-1 ring-red-500")}
-                          />
-                          <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepDesc', index)} className="absolute top-1 right-1 h-7 w-7"><Mic className="w-3 h-3" /></Button>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                          {['Normal', 'Abnormal', 'Alarms'].map((f) => {
-                            const fieldKey = f === 'Alarms' ? 'alarms' : f.toLowerCase() + 'Conditions';
-                            const uiType = `step${f}`;
-                            return (
-                              <div key={f} className="relative">
-                                <Input 
-                                  placeholder={f.toUpperCase()} 
-                                  value={(step as any)[fieldKey]} 
-                                  onChange={(e) => { 
-                                    const n = [...procSteps]; 
-                                    (n[index] as any)[fieldKey] = e.target.value; 
-                                    setProcSteps(n); 
-                                  }} 
-                                  className={cn("h-7 text-[9px]", activeUIField?.type === uiType && activeUIField?.index === index && "ring-1 ring-red-500")}
-                                />
-                                <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice(uiType, index)} className="absolute right-0 top-0 h-7 w-7"><Mic className="w-2.5 h-2.5" /></Button>
-                              </div>
-                            );
-                          })}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                          <div className="relative">
+                            <Input 
+                              placeholder="CONDITIONS NORMALES" 
+                              value={step.normalConditions} 
+                              onChange={(e) => { const n = [...procSteps]; n[index].normalConditions = e.target.value; setProcSteps(n); }} 
+                              className={cn("h-7 text-[9px]", activeUIField?.type === 'stepNormal' && activeUIField?.index === index && "ring-1 ring-red-500")}
+                            />
+                            <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepNormal', index)} className="absolute right-0 top-0 h-7 w-7"><Mic className="w-2.5 h-2.5" /></Button>
+                          </div>
+                          <div className="relative">
+                            <Input 
+                              placeholder="DESCRIPTION" 
+                              value={step.description} 
+                              onChange={(e) => { const n = [...procSteps]; n[index].description = e.target.value; setProcSteps(n); }} 
+                              className={cn("h-7 text-[9px]", activeUIField?.type === 'stepDesc' && activeUIField?.index === index && "ring-1 ring-red-500")}
+                            />
+                            <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepDesc', index)} className="absolute right-0 top-0 h-7 w-7"><Mic className="w-2.5 h-2.5" /></Button>
+                          </div>
                         </div>
                       </div>
                     </Card>

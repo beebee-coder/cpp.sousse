@@ -6,7 +6,6 @@ interface VoiceOptions {
   onResult?: (text: string) => void;
   onEnd?: () => void;
   onError?: (error: string) => void;
-  onInterimResult?: (text: string) => void;
   lang?: string;
   continuous?: boolean;
   interimResults?: boolean;
@@ -16,7 +15,7 @@ interface VoiceOptions {
 interface VoiceState {
   isListening: boolean;
   isSupported: boolean;
-  error: string | null;
+  error: 'not-allowed' | 'no-speech' | 'network' | 'aborted' | string | null;
   transcript: string;
 }
 
@@ -29,14 +28,12 @@ export function useVoice(options: VoiceOptions = {}) {
   });
 
   const onResultRef = useRef(options.onResult);
-  const onEndRef = useRef(options.onEnd);
   const recognitionRef = useRef<any>(null);
   const isManuallyStopped = useRef(false);
 
   useEffect(() => {
     onResultRef.current = options.onResult;
-    onEndRef.current = options.onEnd;
-  }, [options.onResult, options.onEnd]);
+  }, [options.onResult]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -44,14 +41,14 @@ export function useVoice(options: VoiceOptions = {}) {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     
     if (!SpeechRecognition) {
-      setState(prev => ({ ...prev, isSupported: false, error: 'Non supporté par ce navigateur' }));
+      setState(prev => ({ ...prev, isSupported: false, error: 'Navigateur non compatible' }));
       return;
     }
 
     try {
       const recognition = new SpeechRecognition();
       recognition.continuous = options.continuous ?? true;
-      recognition.interimResults = options.interimResults ?? false;
+      recognition.interimResults = options.interimResults ?? true;
       recognition.lang = options.lang || 'fr-FR';
 
       recognition.onresult = (event: any) => {
@@ -64,7 +61,7 @@ export function useVoice(options: VoiceOptions = {}) {
 
         if (finalSegment.trim()) {
           const cleanText = finalSegment.trim();
-          console.log(`[VOICE_HOOK] 🎙️ Texte détecté: "${cleanText}"`);
+          console.log(`[VOICE_HOOK] 🎙️ Capture: "${cleanText}"`);
           if (onResultRef.current) {
             onResultRef.current(cleanText);
           }
@@ -73,27 +70,24 @@ export function useVoice(options: VoiceOptions = {}) {
       };
 
       recognition.onstart = () => {
-        console.log(`[VOICE_HOOK] 🟢 Micro actif`);
+        console.log(`[VOICE_HOOK] 🟢 Micro Actif`);
         setState(prev => ({ ...prev, isListening: true, error: null }));
       };
 
       recognition.onend = () => {
-        console.log(`[VOICE_HOOK] 🔴 Micro inactif`);
+        console.log(`[VOICE_HOOK] 🔴 Micro Inactif`);
         setState(prev => ({ ...prev, isListening: false }));
-        if (onEndRef.current) onEndRef.current();
-
+        
         if (options.autoRestart && !isManuallyStopped.current && !state.error) {
           try { recognition.start(); } catch (e) {}
         }
       };
 
       recognition.onerror = (event: any) => {
-        if (event.error === 'not-allowed') {
-          console.error(`[VOICE_HOOK] ❌ Accès microphone refusé: check permissions`);
-          setState(prev => ({ ...prev, error: 'not-allowed', isListening: false }));
-        } else if (event.error !== 'no-speech') {
-          console.error(`[VOICE_HOOK] ❌ Erreur Speech: ${event.error}`);
-          setState(prev => ({ ...prev, error: event.error, isListening: false }));
+        const err = event.error;
+        if (err !== 'no-speech') {
+          console.error(`[VOICE_HOOK] ❌ Erreur : ${err}`);
+          setState(prev => ({ ...prev, error: err, isListening: false }));
         }
       };
 
@@ -101,7 +95,7 @@ export function useVoice(options: VoiceOptions = {}) {
       setState(prev => ({ ...prev, isSupported: true }));
 
     } catch (error) {
-      console.error('[VOICE_HOOK] ❌ Initialisation échouée');
+      console.error('[VOICE_HOOK] Initialisation échouée');
     }
 
     return () => {
@@ -120,7 +114,7 @@ export function useVoice(options: VoiceOptions = {}) {
     try {
       recognitionRef.current?.start();
     } catch (e) {
-      console.warn('[VOICE_HOOK] Impossible de démarrer le micro');
+      console.warn('[VOICE_HOOK] Impossible de démarrer');
     }
   }, []);
 
@@ -138,7 +132,6 @@ export function useVoice(options: VoiceOptions = {}) {
     if (!text?.trim()) return;
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = 'fr-FR';
-    utterance.rate = 1.0;
     window.speechSynthesis.speak(utterance);
   }, []);
 

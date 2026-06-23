@@ -1,11 +1,8 @@
-/* Minimal VS Code Theme for industrial cockpit */
-:root {
-  --vscode-editor-background: #0d1117;
-  --vscode-editor-foreground: #c9d1d9;
-  --vscode-editor-lineHighlightBackground: #161b22;
+/* Thème VS Code Minimaliste pour VisioNode */
+.vscode-dark {
+  background-color: #1e1e1e;
+  color: #d4d4d4;
 }
-
-.monaco-editor {
-  background-color: var(--vscode-editor-background);
-  color: var(--vscode-editor-foreground);
-}
+.token.comment { color: #6a9955; }
+.token.keyword { color: #569cd6; }
+.token.string { color: #ce9178; }
