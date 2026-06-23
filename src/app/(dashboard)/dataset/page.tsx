@@ -4,10 +4,8 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { 
   Database, 
   Plus, 
-  Trash2, 
   UploadCloud, 
   Layers,
-  RefreshCw,
   Mic,
   MicOff,
   Sparkles,
@@ -18,7 +16,6 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { apiClient } from '@/lib/api-client';
 import { DashboardSidebar } from '@/components/dashboard/Sidebar';
@@ -28,10 +25,6 @@ import { cn } from '@/lib/utils';
 interface ProcedureStep {
   id: string;
   title: string;
-  description: string;
-  normalConditions: string;
-  abnormalConditions: string;
-  alarms: string;
   duration: string;
 }
 
@@ -43,7 +36,7 @@ interface QAItem {
 }
 
 export default function DatasetPage() {
-  // 1. TOUS LES HOOKS AU SOMMET (ORDRE STRICT)
+  // 1. TOUS LES HOOKS AU SOMMET (ORDRE CONSTANT)
   const { toast } = useToast();
   const [mounted, setMounted] = useState(false);
   const [mode, setMode] = useState<'qa' | 'procedure'>('qa');
@@ -52,91 +45,84 @@ export default function DatasetPage() {
   const [answer, setAnswer] = useState('');
   const [procTitle, setProcTitle] = useState('');
   const [procSteps, setProcSteps] = useState<ProcedureStep[]>([
-    { id: '1', title: '', description: '', normalConditions: '', abnormalConditions: '', alarms: '', duration: '' }
+    { id: '1', title: '', duration: '' }
   ]);
   const [isUploading, setIsUploading] = useState(false);
   const [isGuideActive, setIsGuideActive] = useState(false);
   const [activeUIField, setActiveUIField] = useState<{ type: string, index?: number } | null>(null);
   
-  const activeVoiceFieldRef = useRef<{ type: string, index?: number } | null>(null);
+  // Cette Ref permet au callback vocal de savoir où écrire sans re-render
+  const targetFieldRef = useRef<{ type: string, index?: number } | null>(null);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Synchronisation de la Ref avec l'état UI
   useEffect(() => {
-    activeVoiceFieldRef.current = activeUIField;
+    targetFieldRef.current = activeUIField;
   }, [activeUIField]);
 
+  // Callback de traitement des résultats vocaux
   const handleVoiceResult = useCallback((text: string) => {
-    const target = activeVoiceFieldRef.current;
-    const cleanText = text.trim();
-    
+    const target = targetFieldRef.current;
     if (!target) {
-      console.warn(`[DATASET_AUDIT] ⚠️ Aucune cible pour: "${cleanText}"`);
+      console.warn(`[DATASET_AUDIT] ⚠️ Aucune cible pour: "${text}"`);
       return;
     }
 
-    console.log(`[DATASET_AUDIT] 🎯 Injection dans ${target.type} [${target.index ?? 'root'}] -> ${cleanText}`);
+    console.log(`[DATASET_AUDIT] 🎯 Injection dans ${target.type} -> ${text}`);
 
     if (target.type === 'question') {
-      setQuestion(prev => prev ? `${prev} ${cleanText}` : cleanText);
+      setQuestion(prev => prev ? `${prev} ${text}` : text);
     } else if (target.type === 'answer') {
-      setAnswer(prev => prev ? `${prev} ${cleanText}` : cleanText);
+      setAnswer(prev => prev ? `${prev} ${text}` : text);
     } else if (target.type === 'procTitle') {
-      setProcTitle(prev => prev ? `${prev} ${cleanText}` : cleanText);
+      setProcTitle(prev => prev ? `${prev} ${text}` : text);
     } else if (typeof target.index === 'number') {
       setProcSteps(prev => {
         const next = [...prev];
         if (!next[target.index!]) return prev;
         const s = { ...next[target.index!] };
-        
-        if (target.type === 'stepTitle') s.title = s.title ? `${s.title} ${cleanText}` : cleanText;
-        else if (target.type === 'stepDuration') s.duration = s.duration ? `${s.duration} ${cleanText}` : cleanText;
-        
+        if (target.type === 'stepTitle') s.title = s.title ? `${s.title} ${text}` : text;
+        else if (target.type === 'stepDuration') s.duration = s.duration ? `${s.duration} ${text}` : text;
         next[target.index!] = s;
         return next;
       });
     }
   }, []);
 
-  const voiceOptions = useMemo(() => ({
+  const voice = useVoice({
     onResult: handleVoiceResult,
     autoRestart: true,
     lang: 'fr-FR'
-  }), [handleVoiceResult]);
-
-  const { isListening, startListening, stopListening, speak, error: voiceError } = useVoice(voiceOptions);
+  });
 
   useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  useEffect(() => {
-    if (voiceError === 'not-allowed') {
+    if (voice.error === 'not-allowed') {
       toast({
         title: "Microphone Bloqué",
-        description: "Accès refusé par le navigateur. Vérifiez les permissions.",
+        description: "Vérifiez les permissions de votre navigateur.",
         variant: "destructive"
       });
     }
-  }, [voiceError, toast]);
+  }, [voice.error, toast]);
 
-  // LOGIQUE DE NAVIGATION / ACTIONS
   const toggleVoice = (type: string, index?: number) => {
-    const target = { type, index };
-    const isCurrentlyActive = isListening && activeUIField?.type === type && activeUIField?.index === index;
+    const isCurrentlyActive = voice.isListening && activeUIField?.type === type && activeUIField?.index === index;
 
     if (isCurrentlyActive) {
-      stopListening();
+      voice.stopListening();
       setActiveUIField(null);
     } else {
-      if (isListening) stopListening();
-      setActiveUIField(target);
-
+      voice.stopListening();
+      setActiveUIField({ type, index });
       setTimeout(() => {
-        startListening();
+        voice.startListening();
         if (isGuideActive) {
-          speak(type === 'question' ? "Décrivez le symptôme." : "Précisez la solution.");
+          voice.speak(type === 'question' ? "Décrivez le symptôme." : "Précisez la solution.");
         }
-      }, 150);
+      }, 100);
     }
   };
 
@@ -151,7 +137,7 @@ export default function DatasetPage() {
       const details = procSteps.map((s, i) => `[ÉTAPE ${i + 1}] ${s.title} (${s.duration})`).join('\n');
       setQaItems(prev => [{ id: Date.now().toString(), type: 'procedure', label: procTitle, details }, ...prev]);
       setProcTitle('');
-      setProcSteps([{ id: Date.now().toString(), title: '', description: '', normalConditions: '', abnormalConditions: '', alarms: '', duration: '' }]);
+      setProcSteps([{ id: Date.now().toString(), title: '', duration: '' }]);
     }
     toast({ title: "Ajouté à la file locale" });
   };
@@ -169,7 +155,7 @@ export default function DatasetPage() {
         createdAt: new Date()
       }));
       await apiClient.post('/api/sync/upload', { userId: 'admin', projectId: 'project-001', items });
-      toast({ title: "Synchronisation Réussie", description: "Données poussées vers le registre cloud." });
+      toast({ title: "Synchronisation Réussie", description: "Données transmises au registre cloud." });
       setQaItems([]);
     } catch (e) {
       toast({ title: "Échec Synchronisation", variant: "destructive" });
@@ -178,7 +164,6 @@ export default function DatasetPage() {
     }
   };
 
-  // RENDU SECURISE (RESTE DU COMPOSANT)
   return (
     <div className="flex flex-col lg:flex-row h-screen bg-background overflow-hidden">
       <DashboardSidebar />
@@ -224,10 +209,10 @@ export default function DatasetPage() {
                           value={question} 
                           onChange={(e) => setQuestion(e.target.value)} 
                           placeholder="SYMPTÔME / QUESTION..." 
-                          className={cn("h-32 bg-background font-code text-xs uppercase transition-all", activeUIField?.type === 'question' && "ring-2 ring-red-500 animate-pulse border-red-500")}
+                          className={cn("h-32 bg-background font-code text-xs uppercase transition-all", activeUIField?.type === 'question' && "ring-2 ring-red-500 border-red-500 animate-pulse")}
                         />
                         <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('question')} className={cn("absolute top-2 right-2 h-7 w-7", activeUIField?.type === 'question' ? "text-red-500" : "text-primary")}>
-                          <Mic className="w-3.5 h-3.5" />
+                          {voice.isListening && activeUIField?.type === 'question' ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
                         </Button>
                       </div>
                       <div className="relative">
@@ -235,10 +220,10 @@ export default function DatasetPage() {
                           value={answer} 
                           onChange={(e) => setAnswer(e.target.value)} 
                           placeholder="RÉSOLUTION / RÉPONSE..." 
-                          className={cn("h-32 bg-background font-code text-xs uppercase transition-all", activeUIField?.type === 'answer' && "ring-2 ring-red-500 animate-pulse border-red-500")}
+                          className={cn("h-32 bg-background font-code text-xs uppercase transition-all", activeUIField?.type === 'answer' && "ring-2 ring-red-500 border-red-500 animate-pulse")}
                         />
                         <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('answer')} className={cn("absolute top-2 right-2 h-7 w-7", activeUIField?.type === 'answer' ? "text-red-500" : "text-primary")}>
-                          <Mic className="w-3.5 h-3.5" />
+                           {voice.isListening && activeUIField?.type === 'answer' ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
                         </Button>
                       </div>
                     </div>
@@ -257,7 +242,7 @@ export default function DatasetPage() {
                       </div>
 
                       {procSteps.map((step, index) => (
-                        <Card key={step.id} className="p-4 border-border bg-black/30 space-y-4 group">
+                        <Card key={step.id} className="p-4 border-border bg-black/30 space-y-4">
                           <div className="flex justify-between items-center border-b border-border/50 pb-2">
                             <span className="text-[10px] font-bold text-secondary uppercase">Étape {index + 1}</span>
                             <div className="relative">
@@ -270,21 +255,18 @@ export default function DatasetPage() {
                               <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepDuration', index)} className="absolute right-0 top-0 h-7 w-7"><Mic className="w-2.5 h-2.5" /></Button>
                             </div>
                           </div>
-
-                          <div className="space-y-3">
-                            <div className="relative">
-                              <Input 
-                                placeholder="ACTION" 
-                                value={step.title} 
-                                onChange={(e) => { const n = [...procSteps]; n[index].title = e.target.value; setProcSteps(n); }} 
-                                className={cn("h-8 text-[10px] uppercase", activeUIField?.type === 'stepTitle' && activeUIField?.index === index && "ring-1 ring-red-500")}
-                              />
-                              <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepTitle', index)} className="absolute top-0.5 right-1 h-7 w-7"><Mic className="w-3 h-3" /></Button>
-                            </div>
+                          <div className="relative">
+                            <Input 
+                              placeholder="ACTION" 
+                              value={step.title} 
+                              onChange={(e) => { const n = [...procSteps]; n[index].title = e.target.value; setProcSteps(n); }} 
+                              className={cn("h-8 text-[10px] uppercase", activeUIField?.type === 'stepTitle' && activeUIField?.index === index && "ring-1 ring-red-500")}
+                            />
+                            <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepTitle', index)} className="absolute top-0.5 right-1 h-7 w-7"><Mic className="w-3 h-3" /></Button>
                           </div>
                         </Card>
                       ))}
-                      <Button type="button" variant="outline" onClick={() => setProcSteps([...procSteps, { id: Date.now().toString(), title: '', description: '', normalConditions: '', abnormalConditions: '', alarms: '', duration: '' }])} className="w-full border-dashed h-10 text-[10px] uppercase">
+                      <Button type="button" variant="outline" onClick={() => setProcSteps([...procSteps, { id: Date.now().toString(), title: '', duration: '' }])} className="w-full border-dashed h-10 text-[10px] uppercase">
                         <Plus className="w-3 h-3 mr-2" /> Ajouter Étape
                       </Button>
                     </div>

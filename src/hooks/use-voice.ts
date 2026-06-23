@@ -6,7 +6,6 @@ interface VoiceOptions {
   onResult?: (text: string) => void;
   onEnd?: () => void;
   lang?: string;
-  continuous?: boolean;
   autoRestart?: boolean;
 }
 
@@ -14,27 +13,28 @@ interface VoiceState {
   isListening: boolean;
   isSupported: boolean;
   error: string | null;
-  transcript: string;
 }
 
+/**
+ * Hook de reconnaissance vocale ultra-stable.
+ * Utilise des références pour les callbacks afin d'éviter les ruptures de liaison 
+ * pendant les cycles de rendu de React.
+ */
 export function useVoice(options: VoiceOptions = {}) {
   const [state, setState] = useState<VoiceState>({
     isListening: false,
     isSupported: true,
     error: null,
-    transcript: ''
   });
 
-  const onResultRef = useRef(options.onResult);
-  const optionsRef = useRef(options);
   const recognitionRef = useRef<any>(null);
   const isManuallyStopped = useRef(false);
-
-  // Mise à jour des références sans redéclencher les hooks
+  
+  // Utilisation de Refs pour les options pour éviter de redéclencher useEffect inutilement
+  const optionsRef = useRef(options);
   useEffect(() => {
-    onResultRef.current = options.onResult;
     optionsRef.current = options;
-  });
+  }, [options]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -46,73 +46,77 @@ export function useVoice(options: VoiceOptions = {}) {
       return;
     }
 
-    try {
-      const recognition = new SpeechRecognition();
-      recognition.continuous = true;
-      recognition.interimResults = false;
-      recognition.lang = optionsRef.current.lang || 'fr-FR';
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = false;
+    recognition.lang = optionsRef.current.lang || 'fr-FR';
 
-      recognition.onresult = (event: any) => {
-        let segment = '';
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          if (event.results[i].isFinal) {
-            segment += event.results[i][0].transcript;
-          }
+    recognition.onstart = () => {
+      setState(prev => ({ ...prev, isListening: true, error: null }));
+      console.log('[VOICE_HOOK] 🎙️ Session démarrée');
+    };
+
+    recognition.onresult = (event: any) => {
+      const lastIndex = event.resultIndex;
+      const segment = event.results[lastIndex][0].transcript;
+      
+      if (segment.trim()) {
+        console.log(`[VOICE_HOOK] 🗣️ Texte capturé: "${segment.trim()}"`);
+        if (optionsRef.current.onResult) {
+          optionsRef.current.onResult(segment.trim());
         }
+      }
+    };
 
-        if (segment.trim()) {
-          console.log(`[VOICE_HOOK] 🎙️ Texte détecté: "${segment.trim()}"`);
-          onResultRef.current?.(segment.trim());
+    recognition.onend = () => {
+      setState(prev => ({ ...prev, isListening: false }));
+      if (optionsRef.current.autoRestart && !isManuallyStopped.current) {
+        try {
+          recognition.start();
+        } catch (e) {
+          // Erreur ignorée (déjà démarré)
         }
-      };
+      }
+    };
 
-      recognition.onstart = () => {
-        setState(prev => ({ ...prev, isListening: true, error: null }));
-      };
+    recognition.onerror = (event: any) => {
+      console.error(`[VOICE_HOOK] ❌ Erreur : ${event.error}`);
+      setState(prev => ({ ...prev, error: event.error, isListening: false }));
+    };
 
-      recognition.onend = () => {
-        setState(prev => ({ ...prev, isListening: false }));
-        // Redémarrage automatique si nécessaire
-        if (optionsRef.current.autoRestart && !isManuallyStopped.current) {
-          try { recognition.start(); } catch (e) {}
-        }
-      };
+    recognitionRef.current = recognition;
 
-      recognition.onerror = (event: any) => {
-        if (event.error !== 'no-speech') {
-          console.error(`[VOICE_HOOK] ❌ Erreur : ${event.error}`);
-          setState(prev => ({ ...prev, error: event.error, isListening: false }));
-        }
-      };
-
-      recognitionRef.current = recognition;
-    } catch (e) {
-      console.error('[VOICE_HOOK] Initialisation échouée', e);
-    }
-
-    // Nettoyage impératif pour éviter la violation "unload"
     return () => {
       if (recognitionRef.current) {
+        recognitionRef.current.onstart = null;
         recognitionRef.current.onresult = null;
         recognitionRef.current.onend = null;
         recognitionRef.current.onerror = null;
-        try { recognitionRef.current.stop(); } catch (e) {}
+        try {
+          recognitionRef.current.stop();
+        } catch (e) {}
       }
     };
   }, []);
 
   const startListening = useCallback(() => {
     isManuallyStopped.current = false;
-    try {
-      recognitionRef.current?.start();
-    } catch (e) {}
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.start();
+      } catch (e) {
+        console.warn('[VOICE_HOOK] Micro déjà actif');
+      }
+    }
   }, []);
 
   const stopListening = useCallback(() => {
     isManuallyStopped.current = true;
-    try {
-      recognitionRef.current?.stop();
-    } catch (e) {}
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch (e) {}
+    }
     setState(prev => ({ ...prev, isListening: false }));
   }, []);
 
