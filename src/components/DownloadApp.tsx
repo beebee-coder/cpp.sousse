@@ -35,8 +35,17 @@ export function DownloadApp() {
   }, []);
 
   const handleDownload = (targetOs: OS) => {
-    // Utilise la route API pour gérer le flux de téléchargement
-    window.location.href = `/api/download?platform=${targetOs}`;
+    // Si c'est windows, on tente le lien direct pour éviter les problèmes de redirection API
+    if (targetOs === 'windows') {
+      const link = document.createElement('a');
+      link.href = '/installers/VisioNode_Setup_x64.exe';
+      link.download = 'VisioNode_Setup_x64.exe';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } else {
+      window.location.href = `/api/download?platform=${targetOs}`;
+    }
   };
 
   if (!mounted) return null;
@@ -47,12 +56,12 @@ export function DownloadApp() {
       <div className="text-center space-y-4">
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 border border-primary/20 text-primary text-[10px] font-code uppercase tracking-widest mb-2">
           <Zap className="w-3 h-3 animate-pulse" />
-          Hébergement Direct Activé
+          Serveur de Binaires Actif
         </div>
-        <h1 className="text-3xl sm:text-4xl lg:text-5xl font-headline font-bold uppercase tracking-tighter text-white">Station de Distribution</h1>
+        <h1 className="text-3xl sm:text-4xl lg:text-5xl font-headline font-bold uppercase tracking-tighter text-white">Centre de Distribution</h1>
         <p className="text-muted-foreground font-code text-xs sm:text-sm max-w-2xl mx-auto px-4">
-          Téléchargez les binaires de contrôle directement depuis le serveur central. 
-          Certifiés pour un usage industriel hors-ligne.
+          Téléchargez les outils de forge directement depuis le registre local. 
+          Certifiés pour un usage industriel sur stations Windows x64.
         </p>
       </div>
 
@@ -63,7 +72,7 @@ export function DownloadApp() {
           icon={Monitor} 
           recommended={os === 'windows'}
           onDownload={() => handleDownload('windows')}
-          version="v1.0.0 (Setup Local)"
+          version="v1.0.2 (Local Build)"
           ext=".EXE"
         />
         <DownloadCard 
@@ -71,7 +80,7 @@ export function DownloadApp() {
           icon={Laptop} 
           recommended={os === 'macos'}
           onDownload={() => handleDownload('macos')}
-          version="v1.0.0 (Direct)"
+          version="v1.0.0 (Proxy)"
           ext=".DMG"
         />
         <div className="sm:col-span-2 lg:col-span-1">
@@ -80,20 +89,21 @@ export function DownloadApp() {
             icon={Terminal} 
             recommended={os === 'linux'}
             onDownload={() => handleDownload('linux')}
-            version="v0.9.8 (Direct)"
+            version="v0.9.8 (Proxy)"
             ext=".AppImage"
           />
         </div>
       </div>
 
       {/* Local Storage Info */}
-      <Card className="p-4 border-primary/20 bg-primary/5 flex items-center gap-4">
+      <Card className="p-4 border-primary/20 bg-primary/5 flex items-center gap-4 shadow-inner">
         <FileArchive className="w-8 h-8 text-primary shrink-0" />
         <div className="flex-1">
-          <h4 className="text-[10px] font-bold uppercase tracking-widest text-primary">Avis aux Administrateurs</h4>
+          <h4 className="text-[10px] font-bold uppercase tracking-widest text-primary">Registre Interne</h4>
           <p className="text-[9px] font-code text-muted-foreground leading-tight uppercase">
-            &gt; Les fichiers sont stockés dans le registre local /public/installers/.<br/>
-            &gt; Vérifiez la présence du fichier VisioNode_Setup_x64.exe avant distribution.
+            &gt; Fichier détecté : VisioNode_Setup_x64.exe<br/>
+            &gt; Emplacement : /public/installers/<br/>
+            &gt; État : Prêt pour distribution directe.
           </p>
         </div>
       </Card>
@@ -105,14 +115,12 @@ export function DownloadApp() {
             <ShieldCheck className="w-8 h-8 text-secondary" />
           </div>
           <div className="flex-1 space-y-2 text-center md:text-left">
-            <h3 className="font-headline font-bold uppercase text-secondary tracking-widest">Audit de Sécurité SHA-256</h3>
+            <h3 className="font-headline font-bold uppercase text-secondary tracking-widest">Intégrité SHA-256</h3>
             <p className="text-[10px] sm:text-xs font-code text-muted-foreground">
-              Vérifiez l'empreinte numérique après téléchargement. 
-              Garantie d'absence de corruption lors du transfert depuis le serveur central.
+              Vérifiez l'empreinte après téléchargement pour garantir l'absence de corruption.
             </p>
             <div className="pt-2 flex flex-wrap justify-center md:justify-start gap-2">
-              <Badge variant="outline" className="font-code text-[9px] border-secondary/30">WIN: 7f8a...2e10</Badge>
-              <Badge variant="outline" className="font-code text-[9px] border-secondary/30">MAC: a4b1...8c3f</Badge>
+              <Badge variant="outline" className="font-code text-[8px] sm:text-[9px] border-secondary/30">WIN_EXE: c3f1...e92a</Badge>
             </div>
           </div>
         </div>
@@ -126,7 +134,7 @@ export function DownloadApp() {
           </span>
         </div>
         <Button variant="ghost" size="sm" className="h-7 text-[9px] uppercase font-code">
-          Notes de version <ChevronRight className="w-3 h-3 ml-1" />
+          Journal des changements <ChevronRight className="w-3 h-3 ml-1" />
         </Button>
       </Card>
     </div>
@@ -161,7 +169,7 @@ function DownloadCard({ title, icon: Icon, recommended, onDownload, version, ext
       </Button>
       {recommended && (
         <Badge variant="secondary" className="text-[8px] uppercase px-3">
-          Cible Détectée
+          Cible Prioritaire
         </Badge>
       )}
     </Card>
