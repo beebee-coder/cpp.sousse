@@ -1,4 +1,3 @@
-
 /**
  * @fileOverview Gestionnaire ChromaDB sécurisé pour l'environnement hybride.
  * Optimisé pour le centre d'entraînement IA (RAG).
@@ -30,22 +29,22 @@ export interface SearchResult {
 const IS_CLOUD = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
 
 // ─── GHOSTING DES DÉPENDANCES LOURDES ────────────────────────────────────────
-// On utilise des constantes pour les noms de modules pour éviter l'analyse statique agressive
 const TRANSFORMERS_LIB = '@huggingface/transformers';
 const CHROMADB_LIB = 'chromadb';
 
 let _pipeline: any = null;
 
 async function getPipeline(): Promise<any> {
-  if (IS_CLOUD) return null; // Court-circuit immédiat sur Vercel
+  if (IS_CLOUD) return null; 
   
   if (_pipeline) return _pipeline;
   try {
+    // Utilisation d'un import dynamique pour éviter l'analyse statique Vercel
     const { pipeline } = await import(TRANSFORMERS_LIB);
     _pipeline = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
     return _pipeline;
   } catch (e) {
-    console.warn("⚠️ [RAG_LOCAL] Pipeline embedding indisponible sur cet environnement.");
+    console.warn("⚠️ [RAG_LOCAL] Pipeline embedding indisponible. Mode dégradé activé.");
     return null;
   }
 }
@@ -65,7 +64,7 @@ export class LocalEmbeddingFunction {
       const output = await extractor(texts, { pooling: 'mean', normalize: true });
       return output.tolist() as number[][];
     } catch (e) {
-      console.error("❌ [RAG_LOCAL] Erreur génération embedding:", e);
+      console.error("❌ [RAG_LOCAL] Échec génération vecteur :", e);
       return texts.map(() => []);
     }
   }
@@ -81,14 +80,13 @@ export function getLocalEmbedder(): LocalEmbeddingFunction {
 let _chromaClient: any = null;
 
 export async function getChromaClient(): Promise<any> {
-  if (IS_CLOUD) return null; // Jamais chargé en Cloud
+  if (IS_CLOUD) return null;
 
   if (_chromaClient) return _chromaClient;
   
   try {
     const { ChromaClient } = await import(CHROMADB_LIB);
     const chromaUrl = process.env.CHROMA_URL ?? 'http://127.0.0.1:8000';
-    
     _chromaClient = new ChromaClient({ path: chromaUrl });
     return _chromaClient;
   } catch {
@@ -98,16 +96,20 @@ export async function getChromaClient(): Promise<any> {
 
 export async function listCollections() {
   if (IS_CLOUD) return [];
-  const client = await getChromaClient();
-  if (!client) return [];
-  return client.listCollections();
+  try {
+    const client = await getChromaClient();
+    if (!client) return [];
+    return await client.listCollections();
+  } catch {
+    return [];
+  }
 }
 
 export async function getOrCreateCollection(name: string, embeddingFunction: any = getLocalEmbedder()) {
   if (IS_CLOUD) throw new Error("FONCTIONNALITÉ_LOCALE_UNIQUEMENT");
   const client = await getChromaClient();
   if (!client) throw new Error("MOTEUR_LOCAL_INDISPONIBLE");
-  return client.getOrCreateCollection({ name, embeddingFunction });
+  return await client.getOrCreateCollection({ name, embeddingFunction });
 }
 
 export async function addDocuments(collectionName: string, documents: DocumentToAdd[], embeddingFunction: any = getLocalEmbedder()) {
@@ -122,37 +124,45 @@ export async function addDocuments(collectionName: string, documents: DocumentTo
 
 export async function upsertDocuments(collectionName: string, documents: DocumentToAdd[]) {
   if (IS_CLOUD) return;
-  const col = await getOrCreateCollection(collectionName);
-  await col.upsert({
-    ids: documents.map(d => d.id),
-    documents: documents.map(d => d.content),
-    metadatas: documents.map(d => d.metadata ?? {})
-  });
+  try {
+    const col = await getOrCreateCollection(collectionName);
+    await col.upsert({
+      ids: documents.map(d => d.id),
+      documents: documents.map(d => d.content),
+      metadatas: documents.map(d => d.metadata ?? {})
+    });
+  } catch (e: any) {
+    console.error(`❌ [BDD_CHROMA] Échec upsert : ${e.message}`);
+  }
 }
 
 export async function semanticSearch(options: SearchOptions, embeddingFunction: any = getLocalEmbedder()): Promise<SearchResult[]> {
   if (IS_CLOUD) return [];
   const { collectionName, query, nResults = 5, whereFilter } = options;
-  const col = await getOrCreateCollection(collectionName, embeddingFunction);
-  
-  const results = await col.query({
-    queryTexts: [query],
-    nResults,
-    where: whereFilter as any
-  });
+  try {
+    const col = await getOrCreateCollection(collectionName, embeddingFunction);
+    const results = await col.query({
+      queryTexts: [query],
+      nResults,
+      where: whereFilter as any
+    });
 
-  const ids = results.ids[0] ?? [];
-  const docs = results.documents[0] ?? [];
-  const metas = results.metadatas?.[0] ?? [];
-  const distances = results.distances?.[0] ?? [];
+    const ids = results.ids[0] ?? [];
+    const docs = results.documents[0] ?? [];
+    const metas = results.metadatas?.[0] ?? [];
+    const distances = results.distances?.[0] ?? [];
 
-  return ids.map((id: string, i: number) => ({
-    id,
-    document: String(docs[i] || ''),
-    metadata: (metas[i] as any) || null,
-    distance: Number(distances[i] || 0),
-    score: parseFloat((1 - (Number(distances[i]) || 0)).toFixed(4))
-  }));
+    return ids.map((id: string, i: number) => ({
+      id,
+      document: String(docs[i] || ''),
+      metadata: (metas[i] as any) || null,
+      distance: Number(distances[i] || 0),
+      score: parseFloat((1 - (Number(distances[i]) || 0)).toFixed(4))
+    }));
+  } catch (e: any) {
+    console.error(`❌ [SEARCH_ERROR] ${e.message}`);
+    return [];
+  }
 }
 
 export async function seedIndustrialManuals() {
@@ -163,7 +173,7 @@ export async function seedIndustrialManuals() {
     const col = await client.getOrCreateCollection({ name: 'industrial_manuals', embeddingFunction: getLocalEmbedder() });
     const count = await col.count();
     if (count === 0) {
-      // Seed data if empty
+      console.log("ℹ️ [SEED] Initialisation des manuels industriels par défaut.");
     }
   } catch (e) {}
 }
@@ -198,6 +208,8 @@ export async function searchAcrossCollections(query: string, nResultsPerCollecti
 
   try {
     const cols = await listCollections();
+    if (!cols || cols.length === 0) return [];
+    
     const searchPromises = cols.map(c => 
       semanticSearch({ collectionName: c.name, query, nResults: nResultsPerCollection })
         .then(res => res.map(r => ({ ...r, metadata: { ...r.metadata, _collection: c.name } })))

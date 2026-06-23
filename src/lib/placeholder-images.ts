@@ -1,7 +1,6 @@
-
 /**
  * @fileOverview Utility to provide safe access to placeholder image data.
- * Consolidates image data from the application's library.
+ * Consolidates image data from the application's library with enhanced error safety.
  */
 
 import data from '@/app/lib/placeholder-images.json';
@@ -15,19 +14,25 @@ export type ImagePlaceholder = {
 
 /**
  * Safely extracts placeholder images from the imported JSON data.
- * Provides a fallback to an empty array to prevent "Unexpected end of JSON input"
- * or property access errors if the JSON file is malformed.
+ * Provides a fallback to an empty array and prevents crash during build.
  */
 function getPlaceholderImages(): ImagePlaceholder[] {
-  if (!data) return [];
+  if (!data || typeof data !== 'object') return [];
   
   try {
     const rawImages = (data as any)?.placeholderImages;
     if (Array.isArray(rawImages)) {
-      return rawImages;
+      return rawImages.map(img => ({
+        id: String(img.id || 'unknown'),
+        description: String(img.description || ''),
+        imageUrl: String(img.imageUrl || ''),
+        imageHint: String(img.imageHint || '')
+      }));
     }
   } catch (error) {
-    console.warn("[VisioNode] Failed to parse placeholder images data:", error);
+    if (process.env.NODE_ENV === 'development') {
+      console.warn("[VisioNode] Échec de l'extraction des assets visuels :", error);
+    }
   }
   
   return [];
