@@ -21,7 +21,10 @@ import {
   Upload,
   FileJson,
   Mic,
-  MicOff
+  MicOff,
+  Activity,
+  ShieldAlert,
+  Bell
 } from 'lucide-react';
 
 import { Card } from '@/components/ui/card';
@@ -91,14 +94,13 @@ export default function DatasetPage() {
       if (type === 'question') setQuestion(prev => (prev ? prev + ' ' + text : text));
       else if (type === 'answer') setAnswer(prev => (prev ? prev + ' ' + text : text));
       else if (type === 'procTitle') setProcTitle(prev => (prev ? prev + ' ' + text : text));
-      else if (type === 'stepTitle' && typeof index === 'number') {
+      else if (typeof index === 'number') {
         const newSteps = [...procSteps];
-        newSteps[index].title = newSteps[index].title ? newSteps[index].title + ' ' + text : text;
-        setProcSteps(newSteps);
-      }
-      else if (type === 'stepDesc' && typeof index === 'number') {
-        const newSteps = [...procSteps];
-        newSteps[index].description = newSteps[index].description ? newSteps[index].description + ' ' + text : text;
+        if (type === 'stepTitle') newSteps[index].title = newSteps[index].title ? newSteps[index].title + ' ' + text : text;
+        else if (type === 'stepDesc') newSteps[index].description = newSteps[index].description ? newSteps[index].description + ' ' + text : text;
+        else if (type === 'stepNormal') newSteps[index].normalConditions = newSteps[index].normalConditions ? newSteps[index].normalConditions + ' ' + text : text;
+        else if (type === 'stepAbnormal') newSteps[index].abnormalConditions = newSteps[index].abnormalConditions ? newSteps[index].abnormalConditions + ' ' + text : text;
+        else if (type === 'stepAlarms') newSteps[index].alarms = newSteps[index].alarms ? newSteps[index].alarms + ' ' + text : text;
         setProcSteps(newSteps);
       }
     },
@@ -132,7 +134,6 @@ export default function DatasetPage() {
   useEffect(() => {
     setMounted(true);
     return () => {
-      // Nettoyage final de tous les blobs pour éviter les fuites mémoire
       procSteps.forEach(s => {
         if (s.imagePreview) URL.revokeObjectURL(s.imagePreview);
         if (s.videoPreview) URL.revokeObjectURL(s.videoPreview);
@@ -258,7 +259,7 @@ export default function DatasetPage() {
       setQuestion(''); setAnswer('');
     } else {
       if (!procTitle.trim()) return;
-      const details = procSteps.map((s, i) => `[ÉTAPE ${i + 1}] ${s.title}: ${s.description}`).join('\n');
+      const details = procSteps.map((s, i) => `[ÉTAPE ${i + 1}] ${s.title}\nDesc: ${s.description}\nNormal: ${s.normalConditions}\nAbnormal: ${s.abnormalConditions}\nAlarms: ${s.alarms}`).join('\n');
       const assets = procSteps.flatMap((s, idx) => {
         const items = [];
         if (s.imageFile) items.push({ type: 'image' as const, file: s.imageFile, step: idx });
@@ -267,7 +268,6 @@ export default function DatasetPage() {
       });
       setQaItems([{ id: Date.now().toString(), type: 'procedure', label: procTitle, details, mediaAssets: assets }, ...qaItems]);
       setProcTitle('');
-      // Nettoyer les anciens blobs avant de réinitialiser
       procSteps.forEach(revokeStepPreviews);
       setProcSteps([{ id: Date.now().toString(), title: '', description: '', normalConditions: '', abnormalConditions: '', alarms: '' }]);
     }
@@ -276,11 +276,9 @@ export default function DatasetPage() {
   const handleFinalSubmitToWebBDD = async () => {
     if (qaItems.length === 0) return;
     setIsUploading(true);
-    const timestamp = new Date().toLocaleTimeString();
     
     try {
       const uploadItems = [];
-      
       for (const item of qaItems) {
         uploadItems.push({
           id: `doc-${item.id}`,
@@ -298,7 +296,6 @@ export default function DatasetPage() {
               reader.onload = () => res(reader.result as string);
               reader.readAsDataURL(asset.file);
             });
-            
             uploadItems.push({
               id: `asset-${Date.now()}-${Math.random()}`,
               projectId: 'project-001',
@@ -313,7 +310,6 @@ export default function DatasetPage() {
       }
 
       await apiClient.post('/api/sync/upload', { userId: 'admin', projectId: 'project-001', items: uploadItems });
-      
       toast({ title: "Transfert Réussi", description: "Données JSON et médias envoyés vers la BDD Web." });
       setQaItems([]);
     } catch (e) {
@@ -358,33 +354,13 @@ export default function DatasetPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="relative group">
                     <Textarea value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="SYMPTÔME..." className="h-32 bg-background font-code text-xs uppercase pr-10" />
-                    <Button 
-                      type="button"
-                      variant="ghost" 
-                      size="icon" 
-                      onClick={() => toggleVoice('question')}
-                      className={cn(
-                        "absolute top-2 right-2 h-7 w-7 transition-all",
-                        activeVoiceField?.type === 'question' ? "bg-red-500/20 text-red-500 animate-pulse" : "text-primary opacity-30 group-hover:opacity-100"
-                      )}
-                      disabled={!isSupported}
-                    >
+                    <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('question')} className={cn("absolute top-2 right-2 h-7 w-7 transition-all", activeVoiceField?.type === 'question' ? "bg-red-500/20 text-red-500 animate-pulse" : "text-primary opacity-30 group-hover:opacity-100")} disabled={!isSupported}>
                       {activeVoiceField?.type === 'question' ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
                     </Button>
                   </div>
                   <div className="relative group">
                     <Textarea value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="RÉSOLUTION..." className="h-32 bg-background font-code text-xs uppercase pr-10" />
-                    <Button 
-                      type="button"
-                      variant="ghost" 
-                      size="icon" 
-                      onClick={() => toggleVoice('answer')}
-                      className={cn(
-                        "absolute top-2 right-2 h-7 w-7 transition-all",
-                        activeVoiceField?.type === 'answer' ? "bg-red-500/20 text-red-500 animate-pulse" : "text-primary opacity-30 group-hover:opacity-100"
-                      )}
-                      disabled={!isSupported}
-                    >
+                    <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('answer')} className={cn("absolute top-2 right-2 h-7 w-7 transition-all", activeVoiceField?.type === 'answer' ? "bg-red-500/20 text-red-500 animate-pulse" : "text-primary opacity-30 group-hover:opacity-100")} disabled={!isSupported}>
                       {activeVoiceField?.type === 'answer' ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
                     </Button>
                   </div>
@@ -393,17 +369,7 @@ export default function DatasetPage() {
                 <div className="space-y-4">
                   <div className="relative group">
                     <Input value={procTitle} onChange={(e) => setProcTitle(e.target.value)} placeholder="TITRE PROCÉDURE" className="bg-background font-headline uppercase pr-10" />
-                    <Button 
-                      type="button"
-                      variant="ghost" 
-                      size="icon" 
-                      onClick={() => toggleVoice('procTitle')}
-                      className={cn(
-                        "absolute top-1.5 right-2 h-7 w-7 transition-all",
-                        activeVoiceField?.type === 'procTitle' ? "bg-red-500/20 text-red-500 animate-pulse" : "text-primary opacity-30 group-hover:opacity-100"
-                      )}
-                      disabled={!isSupported}
-                    >
+                    <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('procTitle')} className={cn("absolute top-1.5 right-2 h-7 w-7 transition-all", activeVoiceField?.type === 'procTitle' ? "bg-red-500/20 text-red-500 animate-pulse" : "text-primary opacity-30 group-hover:opacity-100")} disabled={!isSupported}>
                       {activeVoiceField?.type === 'procTitle' ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
                     </Button>
                   </div>
@@ -417,17 +383,7 @@ export default function DatasetPage() {
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                           <div className="relative group">
                             <Input placeholder="TITRE ACTION" value={step.title} onChange={(e) => { const n = [...procSteps]; n[index].title = e.target.value; setProcSteps(n); }} className="h-9 text-[11px] font-code uppercase pr-10" />
-                            <Button 
-                              type="button"
-                              variant="ghost" 
-                              size="icon" 
-                              onClick={() => toggleVoice('stepTitle', index)}
-                              className={cn(
-                                "absolute top-1 right-2 h-7 w-7 transition-all",
-                                (activeVoiceField?.type === 'stepTitle' && activeVoiceField.index === index) ? "bg-red-500/20 text-red-500 animate-pulse" : "text-primary opacity-30 group-hover:opacity-100"
-                              )}
-                              disabled={!isSupported}
-                            >
+                            <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepTitle', index)} className={cn("absolute top-1 right-2 h-7 w-7 transition-all", (activeVoiceField?.type === 'stepTitle' && activeVoiceField.index === index) ? "bg-red-500/20 text-red-500 animate-pulse" : "text-primary opacity-30 group-hover:opacity-100")} disabled={!isSupported}>
                               {(activeVoiceField?.type === 'stepTitle' && activeVoiceField.index === index) ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
                             </Button>
                           </div>
@@ -436,22 +392,47 @@ export default function DatasetPage() {
                             <Button variant="outline" size="sm" className="flex-1 h-9 text-[9px] font-code" onClick={(e) => handleTriggerCapture(e, index, 'video')}><Video className="w-3.5 h-3.5 mr-2" /> VIDEO</Button>
                           </div>
                         </div>
+                        
                         <div className="relative group">
                           <Textarea placeholder="DESCRIPTION DÉTAILLÉE..." value={step.description} onChange={(e) => { const n = [...procSteps]; n[index].description = e.target.value; setProcSteps(n); }} className="h-20 bg-background/50 font-code text-[11px] uppercase pr-10" />
-                          <Button 
-                            type="button"
-                            variant="ghost" 
-                            size="icon" 
-                            onClick={() => toggleVoice('stepDesc', index)}
-                            className={cn(
-                              "absolute top-2 right-2 h-7 w-7 transition-all",
-                              (activeVoiceField?.type === 'stepDesc' && activeVoiceField.index === index) ? "bg-red-500/20 text-red-500 animate-pulse" : "text-primary opacity-30 group-hover:opacity-100"
-                            )}
-                            disabled={!isSupported}
-                          >
+                          <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepDesc', index)} className={cn("absolute top-2 right-2 h-7 w-7 transition-all", (activeVoiceField?.type === 'stepDesc' && activeVoiceField.index === index) ? "bg-red-500/20 text-red-500 animate-pulse" : "text-primary opacity-30 group-hover:opacity-100")} disabled={!isSupported}>
                             {(activeVoiceField?.type === 'stepDesc' && activeVoiceField.index === index) ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
                           </Button>
                         </div>
+
+                        {/* CHAMPS INDUSTRIELS RESTAURÉS */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                          <div className="space-y-1.5 relative group">
+                            <div className="flex items-center gap-1.5 text-[9px] font-bold text-secondary uppercase mb-1">
+                              <Activity className="w-3 h-3" /> Conditions Normales
+                            </div>
+                            <Input value={step.normalConditions} onChange={(e) => { const n = [...procSteps]; n[index].normalConditions = e.target.value; setProcSteps(n); }} className="h-8 text-[10px] font-code bg-background/20 pr-8" placeholder="NOMINAL..." />
+                            <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepNormal', index)} className={cn("absolute bottom-1 right-1 h-6 w-6 transition-all", (activeVoiceField?.type === 'stepNormal' && activeVoiceField.index === index) ? "bg-red-500/20 text-red-500 animate-pulse" : "text-primary opacity-0 group-hover:opacity-40")} disabled={!isSupported}>
+                              {(activeVoiceField?.type === 'stepNormal' && activeVoiceField.index === index) ? <MicOff className="w-3 h-3" /> : <Mic className="w-3 h-3" />}
+                            </Button>
+                          </div>
+                          
+                          <div className="space-y-1.5 relative group">
+                            <div className="flex items-center gap-1.5 text-[9px] font-bold text-primary uppercase mb-1">
+                              <ShieldAlert className="w-3 h-3" /> Conditions Anormales
+                            </div>
+                            <Input value={step.abnormalConditions} onChange={(e) => { const n = [...procSteps]; n[index].abnormalConditions = e.target.value; setProcSteps(n); }} className="h-8 text-[10px] font-code bg-background/20 pr-8" placeholder="DÉRIVE..." />
+                            <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepAbnormal', index)} className={cn("absolute bottom-1 right-1 h-6 w-6 transition-all", (activeVoiceField?.type === 'stepAbnormal' && activeVoiceField.index === index) ? "bg-red-500/20 text-red-500 animate-pulse" : "text-primary opacity-0 group-hover:opacity-40")} disabled={!isSupported}>
+                              {(activeVoiceField?.type === 'stepAbnormal' && activeVoiceField.index === index) ? <MicOff className="w-3 h-3" /> : <Mic className="w-3 h-3" />}
+                            </Button>
+                          </div>
+
+                          <div className="space-y-1.5 relative group">
+                            <div className="flex items-center gap-1.5 text-[9px] font-bold text-destructive uppercase mb-1">
+                              <Bell className="w-3 h-3" /> Alarmes / Seuils
+                            </div>
+                            <Input value={step.alarms} onChange={(e) => { const n = [...procSteps]; n[index].alarms = e.target.value; setProcSteps(n); }} className="h-8 text-[10px] font-code bg-background/20 pr-8" placeholder="ALERTES..." />
+                            <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepAlarms', index)} className={cn("absolute bottom-1 right-1 h-6 w-6 transition-all", (activeVoiceField?.type === 'stepAlarms' && activeVoiceField.index === index) ? "bg-red-500/20 text-red-500 animate-pulse" : "text-primary opacity-0 group-hover:opacity-40")} disabled={!isSupported}>
+                              {(activeVoiceField?.type === 'stepAlarms' && activeVoiceField.index === index) ? <MicOff className="w-3 h-3" /> : <Mic className="w-3 h-3" />}
+                            </Button>
+                          </div>
+                        </div>
+
                         {(step.imagePreview || step.videoPreview) && (
                           <div className="flex gap-2 items-center">
                             <Badge variant="outline" className="text-[8px] uppercase bg-secondary/10 text-secondary border-secondary/20 px-2 py-0.5">Média attaché</Badge>
