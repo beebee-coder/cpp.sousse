@@ -14,7 +14,11 @@ import {
   AlertTriangle,
   Trash2,
   ChevronDown,
-  Info
+  Info,
+  ShieldAlert,
+  Image as ImageIcon,
+  Video as VideoIcon,
+  Bell
 } from 'lucide-react';
 
 import { Card } from '@/components/ui/card';
@@ -32,6 +36,10 @@ interface ProcedureStep {
   title: string;
   duration: string;
   description: string;
+  conditions: string;
+  alarms: string;
+  images: string;
+  video: string;
 }
 
 interface QAItem {
@@ -50,12 +58,11 @@ export default function DatasetPage() {
   const [answer, setAnswer] = useState('');
   const [procTitle, setProcTitle] = useState('');
   const [procSteps, setProcSteps] = useState<ProcedureStep[]>([
-    { id: '1', title: '', duration: '', description: '' }
+    { id: '1', title: '', duration: '', description: '', conditions: '', alarms: '', images: '', video: '' }
   ]);
   const [isUploading, setIsUploading] = useState(false);
   const [isGuideActive, setIsGuideActive] = useState(false);
   
-  // L'ordre des hooks est crucial : TOUS les hooks doivent être au sommet
   const [activeUIField, setActiveUIField] = useState<{ type: string, index?: number } | null>(null);
   const activeVoiceFieldRef = useRef<{ type: string, index?: number } | null>(null);
 
@@ -85,6 +92,9 @@ export default function DatasetPage() {
         if (target.type === 'stepTitle') s.title = s.title ? `${s.title} ${text}` : text;
         else if (target.type === 'stepDuration') s.duration = s.duration ? `${s.duration} ${text}` : text;
         else if (target.type === 'stepDescription') s.description = s.description ? `${s.description} ${text}` : text;
+        else if (target.type === 'stepConditions') s.conditions = s.conditions ? `${s.conditions} ${text}` : text;
+        else if (target.type === 'stepAlarms') s.alarms = s.alarms ? `${s.alarms} ${text}` : text;
+        
         next[target.index!] = s;
         return next;
       });
@@ -99,16 +109,6 @@ export default function DatasetPage() {
 
   const voice = useVoice(voiceOptions);
 
-  useEffect(() => {
-    if (voice.error === 'not-allowed') {
-      toast({
-        title: "Microphone Bloqué",
-        description: "Accès refusé. SSL requis ou vérifiez les permissions du navigateur.",
-        variant: "destructive"
-      });
-    }
-  }, [voice.error, toast]);
-
   const toggleVoice = (type: string, index?: number) => {
     const isCurrentlyActive = voice.isListening && activeUIField?.type === type && activeUIField?.index === index;
 
@@ -121,7 +121,7 @@ export default function DatasetPage() {
       setTimeout(() => {
         voice.startListening();
         if (isGuideActive) {
-          voice.speak(type === 'question' ? "Décrivez le symptôme." : "Décrivez la résolution.");
+          voice.speak("Écoute activée.");
         }
       }, 50);
     }
@@ -135,10 +135,12 @@ export default function DatasetPage() {
       setQuestion(''); setAnswer('');
     } else {
       if (!procTitle.trim()) return;
-      const details = procSteps.map((s, i) => `[Étape ${i + 1}] ${s.title} (${s.duration})\n${s.description}`).join('\n\n');
+      const details = procSteps.map((s, i) => 
+        `[Étape ${i + 1}] ${s.title} (${s.duration})\nCONDITIONS: ${s.conditions}\nALARMES: ${s.alarms}\nASSETS: ${s.images} ${s.video}\nDÉTAILS: ${s.description}`
+      ).join('\n\n');
       setQaItems(prev => [{ id: Date.now().toString(), type: 'procedure', label: procTitle, details }, ...prev]);
       setProcTitle('');
-      setProcSteps([{ id: Date.now().toString(), title: '', duration: '', description: '' }]);
+      setProcSteps([{ id: Date.now().toString(), title: '', duration: '', description: '', conditions: '', alarms: '', images: '', video: '' }]);
     }
     toast({ title: "Donnée enregistrée localement." });
   };
@@ -189,12 +191,6 @@ export default function DatasetPage() {
               </div>
 
               <div className="flex items-center gap-4">
-                {voice.error === 'not-allowed' && (
-                  <div className="flex items-center gap-2 text-destructive animate-pulse">
-                    <AlertTriangle className="w-3 h-3" />
-                    <span className="text-[8px] font-code uppercase">Microphone Bloqué</span>
-                  </div>
-                )}
                 <Button 
                   variant="ghost" 
                   size="sm" 
@@ -225,7 +221,7 @@ export default function DatasetPage() {
                           className={cn("h-32 bg-background font-code text-xs uppercase transition-all", activeUIField?.type === 'question' && "ring-2 ring-red-500 border-red-500 animate-pulse")}
                         />
                         <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('question')} className={cn("absolute top-8 right-2 h-7 w-7", activeUIField?.type === 'question' ? "text-red-500" : "text-primary")}>
-                          {voice.isListening && activeUIField?.type === 'question' ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
+                          <Mic className="w-3.5 h-3.5" />
                         </Button>
                       </div>
                       <div className="relative">
@@ -237,7 +233,7 @@ export default function DatasetPage() {
                           className={cn("h-32 bg-background font-code text-xs uppercase transition-all", activeUIField?.type === 'answer' && "ring-2 ring-red-500 border-red-500 animate-pulse")}
                         />
                         <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('answer')} className={cn("absolute top-8 right-2 h-7 w-7", activeUIField?.type === 'answer' ? "text-red-500" : "text-secondary")}>
-                           {voice.isListening && activeUIField?.type === 'answer' ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
+                           <Mic className="w-3.5 h-3.5" />
                         </Button>
                       </div>
                     </div>
@@ -296,7 +292,7 @@ export default function DatasetPage() {
                                 <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepTitle', index)} className="absolute top-5 right-1 h-7 w-7"><Mic className="w-3 h-3" /></Button>
                               </div>
                               <div className="relative">
-                                <p className="text-[8px] font-bold uppercase text-muted-foreground mb-1">Détails techniques / Observations</p>
+                                <p className="text-[8px] font-bold uppercase text-muted-foreground mb-1">Détails techniques</p>
                                 <Input 
                                   placeholder="Observations complémentaires..." 
                                   value={step.description} 
@@ -306,11 +302,69 @@ export default function DatasetPage() {
                                 <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepDescription', index)} className="absolute top-5 right-1 h-7 w-7"><Mic className="w-3 h-3" /></Button>
                               </div>
                             </div>
+
+                            {/* NOUVEAUX CHAMPS : CONDITIONS & ALARMES */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div className="relative">
+                                <div className="flex items-center gap-1.5 mb-1">
+                                  <ShieldAlert className="w-3 h-3 text-primary" />
+                                  <p className="text-[8px] font-bold uppercase text-primary">Conditions de début</p>
+                                </div>
+                                <Input 
+                                  placeholder="EX: VANNES FERMÉES, MACHINE À L'ARRÊT..." 
+                                  value={step.conditions} 
+                                  onChange={(e) => { const n = [...procSteps]; n[index].conditions = e.target.value; setProcSteps(n); }} 
+                                  className={cn("h-8 text-[9px] uppercase bg-primary/5", activeUIField?.type === 'stepConditions' && activeUIField?.index === index && "ring-1 ring-primary")}
+                                />
+                                <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepConditions', index)} className="absolute top-5 right-1 h-7 w-7"><Mic className="w-3 h-3" /></Button>
+                              </div>
+                              <div className="relative">
+                                <div className="flex items-center gap-1.5 mb-1">
+                                  <Bell className="w-3 h-3 text-destructive" />
+                                  <p className="text-[8px] font-bold uppercase text-destructive">Alarmes / Vigilance</p>
+                                </div>
+                                <Input 
+                                  placeholder="EX: ATTENTION AUX PROJECTIONS, PRESSION > 2 BAR..." 
+                                  value={step.alarms} 
+                                  onChange={(e) => { const n = [...procSteps]; n[index].alarms = e.target.value; setProcSteps(n); }} 
+                                  className={cn("h-8 text-[9px] uppercase bg-destructive/5", activeUIField?.type === 'stepAlarms' && activeUIField?.index === index && "ring-1 ring-destructive")}
+                                />
+                                <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepAlarms', index)} className="absolute top-5 right-1 h-7 w-7"><Mic className="w-3 h-3" /></Button>
+                              </div>
+                            </div>
+
+                            {/* NOUVEAUX CHAMPS : IMAGES & VIDEO */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div className="relative">
+                                <div className="flex items-center gap-1.5 mb-1">
+                                  <ImageIcon className="w-3 h-3 text-secondary" />
+                                  <p className="text-[8px] font-bold uppercase text-secondary">Images (Ref/ID)</p>
+                                </div>
+                                <Input 
+                                  placeholder="Référence image ou URL..." 
+                                  value={step.images} 
+                                  onChange={(e) => { const n = [...procSteps]; n[index].images = e.target.value; setProcSteps(n); }} 
+                                  className="h-8 text-[9px] uppercase bg-secondary/5"
+                                />
+                              </div>
+                              <div className="relative">
+                                <div className="flex items-center gap-1.5 mb-1">
+                                  <VideoIcon className="w-3 h-3 text-secondary" />
+                                  <p className="text-[8px] font-bold uppercase text-secondary">Vidéo (URL/Path)</p>
+                                </div>
+                                <Input 
+                                  placeholder="Référence vidéo..." 
+                                  value={step.video} 
+                                  onChange={(e) => { const n = [...procSteps]; n[index].video = e.target.value; setProcSteps(n); }} 
+                                  className="h-8 text-[9px] uppercase bg-secondary/5"
+                                />
+                              </div>
+                            </div>
                           </Card>
                         ))}
                       </div>
 
-                      <Button type="button" variant="outline" onClick={() => setProcSteps([...procSteps, { id: Date.now().toString(), title: '', duration: '', description: '' }])} className="w-full border-dashed h-10 text-[10px] uppercase hover:bg-secondary/5 hover:border-secondary/50">
+                      <Button type="button" variant="outline" onClick={() => setProcSteps([...procSteps, { id: Date.now().toString(), title: '', duration: '', description: '', conditions: '', alarms: '', images: '', video: '' }])} className="w-full border-dashed h-10 text-[10px] uppercase hover:bg-secondary/5 hover:border-secondary/50">
                         <Plus className="w-3 h-3 mr-2" /> Ajouter une étape de maintenance
                       </Button>
                     </div>
@@ -330,7 +384,7 @@ export default function DatasetPage() {
                     </h3>
                     <Button onClick={handleFinalSubmit} disabled={isUploading} size="sm" className="bg-secondary text-secondary-foreground text-[9px] uppercase font-bold shadow-lg">
                       {isUploading ? <Loader2 className="w-3 h-3 mr-2 animate-spin" /> : <UploadCloud className="w-3 h-3 mr-2" />} 
-                      Pousser vers le Cloud Industriel
+                      Pousser vers le Cloud
                     </Button>
                   </div>
 
@@ -349,7 +403,7 @@ export default function DatasetPage() {
                           <span className={cn("w-1.5 h-1.5 rounded-full", item.type === 'qa' ? "bg-primary" : "bg-secondary")} />
                           <p className="text-[10px] font-bold text-primary uppercase truncate pr-8">{item.label}</p>
                         </div>
-                        <p className="text-[9px] font-code text-muted-foreground line-clamp-3 italic bg-black/20 p-2 rounded-sm whitespace-pre-wrap">{item.details}</p>
+                        <p className="text-[9px] font-code text-muted-foreground line-clamp-4 italic bg-black/20 p-2 rounded-sm whitespace-pre-wrap">{item.details}</p>
                       </Card>
                     ))}
                   </div>
