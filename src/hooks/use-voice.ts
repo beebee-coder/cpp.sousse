@@ -32,7 +32,6 @@ export function useVoice(options: VoiceOptions = {}) {
   const optionsRef = useRef(options);
   const hasPermissionError = useRef(false);
 
-  // Mise à jour synchronisée des options via ref pour éviter les boucles d'effet
   useEffect(() => {
     optionsRef.current = options;
   }, [options]);
@@ -72,7 +71,6 @@ export function useVoice(options: VoiceOptions = {}) {
     recognition.onend = () => {
       setState(prev => ({ ...prev, isListening: false }));
       
-      // AUTO-RESTART SECURITY: Ne pas redémarrer si arrêt manuel ou erreur critique de permission
       const shouldRestart = optionsRef.current.autoRestart && 
                            !isManuallyStopped.current && 
                            !hasPermissionError.current;
@@ -80,9 +78,7 @@ export function useVoice(options: VoiceOptions = {}) {
       if (shouldRestart) {
         try {
           recognition.start();
-        } catch (e) {
-          console.warn("[VOICE_HOOK] Échec redémarrage automatique.");
-        }
+        } catch (e) {}
       }
     };
 
@@ -90,12 +86,9 @@ export function useVoice(options: VoiceOptions = {}) {
       const err = event.error;
       if (err === 'no-speech') return;
 
-      // Gestion spécifique des permissions pour éviter le spam console et l'overlay Next.js
       if (err === 'not-allowed' || err === 'service-not-allowed') {
-        hasPermissionError.current = true; // Bloque les tentatives de redémarrage auto
-        console.warn(`[VOICE_HOOK] ⚠️ Permission microphone refusée ou indisponible (SSL requis pour Speech API).`);
-      } else {
-        console.error(`[VOICE_HOOK] ❌ Erreur système : ${err}`);
+        hasPermissionError.current = true;
+        console.warn(`[VOICE_HOOK] ⚠️ Permission microphone refusée ou indisponible.`);
       }
       
       setState(prev => ({ ...prev, error: err, isListening: false }));
@@ -123,7 +116,7 @@ export function useVoice(options: VoiceOptions = {}) {
       try {
         recognitionRef.current.start();
       } catch (e) {
-        console.warn("[VOICE_HOOK] Impossible de démarrer la reconnaissance.");
+        console.warn("[VOICE_HOOK] Échec démarrage.");
       }
     }
   }, []);

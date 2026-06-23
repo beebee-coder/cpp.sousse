@@ -12,7 +12,9 @@ import {
   Sparkles,
   Loader2,
   AlertTriangle,
-  Trash2
+  Trash2,
+  ChevronDown,
+  Info
 } from 'lucide-react';
 
 import { Card } from '@/components/ui/card';
@@ -29,6 +31,7 @@ interface ProcedureStep {
   id: string;
   title: string;
   duration: string;
+  description: string;
 }
 
 interface QAItem {
@@ -39,7 +42,6 @@ interface QAItem {
 }
 
 export default function DatasetPage() {
-  // --- 1. TOUS LES HOOKS AU SOMMET (ORDRE CONSTANT) ---
   const { toast } = useToast();
   const [mounted, setMounted] = useState(false);
   const [mode, setMode] = useState<'qa' | 'procedure'>('qa');
@@ -48,20 +50,18 @@ export default function DatasetPage() {
   const [answer, setAnswer] = useState('');
   const [procTitle, setProcTitle] = useState('');
   const [procSteps, setProcSteps] = useState<ProcedureStep[]>([
-    { id: '1', title: '', duration: '' }
+    { id: '1', title: '', duration: '', description: '' }
   ]);
   const [isUploading, setIsUploading] = useState(false);
   const [isGuideActive, setIsGuideActive] = useState(false);
   const [activeUIField, setActiveUIField] = useState<{ type: string, index?: number } | null>(null);
   
-  // Référence pour maintenir la liaison avec la voix sans re-rendu intempestif
   const activeVoiceFieldRef = useRef<{ type: string, index?: number } | null>(null);
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  // Synchronisation de la ref avec l'état UI
   useEffect(() => {
     activeVoiceFieldRef.current = activeUIField;
   }, [activeUIField]);
@@ -69,8 +69,6 @@ export default function DatasetPage() {
   const handleVoiceResult = useCallback((text: string) => {
     const target = activeVoiceFieldRef.current;
     if (!target) return;
-
-    console.log(`🎙️ [DATASET_AUDIT] Injection voix dans [${target.type}${target.index !== undefined ? ':' + target.index : ''}] : ${text}`);
 
     if (target.type === 'question') {
       setQuestion(prev => prev ? `${prev} ${text}` : text);
@@ -85,13 +83,13 @@ export default function DatasetPage() {
         const s = { ...next[target.index!] };
         if (target.type === 'stepTitle') s.title = s.title ? `${s.title} ${text}` : text;
         else if (target.type === 'stepDuration') s.duration = s.duration ? `${s.duration} ${text}` : text;
+        else if (target.type === 'stepDescription') s.description = s.description ? `${s.description} ${text}` : text;
         next[target.index!] = s;
         return next;
       });
     }
   }, []);
 
-  // Paramètres voix mémoïsés pour éviter les cycles de hooks
   const voiceOptions = useMemo(() => ({
     onResult: handleVoiceResult,
     autoRestart: true,
@@ -104,7 +102,7 @@ export default function DatasetPage() {
     if (voice.error === 'not-allowed') {
       toast({
         title: "Microphone Bloqué",
-        description: "Accès refusé. Vérifiez les permissions de votre navigateur ou utilisez HTTPS.",
+        description: "Accès refusé. Vérifiez les permissions de votre navigateur.",
         variant: "destructive"
       });
     }
@@ -119,7 +117,6 @@ export default function DatasetPage() {
     } else {
       voice.stopListening();
       setActiveUIField({ type, index });
-      // Délai court pour assurer l'arrêt propre avant redémarrage sur une nouvelle cible
       setTimeout(() => {
         voice.startListening();
         if (isGuideActive) {
@@ -137,12 +134,17 @@ export default function DatasetPage() {
       setQuestion(''); setAnswer('');
     } else {
       if (!procTitle.trim()) return;
-      const details = procSteps.map((s, i) => `[ÉTAPE ${i + 1}] ${s.title} (${s.duration})`).join('\n');
+      const details = procSteps.map((s, i) => `[Étape ${i + 1}] ${s.title} (${s.duration})\n${s.description}`).join('\n\n');
       setQaItems(prev => [{ id: Date.now().toString(), type: 'procedure', label: procTitle, details }, ...prev]);
       setProcTitle('');
-      setProcSteps([{ id: Date.now().toString(), title: '', duration: '' }]);
+      setProcSteps([{ id: Date.now().toString(), title: '', duration: '', description: '' }]);
     }
-    toast({ title: "Donnée ajoutée à la file d'attente." });
+    toast({ title: "Donnée enregistrée localement." });
+  };
+
+  const removeStep = (id: string) => {
+    if (procSteps.length <= 1) return;
+    setProcSteps(prev => prev.filter(s => s.id !== id));
   };
 
   const handleFinalSubmit = async () => {
@@ -158,7 +160,7 @@ export default function DatasetPage() {
         createdAt: new Date()
       }));
       await apiClient.post('/api/sync/upload', { userId: 'admin', projectId: 'project-001', items });
-      toast({ title: "Synchronisation Réussie", description: "Le registre cloud a été mis à jour." });
+      toast({ title: "Synchronisation Cloud Terminée" });
       setQaItems([]);
     } catch (e) {
       toast({ title: "Échec Synchronisation", variant: "destructive" });
@@ -167,164 +169,194 @@ export default function DatasetPage() {
     }
   };
 
-  const removeItem = (id: string) => {
-    setQaItems(prev => prev.filter(i => i.id !== id));
-  };
-
-  // --- RENDU ---
-  if (!mounted) {
-    return (
-      <div className="flex h-screen bg-background items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-primary opacity-20" />
-      </div>
-    );
-  }
-
   return (
     <div className="flex flex-col lg:flex-row h-screen bg-background overflow-hidden">
       <DashboardSidebar />
 
       <main className="flex-1 flex flex-col min-w-0 h-full overflow-y-auto terminal-scroll">
-        <header className="h-16 border-b border-border bg-card/30 flex items-center justify-between px-6 shrink-0">
-          <div className="flex items-center gap-4">
-            <div className="lg:hidden w-10" />
-            <Database className="w-4 h-4 text-primary" />
-            <span className="font-headline font-bold text-xs uppercase tracking-widest text-primary">Capture RAG</span>
+        {!mounted ? (
+          <div className="flex-1 flex items-center justify-center">
+            <Loader2 className="w-8 h-8 animate-spin text-primary opacity-20" />
           </div>
-
-          <div className="flex items-center gap-4">
-            {voice.error === 'not-allowed' && (
-              <div className="flex items-center gap-2 text-destructive animate-pulse">
-                <AlertTriangle className="w-3 h-3" />
-                <span className="text-[8px] font-code uppercase">Microphone Bloqué</span>
+        ) : (
+          <>
+            <header className="h-16 border-b border-border bg-card/30 flex items-center justify-between px-6 shrink-0">
+              <div className="flex items-center gap-4">
+                <div className="lg:hidden w-10" />
+                <Database className="w-4 h-4 text-primary" />
+                <span className="font-headline font-bold text-xs uppercase tracking-widest text-primary">Capture RAG</span>
               </div>
-            )}
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              onClick={() => setIsGuideActive(!isGuideActive)}
-              className={cn("h-9 text-[9px] font-code uppercase", isGuideActive ? "text-secondary" : "text-muted-foreground")}
-            >
-              <Sparkles className="w-3.5 h-3.5 mr-2" />
-              Audit Guidé {isGuideActive ? "ON" : "OFF"}
-            </Button>
-            <div className="flex bg-muted/30 p-1 rounded-sm border border-border">
-              <button onClick={() => setMode('qa')} className={cn("px-3 py-1 text-[9px] uppercase rounded-sm", mode === 'qa' ? "bg-primary text-primary-foreground" : "text-muted-foreground")}>FAQ</button>
-              <button onClick={() => setMode('procedure')} className={cn("px-3 py-1 text-[9px] uppercase rounded-sm", mode === 'procedure' ? "bg-secondary text-secondary-foreground" : "text-muted-foreground")}>Procédure</button>
-            </div>
-          </div>
-        </header>
 
-        <div className="p-4 lg:p-8 max-w-5xl mx-auto w-full space-y-6">
-          <Card className="p-6 border-border bg-card/50 space-y-6 rounded-sm shadow-2xl">
-            <form onSubmit={handleAddItem} className="space-y-6">
-              {mode === 'qa' ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="relative">
-                    <Textarea 
-                      value={question} 
-                      onChange={(e) => setQuestion(e.target.value)} 
-                      placeholder="SYMPTÔME / QUESTION..." 
-                      className={cn("h-32 bg-background font-code text-xs uppercase transition-all", activeUIField?.type === 'question' && "ring-2 ring-red-500 border-red-500 animate-pulse")}
-                    />
-                    <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('question')} className={cn("absolute top-2 right-2 h-7 w-7", activeUIField?.type === 'question' ? "text-red-500" : "text-primary")}>
-                      {voice.isListening && activeUIField?.type === 'question' ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
-                    </Button>
+              <div className="flex items-center gap-4">
+                {voice.error === 'not-allowed' && (
+                  <div className="flex items-center gap-2 text-destructive animate-pulse">
+                    <AlertTriangle className="w-3 h-3" />
+                    <span className="text-[8px] font-code uppercase">Microphone Bloqué</span>
                   </div>
-                  <div className="relative">
-                    <Textarea 
-                      value={answer} 
-                      onChange={(e) => setAnswer(e.target.value)} 
-                      placeholder="RÉSOLUTION / RÉPONSE..." 
-                      className={cn("h-32 bg-background font-code text-xs uppercase transition-all", activeUIField?.type === 'answer' && "ring-2 ring-red-500 border-red-500 animate-pulse")}
-                    />
-                    <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('answer')} className={cn("absolute top-2 right-2 h-7 w-7", activeUIField?.type === 'answer' ? "text-red-500" : "text-primary")}>
-                       {voice.isListening && activeUIField?.type === 'answer' ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
-                    </Button>
-                  </div>
+                )}
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  onClick={() => setIsGuideActive(!isGuideActive)}
+                  className={cn("h-9 text-[9px] font-code uppercase", isGuideActive ? "text-secondary" : "text-muted-foreground")}
+                >
+                  <Sparkles className="w-3.5 h-3.5 mr-2" />
+                  Audit Guidé {isGuideActive ? "ON" : "OFF"}
+                </Button>
+                <div className="flex bg-muted/30 p-1 rounded-sm border border-border">
+                  <button onClick={() => setMode('qa')} className={cn("px-3 py-1 text-[9px] uppercase rounded-sm transition-all", mode === 'qa' ? "bg-primary text-primary-foreground font-bold" : "text-muted-foreground hover:text-foreground")}>FAQ</button>
+                  <button onClick={() => setMode('procedure')} className={cn("px-3 py-1 text-[9px] uppercase rounded-sm transition-all", mode === 'procedure' ? "bg-secondary text-secondary-foreground font-bold" : "text-muted-foreground hover:text-foreground")}>Procédure</button>
                 </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="relative">
-                    <Input 
-                      value={procTitle} 
-                      onChange={(e) => setProcTitle(e.target.value)} 
-                      placeholder="TITRE DE LA PROCÉDURE" 
-                      className={cn("bg-background uppercase h-12 text-sm font-bold", activeUIField?.type === 'procTitle' && "ring-2 ring-red-500 border-red-500")} 
-                    />
-                    <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('procTitle')} className={cn("absolute top-2.5 right-2 h-7 w-7", activeUIField?.type === 'procTitle' ? "text-red-500" : "text-primary")}>
-                      <Mic className="w-3.5 h-3.5" />
-                    </Button>
-                  </div>
+              </div>
+            </header>
 
-                  {procSteps.map((step, index) => (
-                    <Card key={step.id} className="p-4 border-border bg-black/30 space-y-4">
-                      <div className="flex justify-between items-center border-b border-border/50 pb-2">
-                        <span className="text-[10px] font-bold text-secondary uppercase">Étape {index + 1}</span>
-                        <div className="relative">
-                          <Input 
-                            placeholder="DURÉE" 
-                            value={step.duration} 
-                            onChange={(e) => { const n = [...procSteps]; n[index].duration = e.target.value; setProcSteps(n); }} 
-                            className={cn("h-7 w-32 text-[9px] bg-background/20", activeUIField?.type === 'stepDuration' && activeUIField?.index === index && "ring-1 ring-red-500")}
-                          />
-                          <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepDuration', index)} className="absolute right-0 top-0 h-7 w-7"><Mic className="w-2.5 h-2.5" /></Button>
-                        </div>
+            <div className="p-4 lg:p-8 max-w-5xl mx-auto w-full space-y-8">
+              <Card className="p-6 border-border bg-card/50 space-y-6 rounded-sm shadow-2xl">
+                <form onSubmit={handleAddItem} className="space-y-6">
+                  {mode === 'qa' ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="relative">
+                        <p className="text-[10px] font-bold text-primary mb-2 uppercase tracking-widest">Symptôme / Question</p>
+                        <Textarea 
+                          value={question} 
+                          onChange={(e) => setQuestion(e.target.value)} 
+                          placeholder="EX: ÉCHAUFFEMENT POMPE P-101..." 
+                          className={cn("h-32 bg-background font-code text-xs uppercase transition-all", activeUIField?.type === 'question' && "ring-2 ring-red-500 border-red-500 animate-pulse")}
+                        />
+                        <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('question')} className={cn("absolute top-8 right-2 h-7 w-7", activeUIField?.type === 'question' ? "text-red-500" : "text-primary")}>
+                          {voice.isListening && activeUIField?.type === 'question' ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
+                        </Button>
                       </div>
                       <div className="relative">
-                        <Input 
-                          placeholder="ACTION" 
-                          value={step.title} 
-                          onChange={(e) => { const n = [...procSteps]; n[index].title = e.target.value; setProcSteps(n); }} 
-                          className={cn("h-8 text-[10px] uppercase", activeUIField?.type === 'stepTitle' && activeUIField?.index === index && "ring-1 ring-red-500")}
+                        <p className="text-[10px] font-bold text-secondary mb-2 uppercase tracking-widest">Résolution / Réponse</p>
+                        <Textarea 
+                          value={answer} 
+                          onChange={(e) => setAnswer(e.target.value)} 
+                          placeholder="EX: VÉRIFIER LUBRIFICATION PALIER 2..." 
+                          className={cn("h-32 bg-background font-code text-xs uppercase transition-all", activeUIField?.type === 'answer' && "ring-2 ring-red-500 border-red-500 animate-pulse")}
                         />
-                        <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepTitle', index)} className="absolute top-0.5 right-1 h-7 w-7"><Mic className="w-3 h-3" /></Button>
+                        <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('answer')} className={cn("absolute top-8 right-2 h-7 w-7", activeUIField?.type === 'answer' ? "text-red-500" : "text-secondary")}>
+                           {voice.isListening && activeUIField?.type === 'answer' ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
+                        </Button>
                       </div>
-                    </Card>
-                  ))}
-                  <Button type="button" variant="outline" onClick={() => setProcSteps([...procSteps, { id: Date.now().toString(), title: '', duration: '' }])} className="w-full border-dashed h-10 text-[10px] uppercase">
-                    <Plus className="w-3 h-3 mr-2" /> Ajouter Étape
+                    </div>
+                  ) : (
+                    <div className="space-y-6">
+                      <div className="relative">
+                        <p className="text-[10px] font-bold text-primary mb-2 uppercase tracking-widest">Titre de la procédure industrielle</p>
+                        <Input 
+                          value={procTitle} 
+                          onChange={(e) => setProcTitle(e.target.value)} 
+                          placeholder="MAINTENANCE CURATIVE UNITÉ A-4..." 
+                          className={cn("bg-background uppercase h-12 text-sm font-bold", activeUIField?.type === 'procTitle' && "ring-2 ring-red-500 border-red-500")} 
+                        />
+                        <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('procTitle')} className={cn("absolute top-8 right-2 h-7 w-7", activeUIField?.type === 'procTitle' ? "text-red-500" : "text-primary")}>
+                          <Mic className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+
+                      <div className="space-y-4">
+                        {procSteps.map((step, index) => (
+                          <Card key={step.id} className="p-4 border-border bg-black/30 space-y-4 relative group">
+                            <div className="flex justify-between items-center border-b border-border/50 pb-2">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-bold text-secondary uppercase">Étape {index + 1}</span>
+                                <Button 
+                                  type="button" 
+                                  variant="ghost" 
+                                  size="icon" 
+                                  onClick={() => removeStep(step.id)} 
+                                  className="h-6 w-6 text-muted-foreground hover:text-destructive transition-colors"
+                                  disabled={procSteps.length <= 1}
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </Button>
+                              </div>
+                              <div className="relative">
+                                <Input 
+                                  placeholder="DURÉE" 
+                                  value={step.duration} 
+                                  onChange={(e) => { const n = [...procSteps]; n[index].duration = e.target.value; setProcSteps(n); }} 
+                                  className={cn("h-7 w-32 text-[9px] bg-background/20", activeUIField?.type === 'stepDuration' && activeUIField?.index === index && "ring-1 ring-red-500")}
+                                />
+                                <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepDuration', index)} className="absolute right-0 top-0 h-7 w-7"><Mic className="w-2.5 h-2.5" /></Button>
+                              </div>
+                            </div>
+                            
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div className="relative">
+                                <p className="text-[8px] font-bold uppercase text-muted-foreground mb-1">Action Principale</p>
+                                <Input 
+                                  placeholder="Action à réaliser..." 
+                                  value={step.title} 
+                                  onChange={(e) => { const n = [...procSteps]; n[index].title = e.target.value; setProcSteps(n); }} 
+                                  className={cn("h-8 text-[10px] uppercase", activeUIField?.type === 'stepTitle' && activeUIField?.index === index && "ring-1 ring-red-500")}
+                                />
+                                <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepTitle', index)} className="absolute top-5 right-1 h-7 w-7"><Mic className="w-3 h-3" /></Button>
+                              </div>
+                              <div className="relative">
+                                <p className="text-[8px] font-bold uppercase text-muted-foreground mb-1">Détails techniques / Observations</p>
+                                <Input 
+                                  placeholder="Observations complémentaires..." 
+                                  value={step.description} 
+                                  onChange={(e) => { const n = [...procSteps]; n[index].description = e.target.value; setProcSteps(n); }} 
+                                  className={cn("h-8 text-[10px] uppercase", activeUIField?.type === 'stepDescription' && activeUIField?.index === index && "ring-1 ring-red-500")}
+                                />
+                                <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepDescription', index)} className="absolute top-5 right-1 h-7 w-7"><Mic className="w-3 h-3" /></Button>
+                              </div>
+                            </div>
+                          </Card>
+                        ))}
+                      </div>
+
+                      <Button type="button" variant="outline" onClick={() => setProcSteps([...procSteps, { id: Date.now().toString(), title: '', duration: '', description: '' }])} className="w-full border-dashed h-10 text-[10px] uppercase hover:bg-secondary/5 hover:border-secondary/50">
+                        <Plus className="w-3 h-3 mr-2" /> Ajouter une étape de maintenance
+                      </Button>
+                    </div>
+                  )}
+
+                  <Button type="submit" className="w-full font-headline font-bold uppercase text-xs h-10 bg-primary hover:shadow-[0_0_15px_rgba(50,181,212,0.3)] transition-all">
+                    Enregistrer dans la file d'audit
                   </Button>
+                </form>
+              </Card>
+
+              {qaItems.length > 0 && (
+                <div className="space-y-4 pb-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                  <div className="flex justify-between items-center px-2">
+                    <h3 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+                      <Layers className="w-3.5 h-3.5" /> Registre Provisoire ({qaItems.length} items)
+                    </h3>
+                    <Button onClick={handleFinalSubmit} disabled={isUploading} size="sm" className="bg-secondary text-secondary-foreground text-[9px] uppercase font-bold shadow-lg">
+                      {isUploading ? <Loader2 className="w-3 h-3 mr-2 animate-spin" /> : <UploadCloud className="w-3 h-3 mr-2" />} 
+                      Pousser vers le Cloud Industriel
+                    </Button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {qaItems.map(item => (
+                      <Card key={item.id} className="p-4 border-border bg-card/20 relative group hover:border-primary/30 transition-colors">
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          onClick={() => setQaItems(prev => prev.filter(i => i.id !== item.id))}
+                          className="absolute top-2 right-2 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity text-destructive"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className={cn("w-1.5 h-1.5 rounded-full", item.type === 'qa' ? "bg-primary" : "bg-secondary")} />
+                          <p className="text-[10px] font-bold text-primary uppercase truncate pr-8">{item.label}</p>
+                        </div>
+                        <p className="text-[9px] font-code text-muted-foreground line-clamp-3 italic bg-black/20 p-2 rounded-sm whitespace-pre-wrap">{item.details}</p>
+                      </Card>
+                    ))}
+                  </div>
                 </div>
               )}
-
-              <Button type="submit" className="w-full font-headline font-bold uppercase text-xs h-10 bg-primary">
-                Enregistrer dans la file
-              </Button>
-            </form>
-          </Card>
-
-          {qaItems.length > 0 && (
-            <div className="space-y-3 pb-12">
-              <div className="flex justify-between items-center px-2">
-                <h3 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-                  <Layers className="w-3.5 h-3.5" /> File d'attente ({qaItems.length})
-                </h3>
-                <Button onClick={handleFinalSubmit} disabled={isUploading} size="sm" className="bg-secondary text-secondary-foreground text-[9px] uppercase font-bold">
-                  {isUploading ? <Loader2 className="w-3 h-3 mr-2 animate-spin" /> : <UploadCloud className="w-3 h-3 mr-2" />} 
-                  Pousser vers Cloud
-                </Button>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {qaItems.map(item => (
-                  <Card key={item.id} className="p-4 border-border bg-card/20 relative group">
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
-                      onClick={() => removeItem(item.id)}
-                      className="absolute top-2 right-2 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity text-destructive"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </Button>
-                    <p className="text-[10px] font-bold text-primary uppercase truncate pr-8 mb-1">{item.label}</p>
-                    <p className="text-[9px] font-code text-muted-foreground line-clamp-2 italic">{item.details}</p>
-                  </Card>
-                ))}
-              </div>
             </div>
-          )}
-        </div>
+          </>
+        )}
       </main>
     </div>
   );
