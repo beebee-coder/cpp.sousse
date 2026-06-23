@@ -1,24 +1,21 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { DashboardSidebar } from '@/components/dashboard/Sidebar';
 import { 
   Folder, 
   File, 
   FolderPlus, 
-  FilePlus, 
   Trash2, 
-  Edit3, 
   ChevronRight, 
   ChevronDown, 
   Database, 
-  Globe, 
-  Zap, 
   RefreshCw,
-  Search,
   Check,
-  X,
-  Server
+  Server,
+  Zap,
+  CloudLightning,
+  ShieldAlert
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -26,6 +23,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { apiClient } from '@/lib/api-client';
+import { useToast } from '@/hooks/use-toast';
 
 type NodeType = 'file' | 'folder';
 
@@ -35,37 +33,125 @@ interface FSNode {
   type: NodeType;
   children?: FSNode[];
   isOpen?: boolean;
+  metadata?: any;
 }
 
 const STORAGE_KEY_WEB = 'visionode_bdd_web_structure';
 const STORAGE_KEY_CHROMA = 'visionode_bdd_chroma_structure';
 
 export default function BDDPage() {
+  const { toast } = useToast();
   const [mode, setMode] = useState<'chroma' | 'web'>('chroma');
   const [tree, setTree] = useState<FSNode[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [activeProvider, setActiveProvider] = useState<string>('DÉCONNECTÉ');
+  const [isPurging, setIsPurging] = useState(false);
+  const [activeProvider, setActiveProvider] = useState<string>('RECHERCHE...');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditingValue] = useState('');
 
-  useEffect(() => {
-    const key = mode === 'web' ? STORAGE_KEY_WEB : STORAGE_KEY_CHROMA;
-    const saved = localStorage.getItem(key);
-    if (saved) {
-      setTree(JSON.parse(saved));
-    } else {
-      const defaultTree = mode === 'web' ? [
-        { id: 'root', name: 'DATABASE_ROOT', type: 'folder', isOpen: true, children: [] }
-      ] : [
-        { id: 'chroma-root', name: 'VECTOR_DATA', type: 'folder', isOpen: true, children: [] }
-      ];
-      setTree(defaultTree);
-    }
-  }, [mode]);
+  // 1. Logique de synchronisation Physique (ChromaDB)
+  const syncChromaState = useCallback(async (isAuto = false) => {
+    setIsSyncing(true);
+    const timestamp = new Date().toLocaleTimeString();
+    
+    try {
+      const res = await apiClient.get<any>('/api/vector/collections');
+      if (res && res.success && Array.isArray(res.collections)) {
+        const providerName = res.provider || 'CHROMA';
+        setActiveProvider(providerName);
+        
+        const chromaNodes = res.collections.map((c: any) => ({
+          id: `chroma-${c.name}`,
+          name: c.name,
+          type: 'folder' as const,
+          children: []
+        }));
+        
+        setTree([{ 
+          id: 'chroma-root', 
+          name: providerName === 'WEAVIATE_CLOUD' ? 'CLASSES_CLOUD' : 'COLLECTIONS_LOCALES', 
+          type: 'folder', 
+          isOpen: true, 
+          children: chromaNodes 
+        }]);
 
+        if (!isAuto) {
+          toast({ title: "Liaison Établie", description: `Moteur ${providerName} synchronisé.` });
+        }
+      } else {
+        throw new Error(res.error || "Moteur hors-ligne");
+      }
+    } catch (e: any) {
+      setActiveProvider('ERREUR_LIAISON');
+      if (!isAuto) {
+        toast({ title: "Échec Liaison", description: "Vérifiez que l'instance ChromaDB est active.", variant: "destructive" });
+      }
+    } finally {
+      setIsSyncing(false);
+    }
+  }, [toast]);
+
+  // 2. Logique de synchronisation Web + Purge Immédiate
+  const syncWebAndPurge = async () => {
+    setIsSyncing(true);
+    setIsPurging(true);
+    
+    try {
+      // Étape A: Récupération des données du tampon Cloud
+      const res = await apiClient.post<any>('/api/sync/download', {
+        userId: 'admin',
+        projectId: 'project-001',
+        lastSync: new Date(0).toISOString()
+      });
+
+      if (res.items && res.items.length > 0) {
+        // Étape B: Injection dans Chroma (Simulation de transfert via API)
+        await apiClient.post('/api/vector/ingest', {
+          items: res.items.map((i: any) => ({ question: i.tags[0], answer: i.content })),
+          metadata: { collection: 'industrial_manuals', source: 'web_purge' }
+        });
+
+        // Étape C: Purge Immédiate du Cloud
+        const ids = res.items.map((i: any) => i.id);
+        await apiClient.post('/api/sync/cleanup', { ids, projectId: 'project-001' });
+
+        toast({ 
+          title: "Cycle de Purge Terminé", 
+          description: `${ids.length} assets transférés vers Chroma et supprimés du Cloud.` 
+        });
+      } else {
+        toast({ title: "Tampon Vide", description: "Aucune donnée en attente de purge." });
+      }
+      
+      // Rafraîchir l'arborescence logique
+      setTree([{ id: 'root', name: 'WEB_BUFFER_PURGÉ', type: 'folder', isOpen: true, children: [] }]);
+    } catch (e) {
+      toast({ title: "Erreur de Cycle", description: "Le transfert atomique a échoué.", variant: "destructive" });
+    } finally {
+      setIsSyncing(false);
+      setIsPurging(false);
+    }
+  };
+
+  // Chargement initial et auto-sync
   useEffect(() => {
-    const key = mode === 'web' ? STORAGE_KEY_WEB : STORAGE_KEY_CHROMA;
-    localStorage.setItem(key, JSON.stringify(tree));
+    if (mode === 'chroma') {
+      syncChromaState(true);
+    } else {
+      const saved = localStorage.getItem(STORAGE_KEY_WEB);
+      if (saved) {
+        setTree(JSON.parse(saved));
+      } else {
+        setTree([{ id: 'root', name: 'DATABASE_ROOT', type: 'folder', isOpen: true, children: [] }]);
+      }
+    }
+  }, [mode, syncChromaState]);
+
+  // Sauvegarde auto du mode Web
+  useEffect(() => {
+    if (mode === 'web') {
+      localStorage.setItem(STORAGE_KEY_WEB, JSON.stringify(tree));
+    }
   }, [tree, mode]);
 
   const toggleFolder = (id: string) => {
@@ -103,11 +189,6 @@ export default function BDDPage() {
     setTree(update(tree));
   };
 
-  const startRename = (id: string, name: string) => {
-    setEditingId(id);
-    setEditingValue(name);
-  };
-
   const saveRename = () => {
     if (!editingId) return;
     const update = (nodes: FSNode[]): FSNode[] => nodes.map(n => {
@@ -119,50 +200,12 @@ export default function BDDPage() {
     setEditingId(null);
   };
 
-  const syncPhysicalState = async () => {
-    setIsSyncing(true);
-    const timestamp = new Date().toLocaleTimeString();
-    
-    try {
-      if (mode === 'chroma') {
-        const res = await apiClient.get<any>('/api/vector/collections');
-        if (res && res.success && Array.isArray(res.collections)) {
-          const providerName = res.provider || 'CHROMA';
-          setActiveProvider(providerName);
-          
-          const chromaNodes = res.collections.map((c: any) => ({
-            id: `chroma-${c.name}`,
-            name: c.name,
-            type: 'folder',
-            children: []
-          }));
-          
-          setTree([{ 
-            id: 'chroma-root', 
-            name: providerName === 'WEAVIATE_CLOUD' ? 'CLASSES_CLOUD' : 'COLLECTIONS_LOCALES', 
-            type: 'folder', 
-            isOpen: true, 
-            children: chromaNodes 
-          }]);
-          console.log(`✅ [${timestamp}] [BDD_SYNC] Liaison ${providerName} établie.`);
-        } else {
-          throw new Error(res.error || "Réponse invalide");
-        }
-      }
-    } catch (e: any) {
-      console.error("❌ Échec sync BDD:", e.message);
-      setActiveProvider('ERREUR_LIAISON');
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
   const renderTree = (nodes: FSNode[], depth = 0) => {
     return nodes.map(node => (
       <div key={node.id} className="select-none">
         <div 
           className={cn(
-            "flex items-center gap-2 py-1.5 lg:py-1 px-2 hover:bg-primary/5 cursor-pointer group rounded-sm transition-colors",
+            "flex items-center gap-2 py-1 px-2 hover:bg-primary/5 cursor-pointer group rounded-sm transition-colors",
             editingId === node.id && "bg-primary/10"
           )}
           style={{ paddingLeft: `${depth * 1 + 0.5}rem` }}
@@ -190,7 +233,6 @@ export default function BDDPage() {
                 onKeyDown={(e) => e.key === 'Enter' && saveRename()}
                 className="h-7 py-0 px-1 text-[11px] font-code uppercase bg-background border-primary"
               />
-              <button onClick={saveRename} className="text-secondary p-1"><Check className="w-4 h-4" /></button>
             </div>
           ) : (
             <span className="text-[11px] font-code uppercase flex-1 truncate py-0.5" onClick={() => node.type === 'folder' && toggleFolder(node.id)}>
@@ -199,10 +241,12 @@ export default function BDDPage() {
           )}
 
           <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 transition-opacity">
-            {node.type === 'folder' && (
+            {node.type === 'folder' && mode === 'web' && (
               <button onClick={() => addNode(node.id, 'folder')} className="p-1 hover:text-primary"><FolderPlus className="w-3.5 h-3.5" /></button>
             )}
-            <button onClick={() => deleteNode(node.id)} className="p-1 hover:text-destructive"><Trash2 className="w-3.5 h-3.5" /></button>
+            {mode === 'web' && (
+              <button onClick={() => deleteNode(node.id)} className="p-1 hover:text-destructive"><Trash2 className="w-3.5 h-3.5" /></button>
+            )}
           </div>
         </div>
         {node.type === 'folder' && node.isOpen && node.children && (
@@ -224,7 +268,7 @@ export default function BDDPage() {
             <div className="lg:hidden w-10" />
             <div className="flex items-center gap-2">
               <Database className="w-4 h-4 text-primary animate-pulse" />
-              <span className="font-headline font-bold text-xs lg:text-sm uppercase tracking-widest text-primary truncate max-w-[120px] lg:max-w-none">BDD Hybride</span>
+              <span className="font-headline font-bold text-xs lg:text-sm uppercase tracking-widest text-primary">BDD Hybride</span>
             </div>
           </div>
           
@@ -232,7 +276,7 @@ export default function BDDPage() {
             <button 
               onClick={() => setMode('chroma')}
               className={cn(
-                "px-2 sm:px-3 py-1 text-[9px] lg:text-[10px] font-code uppercase rounded-sm transition-all",
+                "px-3 py-1 text-[10px] font-code uppercase rounded-sm transition-all",
                 mode === 'chroma' ? "bg-primary text-primary-foreground" : "text-muted-foreground"
               )}
             >
@@ -241,7 +285,7 @@ export default function BDDPage() {
             <button 
               onClick={() => setMode('web')}
               className={cn(
-                "px-2 sm:px-3 py-1 text-[9px] lg:text-[10px] font-code uppercase rounded-sm transition-all",
+                "px-3 py-1 text-[10px] font-code uppercase rounded-sm transition-all",
                 mode === 'web' ? "bg-secondary text-secondary-foreground" : "text-muted-foreground"
               )}
             >
@@ -250,11 +294,11 @@ export default function BDDPage() {
           </div>
         </header>
 
-        <div className="flex-1 p-4 lg:p-6 overflow-y-auto lg:overflow-hidden flex flex-col lg:flex-row gap-4 lg:gap-6">
-          <Card className="w-full lg:w-80 flex flex-col bg-black/40 border-border overflow-hidden shadow-2xl shrink-0 max-h-[400px] lg:max-h-none">
+        <div className="flex-1 p-4 lg:p-6 overflow-hidden flex flex-col lg:flex-row gap-6">
+          <Card className="w-full lg:w-80 flex flex-col bg-black/40 border-border overflow-hidden shadow-2xl shrink-0">
             <div className="p-3 border-b border-border bg-card/50 flex items-center justify-between shrink-0">
               <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">Explorateur</span>
-              <Badge variant="outline" className="text-[8px] uppercase h-4 px-1 border-primary/30 text-primary">
+              <Badge variant="outline" className={cn("text-[8px] uppercase h-4 px-1 border-primary/30", mode === 'web' ? 'text-secondary border-secondary/30' : 'text-primary')}>
                 {mode === 'web' ? 'Logique' : 'Physique'}
               </Badge>
             </div>
@@ -263,41 +307,70 @@ export default function BDDPage() {
             </div>
           </Card>
 
-          <div className="flex-1 flex flex-col gap-4 lg:gap-6 overflow-hidden min-h-0">
-            <Card className="flex-1 bg-card/30 border-border p-6 lg:p-8 flex flex-col items-center justify-center text-center overflow-auto">
-              <Server className="w-10 h-10 lg:w-12 lg:h-12 text-muted-foreground/20 mb-4" />
-              <h3 className="font-headline font-bold text-base lg:text-lg uppercase tracking-widest mb-2">État du Moteur</h3>
-              <p className="text-xs lg:text-sm text-muted-foreground font-code max-w-sm">
-                Liaison active vers le nœud vectoriel distant. Les modifications sont persistées.
-              </p>
-              
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-6 lg:mt-12 w-full max-w-lg text-left">
-                <div className="p-3 lg:p-4 border border-border bg-black/20 rounded-sm">
-                  <p className="text-[9px] lg:text-[10px] font-bold text-primary uppercase mb-1">Stockage UI</p>
-                  <p className="text-[10px] lg:text-[11px] font-code text-muted-foreground">LocalStorage activé.</p>
-                </div>
-                <div className="p-3 lg:p-4 border border-border bg-black/20 rounded-sm">
-                  <p className="text-[9px] lg:text-[10px] font-bold text-secondary uppercase mb-1">Nœud Actif</p>
-                  <p className="text-[10px] lg:text-[11px] font-code text-muted-foreground truncate">{activeProvider}</p>
-                </div>
-              </div>
-              
-              <Button 
-                variant="outline" 
-                size="sm" 
-                onClick={syncPhysicalState}
-                disabled={isSyncing}
-                className="mt-6 h-9 text-[10px] font-code uppercase border-primary/30 text-primary w-full max-w-[200px]"
-              >
-                <RefreshCw className={cn("w-3.5 h-3.5 mr-2", isSyncing && "animate-spin")} />
-                {isSyncing ? "Transmission..." : "Sync Physique"}
-              </Button>
+          <div className="flex-1 flex flex-col gap-6 overflow-hidden">
+            <Card className="flex-1 bg-card/30 border-border p-8 flex flex-col items-center justify-center text-center">
+              {mode === 'chroma' ? (
+                <>
+                  <Server className={cn("w-12 h-12 mb-4", isSyncing ? "text-primary animate-spin" : "text-muted-foreground/20")} />
+                  <h3 className="font-headline font-bold text-lg uppercase tracking-widest mb-2">État du Moteur Vectoriel</h3>
+                  <p className="text-xs text-muted-foreground font-code max-w-sm">
+                    Liaison directe vers l'instance locale ChromaDB. L'arborescence est synchronisée dès la détection du nœud.
+                  </p>
+                  <div className="p-4 border border-border bg-black/20 rounded-sm mt-8 w-full max-w-sm">
+                    <p className="text-[10px] font-bold text-primary uppercase mb-1">Nœud Actif</p>
+                    <p className="text-xs font-code text-muted-foreground truncate">{activeProvider}</p>
+                  </div>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => syncChromaState(false)}
+                    disabled={isSyncing}
+                    className="mt-6 h-9 text-[10px] font-code uppercase border-primary/30 text-primary"
+                  >
+                    <RefreshCw className={cn("w-3.5 h-3.5 mr-2", isSyncing && "animate-spin")} />
+                    Réinterroger le Nœud
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <CloudLightning className={cn("w-12 h-12 mb-4", isSyncing ? "text-secondary animate-pulse" : "text-muted-foreground/20")} />
+                  <h3 className="font-headline font-bold text-lg uppercase tracking-widest mb-2">Tampon Cloud (WEB)</h3>
+                  <p className="text-xs text-muted-foreground font-code max-w-sm">
+                    Les données collectées sur le Web doivent être synchronisées avec ChromaDB puis purgées pour assurer la confidentialité.
+                  </p>
+                  
+                  <div className="flex flex-col gap-4 mt-8 w-full max-w-sm">
+                    <Card className="p-4 border-secondary/20 bg-secondary/5 text-left">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Zap className="w-3.5 h-3.5 text-secondary" />
+                        <p className="text-[10px] font-bold text-secondary uppercase">Action Atomique</p>
+                      </div>
+                      <p className="text-[10px] font-code text-muted-foreground">
+                        Synchronisation locale immédiate suivie d'un nettoyage total du tampon Cloud.
+                      </p>
+                    </Card>
+
+                    <Button 
+                      onClick={syncWebAndPurge}
+                      disabled={isSyncing}
+                      className="bg-secondary text-secondary-foreground h-10 text-[10px] font-code uppercase font-bold shadow-lg"
+                    >
+                      {isPurging ? (
+                        <ShieldAlert className="w-3.5 h-3.5 mr-2 animate-bounce" />
+                      ) : (
+                        <RefreshCw className={cn("w-3.5 h-3.5 mr-2", isSyncing && "animate-spin")} />
+                      )}
+                      {isPurging ? "Purge en cours..." : "Sync & Purge Cloud"}
+                    </Button>
+                  </div>
+                </>
+              )}
             </Card>
 
-            <footer className="h-20 lg:h-24 bg-primary/5 border border-primary/20 rounded-sm p-3 lg:p-4 font-code text-[9px] lg:text-[10px] uppercase text-primary/70 overflow-hidden shrink-0">
+            <footer className="h-24 bg-primary/5 border border-primary/20 rounded-sm p-4 font-code text-[10px] uppercase text-primary/70">
               <p>&gt; MOTEUR_LOGIQUE : PRÊT</p>
               <p className="truncate">&gt; LIAISON_PHYSIQUE : {activeProvider}</p>
-              <p>&gt; AUDIT : {isSyncing ? "TRANSMISSION" : "VEILLE"}</p>
+              <p>&gt; STATUT : {isSyncing ? "TRANSFÈRE" : isPurging ? "PURGE" : "VEILLE"}</p>
             </footer>
           </div>
         </div>
