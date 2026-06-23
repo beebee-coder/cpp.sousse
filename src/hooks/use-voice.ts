@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -11,7 +12,6 @@ interface VoiceOptions {
   continuous?: boolean;
   interimResults?: boolean;
   autoRestart?: boolean;
-  maxRetries?: number;
 }
 
 interface VoiceState {
@@ -19,7 +19,6 @@ interface VoiceState {
   isSupported: boolean;
   error: string | null;
   transcript: string;
-  interimTranscript: string;
 }
 
 export function useVoice(options: VoiceOptions = {}) {
@@ -27,21 +26,19 @@ export function useVoice(options: VoiceOptions = {}) {
     isListening: false,
     isSupported: false,
     error: null,
-    transcript: '',
-    interimTranscript: ''
+    transcript: ''
   });
 
+  // Utilisation de refs pour éviter les closures obsolètes dans l'API Speech
   const onResultRef = useRef(options.onResult);
   const onEndRef = useRef(options.onEnd);
-  const onErrorRef = useRef(options.onError);
   const recognitionRef = useRef<any>(null);
   const isManuallyStopped = useRef(false);
 
   useEffect(() => {
     onResultRef.current = options.onResult;
     onEndRef.current = options.onEnd;
-    onErrorRef.current = options.onError;
-  }, [options.onResult, options.onEnd, options.onError]);
+  }, [options.onResult, options.onEnd]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -49,73 +46,57 @@ export function useVoice(options: VoiceOptions = {}) {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     
     if (!SpeechRecognition) {
-      setState(prev => ({ ...prev, isSupported: false, error: 'Speech recognition not supported' }));
+      setState(prev => ({ ...prev, isSupported: false, error: 'Non supporté' }));
       return;
     }
 
     try {
       const recognition = new SpeechRecognition();
-      recognitionRef.current = recognition;
-      
       recognition.continuous = options.continuous ?? true;
-      recognition.interimResults = options.interimResults ?? true;
+      recognition.interimResults = options.interimResults ?? false;
       recognition.lang = options.lang || 'fr-FR';
 
       recognition.onresult = (event: any) => {
         let finalSegment = '';
-        let interimSegment = '';
-
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          const transcript = event.results[i][0].transcript;
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
           if (event.results[i].isFinal) {
-            finalSegment += transcript;
-          } else {
-            interimSegment += transcript;
+            finalSegment += event.results[i][0].transcript;
           }
         }
 
         if (finalSegment.trim()) {
-          console.log(`[VOICE_HOOK] 🎙️ Texte final détecté : "${finalSegment.trim()}"`);
-          onResultRef.current?.(finalSegment.trim());
+          const cleanText = finalSegment.trim();
+          console.log(`[VOICE_HOOK] 🎙️ Texte final détecté : "${cleanText}"`);
+          if (onResultRef.current) {
+            onResultRef.current(cleanText);
+          }
+          setState(prev => ({ ...prev, transcript: cleanText }));
         }
-
-        setState(prev => ({
-          ...prev,
-          transcript: finalSegment.trim() || prev.transcript,
-          interimTranscript: interimSegment.trim()
-        }));
       };
 
       recognition.onstart = () => {
-        console.log('[VOICE_HOOK] 🟢 Microphone actif');
+        console.log('[VOICE_HOOK] 🟢 Moteur actif');
         setState(prev => ({ ...prev, isListening: true, error: null }));
       };
 
       recognition.onend = () => {
-        console.log('[VOICE_HOOK] 🔴 Microphone inactif');
+        console.log('[VOICE_HOOK] 🔴 Moteur en veille');
         setState(prev => ({ ...prev, isListening: false }));
-        onEndRef.current?.();
+        if (onEndRef.current) onEndRef.current();
 
         if (options.autoRestart && !isManuallyStopped.current) {
-          try {
-            recognitionRef.current?.start();
-          } catch (e) {
-            // Silencieux
-          }
+          try { recognition.start(); } catch (e) {}
         }
       };
 
       recognition.onerror = (event: any) => {
-        if (event.error === 'not-allowed') {
-          console.warn('[VOICE_HOOK] ⚠️ Accès micro refusé');
-        } else if (event.error !== 'no-speech') {
+        if (event.error !== 'no-speech') {
           console.error(`[VOICE_HOOK] ❌ Erreur : ${event.error}`);
+          setState(prev => ({ ...prev, error: event.error }));
         }
-        
-        setState(prev => ({ ...prev, isListening: false, error: event.error }));
-        onErrorRef.current?.(event.error);
       };
 
+      recognitionRef.current = recognition;
       setState(prev => ({ ...prev, isSupported: true }));
 
     } catch (error) {
@@ -126,7 +107,6 @@ export function useVoice(options: VoiceOptions = {}) {
       if (recognitionRef.current) {
         recognitionRef.current.onresult = null;
         recognitionRef.current.onend = null;
-        recognitionRef.current.onerror = null;
         try { recognitionRef.current.stop(); } catch (e) {}
       }
     };
@@ -137,7 +117,7 @@ export function useVoice(options: VoiceOptions = {}) {
     try {
       recognitionRef.current?.start();
     } catch (e) {
-      console.warn('[VOICE_HOOK] Déjà actif ou erreur de démarrage');
+      console.warn('[VOICE_HOOK] Déjà actif ou erreur matériel');
     }
   }, []);
 
@@ -153,10 +133,9 @@ export function useVoice(options: VoiceOptions = {}) {
     if (typeof window === 'undefined' || !window.speechSynthesis) return;
     window.speechSynthesis.cancel();
     if (!text?.trim()) return;
-
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = 'fr-FR';
-    utterance.rate = 1.1;
+    utterance.rate = 1.0;
     window.speechSynthesis.speak(utterance);
   }, []);
 

@@ -1,0 +1,17 @@
+
+/* VisioNode Industrial VSCode Theme Fallback */
+:root {
+  --vscode-editor-background: #070c10;
+  --vscode-editor-foreground: #d1d5db;
+  --vscode-editorLineNumber-foreground: #4b5563;
+  --vscode-editorIndentGuide-background: #1f2937;
+}
+
+.vscode-dark {
+  background-color: var(--vscode-editor-background);
+  color: var(--vscode-editor-foreground);
+}
+
+pre, code {
+  font-family: 'Source Code Pro', monospace !important;
+}
