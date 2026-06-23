@@ -58,20 +58,18 @@ export default function DatasetPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [isGuideActive, setIsGuideActive] = useState(false);
   
-  // Référence immuable pour l'injection vocale instantanée (Crucial pour éviter le bug STT)
   const activeVoiceFieldRef = useRef<{ type: string, index?: number } | null>(null);
   const [activeUIField, setActiveUIField] = useState<{ type: string, index?: number } | null>(null);
 
-  // 1. Injection des résultats vocaux
   const handleVoiceResult = useCallback((text: string) => {
     const target = activeVoiceFieldRef.current;
     if (!target) {
-      console.warn(`[DATASET_AUDIT] ⚠️ Aucun champ cible identifié pour: "${text}"`);
+      console.warn(`[DATASET_AUDIT] ⚠️ Aucune cible pour: "${text}"`);
       return;
     }
 
     const cleanText = text.trim();
-    console.log(`[DATASET_AUDIT] 🎯 Injection dans ${target.type}${target.index !== undefined ? ` [${target.index}]` : ''} -> ${cleanText}`);
+    console.log(`[DATASET_AUDIT] 🎯 Injection dans ${target.type} -> ${cleanText}`);
 
     if (target.type === 'question') {
       setQuestion(prev => prev ? `${prev} ${cleanText}` : cleanText);
@@ -96,7 +94,6 @@ export default function DatasetPage() {
     }
   }, []);
 
-  // 2. Initialisation du moteur vocal avec mémoisation des options pour la stabilité des hooks
   const voiceOptions = useMemo(() => ({
     onResult: handleVoiceResult,
     autoRestart: true
@@ -104,42 +101,37 @@ export default function DatasetPage() {
 
   const { isListening, startListening, stopListening, speak, error: voiceError } = useVoice(voiceOptions);
 
-  // 3. Gestion des erreurs et de l'hydratation
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   useEffect(() => {
     if (voiceError === 'not-allowed') {
       toast({
         title: "Microphone Bloqué",
-        description: "L'accès au micro a été refusé. Vérifiez les paramètres de votre navigateur.",
+        description: "Accès refusé par le navigateur.",
         variant: "destructive"
       });
     }
   }, [voiceError, toast]);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   const toggleVoice = (type: string, index?: number) => {
     const target = { type, index };
     const isCurrentlyActive = isListening && activeUIField?.type === type && activeUIField?.index === index;
 
     if (isCurrentlyActive) {
-      console.log(`[DATASET_AUDIT] 🛑 Arrêt manuel capture.`);
       stopListening();
       activeVoiceFieldRef.current = null;
       setActiveUIField(null);
     } else {
       if (isListening) stopListening();
-      
-      console.log(`[DATASET_AUDIT] 🚀 Démarrage capture pour: ${type}`);
       activeVoiceFieldRef.current = target;
       setActiveUIField(target);
 
       setTimeout(() => {
         startListening();
         if (isGuideActive) {
-          const guideMsg = type === 'question' ? "Décrivez le symptôme." : "Complétez ce champ.";
-          speak(guideMsg);
+          speak(type === 'question' ? "Décrivez le symptôme." : "Continuez.");
         }
       }, 100);
     }
@@ -158,7 +150,7 @@ export default function DatasetPage() {
       setProcTitle('');
       setProcSteps([{ id: Date.now().toString(), title: '', description: '', normalConditions: '', abnormalConditions: '', alarms: '', duration: '' }]);
     }
-    toast({ title: "Ajouté à la file d'audit" });
+    toast({ title: "Ajouté à la file" });
   };
 
   const handleFinalSubmit = async () => {
@@ -174,7 +166,7 @@ export default function DatasetPage() {
         createdAt: new Date()
       }));
       await apiClient.post('/api/sync/upload', { userId: 'admin', projectId: 'project-001', items });
-      toast({ title: "Synchronisation Réussie", description: `${items.length} éléments en base.` });
+      toast({ title: "Sync Réussie" });
       setQaItems([]);
     } catch (e) {
       toast({ title: "Échec Sync", variant: "destructive" });
@@ -183,7 +175,6 @@ export default function DatasetPage() {
     }
   };
 
-  // Rendu conditionnel sécurisé pour les hooks
   return (
     <div className="flex flex-col lg:flex-row h-screen bg-background overflow-hidden">
       <DashboardSidebar />
@@ -285,27 +276,6 @@ export default function DatasetPage() {
                             />
                             <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepTitle', index)} className="absolute top-0.5 right-1 h-7 w-7"><Mic className="w-3 h-3" /></Button>
                           </div>
-
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                            <div className="relative">
-                              <Input 
-                                placeholder="CONDITIONS NORMALES" 
-                                value={step.normalConditions} 
-                                onChange={(e) => { const n = [...procSteps]; n[index].normalConditions = e.target.value; setProcSteps(n); }} 
-                                className={cn("h-7 text-[9px]", activeUIField?.type === 'stepNormal' && activeUIField?.index === index && "ring-1 ring-red-500")}
-                              />
-                              <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepNormal', index)} className="absolute right-0 top-0 h-7 w-7"><Mic className="w-2.5 h-2.5" /></Button>
-                            </div>
-                            <div className="relative">
-                              <Input 
-                                placeholder="DESCRIPTION" 
-                                value={step.description} 
-                                onChange={(e) => { const n = [...procSteps]; n[index].description = e.target.value; setProcSteps(n); }} 
-                                className={cn("h-7 text-[9px]", activeUIField?.type === 'stepDesc' && activeUIField?.index === index && "ring-1 ring-red-500")}
-                              />
-                              <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepDesc', index)} className="absolute right-0 top-0 h-7 w-7"><Mic className="w-2.5 h-2.5" /></Button>
-                            </div>
-                          </div>
                         </div>
                       </Card>
                     ))}
@@ -328,22 +298,9 @@ export default function DatasetPage() {
                     <Layers className="w-3.5 h-3.5" /> File d'attente ({qaItems.length})
                   </h3>
                   <Button onClick={handleFinalSubmit} disabled={isUploading} size="sm" className="bg-secondary text-secondary-foreground text-[9px] uppercase font-bold">
-                    {isUploading ? <RefreshCw className="w-3 h-3 mr-2 animate-spin" /> : <UploadCloud className="w-3 h-3 mr-2" />} 
+                    {isUploading ? <Loader2 className="w-3 h-3 mr-2 animate-spin" /> : <UploadCloud className="w-3 h-3 mr-2" />} 
                     Pousser vers Cloud
                   </Button>
-                </div>
-                <div className="space-y-2">
-                  {qaItems.map((item) => (
-                    <Card key={item.id} className="p-2 border-border bg-black/40 font-code text-[9px] flex items-center justify-between">
-                      <div className="truncate flex items-center gap-3">
-                        <Badge variant="outline" className="text-[8px] uppercase">{item.type}</Badge>
-                        <span className="uppercase truncate max-w-md">{item.label}</span>
-                      </div>
-                      <Button variant="ghost" size="icon" onClick={() => setQaItems(qaItems.filter(i => i.id !== item.id))} className="h-6 w-6 text-muted-foreground hover:text-destructive">
-                        <Trash2 className="w-3 h-3" />
-                      </Button>
-                    </Card>
-                  ))}
                 </div>
               </div>
             )}

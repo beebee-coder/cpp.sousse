@@ -1,4 +1,3 @@
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -33,58 +32,25 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground font-body;
-    /* Empêche le scroll global quand on est en mode dashboard fixe */
-    @apply overflow-x-hidden;
-    /* Amélioration du scroll sur mobile */
+    @apply bg-background text-foreground font-body overflow-x-hidden;
     -webkit-overflow-scrolling: touch;
   }
-  h1, h2, h3, h4, h5, h6 {
-    @apply font-headline tracking-tight;
-  }
-  code, pre {
-    @apply font-code;
-  }
+  h1, h2, h3, h4, h5, h6 { @apply font-headline tracking-tight; }
+  code, pre { @apply font-code; }
 }
 
-/* Scrollbar industrielle stable */
 .terminal-scroll {
   scrollbar-width: thin;
   scrollbar-color: hsl(var(--muted)) transparent;
 }
 
-.terminal-scroll::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
-}
-
-.terminal-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-
+.terminal-scroll::-webkit-scrollbar { width: 4px; height: 4px; }
+.terminal-scroll::-webkit-scrollbar-track { background: transparent; }
 .terminal-scroll::-webkit-scrollbar-thumb {
   background: hsl(var(--muted));
   border-radius: 10px;
-  border: 1px solid transparent;
   background-clip: content-box;
 }
 
-.terminal-scroll::-webkit-scrollbar-thumb:hover {
-  background: hsl(var(--primary) / 0.5);
-}
-
-/* Utilitaires de suppression de scrollbar */
-.no-scrollbar::-webkit-scrollbar {
-  display: none;
-}
-.no-scrollbar {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
-
-/* Amélioration des cibles tactiles sur mobile */
-@media (max-width: 640px) {
-  button, a {
-    min-height: 32px;
-  }
-}
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }

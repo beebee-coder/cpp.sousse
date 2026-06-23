@@ -1,8 +1,9 @@
-/* Thème VS Code Minimaliste pour VisioNode */
-.vscode-dark {
-  background-color: #1e1e1e;
-  color: #d4d4d4;
+/* VSCode Industrial Dark Theme Fallback */
+:root {
+  --vscode-editor-background: #0d1117;
+  --vscode-editor-foreground: #c9d1d9;
 }
-.token.comment { color: #6a9955; }
-.token.keyword { color: #569cd6; }
-.token.string { color: #ce9178; }
+pre, code {
+  background-color: var(--vscode-editor-background) !important;
+  color: var(--vscode-editor-foreground) !important;
+}
