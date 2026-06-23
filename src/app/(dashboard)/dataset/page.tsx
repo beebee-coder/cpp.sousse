@@ -89,34 +89,38 @@ export default function DatasetPage() {
   const [isGuideActive, setIsGuideActive] = useState(false);
   const [lastGuidedField, setLastGuidedField] = useState<string>('');
   
-  // Cible vocale actuelle stockée dans une Ref pour être accessible instantanément par le moteur Speech
+  // Utilisation d'une référence immuable pour le routage STT (Speech-to-Text)
   const activeVoiceFieldRef = useRef<{ type: string, index?: number } | null>(null);
   const [activeVoiceField, setActiveVoiceField] = useState<{ type: string, index?: number } | null>(null);
 
   const { isListening, isSupported, startListening, stopListening, speak } = useVoice({
     onResult: (text) => {
-      const field = activeVoiceFieldRef.current;
-      console.log(`[DATASET_AUDIT] 🎯 Traitement résultat pour :`, field);
-      
-      if (!field) return;
+      const target = activeVoiceFieldRef.current;
+      if (!target) {
+        console.warn(`[DATASET_AUDIT] ⚠️ Aucun champ cible identifié pour le texte : "${text}"`);
+        return;
+      }
+
+      console.log(`[DATASET_AUDIT] 🎯 Routage voix vers :`, target.type, target.index ?? '');
       const cleanText = text.trim();
-      
-      if (field.type === 'question') {
+
+      // Mise à jour atomique des états selon le champ cible
+      if (target.type === 'question') {
         setQuestion(prev => prev ? `${prev} ${cleanText}` : cleanText);
-      } else if (field.type === 'answer') {
+      } else if (target.type === 'answer') {
         setAnswer(prev => prev ? `${prev} ${cleanText}` : cleanText);
-      } else if (field.type === 'procTitle') {
+      } else if (target.type === 'procTitle') {
         setProcTitle(prev => prev ? `${prev} ${cleanText}` : cleanText);
-      } else if (typeof field.index === 'number') {
+      } else if (typeof target.index === 'number') {
         setProcSteps(prev => prev.map((step, i) => {
-          if (i !== field.index) return step;
+          if (i !== target.index) return step;
           const s = { ...step };
-          if (field.type === 'stepTitle') s.title = s.title ? `${s.title} ${cleanText}` : cleanText;
-          else if (field.type === 'stepDesc') s.description = s.description ? `${s.description} ${cleanText}` : cleanText;
-          else if (field.type === 'stepNormal') s.normalConditions = s.normalConditions ? `${s.normalConditions} ${cleanText}` : cleanText;
-          else if (field.type === 'stepAbnormal') s.abnormalConditions = s.abnormalConditions ? `${s.abnormalConditions} ${cleanText}` : cleanText;
-          else if (field.type === 'stepAlarms') s.alarms = s.alarms ? `${s.alarms} ${cleanText}` : cleanText;
-          else if (field.type === 'stepDuration') s.duration = s.duration ? `${s.duration} ${cleanText}` : cleanText;
+          if (target.type === 'stepTitle') s.title = s.title ? `${s.title} ${cleanText}` : cleanText;
+          else if (target.type === 'stepDesc') s.description = s.description ? `${s.description} ${cleanText}` : cleanText;
+          else if (target.type === 'stepNormal') s.normalConditions = s.normalConditions ? `${s.normalConditions} ${cleanText}` : cleanText;
+          else if (target.type === 'stepAbnormal') s.abnormalConditions = s.abnormalConditions ? `${s.abnormalConditions} ${cleanText}` : cleanText;
+          else if (target.type === 'stepAlarms') s.alarms = s.alarms ? `${s.alarms} ${cleanText}` : cleanText;
+          else if (target.type === 'stepDuration') s.duration = s.duration ? `${s.duration} ${cleanText}` : cleanText;
           return s;
         }));
       }
@@ -125,21 +129,21 @@ export default function DatasetPage() {
 
   const toggleVoice = (type: string, index?: number) => {
     const target = { type, index };
-    const isSame = isListening && activeVoiceField?.type === type && activeVoiceField?.index === index;
+    const isActive = isListening && activeVoiceField?.type === type && activeVoiceField?.index === index;
 
-    if (isSame) {
+    if (isActive) {
       stopListening();
-      setActiveVoiceField(null);
       activeVoiceFieldRef.current = null;
+      setActiveVoiceField(null);
     } else {
       if (isListening) stopListening();
       
-      // Mise à jour immédiate de la Ref avant le démarrage
+      // Mise à jour immédiate de la Ref AVANT de démarrer le microphone
       activeVoiceFieldRef.current = target;
       setActiveVoiceField(target);
       
-      console.log(`[DATASET_AUDIT] 🎙️ Activation micro pour :`, target);
-      setTimeout(() => startListening(), 150);
+      console.log(`[DATASET_AUDIT] 🎙️ Démarrage capture vocale pour :`, type);
+      setTimeout(() => startListening(), 100);
     }
   };
 
@@ -166,7 +170,7 @@ export default function DatasetPage() {
   useEffect(() => {
     setMounted(true);
     return () => {
-      // Nettoyage systématique pour éviter les violations de mémoire/politique
+      // Nettoyage strict des previews lors du démontage pour éviter les fuites mémoire
       procSteps.forEach(s => {
         if (s.imagePreview) URL.revokeObjectURL(s.imagePreview);
         if (s.videoPreview) URL.revokeObjectURL(s.videoPreview);

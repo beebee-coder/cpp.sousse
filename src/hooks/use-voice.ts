@@ -15,8 +15,6 @@ export function useVoice(options: VoiceOptions = {}) {
   const [isSupported, setIsSupported] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  // Utilisation d'une Ref pour le callback afin de toujours avoir la version la plus récente
-  // sans recréer l'instance SpeechRecognition
   const onResultRef = useRef(options.onResult);
   onResultRef.current = options.onResult;
 
@@ -38,47 +36,51 @@ export function useVoice(options: VoiceOptions = {}) {
         recognition.lang = options.lang || 'fr-FR';
 
         recognition.onresult = (event: any) => {
-          // Récupération sécurisée du dernier segment transcrit
-          const results = event.results;
-          const lastResult = results[results.length - 1];
-          
-          if (lastResult.isFinal) {
-            const transcript = lastResult[0].transcript;
-            const cleanText = transcript.trim();
-            
-            console.log(`[VOICE_HOOK] 🎙️ Texte détecté : "${cleanText}"`);
-            
-            if (cleanText && onResultRef.current) {
+          let transcript = '';
+          // Traitement robuste de tous les nouveaux résultats
+          for (let i = event.resultIndex; i < event.results.length; ++i) {
+            if (event.results[i].isFinal) {
+              transcript += event.results[i][0].transcript;
+            }
+          }
+
+          const cleanText = transcript.trim();
+          if (cleanText) {
+            console.log(`[VOICE_HOOK] 🎙️ Segment transcrit : "${cleanText}"`);
+            if (onResultRef.current) {
               onResultRef.current(cleanText);
             }
           }
         };
 
         recognition.onstart = () => {
-          console.log(`[VOICE_HOOK] 🟢 Session active`);
+          console.log(`[VOICE_HOOK] 🟢 Session microphone active`);
           setIsListening(true);
         };
 
         recognition.onend = () => {
-          console.log(`[VOICE_HOOK] 🔴 Session terminée`);
+          console.log(`[VOICE_HOOK] 🔴 Session microphone terminée`);
           setIsListening(false);
         };
 
         recognition.onerror = (event: any) => {
-          console.error(`[VOICE_HOOK] ❌ Erreur :`, event.error);
-          if (event.error !== 'no-speech' && event.error !== 'aborted') {
+          // Gestion silencieuse des erreurs de sécurité pour éviter le crash de l'UI
+          if (event.error === 'not-allowed') {
+            console.warn(`[VOICE_HOOK] ⚠️ Accès microphone refusé.`);
+          } else if (event.error !== 'no-speech' && event.error !== 'aborted') {
+            console.error(`[VOICE_HOOK] ❌ Erreur technique :`, event.error);
             setError(event.error);
           }
           setIsListening(false);
         };
       } catch (e) {
-        console.error(`[VOICE_HOOK] ❌ Échec init :`, e);
+        console.error(`[VOICE_HOOK] ❌ Échec initialisation Speech API :`, e);
         setIsSupported(false);
       }
     }
 
     return () => {
-      // Nettoyage strict sans déclencher d'événements de déchargement interdits
+      // Nettoyage sécurisé sans utiliser 'unload'
       if (recognitionRef.current) {
         recognitionRef.current.onresult = null;
         recognitionRef.current.onend = null;
@@ -93,14 +95,11 @@ export function useVoice(options: VoiceOptions = {}) {
 
   const startListening = useCallback(() => {
     setError(null);
-    if (!recognitionRef.current) {
-      console.warn(`[VOICE_HOOK] ⚠️ Instance manquante`);
-      return;
-    }
+    if (!recognitionRef.current) return;
     try {
       recognitionRef.current.start();
     } catch (e) {
-      // Si déjà démarré, on ignore
+      // Ignorer si déjà démarré
     }
   }, []);
 
