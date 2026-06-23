@@ -13,9 +13,8 @@ Plateforme de contrôle par vision industrielle hybride avec audit de flux intel
 L'application nécessite des clés API pour communiquer avec les services d'IA et de synchronisation.
 1. Ouvrez le dossier d'installation (généralement `C:\Program Files\VisioNode`).
 2. Localisez le fichier `.env.example`.
-3. Exécutez le script `configure-app.ps1` (Clic droit > Exécuter avec PowerShell).
-4. Éditez le nouveau fichier `.env` avec vos clés API (Groq, Gemini, GitHub).
-5. Relancez l'application.
+3. Editez le nouveau fichier `.env` avec vos clés API (Groq, Weaviate, GitHub).
+4. Relancez l'application.
 
 ---
 
@@ -25,31 +24,49 @@ L'application suit une architecture modulaire conçue pour l'hybridation Web/Des
 
 ```text
 src/
-├── ai/                     # Cerveau du système
-│   ├── flows/              # Flux logiques IA (Analyse visuelle, RAG, Chat)
-│   └── dev.ts              # Point d'entrée pour l'environnement de développement
-├── app/                    # Moteur Next.js (App Router)
-│   ├── (dashboard)/        # Routes de l'interface de contrôle (BDD, Chat, Dataset)
-│   ├── api/                # Points de terminaison hybrides (Vision, Vector, Sync)
-│   ├── actions/            # Server Actions pour le pilotage du pipeline
-│   ├── globals.css         # Thème industriel (Tailwind + CSS Variables)
-│   └── layout.tsx          # Structure racine et injection du PlatformProvider
-├── components/             # Composants React réutilisables
-│   ├── dashboard/          # Composants métier (Terminal de vision, Sidebar, Sync)
-│   ├── ui/                 # Composants atomiques ShadCN (Boutons, Cards, Dialogs)
-│   └── PlatformProvider.tsx # Gestionnaire de contexte de plateforme (Web vs Natif)
-├── hooks/                  # Logique d'état personnalisée
-│   ├── use-chat.ts         # Gestion du dialogue neural
-│   ├── use-voice.ts        # Moteur Speech-to-Text & Text-to-Speech
-│   ├── use-sync.ts         # Orchestrateur de synchronisation Cloud/Local
-│   └── use-toast.ts        # Système de notifications d'audit
-├── lib/                    # Bibliothèque logicielle centrale
-│   ├── db/                 # Clients de base de données (Postgres, SQLite, Sync Engine)
-│   ├── chroma.ts           # Interface avec le moteur vectoriel local
-│   ├── weaviate-client.ts  # Liaison avec le registre sémantique cloud
-│   ├── platform.ts         # Pont de détection Web / Tauri Natif
-│   └── api-client.ts       # Client API unifié avec gestion de timeout
-└── types/                  # Définitions TypeScript globales
+├── ai/                         # Cerveau du système (Logique IA)
+│   ├── flows/                  # Flux de travail Genkit / Groq
+│   │   ├── dynamic-chat-flow.ts       # Chat neural avec RAG multi-collection
+│   │   ├── vision-assistant-description.ts # Analyse visuelle industrielle
+│   │   └── visual-document-retrieval.ts   # RAG basé sur l'image
+│   └── dev.ts                  # Point d'entrée AI pour le développement
+├── app/                        # Moteur Next.js (App Router)
+│   ├── (dashboard)/            # Routes de l'interface de contrôle
+│   │   ├── bdd/page.tsx               # Explorateur de base de données hybride
+│   │   ├── chat/page.tsx              # Interface de dialogue neural
+│   │   ├── dashboard/page.tsx         # Moniteur système et cockpit visuel
+│   │   ├── dataset/page.tsx           # Entraînement RAG et saisie vocale
+│   │   └── pipeline/page.tsx          # Pilotage du flux industriel (Forge)
+│   ├── api/                    # Points de terminaison (Hybrid Routes)
+│   │   ├── chat/route.ts              # Proxy de chat IA
+│   │   ├── sync/                      # Endpoints de synchronisation Neon
+│   │   ├── vector/                    # Gestion des collections Chroma/Weaviate
+│   │   └── vision/                    # Analyse et récupération documentaire
+│   ├── globals.css             # Thème industriel (Tailwind + CSS Var)
+│   └── layout.tsx              # Structure racine et injection de contexte
+├── components/                 # Composants React réutilisables
+│   ├── dashboard/              # Composants métier du cockpit
+│   │   ├── Sidebar.tsx                # Navigation latérale intelligente
+│   │   ├── VisionTerminal.tsx         # Terminal d'analyse visuelle en direct
+│   │   ├── SyncPanel.tsx              # Panneau de contrôle de synchronisation
+│   │   └── CommandPalette.tsx         # Barre de commande rapide (/)
+│   ├── ui/                     # Composants atomiques ShadCN
+│   └── PlatformProvider.tsx    # Détection et gestion du mode Web vs Natif
+├── hooks/                      # Logique d'état et hooks personnalisés
+│   ├── use-chat.ts             # Gestion du dialogue neural (Web/Tauri)
+│   ├── use-voice.ts            # Moteur Speech-to-Text (Atomic-to-Ref)
+│   ├── use-sync.ts             # Orchestrateur de synchronisation Cloud/Local
+│   └── use-toast.ts            # Notifications d'audit système
+├── lib/                        # Bibliothèque logicielle centrale
+│   ├── db/                     # Clients de persistence (Neon, SQLite, Sync)
+│   │   ├── sync-engine.ts             # Moteur de transfert atomique
+│   │   ├── postgres-client.ts         # Liaison Neon Postgres
+│   │   └── chroma-client.ts           # Interface moteur vectoriel
+│   ├── chroma.ts               # Configuration ChromaDB et Embeddings
+│   ├── weaviate-client.ts      # Liaison avec le registre cloud
+│   ├── platform.ts             # Pont de détection Web / Tauri
+│   └── api-client.ts           # Client API unifié avec audit iconographié
+└── types/                      # Définitions TypeScript globales
 ```
 
 ---
@@ -58,22 +75,15 @@ src/
 
 La Forge transforme le code Next.js en binaire natif Windows hautement optimisé.
 
-### A. Personnalisation des Icônes
-Pour changer l'icône de l'application EXE/MSI :
-1. Remplacez les fichiers dans `src-tauri/icons/` par vos propres icônes.
-2. Formats requis : `icon.ico` (Windows), `icon.png` (512x512) et les variantes de taille (32x32, 128x128).
+### A. Pipeline de Transformation Rapide
+Utilisez les scripts à la racine pour automatiser le processus :
+- `./forge-desktop.sh` : Nettoyage, compilation Next.js statique et forge du binaire Tauri.
+- `./sync.sh` : Synchronisation du registre local avec le dépôt GitHub central.
 
-### B. Pipeline de Transformation Rapide
-Utilisez les scripts PowerShell à la racine pour automatiser le processus :
-- `.\update-and-build.ps1` : Nettoyage complet, mise à jour et forge du binaire.
-- `.\quick-update.ps1` : Synchronisation rapide vers GitHub/Vercel.
-- `.\tag-and-release.ps1` : Création de version et déclenchement du pipeline GitHub Actions.
-
-### C. Détails Techniques
-- **Pont Natif (Tauri Bridge)** : En mode Desktop, l'IA utilise un moteur Rust natif pour lire les clés `.env` locales.
-- **Priorité IA** : Routage automatique vers le moteur **Groq LPU** (Llama 3.3).
-- **Audit de Flux** : Journalisation iconographiée (🚀, ⚡, ✅) pour une traçabilité industrielle.
-- **Hybridation** : Utilisation d'API Routes Next.js pour conserver la connectivité web tout en restant compatible avec l'export statique.
+### B. Détails Techniques
+- **Pont Natif (Tauri Bridge)** : En mode Desktop, l'IA utilise un moteur Rust natif pour lire les clés `.env` et accéder aux ressources locales.
+- **Audit de Flux** : Journalisation structurée (`[VOICE_HOOK]`, `[DATASET_AUDIT]`) pour une traçabilité industrielle totale.
+- **Hybridation** : Utilisation d'API Routes Next.js pour conserver la connectivité web tout en restant compatible avec l'export statique (EXE).
 
 ---
 *Propriété technique de CCP Industrial Vision. Déploiement optimisé pour Vercel et stations locales.*
