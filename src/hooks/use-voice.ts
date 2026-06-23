@@ -16,8 +16,7 @@ interface VoiceState {
 }
 
 /**
- * Hook de reconnaissance vocale ultra-stable pour environnement industriel.
- * Utilise des références immuables pour garantir l'ordre des hooks et la persistance des rappels.
+ * Hook de reconnaissance vocale stable pour environnement industriel.
  */
 export function useVoice(options: VoiceOptions = {}) {
   const [state, setState] = useState<VoiceState>({
@@ -30,7 +29,6 @@ export function useVoice(options: VoiceOptions = {}) {
   const isManuallyStopped = useRef(false);
   const optionsRef = useRef(options);
 
-  // Mise à jour de la référence des options sans déclencher de re-rendu
   useEffect(() => {
     optionsRef.current = options;
   }, [options]);
@@ -52,21 +50,16 @@ export function useVoice(options: VoiceOptions = {}) {
 
     recognition.onstart = () => {
       setState(prev => ({ ...prev, isListening: true, error: null }));
-      console.log('[VOICE_HOOK] 🎙️ Session active.');
     };
 
     recognition.onresult = (event: any) => {
       const lastIndex = event.resultIndex;
       const result = event.results[lastIndex];
       
-      // On ne traite que les segments finaux pour garantir une injection propre dans les champs
       if (result.isFinal) {
         const segment = result[0].transcript;
-        if (segment && segment.trim()) {
-          console.log(`[VOICE_HOOK] ✅ Texte validé : "${segment.trim()}"`);
-          if (optionsRef.current.onResult) {
-            optionsRef.current.onResult(segment.trim());
-          }
+        if (segment && segment.trim() && optionsRef.current.onResult) {
+          optionsRef.current.onResult(segment.trim());
         }
       }
     };
@@ -76,9 +69,7 @@ export function useVoice(options: VoiceOptions = {}) {
       if (optionsRef.current.autoRestart && !isManuallyStopped.current) {
         try {
           recognition.start();
-        } catch (e) {
-          // Échec de redémarrage ignoré
-        }
+        } catch (e) {}
       }
     };
 
@@ -86,9 +77,9 @@ export function useVoice(options: VoiceOptions = {}) {
       const err = event.error;
       if (err === 'no-speech') return;
 
-      // On utilise warn au lieu de error pour 'not-allowed' pour éviter de bloquer l'UI de dev
+      // Utilisation de warn au lieu de error pour les permissions afin d'éviter l'overlay Next.js
       if (err === 'not-allowed' || err === 'service-not-allowed') {
-        console.warn(`[VOICE_HOOK] ⚠️ Permission microphone refusée ou indisponible (SSL requis pour Speech API).`);
+        console.warn(`[VOICE_HOOK] ⚠️ Permission microphone refusée ou indisponible.`);
       } else {
         console.error(`[VOICE_HOOK] ❌ Erreur système : ${err}`);
       }
@@ -116,9 +107,7 @@ export function useVoice(options: VoiceOptions = {}) {
     if (recognitionRef.current) {
       try {
         recognitionRef.current.start();
-      } catch (e) {
-        console.warn('[VOICE_HOOK] Microphone indisponible ou déjà actif.');
-      }
+      } catch (e) {}
     }
   }, []);
 

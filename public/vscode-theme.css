@@ -1,9 +1,9 @@
-/* Theme minimaliste pour satisfaire les dependances de rendu et eviter les erreurs 404 */
+/* Minimal VSCode Dark theme simulation for industrial dashboard stability */
 :root {
   --vscode-editor-background: #0d1117;
   --vscode-editor-foreground: #c9d1d9;
 }
-body.vscode-dark {
+.vscode-dark {
   background-color: var(--vscode-editor-background);
   color: var(--vscode-editor-foreground);
 }

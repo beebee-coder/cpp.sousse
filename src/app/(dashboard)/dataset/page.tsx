@@ -37,7 +37,7 @@ interface QAItem {
 }
 
 export default function DatasetPage() {
-  // 1. TOUS LES HOOKS AU SOMMET (ORDRE CONSTANT ET INCONDITIONNEL)
+  // 1. TOUS LES HOOKS AU SOMMET (ORDRE CONSTANT)
   const { toast } = useToast();
   const [mounted, setMounted] = useState(false);
   const [mode, setMode] = useState<'qa' | 'procedure'>('qa');
@@ -52,19 +52,16 @@ export default function DatasetPage() {
   const [isGuideActive, setIsGuideActive] = useState(false);
   const [activeUIField, setActiveUIField] = useState<{ type: string, index?: number } | null>(null);
   
-  // Cette Ref permet au moteur vocal de savoir où écrire sans dépendre du cycle de rendu
   const targetFieldRef = useRef<{ type: string, index?: number } | null>(null);
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  // Synchronisation de la Ref avec l'état UI
   useEffect(() => {
     targetFieldRef.current = activeUIField;
   }, [activeUIField]);
 
-  // Callback de traitement des résultats vocaux
   const handleVoiceResult = useCallback((text: string) => {
     const target = targetFieldRef.current;
     if (!target) return;
