@@ -18,8 +18,7 @@ interface VoiceState {
 
 /**
  * Hook de reconnaissance vocale ultra-stable pour environnement industriel.
- * Gère les permissions, les interruptions et les politiques de sécurité modernes.
- * Optimisé pour éviter les violations de politique "unload" et les boucles infinies.
+ * Version 3.0 : Utilise des Refs pour les callbacks afin de garantir l'injection sans crash de hooks.
  */
 export function useVoice(options: VoiceOptions = {}) {
   const [state, setState] = useState<VoiceState>({
@@ -32,7 +31,6 @@ export function useVoice(options: VoiceOptions = {}) {
   const isManuallyStopped = useRef(false);
   const hasPermissionError = useRef(false);
   
-  // Utilisation de références pour les callbacks afin d'éviter les re-liaisons
   const optionsRef = useRef(options);
   useEffect(() => {
     optionsRef.current = options;
@@ -50,12 +48,13 @@ export function useVoice(options: VoiceOptions = {}) {
 
     const recognition = new SpeechRecognition();
     recognition.continuous = true;
-    recognition.interimResults = true;
+    recognition.interimResults = false; // Plus stable pour l'audit technique
     recognition.lang = optionsRef.current.lang || 'fr-FR';
 
     recognition.onstart = () => {
       setState(prev => ({ ...prev, isListening: true, error: null }));
       hasPermissionError.current = false;
+      console.log("[VOICE_HOOK] Liaison active.");
     };
 
     recognition.onresult = (event: any) => {
@@ -65,6 +64,7 @@ export function useVoice(options: VoiceOptions = {}) {
       if (result.isFinal) {
         const segment = result[0].transcript;
         if (segment && segment.trim() && optionsRef.current.onResult) {
+          console.log("[VOICE_HOOK] Segment capturé :", segment.trim());
           optionsRef.current.onResult(segment.trim());
         }
       }
@@ -73,7 +73,6 @@ export function useVoice(options: VoiceOptions = {}) {
     recognition.onend = () => {
       setState(prev => ({ ...prev, isListening: false }));
       
-      // Sécurité : Ne pas redémarrer si erreur de permission ou arrêt manuel
       const shouldRestart = optionsRef.current.autoRestart && 
                            !isManuallyStopped.current && 
                            !hasPermissionError.current;
@@ -93,9 +92,9 @@ export function useVoice(options: VoiceOptions = {}) {
 
       if (err === 'not-allowed' || err === 'service-not-allowed') {
         hasPermissionError.current = true;
-        console.warn(`[VOICE_HOOK] ⚠️ Permission microphone refusée ou indisponible (SSL requis pour Speech API).`);
+        console.warn(`[VOICE_HOOK] ⚠️ Permission refusée ou SSL manquant.`);
       } else {
-        console.warn(`[VOICE_HOOK] ❌ Erreur technique : ${err}`);
+        console.warn(`[VOICE_HOOK] ❌ Erreur : ${err}`);
       }
       
       setState(prev => ({ ...prev, error: err, isListening: false }));
@@ -105,7 +104,6 @@ export function useVoice(options: VoiceOptions = {}) {
 
     return () => {
       if (recognitionRef.current) {
-        // Nettoyage propre sans utiliser "unload"
         recognitionRef.current.onstart = null;
         recognitionRef.current.onresult = null;
         recognitionRef.current.onend = null;
@@ -124,7 +122,7 @@ export function useVoice(options: VoiceOptions = {}) {
       try {
         recognitionRef.current.start();
       } catch (e) {
-        console.warn("[VOICE_HOOK] Impossible de démarrer le microphone.");
+        console.warn("[VOICE_HOOK] Impossible de démarrer.");
       }
     }
   }, []);
