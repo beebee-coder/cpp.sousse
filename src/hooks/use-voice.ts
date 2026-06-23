@@ -35,7 +35,9 @@ export function useVoice(options: VoiceOptions = {}) {
         recognition.lang = options.lang || 'fr-FR';
 
         recognition.onresult = (event: any) => {
-          const transcript = event.results[event.results.length - 1][0].transcript;
+          // On récupère uniquement les nouveaux résultats depuis le dernier index
+          const resultIndex = event.resultIndex;
+          const transcript = event.results[resultIndex][0].transcript;
           const cleanText = transcript.trim();
           
           console.log(`[VOICE_HOOK] 🎙️ Texte détecté par le navigateur : "${cleanText}"`);
