@@ -14,8 +14,9 @@ export function useVoice(options: VoiceOptions = {}) {
   const [isSupported, setIsSupported] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  const optionsRef = useRef(options);
-  optionsRef.current = options;
+  // Utilisation d'une ref pour onResult afin d'éviter les closures obsolètes
+  const onResultRef = useRef(options.onResult);
+  onResultRef.current = options.onResult;
 
   const recognitionRef = useRef<any>(null);
 
@@ -30,43 +31,24 @@ export function useVoice(options: VoiceOptions = {}) {
         const recognition = new SpeechRecognition();
         recognitionRef.current = recognition;
         
-        recognition.continuous = false;
+        recognition.continuous = true;
         recognition.interimResults = false;
         recognition.lang = options.lang || 'fr-FR';
 
         recognition.onresult = (event: any) => {
-          let transcript = '';
-          for (let i = event.resultIndex; i < event.results.length; ++i) {
-            transcript += event.results[i][0].transcript;
-          }
-          
-          if (transcript.trim() && optionsRef.current.onResult) {
-            optionsRef.current.onResult(transcript.trim());
+          const transcript = event.results[event.results.length - 1][0].transcript;
+          if (transcript && onResultRef.current) {
+            onResultRef.current(transcript.trim());
           }
         };
 
-        recognition.onstart = () => {
-          setIsListening(true);
-        };
-
-        recognition.onend = () => {
-          setIsListening(false);
-          if (optionsRef.current.onEnd) {
-            optionsRef.current.onEnd();
-          }
-        };
-
+        recognition.onstart = () => setIsListening(true);
+        recognition.onend = () => setIsListening(false);
         recognition.onerror = (event: any) => {
-          const errorMsg = event.error === 'not-allowed' 
-            ? "Accès micro refusé." 
-            : event.error;
-          
-          setError(errorMsg);
-          setIsListening(false);
-          
-          if (optionsRef.current.onError) {
-            optionsRef.current.onError(errorMsg);
+          if (event.error !== 'no-speech' && event.error !== 'aborted') {
+            setError(event.error);
           }
+          setIsListening(false);
         };
       } catch (e) {
         setIsSupported(false);
@@ -75,13 +57,7 @@ export function useVoice(options: VoiceOptions = {}) {
 
     return () => {
       if (recognitionRef.current) {
-        recognitionRef.current.onresult = null;
-        recognitionRef.current.onend = null;
-        recognitionRef.current.onerror = null;
-        recognitionRef.current.onstart = null;
-        try {
-          recognitionRef.current.stop();
-        } catch (e) {}
+        recognitionRef.current.stop();
       }
     };
   }, [options.lang]);
@@ -89,40 +65,23 @@ export function useVoice(options: VoiceOptions = {}) {
   const startListening = useCallback(() => {
     setError(null);
     if (!recognitionRef.current) return;
-    
     try {
       recognitionRef.current.start();
-    } catch (e: any) {
-      if (e.name !== 'InvalidStateError') {
-        setError(e.message);
-      }
-    }
+    } catch (e) {}
   }, []);
 
   const stopListening = useCallback(() => {
-    if (!recognitionRef.current) return;
-    try {
+    if (recognitionRef.current) {
       recognitionRef.current.stop();
-    } catch (e) {}
+    }
     setIsListening(false);
   }, []);
 
   const speak = useCallback((text: string, lang = 'fr-FR') => {
     if (typeof window === 'undefined' || !window.speechSynthesis) return;
-    
     window.speechSynthesis.cancel();
-    
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = lang;
-    utterance.rate = 1.0;
-    utterance.pitch = 1.0;
-    
-    const voices = window.speechSynthesis.getVoices();
-    const frVoice = voices.find(v => v.lang.startsWith('fr') && v.name.includes('Google')) || 
-                   voices.find(v => v.lang.startsWith('fr'));
-    
-    if (frVoice) utterance.voice = frVoice;
-
     window.speechSynthesis.speak(utterance);
   }, []);
 
@@ -133,10 +92,6 @@ export function useVoice(options: VoiceOptions = {}) {
     startListening,
     stopListening,
     speak,
-    cancelSpeak: () => {
-      if (typeof window !== 'undefined' && window.speechSynthesis) {
-        window.speechSynthesis.cancel();
-      }
-    }
+    cancelSpeak: () => window.speechSynthesis?.cancel()
   };
 }
