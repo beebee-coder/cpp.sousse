@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { 
   Database, 
   Plus, 
@@ -56,6 +56,8 @@ interface QAItem {
 
 export default function DatasetPage() {
   const { toast } = useToast();
+  
+  // -- 1. TOUS LES HOOKS AU SOMMET (ORDRE FIXE) --
   const [mounted, setMounted] = useState(false);
   const [mode, setMode] = useState<'qa' | 'procedure'>('qa');
   const [qaItems, setQaItems] = useState<QAItem[]>([]);
@@ -76,6 +78,7 @@ export default function DatasetPage() {
   });
   const [isCapturing, setIsCapturing] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
+  
   const videoRef = useRef<HTMLVideoElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -84,17 +87,17 @@ export default function DatasetPage() {
   const [activeUIField, setActiveUIField] = useState<{ type: string, index?: number } | null>(null);
   const activeVoiceFieldRef = useRef<{ type: string, index?: number } | null>(null);
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
+  // Synchronisation de la Ref pour le moteur vocal
   useEffect(() => {
     activeVoiceFieldRef.current = activeUIField;
   }, [activeUIField]);
 
+  // Handler de résultat vocal ultra-stable
   const handleVoiceResult = useCallback((text: string) => {
     const target = activeVoiceFieldRef.current;
     if (!target) return;
+
+    console.log(`[DATASET_AUDIT] Injection vocale -> ${target.type} [${target.index ?? 'root'}]`);
 
     if (target.type === 'question') {
       setQuestion(prev => prev ? `${prev} ${text}` : text);
@@ -125,6 +128,48 @@ export default function DatasetPage() {
     lang: 'fr-FR'
   });
 
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Gestion robuste du flux caméra
+  useEffect(() => {
+    const startStream = async () => {
+      if (!mediaModal.isOpen) return;
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          video: true, 
+          audio: mediaModal.type === 'video' 
+        });
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+        }
+      } catch (err) {
+        console.error("Erreur caméra:", err);
+        toast({ title: "Erreur Caméra", description: "Vérifiez les permissions.", variant: "destructive" });
+        setMediaModal(prev => ({ ...prev, isOpen: false }));
+      }
+    };
+
+    const stopStream = () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+      }
+    };
+
+    if (mediaModal.isOpen) {
+      startStream();
+    } else {
+      stopStream();
+    }
+
+    return () => stopStream();
+  }, [mediaModal.isOpen, mediaModal.type, toast]);
+
+  // -- 2. LOGIQUE MÉTIER --
+
   const toggleVoice = (type: string, index?: number) => {
     const isCurrentlyActive = voice.isListening && activeUIField?.type === type && activeUIField?.index === index;
     if (isCurrentlyActive) {
@@ -137,34 +182,6 @@ export default function DatasetPage() {
     }
   };
 
-  // CAMERA & VIDEO LOGIC
-  const startStream = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: mediaModal.type === 'video' });
-      streamRef.current = stream;
-      if (videoRef.current) videoRef.current.srcObject = stream;
-    } catch (err) {
-      toast({ title: "Erreur Caméra", description: "Vérifiez les permissions de votre navigateur.", variant: "destructive" });
-      setMediaModal(prev => ({ ...prev, isOpen: false }));
-    }
-  };
-
-  const stopStream = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-      streamRef.current = null;
-    }
-  };
-
-  useEffect(() => {
-    if (mediaModal.isOpen) {
-      startStream();
-    } else {
-      stopStream();
-    }
-    return () => stopStream();
-  }, [mediaModal.isOpen]);
-
   const captureImage = () => {
     if (!videoRef.current || mediaModal.stepIndex === null) return;
     const canvas = document.createElement('canvas');
@@ -175,9 +192,9 @@ export default function DatasetPage() {
       ctx.drawImage(videoRef.current, 0, 0);
       const dataUri = canvas.toDataURL('image/jpeg');
       const next = [...procSteps];
-      next[mediaModal.stepIndex].images = `CAP_${Date.now()}_IMG`; // Simulé pour le RAG
+      next[mediaModal.stepIndex].images = `CAP_${Date.now()}_IMG`; // Simulé pour l'indexation RAG
       setProcSteps(next);
-      toast({ title: "Image capturée", description: "Asset lié à l'étape." });
+      toast({ title: "Image capturée", description: "Asset rattaché à l'étape." });
       setMediaModal(prev => ({ ...prev, isOpen: false }));
     }
   };
@@ -189,11 +206,10 @@ export default function DatasetPage() {
     recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
     recorder.onstop = () => {
       if (mediaModal.stepIndex === null) return;
-      const blob = new Blob(chunksRef.current, { type: 'video/mp4' });
       const next = [...procSteps];
-      next[mediaModal.stepIndex].video = `CAP_${Date.now()}_VID`; // Simulé
+      next[mediaModal.stepIndex].video = `CAP_${Date.now()}_VID`; // Référence simulée
       setProcSteps(next);
-      toast({ title: "Vidéo enregistrée", description: "Séquence liée à l'étape." });
+      toast({ title: "Vidéo enregistrée", description: "Séquence rattachée à l'étape." });
     };
     recorder.start();
     mediaRecorderRef.current = recorder;
@@ -206,7 +222,9 @@ export default function DatasetPage() {
   const stopRecording = () => {
     if (mediaRecorderRef.current && isCapturing) {
       mediaRecorderRef.current.stop();
-      clearInterval((mediaRecorderRef.current as any)._interval);
+      if ((mediaRecorderRef.current as any)._interval) {
+        clearInterval((mediaRecorderRef.current as any)._interval);
+      }
       setIsCapturing(false);
       setMediaModal(prev => ({ ...prev, isOpen: false }));
     }
@@ -252,6 +270,8 @@ export default function DatasetPage() {
     }
   };
 
+  // -- 3. RENDU (PROTECTION HYDRATATION DANS LE JSX) --
+
   if (!mounted) return null;
 
   return (
@@ -284,11 +304,11 @@ export default function DatasetPage() {
         </header>
 
         <div className="p-4 lg:p-8 max-w-5xl mx-auto w-full space-y-8">
-          {voice.error && voice.error.includes('allowed') && (
+          {voice.error && (voice.error.includes('allowed') || voice.error.includes('service')) && (
             <Card className="p-4 border-destructive/30 bg-destructive/5 animate-pulse">
               <div className="flex items-center gap-3">
                 <AlertTriangle className="w-5 h-5 text-destructive" />
-                <p className="text-[10px] font-code text-destructive uppercase font-bold">Microphone Bloqué. Désactivez l'Audit Guidé ou autorisez le SSL.</p>
+                <p className="text-[10px] font-code text-destructive uppercase font-bold">Microphone Bloqué ou Non Supporté. Vérifiez le SSL et les permissions.</p>
               </div>
             </Card>
           )}
@@ -303,7 +323,7 @@ export default function DatasetPage() {
                       value={question} 
                       onChange={(e) => setQuestion(e.target.value)} 
                       placeholder="EX: ÉCHAUFFEMENT POMPE P-101..." 
-                      className={cn("h-32 bg-background font-code text-xs uppercase", activeUIField?.type === 'question' && "ring-2 ring-red-500")}
+                      className={cn("h-32 bg-background font-code text-xs uppercase", activeUIField?.type === 'question' && "ring-2 ring-red-500 shadow-[0_0_10px_rgba(239,68,68,0.3)]")}
                     />
                     <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('question')} className={cn("absolute top-8 right-2 h-7 w-7", activeUIField?.type === 'question' ? "text-red-500" : "text-primary")}>
                       <Mic className="w-3.5 h-3.5" />
@@ -315,7 +335,7 @@ export default function DatasetPage() {
                       value={answer} 
                       onChange={(e) => setAnswer(e.target.value)} 
                       placeholder="EX: VÉRIFIER LUBRIFICATION PALIER 2..." 
-                      className={cn("h-32 bg-background font-code text-xs uppercase", activeUIField?.type === 'answer' && "ring-2 ring-red-500")}
+                      className={cn("h-32 bg-background font-code text-xs uppercase", activeUIField?.type === 'answer' && "ring-2 ring-red-500 shadow-[0_0_10px_rgba(239,68,68,0.3)]")}
                     />
                     <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('answer')} className={cn("absolute top-8 right-2 h-7 w-7", activeUIField?.type === 'answer' ? "text-red-500" : "text-secondary")}>
                        <Mic className="w-3.5 h-3.5" />
@@ -405,7 +425,7 @@ export default function DatasetPage() {
                 </div>
               )}
 
-              <Button type="submit" className="w-full font-headline font-bold uppercase text-xs h-10 bg-primary">
+              <Button type="submit" className="w-full font-headline font-bold uppercase text-xs h-10 bg-primary text-primary-foreground">
                 Enregistrer dans la file d'audit
               </Button>
             </form>
@@ -434,33 +454,49 @@ export default function DatasetPage() {
         </div>
       </main>
 
-      {/* MEDIA CAPTURE MODAL */}
-      <Dialog open={mediaModal.isOpen} onOpenChange={(open) => !open && setMediaModal(prev => ({ ...prev, isOpen: false }))}>
-        <DialogContent className="sm:max-w-2xl bg-black border-primary/30">
+      {/* MODAL MULTIMÉDIA STABILISÉ */}
+      <Dialog 
+        open={mediaModal.isOpen} 
+        onOpenChange={(open) => {
+          if (!open) {
+            setMediaModal(prev => ({ ...prev, isOpen: false }));
+            setIsCapturing(false);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-2xl bg-black border-primary/30 shadow-[0_0_50px_rgba(50,181,212,0.1)]">
           <DialogHeader>
             <DialogTitle className="text-xs uppercase font-headline tracking-widest text-primary flex items-center gap-2">
               {mediaModal.type === 'image' ? <Camera className="w-4 h-4" /> : <VideoIcon className="w-4 h-4" />}
-              Capture de flux industriel
+              Station de capture industrielle
             </DialogTitle>
           </DialogHeader>
           <div className="relative aspect-video bg-muted/10 rounded-sm overflow-hidden border border-border">
-            <video ref={videoRef} autoPlay playsInline muted={mediaModal.type === 'image'} className="w-full h-full object-cover" />
+            <video 
+              ref={videoRef} 
+              autoPlay 
+              playsInline 
+              muted={mediaModal.type === 'image'} 
+              className="w-full h-full object-cover"
+            />
             <div className="absolute inset-0 pointer-events-none border-[20px] border-black/20" />
+            <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle,transparent_40%,rgba(0,0,0,0.4)_100%)]" />
             
             {isCapturing && (
-              <div className="absolute top-4 right-4 bg-red-600 text-white px-2 py-1 rounded-sm text-[10px] font-code animate-pulse flex items-center gap-2">
+              <div className="absolute top-4 right-4 bg-red-600 text-white px-2 py-1 rounded-sm text-[10px] font-code animate-pulse flex items-center gap-2 shadow-lg">
+                <span className="w-2 h-2 rounded-full bg-white animate-ping" />
                 REC | {recordingTime}s
               </div>
             )}
           </div>
           <div className="flex justify-center gap-4 mt-4">
             {mediaModal.type === 'image' ? (
-              <Button onClick={captureImage} className="bg-primary text-primary-foreground font-bold uppercase text-[10px] h-10 px-8">
+              <Button onClick={captureImage} className="bg-primary text-primary-foreground font-bold uppercase text-[10px] h-10 px-8 hover:shadow-[0_0_15px_rgba(50,181,212,0.4)]">
                 <Camera className="w-4 h-4 mr-2" /> Capturer l'image
               </Button>
             ) : (
               !isCapturing ? (
-                <Button onClick={startRecording} className="bg-red-600 text-white font-bold uppercase text-[10px] h-10 px-8 hover:bg-red-700">
+                <Button onClick={startRecording} className="bg-red-600 text-white font-bold uppercase text-[10px] h-10 px-8 hover:bg-red-700 hover:shadow-[0_0_15px_rgba(220,38,38,0.4)]">
                   <VideoIcon className="w-4 h-4 mr-2" /> Lancer l'enregistrement
                 </Button>
               ) : (
@@ -469,7 +505,7 @@ export default function DatasetPage() {
                 </Button>
               )
             )}
-            <Button variant="ghost" onClick={() => setMediaModal(prev => ({ ...prev, isOpen: false }))} className="text-[10px] uppercase">Annuler</Button>
+            <Button variant="ghost" onClick={() => setMediaModal(prev => ({ ...prev, isOpen: false }))} className="text-[10px] uppercase">Fermer</Button>
           </div>
         </DialogContent>
       </Dialog>

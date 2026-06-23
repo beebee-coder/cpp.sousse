@@ -16,10 +16,6 @@ interface VoiceState {
   error: string | null;
 }
 
-/**
- * Hook de reconnaissance vocale ultra-stable pour environnement industriel.
- * Version 3.0 : Utilise des Refs pour les callbacks afin de garantir l'injection sans crash de hooks.
- */
 export function useVoice(options: VoiceOptions = {}) {
   const [state, setState] = useState<VoiceState>({
     isListening: false,
@@ -48,13 +44,13 @@ export function useVoice(options: VoiceOptions = {}) {
 
     const recognition = new SpeechRecognition();
     recognition.continuous = true;
-    recognition.interimResults = false; // Plus stable pour l'audit technique
+    recognition.interimResults = false;
     recognition.lang = optionsRef.current.lang || 'fr-FR';
 
     recognition.onstart = () => {
       setState(prev => ({ ...prev, isListening: true, error: null }));
       hasPermissionError.current = false;
-      console.log("[VOICE_HOOK] Liaison active.");
+      console.log("[VOICE_HOOK] Liaison microphone active.");
     };
 
     recognition.onresult = (event: any) => {
@@ -64,7 +60,7 @@ export function useVoice(options: VoiceOptions = {}) {
       if (result.isFinal) {
         const segment = result[0].transcript;
         if (segment && segment.trim() && optionsRef.current.onResult) {
-          console.log("[VOICE_HOOK] Segment capturé :", segment.trim());
+          console.log("[VOICE_HOOK] Segment final capturé :", segment.trim());
           optionsRef.current.onResult(segment.trim());
         }
       }
@@ -92,9 +88,9 @@ export function useVoice(options: VoiceOptions = {}) {
 
       if (err === 'not-allowed' || err === 'service-not-allowed') {
         hasPermissionError.current = true;
-        console.warn(`[VOICE_HOOK] ⚠️ Permission refusée ou SSL manquant.`);
+        console.warn(`[VOICE_HOOK] ⚠️ Permission microphone refusée ou indisponible (SSL requis).`);
       } else {
-        console.warn(`[VOICE_HOOK] ❌ Erreur : ${err}`);
+        console.warn(`[VOICE_HOOK] ❌ Erreur Speech API : ${err}`);
       }
       
       setState(prev => ({ ...prev, error: err, isListening: false }));
@@ -122,7 +118,7 @@ export function useVoice(options: VoiceOptions = {}) {
       try {
         recognitionRef.current.start();
       } catch (e) {
-        console.warn("[VOICE_HOOK] Impossible de démarrer.");
+        console.warn("[VOICE_HOOK] Impossible de démarrer la reconnaissance.");
       }
     }
   }, []);

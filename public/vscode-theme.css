@@ -1,10 +1,17 @@
 
-/* VisioNode Industrial VSCode Theme */
-.vscode-dark {
-  background-color: #0d1214;
-  color: #d1d5db;
+/* Fichier de style pour la compatibilité des composants UI industriels */
+:root {
+  --vscode-editor-background: hsl(200 25% 7%);
+  --vscode-editor-foreground: hsl(210 20% 98%);
+  --vscode-focusBorder: hsl(191 64% 51%);
 }
-.vscode-token-keyword { color: #32b5d4; }
-.vscode-token-string { color: #2eb892; }
-.vscode-token-comment { color: #4b5563; }
-.vscode-token-function { color: #32b5d4; font-weight: bold; }
+
+.terminal-scroll::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+.terminal-scroll::-webkit-scrollbar-thumb {
+  background: hsl(200 20% 15%);
+  border-radius: 10px;
+}
