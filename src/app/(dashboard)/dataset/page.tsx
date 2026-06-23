@@ -24,7 +24,8 @@ import {
   MicOff,
   Activity,
   ShieldAlert,
-  Bell
+  Bell,
+  Clock
 } from 'lucide-react';
 
 import { Card } from '@/components/ui/card';
@@ -52,6 +53,7 @@ interface ProcedureStep {
   normalConditions: string;
   abnormalConditions: string;
   alarms: string;
+  duration: string; // Nouveau champ : Durée estimée
   imageFile?: File;
   videoFile?: File;
   imagePreview?: string;
@@ -78,7 +80,7 @@ export default function DatasetPage() {
 
   const [procTitle, setProcTitle] = useState('');
   const [procSteps, setProcSteps] = useState<ProcedureStep[]>([
-    { id: '1', title: '', description: '', normalConditions: '', abnormalConditions: '', alarms: '' }
+    { id: '1', title: '', description: '', normalConditions: '', abnormalConditions: '', alarms: '', duration: '' }
   ]);
 
   const [isUploading, setIsUploading] = useState(false);
@@ -101,6 +103,7 @@ export default function DatasetPage() {
         else if (type === 'stepNormal') newSteps[index].normalConditions = newSteps[index].normalConditions ? newSteps[index].normalConditions + ' ' + text : text;
         else if (type === 'stepAbnormal') newSteps[index].abnormalConditions = newSteps[index].abnormalConditions ? newSteps[index].abnormalConditions + ' ' + text : text;
         else if (type === 'stepAlarms') newSteps[index].alarms = newSteps[index].alarms ? newSteps[index].alarms + ' ' + text : text;
+        else if (type === 'stepDuration') newSteps[index].duration = newSteps[index].duration ? newSteps[index].duration + ' ' + text : text;
         setProcSteps(newSteps);
       }
     },
@@ -259,7 +262,7 @@ export default function DatasetPage() {
       setQuestion(''); setAnswer('');
     } else {
       if (!procTitle.trim()) return;
-      const details = procSteps.map((s, i) => `[ÉTAPE ${i + 1}] ${s.title}\nDesc: ${s.description}\nNormal: ${s.normalConditions}\nAbnormal: ${s.abnormalConditions}\nAlarms: ${s.alarms}`).join('\n');
+      const details = procSteps.map((s, i) => `[ÉTAPE ${i + 1}] ${s.title}\nDurée: ${s.duration || 'Indéfinie'}\nDesc: ${s.description}\nNormal: ${s.normalConditions}\nAbnormal: ${s.abnormalConditions}\nAlarms: ${s.alarms}`).join('\n');
       const assets = procSteps.flatMap((s, idx) => {
         const items = [];
         if (s.imageFile) items.push({ type: 'image' as const, file: s.imageFile, step: idx });
@@ -269,7 +272,7 @@ export default function DatasetPage() {
       setQaItems([{ id: Date.now().toString(), type: 'procedure', label: procTitle, details, mediaAssets: assets }, ...qaItems]);
       setProcTitle('');
       procSteps.forEach(revokeStepPreviews);
-      setProcSteps([{ id: Date.now().toString(), title: '', description: '', normalConditions: '', abnormalConditions: '', alarms: '' }]);
+      setProcSteps([{ id: Date.now().toString(), title: '', description: '', normalConditions: '', abnormalConditions: '', alarms: '', duration: '' }]);
     }
   };
 
@@ -376,7 +379,21 @@ export default function DatasetPage() {
                   {procSteps.map((step, index) => (
                     <Card key={step.id} className="p-4 border-border bg-black/30 space-y-4">
                       <div className="flex justify-between items-center border-b border-border/50 pb-2">
-                        <span className="text-[10px] font-bold font-code text-secondary">ÉTAPE {index + 1}</span>
+                        <div className="flex items-center gap-3">
+                          <span className="text-[10px] font-bold font-code text-secondary">ÉTAPE {index + 1}</span>
+                          <div className="flex items-center gap-2 relative group">
+                            <Clock className="w-3 h-3 text-muted-foreground" />
+                            <Input 
+                              placeholder="DURÉE (EX: 5 MIN)" 
+                              value={step.duration} 
+                              onChange={(e) => { const n = [...procSteps]; n[index].duration = e.target.value; setProcSteps(n); }} 
+                              className="h-6 w-32 text-[9px] font-code bg-background/20 border-none uppercase"
+                            />
+                            <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepDuration', index)} className={cn("h-5 w-5 transition-all", (activeVoiceField?.type === 'stepDuration' && activeVoiceField.index === index) ? "bg-red-500/20 text-red-500 animate-pulse" : "text-primary opacity-0 group-hover:opacity-50")} disabled={!isSupported}>
+                              {(activeVoiceField?.type === 'stepDuration' && activeVoiceField.index === index) ? <MicOff className="w-2.5 h-2.5" /> : <Mic className="w-2.5 h-2.5" />}
+                            </Button>
+                          </div>
+                        </div>
                         <Button variant="ghost" size="icon" onClick={() => deleteStep(step.id)} className="h-6 w-6 text-destructive"><Trash2 className="w-3 h-3" /></Button>
                       </div>
                       <div className="space-y-4">
@@ -400,7 +417,6 @@ export default function DatasetPage() {
                           </Button>
                         </div>
 
-                        {/* CHAMPS INDUSTRIELS RESTAURÉS */}
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                           <div className="space-y-1.5 relative group">
                             <div className="flex items-center gap-1.5 text-[9px] font-bold text-secondary uppercase mb-1">
@@ -441,7 +457,7 @@ export default function DatasetPage() {
                       </div>
                     </Card>
                   ))}
-                  <Button type="button" variant="outline" onClick={() => setProcSteps([...procSteps, { id: Date.now().toString(), title: '', description: '', normalConditions: '', abnormalConditions: '', alarms: '' }])} className="w-full border-dashed h-9 text-[10px] uppercase font-code border-primary/30 text-primary hover:bg-primary/5"><Plus className="w-3.5 h-3.5 mr-2" /> Ajouter Étape</Button>
+                  <Button type="button" variant="outline" onClick={() => setProcSteps([...procSteps, { id: Date.now().toString(), title: '', description: '', normalConditions: '', abnormalConditions: '', alarms: '', duration: '' }])} className="w-full border-dashed h-9 text-[10px] uppercase font-code border-primary/30 text-primary hover:bg-primary/5"><Plus className="w-3.5 h-3.5 mr-2" /> Ajouter Étape</Button>
                 </div>
               )}
               <div className="flex justify-end pt-4 border-t border-border/50">
