@@ -94,22 +94,32 @@ export default function DatasetPage() {
 
   const { isListening, isSupported, startListening, stopListening, speak } = useVoice({
     onResult: (text) => {
+      console.log(`[DATASET_AUDIT] 📥 Donnée vocale reçue : "${text}"`);
+      
       const field = activeVoiceFieldRef.current;
-      if (!field) return;
+      if (!field) {
+        console.warn(`[DATASET_AUDIT] ⚠️ Aucun champ cible identifié dans activeVoiceFieldRef. Annulation.`);
+        return;
+      }
       
       const cleanText = text.trim();
       if (!cleanText) return;
 
       const { type, index } = field;
+      console.log(`[DATASET_AUDIT] 🎯 Cible détectée : type=${type}, index=${index ?? 'N/A'}`);
 
-      // Injection dynamique du texte dans les bons setters
+      // Injection dynamique du texte dans les bons setters via formes fonctionnelles (pour garantir l'immuabilité)
       if (type === 'question') {
+        console.log(`[DATASET_AUDIT] 📝 Mise à jour champ : SYMPTÔME (Q/R)`);
         setQuestion(prev => prev ? `${prev} ${cleanText}` : cleanText);
       } else if (type === 'answer') {
+        console.log(`[DATASET_AUDIT] 📝 Mise à jour champ : RÉSOLUTION (Q/R)`);
         setAnswer(prev => prev ? `${prev} ${cleanText}` : cleanText);
       } else if (type === 'procTitle') {
+        console.log(`[DATASET_AUDIT] 📝 Mise à jour champ : TITRE_PROCEDURE`);
         setProcTitle(prev => prev ? `${prev} ${cleanText}` : cleanText);
       } else if (typeof index === 'number') {
+        console.log(`[DATASET_AUDIT] 📝 Mise à jour champ : PROC_STEP index=${index} type=${type}`);
         setProcSteps(prevSteps => {
           return prevSteps.map((step, i) => {
             if (i !== index) return step;
@@ -137,19 +147,26 @@ export default function DatasetPage() {
     const fieldId = { type, index };
     const isSameField = isListening && activeVoiceField?.type === type && activeVoiceField?.index === index;
 
+    console.log(`[DATASET_AUDIT] 🔘 Toggle micro pour :`, fieldId);
+
     if (isSameField) {
+      console.log(`[DATASET_AUDIT] 🔘 Arrêt manuel du micro.`);
       stopListening();
       setActiveVoiceField(null);
       activeVoiceFieldRef.current = null;
     } else {
-      // On s'assure que le micro est coupé avant de changer de champ
-      if (isListening) stopListening();
+      if (isListening) {
+        console.log(`[DATASET_AUDIT] 🔘 Changement de champ détecté. Reset session.`);
+        stopListening();
+      }
       
       setActiveVoiceField(fieldId);
       activeVoiceFieldRef.current = fieldId;
       
-      // Petit délai pour laisser le temps à l'API Speech de se réinitialiser
-      setTimeout(() => startListening(), 150);
+      console.log(`[DATASET_AUDIT] 🔘 Initialisation capture pour cible :`, activeVoiceFieldRef.current);
+      
+      // Petit délai pour laisser le temps à l'API Speech de se réinitialiser proprement
+      setTimeout(() => startListening(), 200);
     }
   };
 

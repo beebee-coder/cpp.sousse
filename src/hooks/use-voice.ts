@@ -14,7 +14,6 @@ export function useVoice(options: VoiceOptions = {}) {
   const [isSupported, setIsSupported] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  // Utilisation d'une ref pour onResult afin d'éviter les closures obsolètes
   const onResultRef = useRef(options.onResult);
   onResultRef.current = options.onResult;
 
@@ -37,20 +36,35 @@ export function useVoice(options: VoiceOptions = {}) {
 
         recognition.onresult = (event: any) => {
           const transcript = event.results[event.results.length - 1][0].transcript;
-          if (transcript && onResultRef.current) {
-            onResultRef.current(transcript.trim());
+          const cleanText = transcript.trim();
+          
+          console.log(`[VOICE_HOOK] 🎙️ Texte détecté par le navigateur : "${cleanText}"`);
+          
+          if (cleanText && onResultRef.current) {
+            console.log(`[VOICE_HOOK] 📤 Envoi du texte au composant parent...`);
+            onResultRef.current(cleanText);
           }
         };
 
-        recognition.onstart = () => setIsListening(true);
-        recognition.onend = () => setIsListening(false);
+        recognition.onstart = () => {
+          console.log(`[VOICE_HOOK] 🟢 Microphone ACTIF (Enregistrement en cours...)`);
+          setIsListening(true);
+        };
+
+        recognition.onend = () => {
+          console.log(`[VOICE_HOOK] 🔴 Microphone INACTIF (Fin de session)`);
+          setIsListening(false);
+        };
+
         recognition.onerror = (event: any) => {
+          console.error(`[VOICE_HOOK] ❌ Erreur API Speech :`, event.error);
           if (event.error !== 'no-speech' && event.error !== 'aborted') {
             setError(event.error);
           }
           setIsListening(false);
         };
       } catch (e) {
+        console.error(`[VOICE_HOOK] ❌ Échec initialisation SpeechRecognition :`, e);
         setIsSupported(false);
       }
     }
@@ -64,10 +78,15 @@ export function useVoice(options: VoiceOptions = {}) {
 
   const startListening = useCallback(() => {
     setError(null);
-    if (!recognitionRef.current) return;
+    if (!recognitionRef.current) {
+      console.warn(`[VOICE_HOOK] ⚠️ Tentative de démarrage sans instance recognition.`);
+      return;
+    }
     try {
       recognitionRef.current.start();
-    } catch (e) {}
+    } catch (e) {
+      console.error(`[VOICE_HOOK] ⚠️ Erreur lors du start() :`, e);
+    }
   }, []);
 
   const stopListening = useCallback(() => {
