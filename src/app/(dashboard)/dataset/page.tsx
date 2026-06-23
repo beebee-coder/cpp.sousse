@@ -132,6 +132,7 @@ export default function DatasetPage() {
   useEffect(() => {
     setMounted(true);
     return () => {
+      // Nettoyage final de tous les blobs pour éviter les fuites mémoire
       procSteps.forEach(s => {
         if (s.imagePreview) URL.revokeObjectURL(s.imagePreview);
         if (s.videoPreview) URL.revokeObjectURL(s.videoPreview);
@@ -139,11 +140,16 @@ export default function DatasetPage() {
     };
   }, []);
 
-  useEffect(() => {
-    if (cameraOpen && cameraStream && videoRef.current) {
-      videoRef.current.srcObject = cameraStream;
-    }
-  }, [cameraOpen, cameraStream]);
+  const revokeStepPreviews = (step: ProcedureStep) => {
+    if (step.imagePreview) URL.revokeObjectURL(step.imagePreview);
+    if (step.videoPreview) URL.revokeObjectURL(step.videoPreview);
+  };
+
+  const deleteStep = (id: string) => {
+    const stepToDelete = procSteps.find(s => s.id === id);
+    if (stepToDelete) revokeStepPreviews(stepToDelete);
+    setProcSteps(prev => prev.filter(s => s.id !== id));
+  };
 
   const startCamera = async () => {
     setCameraError(null);
@@ -175,6 +181,12 @@ export default function DatasetPage() {
     else stopCamera();
     return () => stopCamera();
   }, [cameraOpen, cameraType]);
+
+  useEffect(() => {
+    if (cameraOpen && cameraStream && videoRef.current) {
+      videoRef.current.srcObject = cameraStream;
+    }
+  }, [cameraOpen, cameraStream]);
 
   const processCapturedFile = async (file: File, index: number, type: 'image' | 'video') => {
     const newSteps = [...procSteps];
@@ -220,7 +232,8 @@ export default function DatasetPage() {
   const toggleRecording = () => {
     if (!isRecording) {
       recordedChunksRef.current = [];
-      const mediaRecorder = new MediaRecorder(cameraStream!);
+      if (!cameraStream) return;
+      const mediaRecorder = new MediaRecorder(cameraStream);
       mediaRecorderRef.current = mediaRecorder;
       mediaRecorder.ondataavailable = (e) => recordedChunksRef.current.push(e.data);
       mediaRecorder.onstop = async () => {
@@ -254,7 +267,9 @@ export default function DatasetPage() {
       });
       setQaItems([{ id: Date.now().toString(), type: 'procedure', label: procTitle, details, mediaAssets: assets }, ...qaItems]);
       setProcTitle('');
-      setProcSteps([{ id: '1', title: '', description: '', normalConditions: '', abnormalConditions: '', alarms: '' }]);
+      // Nettoyer les anciens blobs avant de réinitialiser
+      procSteps.forEach(revokeStepPreviews);
+      setProcSteps([{ id: Date.now().toString(), title: '', description: '', normalConditions: '', abnormalConditions: '', alarms: '' }]);
     }
   };
 
@@ -264,8 +279,6 @@ export default function DatasetPage() {
     const timestamp = new Date().toLocaleTimeString();
     
     try {
-      console.log(`🚀 [${timestamp}] [WEB_UPLINK] Transformation en JSON et transfert...`);
-      
       const uploadItems = [];
       
       for (const item of qaItems) {
@@ -398,7 +411,7 @@ export default function DatasetPage() {
                     <Card key={step.id} className="p-4 border-border bg-black/30 space-y-4">
                       <div className="flex justify-between items-center border-b border-border/50 pb-2">
                         <span className="text-[10px] font-bold font-code text-secondary">ÉTAPE {index + 1}</span>
-                        <Button variant="ghost" size="icon" onClick={() => setProcSteps(procSteps.filter(s => s.id !== step.id))} className="h-6 w-6 text-destructive"><Trash2 className="w-3 h-3" /></Button>
+                        <Button variant="ghost" size="icon" onClick={() => deleteStep(step.id)} className="h-6 w-6 text-destructive"><Trash2 className="w-3 h-3" /></Button>
                       </div>
                       <div className="space-y-4">
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

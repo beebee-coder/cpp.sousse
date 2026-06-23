@@ -24,35 +24,39 @@ export function useVoice(options: VoiceOptions = {}) {
     
     if (SpeechRecognition) {
       setIsSupported(true);
-      const recognition = new SpeechRecognition();
-      recognitionRef.current = recognition;
-      
-      recognition.continuous = false;
-      recognition.interimResults = false;
-      recognition.lang = options.lang || 'fr-FR';
-
-      recognition.onresult = (event: any) => {
-        const text = event.results[0][0].transcript;
-        if (options.onResult) options.onResult(text);
-      };
-
-      recognition.onend = () => {
-        setIsListening(false);
-        if (options.onEnd) options.onEnd();
-      };
-
-      recognition.onerror = (event: any) => {
-        // "not-allowed" signifie que l'utilisateur ou le navigateur bloque le micro
-        // On évite console.error pour ne pas polluer les logs de dev en cas de refus volontaire
-        const errorMsg = event.error === 'not-allowed' 
-          ? "Accès micro refusé. Vérifiez vos paramètres navigateur." 
-          : event.error;
+      try {
+        const recognition = new SpeechRecognition();
+        recognitionRef.current = recognition;
         
-        setError(errorMsg);
-        setIsListening(false);
-        
-        if (options.onError) options.onError(errorMsg);
-      };
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        recognition.lang = options.lang || 'fr-FR';
+
+        recognition.onresult = (event: any) => {
+          const text = event.results[0][0].transcript;
+          if (options.onResult) options.onResult(text);
+        };
+
+        recognition.onend = () => {
+          setIsListening(false);
+          if (options.onEnd) options.onEnd();
+        };
+
+        recognition.onerror = (event: any) => {
+          // "not-allowed" signifie que l'utilisateur ou le navigateur bloque le micro
+          const errorMsg = event.error === 'not-allowed' 
+            ? "Accès micro refusé. Vérifiez vos paramètres navigateur." 
+            : event.error;
+          
+          setError(errorMsg);
+          setIsListening(false);
+          
+          if (options.onError) options.onError(errorMsg);
+        };
+      } catch (e) {
+        console.warn("[VOICE] Échec initialisation API Speech.");
+        setIsSupported(false);
+      }
     }
 
     return () => {
@@ -60,7 +64,7 @@ export function useVoice(options: VoiceOptions = {}) {
         try {
           recognitionRef.current.stop();
         } catch (e) {
-          // Ignorer les erreurs d'arrêt si déjà inactif
+          // Ignorer
         }
       }
     };
@@ -74,7 +78,6 @@ export function useVoice(options: VoiceOptions = {}) {
       recognitionRef.current.start();
       setIsListening(true);
     } catch (e: any) {
-      // Si déjà en train d'écouter, on ignore l'erreur d'état
       if (e.name !== 'InvalidStateError') {
         setError(e.message);
       }
