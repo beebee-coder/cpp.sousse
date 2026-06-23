@@ -19,6 +19,7 @@ interface VoiceState {
 /**
  * Hook de reconnaissance vocale ultra-stable pour environnement industriel.
  * Gère les permissions, les interruptions et les politiques de sécurité modernes.
+ * Optimisé pour éviter les violations de politique "unload" et les boucles infinies.
  */
 export function useVoice(options: VoiceOptions = {}) {
   const [state, setState] = useState<VoiceState>({
@@ -29,9 +30,10 @@ export function useVoice(options: VoiceOptions = {}) {
 
   const recognitionRef = useRef<any>(null);
   const isManuallyStopped = useRef(false);
-  const optionsRef = useRef(options);
   const hasPermissionError = useRef(false);
-
+  
+  // Utilisation de références pour les callbacks afin d'éviter les re-liaisons
+  const optionsRef = useRef(options);
   useEffect(() => {
     optionsRef.current = options;
   }, [options]);
@@ -71,6 +73,7 @@ export function useVoice(options: VoiceOptions = {}) {
     recognition.onend = () => {
       setState(prev => ({ ...prev, isListening: false }));
       
+      // Sécurité : Ne pas redémarrer si erreur de permission ou arrêt manuel
       const shouldRestart = optionsRef.current.autoRestart && 
                            !isManuallyStopped.current && 
                            !hasPermissionError.current;
@@ -78,7 +81,9 @@ export function useVoice(options: VoiceOptions = {}) {
       if (shouldRestart) {
         try {
           recognition.start();
-        } catch (e) {}
+        } catch (e) {
+          console.warn("[VOICE_HOOK] Échec redémarrage automatique.");
+        }
       }
     };
 
@@ -88,7 +93,9 @@ export function useVoice(options: VoiceOptions = {}) {
 
       if (err === 'not-allowed' || err === 'service-not-allowed') {
         hasPermissionError.current = true;
-        console.warn(`[VOICE_HOOK] ⚠️ Permission microphone refusée ou indisponible.`);
+        console.warn(`[VOICE_HOOK] ⚠️ Permission microphone refusée ou indisponible (SSL requis pour Speech API).`);
+      } else {
+        console.warn(`[VOICE_HOOK] ❌ Erreur technique : ${err}`);
       }
       
       setState(prev => ({ ...prev, error: err, isListening: false }));
@@ -98,6 +105,7 @@ export function useVoice(options: VoiceOptions = {}) {
 
     return () => {
       if (recognitionRef.current) {
+        // Nettoyage propre sans utiliser "unload"
         recognitionRef.current.onstart = null;
         recognitionRef.current.onresult = null;
         recognitionRef.current.onend = null;
@@ -116,7 +124,7 @@ export function useVoice(options: VoiceOptions = {}) {
       try {
         recognitionRef.current.start();
       } catch (e) {
-        console.warn("[VOICE_HOOK] Échec démarrage.");
+        console.warn("[VOICE_HOOK] Impossible de démarrer le microphone.");
       }
     }
   }, []);

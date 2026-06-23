@@ -1,12 +1,16 @@
 
-/* VisioNode Industrial Theme for Code Rendering */
-:root {
-    --vscode-editor-background: #0d1117;
-    --vscode-editor-foreground: #c9d1d9;
-    --vscode-editorLineNumber-foreground: #484f58;
-    --vscode-editor-selectionBackground: #1f6feb44;
+/* VisioNode Dark Industrial Code Theme */
+pre, code {
+  color: #d1d5db;
+  background-color: transparent !important;
+  font-family: 'Source Code Pro', monospace;
 }
-.vscode-dark {
-    background-color: var(--vscode-editor-background);
-    color: var(--vscode-editor-foreground);
-}
+.token.comment, .token.prolog, .token.doctype, .token.cdata { color: #6b7280; }
+.token.punctuation { color: #9ca3af; }
+.token.namespace { opacity: .7; }
+.token.property, .token.tag, .token.boolean, .token.number, .token.constant, .token.symbol, .token.deleted { color: #32b5d4; }
+.token.selector, .token.attr-name, .token.string, .token.char, .token.builtin, .token.inserted { color: #2eb892; }
+.token.operator, .token.entity, .token.url, .language-css .token.string, .style .token.string { color: #e5e7eb; }
+.token.atrule, .token.attr-value, .token.keyword { color: #32b5d4; }
+.token.function, .token.class-name { color: #2eb892; }
+.token.regex, .token.important, .token.variable { color: #f59e0b; }

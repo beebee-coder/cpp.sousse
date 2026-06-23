@@ -54,8 +54,9 @@ export default function DatasetPage() {
   ]);
   const [isUploading, setIsUploading] = useState(false);
   const [isGuideActive, setIsGuideActive] = useState(false);
-  const [activeUIField, setActiveUIField] = useState<{ type: string, index?: number } | null>(null);
   
+  // L'ordre des hooks est crucial : TOUS les hooks doivent être au sommet
+  const [activeUIField, setActiveUIField] = useState<{ type: string, index?: number } | null>(null);
   const activeVoiceFieldRef = useRef<{ type: string, index?: number } | null>(null);
 
   useEffect(() => {
@@ -102,7 +103,7 @@ export default function DatasetPage() {
     if (voice.error === 'not-allowed') {
       toast({
         title: "Microphone Bloqué",
-        description: "Accès refusé. Vérifiez les permissions de votre navigateur.",
+        description: "Accès refusé. SSL requis ou vérifiez les permissions du navigateur.",
         variant: "destructive"
       });
     }
