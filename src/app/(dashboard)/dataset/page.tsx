@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { 
   Database, 
   Plus, 
@@ -36,7 +36,7 @@ interface QAItem {
 }
 
 export default function DatasetPage() {
-  // 1. TOUS LES HOOKS AU SOMMET (ORDRE CONSTANT)
+  // 1. TOUS LES HOOKS AU SOMMET (ORDRE CONSTANT ET INCONDITIONNEL)
   const { toast } = useToast();
   const [mounted, setMounted] = useState(false);
   const [mode, setMode] = useState<'qa' | 'procedure'>('qa');
@@ -51,23 +51,23 @@ export default function DatasetPage() {
   const [isGuideActive, setIsGuideActive] = useState(false);
   const [activeUIField, setActiveUIField] = useState<{ type: string, index?: number } | null>(null);
   
-  // Cette Ref permet au callback vocal de savoir où écrire sans re-render
+  // Cette Ref permet au moteur vocal de savoir où écrire sans dépendre du cycle de rendu
   const targetFieldRef = useRef<{ type: string, index?: number } | null>(null);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   // Synchronisation de la Ref avec l'état UI
   useEffect(() => {
     targetFieldRef.current = activeUIField;
   }, [activeUIField]);
 
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   // Callback de traitement des résultats vocaux
   const handleVoiceResult = useCallback((text: string) => {
     const target = targetFieldRef.current;
     if (!target) {
-      console.warn(`[DATASET_AUDIT] ⚠️ Aucune cible pour: "${text}"`);
+      console.warn(`[DATASET_AUDIT] ⚠️ Aucune cible active pour l'injection : "${text}"`);
       return;
     }
 
@@ -102,7 +102,7 @@ export default function DatasetPage() {
     if (voice.error === 'not-allowed') {
       toast({
         title: "Microphone Bloqué",
-        description: "Vérifiez les permissions de votre navigateur.",
+        description: "Veuillez autoriser l'accès au microphone dans votre navigateur.",
         variant: "destructive"
       });
     }
@@ -120,7 +120,7 @@ export default function DatasetPage() {
       setTimeout(() => {
         voice.startListening();
         if (isGuideActive) {
-          voice.speak(type === 'question' ? "Décrivez le symptôme." : "Précisez la solution.");
+          voice.speak(type === 'question' ? "Décrivez le symptôme." : "Décrivez la résolution.");
         }
       }, 100);
     }
@@ -139,7 +139,7 @@ export default function DatasetPage() {
       setProcTitle('');
       setProcSteps([{ id: Date.now().toString(), title: '', duration: '' }]);
     }
-    toast({ title: "Ajouté à la file locale" });
+    toast({ title: "Donnée ajoutée à la file d'attente." });
   };
 
   const handleFinalSubmit = async () => {
@@ -155,7 +155,7 @@ export default function DatasetPage() {
         createdAt: new Date()
       }));
       await apiClient.post('/api/sync/upload', { userId: 'admin', projectId: 'project-001', items });
-      toast({ title: "Synchronisation Réussie", description: "Données transmises au registre cloud." });
+      toast({ title: "Synchronisation Réussie", description: "Le registre cloud a été mis à jour." });
       setQaItems([]);
     } catch (e) {
       toast({ title: "Échec Synchronisation", variant: "destructive" });
@@ -164,6 +164,7 @@ export default function DatasetPage() {
     }
   };
 
+  // 2. RENDU CONDITIONNEL DANS LE JSX POUR RESPECTER LES HOOKS
   return (
     <div className="flex flex-col lg:flex-row h-screen bg-background overflow-hidden">
       <DashboardSidebar />
@@ -179,7 +180,7 @@ export default function DatasetPage() {
               <div className="flex items-center gap-4">
                 <div className="lg:hidden w-10" />
                 <Database className="w-4 h-4 text-primary" />
-                <span className="font-headline font-bold text-xs uppercase tracking-widest text-primary">RAG Forge</span>
+                <span className="font-headline font-bold text-xs uppercase tracking-widest text-primary">Capture RAG</span>
               </div>
 
               <div className="flex items-center gap-4">
@@ -190,7 +191,7 @@ export default function DatasetPage() {
                   className={cn("h-9 text-[9px] font-code uppercase", isGuideActive ? "text-secondary" : "text-muted-foreground")}
                 >
                   <Sparkles className="w-3.5 h-3.5 mr-2" />
-                  Guide IA {isGuideActive ? "ON" : "OFF"}
+                  Audit Guidé {isGuideActive ? "ON" : "OFF"}
                 </Button>
                 <div className="flex bg-muted/30 p-1 rounded-sm border border-border">
                   <button onClick={() => setMode('qa')} className={cn("px-3 py-1 text-[9px] uppercase rounded-sm", mode === 'qa' ? "bg-primary text-primary-foreground" : "text-muted-foreground")}>FAQ</button>

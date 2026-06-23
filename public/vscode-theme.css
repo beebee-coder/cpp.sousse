@@ -1,9 +1,9 @@
-/* Minimal VSCode Dark Theme for satisfying asset dependencies */
-:root {
-  --vscode-editor-background: #0d1117;
-  --vscode-editor-foreground: #c9d1d9;
-}
+/* Thème VS Code sombre pour les composants de code industriel */
 .vscode-dark {
-  background-color: var(--vscode-editor-background);
-  color: var(--vscode-editor-foreground);
+  background-color: #0d1117;
+  color: #c9d1d9;
 }
+.vscode-keyword { color: #ff7b72; }
+.vscode-string { color: #a5d6ff; }
+.vscode-comment { color: #8b949e; }
+.vscode-function { color: #d2a8ff; }

@@ -16,9 +16,8 @@ interface VoiceState {
 }
 
 /**
- * Hook de reconnaissance vocale ultra-stable.
- * Utilise des références pour les callbacks afin d'éviter les ruptures de liaison 
- * pendant les cycles de rendu de React.
+ * Hook de reconnaissance vocale ultra-stable pour environnement industriel.
+ * Utilise des références immuables pour garantir l'ordre des hooks et la persistance des rappels.
  */
 export function useVoice(options: VoiceOptions = {}) {
   const [state, setState] = useState<VoiceState>({
@@ -29,9 +28,9 @@ export function useVoice(options: VoiceOptions = {}) {
 
   const recognitionRef = useRef<any>(null);
   const isManuallyStopped = useRef(false);
-  
-  // Utilisation de Refs pour les options pour éviter de redéclencher useEffect inutilement
   const optionsRef = useRef(options);
+
+  // Mise à jour de la référence des options sans déclencher de re-rendu
   useEffect(() => {
     optionsRef.current = options;
   }, [options]);
@@ -53,15 +52,15 @@ export function useVoice(options: VoiceOptions = {}) {
 
     recognition.onstart = () => {
       setState(prev => ({ ...prev, isListening: true, error: null }));
-      console.log('[VOICE_HOOK] 🎙️ Session démarrée');
+      console.log('[VOICE_HOOK] 🎙️ Session active.');
     };
 
     recognition.onresult = (event: any) => {
       const lastIndex = event.resultIndex;
       const segment = event.results[lastIndex][0].transcript;
       
-      if (segment.trim()) {
-        console.log(`[VOICE_HOOK] 🗣️ Texte capturé: "${segment.trim()}"`);
+      if (segment && segment.trim()) {
+        console.log(`[VOICE_HOOK] 🗣️ Texte capturé : "${segment.trim()}"`);
         if (optionsRef.current.onResult) {
           optionsRef.current.onResult(segment.trim());
         }
@@ -74,18 +73,21 @@ export function useVoice(options: VoiceOptions = {}) {
         try {
           recognition.start();
         } catch (e) {
-          // Erreur ignorée (déjà démarré)
+          // Déjà démarré, erreur ignorée
         }
       }
     };
 
     recognition.onerror = (event: any) => {
-      console.error(`[VOICE_HOOK] ❌ Erreur : ${event.error}`);
-      setState(prev => ({ ...prev, error: event.error, isListening: false }));
+      if (event.error !== 'no-speech') {
+        console.error(`[VOICE_HOOK] ❌ Erreur système : ${event.error}`);
+        setState(prev => ({ ...prev, error: event.error, isListening: false }));
+      }
     };
 
     recognitionRef.current = recognition;
 
+    // Nettoyage agressif pour respecter les politiques de sécurité (unload protection)
     return () => {
       if (recognitionRef.current) {
         recognitionRef.current.onstart = null;
@@ -105,7 +107,7 @@ export function useVoice(options: VoiceOptions = {}) {
       try {
         recognitionRef.current.start();
       } catch (e) {
-        console.warn('[VOICE_HOOK] Micro déjà actif');
+        console.warn('[VOICE_HOOK] Microphone déjà en cours d\'utilisation.');
       }
     }
   }, []);
