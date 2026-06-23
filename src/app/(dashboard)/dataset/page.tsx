@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from 'react';
@@ -88,87 +89,65 @@ export default function DatasetPage() {
   const [isGuideActive, setIsGuideActive] = useState(false);
   const [lastGuidedField, setLastGuidedField] = useState<string>('');
   
-  // Gestion critique de la voix via Ref pour éviter les closures React obsolètes
-  const [activeVoiceField, setActiveVoiceField] = useState<{ type: string, index?: number } | null>(null);
+  // Cible vocale actuelle stockée dans une Ref pour être accessible instantanément par le moteur Speech
   const activeVoiceFieldRef = useRef<{ type: string, index?: number } | null>(null);
+  const [activeVoiceField, setActiveVoiceField] = useState<{ type: string, index?: number } | null>(null);
 
   const { isListening, isSupported, startListening, stopListening, speak } = useVoice({
     onResult: (text) => {
-      console.log(`[DATASET_AUDIT] 📥 Donnée vocale reçue : "${text}"`);
-      
       const field = activeVoiceFieldRef.current;
-      if (!field) {
-        console.warn(`[DATASET_AUDIT] ⚠️ Aucun champ cible identifié dans activeVoiceFieldRef. Annulation.`);
-        return;
-      }
+      console.log(`[DATASET_AUDIT] 🎯 Traitement résultat pour :`, field);
       
+      if (!field) return;
       const cleanText = text.trim();
-      if (!cleanText) return;
-
-      const { type, index } = field;
-      console.log(`[DATASET_AUDIT] 🎯 Cible détectée : type=${type}, index=${index ?? 'N/A'}`);
-
-      // Injection dynamique du texte dans les bons setters via formes fonctionnelles (pour garantir l'immuabilité)
-      if (type === 'question') {
-        console.log(`[DATASET_AUDIT] 📝 Mise à jour champ : SYMPTÔME (Q/R)`);
+      
+      if (field.type === 'question') {
         setQuestion(prev => prev ? `${prev} ${cleanText}` : cleanText);
-      } else if (type === 'answer') {
-        console.log(`[DATASET_AUDIT] 📝 Mise à jour champ : RÉSOLUTION (Q/R)`);
+      } else if (field.type === 'answer') {
         setAnswer(prev => prev ? `${prev} ${cleanText}` : cleanText);
-      } else if (type === 'procTitle') {
-        console.log(`[DATASET_AUDIT] 📝 Mise à jour champ : TITRE_PROCEDURE`);
+      } else if (field.type === 'procTitle') {
         setProcTitle(prev => prev ? `${prev} ${cleanText}` : cleanText);
-      } else if (typeof index === 'number') {
-        console.log(`[DATASET_AUDIT] 📝 Mise à jour champ : PROC_STEP index=${index} type=${type}`);
-        setProcSteps(prevSteps => {
-          return prevSteps.map((step, i) => {
-            if (i !== index) return step;
-            const updated = { ...step };
-            if (type === 'stepTitle') updated.title = updated.title ? `${updated.title} ${cleanText}` : cleanText;
-            else if (type === 'stepDesc') updated.description = updated.description ? `${updated.description} ${cleanText}` : cleanText;
-            else if (type === 'stepNormal') updated.normalConditions = updated.normalConditions ? `${updated.normalConditions} ${cleanText}` : cleanText;
-            else if (type === 'stepAbnormal') updated.abnormalConditions = updated.abnormalConditions ? `${updated.abnormalConditions} ${cleanText}` : cleanText;
-            else if (type === 'stepAlarms') updated.alarms = updated.alarms ? `${updated.alarms} ${cleanText}` : cleanText;
-            else if (type === 'stepDuration') updated.duration = updated.duration ? `${updated.duration} ${cleanText}` : cleanText;
-            return updated;
-          });
-        });
+      } else if (typeof field.index === 'number') {
+        setProcSteps(prev => prev.map((step, i) => {
+          if (i !== field.index) return step;
+          const s = { ...step };
+          if (field.type === 'stepTitle') s.title = s.title ? `${s.title} ${cleanText}` : cleanText;
+          else if (field.type === 'stepDesc') s.description = s.description ? `${s.description} ${cleanText}` : cleanText;
+          else if (field.type === 'stepNormal') s.normalConditions = s.normalConditions ? `${s.normalConditions} ${cleanText}` : cleanText;
+          else if (field.type === 'stepAbnormal') s.abnormalConditions = s.abnormalConditions ? `${s.abnormalConditions} ${cleanText}` : cleanText;
+          else if (field.type === 'stepAlarms') s.alarms = s.alarms ? `${s.alarms} ${cleanText}` : cleanText;
+          else if (field.type === 'stepDuration') s.duration = s.duration ? `${s.duration} ${cleanText}` : cleanText;
+          return s;
+        }));
       }
     }
   });
+
+  const toggleVoice = (type: string, index?: number) => {
+    const target = { type, index };
+    const isSame = isListening && activeVoiceField?.type === type && activeVoiceField?.index === index;
+
+    if (isSame) {
+      stopListening();
+      setActiveVoiceField(null);
+      activeVoiceFieldRef.current = null;
+    } else {
+      if (isListening) stopListening();
+      
+      // Mise à jour immédiate de la Ref avant le démarrage
+      activeVoiceFieldRef.current = target;
+      setActiveVoiceField(target);
+      
+      console.log(`[DATASET_AUDIT] 🎙️ Activation micro pour :`, target);
+      setTimeout(() => startListening(), 150);
+    }
+  };
 
   const triggerGuidance = useCallback((fieldId: string, instruction: string) => {
     if (!isGuideActive || lastGuidedField === fieldId) return;
     setLastGuidedField(fieldId);
     speak(instruction);
   }, [isGuideActive, lastGuidedField, speak]);
-
-  const toggleVoice = (type: string, index?: number) => {
-    const fieldId = { type, index };
-    const isSameField = isListening && activeVoiceField?.type === type && activeVoiceField?.index === index;
-
-    console.log(`[DATASET_AUDIT] 🔘 Toggle micro pour :`, fieldId);
-
-    if (isSameField) {
-      console.log(`[DATASET_AUDIT] 🔘 Arrêt manuel du micro.`);
-      stopListening();
-      setActiveVoiceField(null);
-      activeVoiceFieldRef.current = null;
-    } else {
-      if (isListening) {
-        console.log(`[DATASET_AUDIT] 🔘 Changement de champ détecté. Reset session.`);
-        stopListening();
-      }
-      
-      setActiveVoiceField(fieldId);
-      activeVoiceFieldRef.current = fieldId;
-      
-      console.log(`[DATASET_AUDIT] 🔘 Initialisation capture pour cible :`, activeVoiceFieldRef.current);
-      
-      // Petit délai pour laisser le temps à l'API Speech de se réinitialiser proprement
-      setTimeout(() => startListening(), 200);
-    }
-  };
 
   const [cameraOpen, setCameraModalOpen] = useState(false);
   const [cameraType, setCameraType] = useState<'image' | 'video'>('image');
@@ -187,6 +166,7 @@ export default function DatasetPage() {
   useEffect(() => {
     setMounted(true);
     return () => {
+      // Nettoyage systématique pour éviter les violations de mémoire/politique
       procSteps.forEach(s => {
         if (s.imagePreview) URL.revokeObjectURL(s.imagePreview);
         if (s.videoPreview) URL.revokeObjectURL(s.videoPreview);
@@ -373,11 +353,11 @@ export default function DatasetPage() {
     }
   };
 
-  if (!mounted) return null;
-
   const isFieldActive = (type: string, index?: number) => {
     return isListening && activeVoiceField?.type === type && activeVoiceField?.index === index;
   };
+
+  if (!mounted) return null;
 
   return (
     <div className="flex flex-col lg:flex-row h-screen bg-background overflow-hidden">

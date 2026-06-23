@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -14,6 +15,8 @@ export function useVoice(options: VoiceOptions = {}) {
   const [isSupported, setIsSupported] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
+  // Utilisation d'une Ref pour le callback afin de toujours avoir la version la plus récente
+  // sans recréer l'instance SpeechRecognition
   const onResultRef = useRef(options.onResult);
   onResultRef.current = options.onResult;
 
@@ -35,45 +38,55 @@ export function useVoice(options: VoiceOptions = {}) {
         recognition.lang = options.lang || 'fr-FR';
 
         recognition.onresult = (event: any) => {
-          // On récupère uniquement les nouveaux résultats depuis le dernier index
-          const resultIndex = event.resultIndex;
-          const transcript = event.results[resultIndex][0].transcript;
-          const cleanText = transcript.trim();
+          // Récupération sécurisée du dernier segment transcrit
+          const results = event.results;
+          const lastResult = results[results.length - 1];
           
-          console.log(`[VOICE_HOOK] 🎙️ Texte détecté par le navigateur : "${cleanText}"`);
-          
-          if (cleanText && onResultRef.current) {
-            console.log(`[VOICE_HOOK] 📤 Envoi du texte au composant parent...`);
-            onResultRef.current(cleanText);
+          if (lastResult.isFinal) {
+            const transcript = lastResult[0].transcript;
+            const cleanText = transcript.trim();
+            
+            console.log(`[VOICE_HOOK] 🎙️ Texte détecté : "${cleanText}"`);
+            
+            if (cleanText && onResultRef.current) {
+              onResultRef.current(cleanText);
+            }
           }
         };
 
         recognition.onstart = () => {
-          console.log(`[VOICE_HOOK] 🟢 Microphone ACTIF (Enregistrement en cours...)`);
+          console.log(`[VOICE_HOOK] 🟢 Session active`);
           setIsListening(true);
         };
 
         recognition.onend = () => {
-          console.log(`[VOICE_HOOK] 🔴 Microphone INACTIF (Fin de session)`);
+          console.log(`[VOICE_HOOK] 🔴 Session terminée`);
           setIsListening(false);
         };
 
         recognition.onerror = (event: any) => {
-          console.error(`[VOICE_HOOK] ❌ Erreur API Speech :`, event.error);
+          console.error(`[VOICE_HOOK] ❌ Erreur :`, event.error);
           if (event.error !== 'no-speech' && event.error !== 'aborted') {
             setError(event.error);
           }
           setIsListening(false);
         };
       } catch (e) {
-        console.error(`[VOICE_HOOK] ❌ Échec initialisation SpeechRecognition :`, e);
+        console.error(`[VOICE_HOOK] ❌ Échec init :`, e);
         setIsSupported(false);
       }
     }
 
     return () => {
+      // Nettoyage strict sans déclencher d'événements de déchargement interdits
       if (recognitionRef.current) {
-        recognitionRef.current.stop();
+        recognitionRef.current.onresult = null;
+        recognitionRef.current.onend = null;
+        recognitionRef.current.onerror = null;
+        recognitionRef.current.onstart = null;
+        try {
+          recognitionRef.current.stop();
+        } catch (e) {}
       }
     };
   }, [options.lang]);
@@ -81,19 +94,21 @@ export function useVoice(options: VoiceOptions = {}) {
   const startListening = useCallback(() => {
     setError(null);
     if (!recognitionRef.current) {
-      console.warn(`[VOICE_HOOK] ⚠️ Tentative de démarrage sans instance recognition.`);
+      console.warn(`[VOICE_HOOK] ⚠️ Instance manquante`);
       return;
     }
     try {
       recognitionRef.current.start();
     } catch (e) {
-      console.error(`[VOICE_HOOK] ⚠️ Erreur lors du start() :`, e);
+      // Si déjà démarré, on ignore
     }
   }, []);
 
   const stopListening = useCallback(() => {
     if (recognitionRef.current) {
-      recognitionRef.current.stop();
+      try {
+        recognitionRef.current.stop();
+      } catch (e) {}
     }
     setIsListening(false);
   }, []);
