@@ -14,7 +14,6 @@ export function useVoice(options: VoiceOptions = {}) {
   const [isSupported, setIsSupported] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  // Utilisation de Refs pour éviter de recréer l'objet recognition à chaque changement de state parent
   const optionsRef = useRef(options);
   optionsRef.current = options;
 
@@ -36,13 +35,18 @@ export function useVoice(options: VoiceOptions = {}) {
         recognition.lang = options.lang || 'fr-FR';
 
         recognition.onresult = (event: any) => {
-          // Récupération du dernier résultat transcrit
-          const results = event.results;
-          const transcript = results[results.length - 1][0].transcript;
-          
-          if (optionsRef.current.onResult) {
-            optionsRef.current.onResult(transcript);
+          let transcript = '';
+          for (let i = event.resultIndex; i < event.results.length; ++i) {
+            transcript += event.results[i][0].transcript;
           }
+          
+          if (transcript.trim() && optionsRef.current.onResult) {
+            optionsRef.current.onResult(transcript.trim());
+          }
+        };
+
+        recognition.onstart = () => {
+          setIsListening(true);
         };
 
         recognition.onend = () => {
@@ -54,7 +58,7 @@ export function useVoice(options: VoiceOptions = {}) {
 
         recognition.onerror = (event: any) => {
           const errorMsg = event.error === 'not-allowed' 
-            ? "Accès micro refusé. Vérifiez vos paramètres navigateur." 
+            ? "Accès micro refusé." 
             : event.error;
           
           setError(errorMsg);
@@ -65,17 +69,16 @@ export function useVoice(options: VoiceOptions = {}) {
           }
         };
       } catch (e) {
-        console.warn("[VOICE] Échec initialisation API Speech.");
         setIsSupported(false);
       }
     }
 
     return () => {
       if (recognitionRef.current) {
-        // Nettoyage des listeners pour éviter les fuites mémoire
         recognitionRef.current.onresult = null;
         recognitionRef.current.onend = null;
         recognitionRef.current.onerror = null;
+        recognitionRef.current.onstart = null;
         try {
           recognitionRef.current.stop();
         } catch (e) {}
@@ -89,7 +92,6 @@ export function useVoice(options: VoiceOptions = {}) {
     
     try {
       recognitionRef.current.start();
-      setIsListening(true);
     } catch (e: any) {
       if (e.name !== 'InvalidStateError') {
         setError(e.message);

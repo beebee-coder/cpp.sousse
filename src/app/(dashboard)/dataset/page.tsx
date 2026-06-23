@@ -88,13 +88,8 @@ export default function DatasetPage() {
   const [isGuideActive, setIsGuideActive] = useState(false);
   const [lastGuidedField, setLastGuidedField] = useState<string>('');
   
-  // Voice Integration State & Refs
   const [activeVoiceField, setActiveVoiceField] = useState<{ type: string, index?: number } | null>(null);
   const activeVoiceFieldRef = useRef<{ type: string, index?: number } | null>(null);
-
-  useEffect(() => {
-    activeVoiceFieldRef.current = activeVoiceField;
-  }, [activeVoiceField]);
 
   const { isListening, isSupported, startListening, stopListening, speak } = useVoice({
     onResult: (text) => {
@@ -102,36 +97,34 @@ export default function DatasetPage() {
       if (!field) return;
       
       const { type, index } = field;
+      const cleanText = text.trim();
       
       if (type === 'question') {
-        setQuestion(prev => (prev ? prev + ' ' + text : text));
+        setQuestion(prev => (prev ? prev + ' ' + cleanText : cleanText));
       } else if (type === 'answer') {
-        setAnswer(prev => (prev ? prev + ' ' + text : text));
+        setAnswer(prev => (prev ? prev + ' ' + cleanText : cleanText));
       } else if (type === 'procTitle') {
-        setProcTitle(prev => (prev ? prev + ' ' + text : text));
+        setProcTitle(prev => (prev ? prev + ' ' + cleanText : cleanText));
       } else if (typeof index === 'number') {
         setProcSteps(prevSteps => {
           const newSteps = [...prevSteps];
-          const step = newSteps[index];
+          const step = { ...newSteps[index] };
           if (!step) return prevSteps;
 
-          if (type === 'stepTitle') step.title = step.title ? step.title + ' ' + text : text;
-          else if (type === 'stepDesc') step.description = step.description ? step.description + ' ' + text : text;
-          else if (type === 'stepNormal') step.normalConditions = step.normalConditions ? step.normalConditions + ' ' + text : text;
-          else if (type === 'stepAbnormal') step.abnormalConditions = step.abnormalConditions ? step.abnormalConditions + ' ' + text : text;
-          else if (type === 'stepAlarms') step.alarms = step.alarms ? step.alarms + ' ' + text : text;
-          else if (type === 'stepDuration') step.duration = step.duration ? step.duration + ' ' + text : text;
+          if (type === 'stepTitle') step.title = step.title ? step.title + ' ' + cleanText : cleanText;
+          else if (type === 'stepDesc') step.description = step.description ? step.description + ' ' + cleanText : cleanText;
+          else if (type === 'stepNormal') step.normalConditions = step.normalConditions ? step.normalConditions + ' ' + cleanText : cleanText;
+          else if (type === 'stepAbnormal') step.abnormalConditions = step.abnormalConditions ? step.abnormalConditions + ' ' + cleanText : cleanText;
+          else if (type === 'stepAlarms') step.alarms = step.alarms ? step.alarms + ' ' + cleanText : cleanText;
+          else if (type === 'stepDuration') step.duration = step.duration ? step.duration + ' ' + cleanText : cleanText;
           
+          newSteps[index] = step;
           return newSteps;
         });
       }
-    },
-    onEnd: () => {
-      // On ne reset pas activeVoiceFieldRef immédiatement pour permettre la fin du traitement
     }
   });
 
-  // AI Guidance Logic
   const triggerGuidance = useCallback((fieldId: string, instruction: string) => {
     if (!isGuideActive || lastGuidedField === fieldId) return;
     setLastGuidedField(fieldId);
@@ -139,12 +132,19 @@ export default function DatasetPage() {
   }, [isGuideActive, lastGuidedField, speak]);
 
   const toggleVoice = (type: string, index?: number) => {
-    if (isListening && activeVoiceField?.type === type && activeVoiceField?.index === index) {
+    const fieldId = { type, index };
+    const isSameField = isListening && activeVoiceField?.type === type && activeVoiceField?.index === index;
+
+    if (isSameField) {
       stopListening();
       setActiveVoiceField(null);
+      activeVoiceFieldRef.current = null;
     } else {
-      setActiveVoiceField({ type, index });
-      startListening();
+      if (isListening) stopListening();
+      
+      setActiveVoiceField(fieldId);
+      activeVoiceFieldRef.current = fieldId;
+      setTimeout(() => startListening(), 100);
     }
   };
 
@@ -465,7 +465,7 @@ export default function DatasetPage() {
                               placeholder="DURÉE (EX: 5 MIN)" 
                               value={step.duration} 
                               onFocus={() => triggerGuidance(`step-dur-${index}`, `Combien de temps faut-il pour accomplir l'étape ${index + 1} ?`)}
-                              onChange={(e) => { const n = [...procSteps]; n[index].duration = e.target.value; setProcSteps(n); }} 
+                              onChange={(e) => { const n = [...procSteps]; n[index] = {...n[index], duration: e.target.value}; setProcSteps(n); }} 
                               className={cn(
                                 "h-6 w-32 text-[9px] font-code bg-background/20 border-none uppercase transition-all",
                                 (isListening && activeVoiceField?.type === 'stepDuration' && activeVoiceField.index === index) && "ring-1 ring-red-500 animate-pulse bg-red-500/10"
@@ -486,7 +486,7 @@ export default function DatasetPage() {
                               placeholder="TITRE ACTION" 
                               value={step.title} 
                               onFocus={() => triggerGuidance(`step-title-${index}`, `Nommez l'action spécifique de l'étape ${index + 1}.`)}
-                              onChange={(e) => { const n = [...procSteps]; n[index].title = e.target.value; setProcSteps(n); }} 
+                              onChange={(e) => { const n = [...procSteps]; n[index] = {...n[index], title: e.target.value}; setProcSteps(n); }} 
                               className={cn(
                                 "h-9 text-[11px] font-code uppercase pr-10 transition-all",
                                 (isListening && activeVoiceField?.type === 'stepTitle' && activeVoiceField.index === index) && "ring-2 ring-red-500 animate-pulse border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.3)]"
@@ -507,7 +507,7 @@ export default function DatasetPage() {
                             placeholder="DESCRIPTION DÉTAILLÉE..." 
                             value={step.description} 
                             onFocus={() => triggerGuidance(`step-desc-${index}`, "Détaillez les manipulations techniques à effectuer pour cette étape.")}
-                            onChange={(e) => { const n = [...procSteps]; n[index].description = e.target.value; setProcSteps(n); }} 
+                            onChange={(e) => { const n = [...procSteps]; n[index] = {...n[index], description: e.target.value}; setProcSteps(n); }} 
                             className={cn(
                               "h-20 bg-background/50 font-code text-[11px] uppercase pr-10 transition-all",
                               (isListening && activeVoiceField?.type === 'stepDesc' && activeVoiceField.index === index) && "ring-2 ring-red-500 animate-pulse border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.3)]"
@@ -526,7 +526,7 @@ export default function DatasetPage() {
                             <Input 
                               value={step.normalConditions} 
                               onFocus={() => triggerGuidance(`step-norm-${index}`, "Quels sont les paramètres ou l'état nominal attendu ?")}
-                              onChange={(e) => { const n = [...procSteps]; n[index].normalConditions = e.target.value; setProcSteps(n); }} 
+                              onChange={(e) => { const n = [...procSteps]; n[index] = {...n[index], normalConditions: e.target.value}; setProcSteps(n); }} 
                               className={cn(
                                 "h-8 text-[10px] font-code bg-background/20 pr-8 transition-all",
                                 (isListening && activeVoiceField?.type === 'stepNormal' && activeVoiceField.index === index) && "ring-1 ring-red-500 animate-pulse border-red-500/50 bg-red-500/5"
@@ -545,7 +545,7 @@ export default function DatasetPage() {
                             <Input 
                               value={step.abnormalConditions} 
                               onFocus={() => triggerGuidance(`step-abnorm-${index}`, "Quels sont les signes de dérive ou de dysfonctionnement ?")}
-                              onChange={(e) => { const n = [...procSteps]; n[index].abnormalConditions = e.target.value; setProcSteps(n); }} 
+                              onChange={(e) => { const n = [...procSteps]; n[index] = {...n[index], abnormalConditions: e.target.value}; setProcSteps(n); }} 
                               className={cn(
                                 "h-8 text-[10px] font-code bg-background/20 pr-8 transition-all",
                                 (isListening && activeVoiceField?.type === 'stepAbnormal' && activeVoiceField.index === index) && "ring-1 ring-red-500 animate-pulse border-red-500/50 bg-red-500/5"
@@ -564,7 +564,7 @@ export default function DatasetPage() {
                             <Input 
                               value={step.alarms} 
                               onFocus={() => triggerGuidance(`step-alarms-${index}`, "Précisez les seuils critiques et les alertes système.")}
-                              onChange={(e) => { const n = [...procSteps]; n[index].alarms = e.target.value; setProcSteps(n); }} 
+                              onChange={(e) => { const n = [...procSteps]; n[index] = {...n[index], alarms: e.target.value}; setProcSteps(n); }} 
                               className={cn(
                                 "h-8 text-[10px] font-code bg-background/20 pr-8 transition-all",
                                 (isListening && activeVoiceField?.type === 'stepAlarms' && activeVoiceField.index === index) && "ring-1 ring-red-500 animate-pulse border-red-500/50 bg-red-500/5"
