@@ -12,7 +12,8 @@ import {
   Laptop,
   Terminal,
   Info,
-  ShieldAlert
+  ShieldAlert,
+  FileArchive
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -33,13 +34,9 @@ export function DownloadApp() {
     else if (platform.includes('linux')) setOs('linux');
   }, []);
 
-  const getInstallerLink = (targetOs: OS) => {
-    const storageMap: Record<string, string> = {
-      windows: 'https://github.com/beebee-coder/cpp.sousse/releases/latest/download/VisioNode_Setup_x64.exe',
-      macos: 'https://github.com/beebee-coder/cpp.sousse/releases/latest/download/VisioNode.dmg',
-      linux: 'https://github.com/beebee-coder/cpp.sousse/releases/latest/download/VisioNode.AppImage'
-    };
-    return storageMap[targetOs] || '#';
+  const handleDownload = (targetOs: OS) => {
+    // Utilise la route API pour gérer le flux de téléchargement
+    window.location.href = `/api/download?platform=${targetOs}`;
   };
 
   if (!mounted) return null;
@@ -50,12 +47,12 @@ export function DownloadApp() {
       <div className="text-center space-y-4">
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 border border-primary/20 text-primary text-[10px] font-code uppercase tracking-widest mb-2">
           <Zap className="w-3 h-3 animate-pulse" />
-          Performance Native Détectée
+          Hébergement Direct Activé
         </div>
-        <h1 className="text-3xl sm:text-4xl lg:text-5xl font-headline font-bold uppercase tracking-tighter">Forge VisioNode Desktop</h1>
+        <h1 className="text-3xl sm:text-4xl lg:text-5xl font-headline font-bold uppercase tracking-tighter text-white">Station de Distribution</h1>
         <p className="text-muted-foreground font-code text-xs sm:text-sm max-w-2xl mx-auto px-4">
-          Transformez votre expérience Web en station de contrôle industrielle haute performance. 
-          Accès direct au matériel, traitement local ultra-rapide et confidentialité totale.
+          Téléchargez les binaires de contrôle directement depuis le serveur central. 
+          Certifiés pour un usage industriel hors-ligne.
         </p>
       </div>
 
@@ -65,16 +62,16 @@ export function DownloadApp() {
           title="Windows x64" 
           icon={Monitor} 
           recommended={os === 'windows'}
-          href={getInstallerLink('windows')}
-          version="v1.0.0 (Stable)"
+          onDownload={() => handleDownload('windows')}
+          version="v1.0.0 (Setup Local)"
           ext=".EXE"
         />
         <DownloadCard 
           title="macOS Silicon" 
           icon={Laptop} 
           recommended={os === 'macos'}
-          href={getInstallerLink('macos')}
-          version="v1.0.0 (Beta)"
+          onDownload={() => handleDownload('macos')}
+          version="v1.0.0 (Direct)"
           ext=".DMG"
         />
         <div className="sm:col-span-2 lg:col-span-1">
@@ -82,12 +79,24 @@ export function DownloadApp() {
             title="Linux Engine" 
             icon={Terminal} 
             recommended={os === 'linux'}
-            href={getInstallerLink('linux')}
-            version="v0.9.8"
+            onDownload={() => handleDownload('linux')}
+            version="v0.9.8 (Direct)"
             ext=".AppImage"
           />
         </div>
       </div>
+
+      {/* Local Storage Info */}
+      <Card className="p-4 border-primary/20 bg-primary/5 flex items-center gap-4">
+        <FileArchive className="w-8 h-8 text-primary shrink-0" />
+        <div className="flex-1">
+          <h4 className="text-[10px] font-bold uppercase tracking-widest text-primary">Avis aux Administrateurs</h4>
+          <p className="text-[9px] font-code text-muted-foreground leading-tight uppercase">
+            &gt; Les fichiers sont stockés dans le registre local /public/installers/.<br/>
+            &gt; Vérifiez la présence du fichier VisioNode_Setup_x64.exe avant distribution.
+          </p>
+        </div>
+      </Card>
 
       {/* Security & Integrity Section */}
       <Card className="p-6 border-secondary/20 bg-secondary/5">
@@ -98,7 +107,8 @@ export function DownloadApp() {
           <div className="flex-1 space-y-2 text-center md:text-left">
             <h3 className="font-headline font-bold uppercase text-secondary tracking-widest">Audit de Sécurité SHA-256</h3>
             <p className="text-[10px] sm:text-xs font-code text-muted-foreground">
-              Chaque binaire est signé numériquement par CCP Industrial. Vérifiez l'empreinte avant installation pour garantir l'absence de falsification du flux.
+              Vérifiez l'empreinte numérique après téléchargement. 
+              Garantie d'absence de corruption lors du transfert depuis le serveur central.
             </p>
             <div className="pt-2 flex flex-wrap justify-center md:justify-start gap-2">
               <Badge variant="outline" className="font-code text-[9px] border-secondary/30">WIN: 7f8a...2e10</Badge>
@@ -107,30 +117,6 @@ export function DownloadApp() {
           </div>
         </div>
       </Card>
-
-      {/* Benefits Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-12">
-        <BenefitItem 
-          icon={Cpu} 
-          title="IA LOCALE" 
-          desc="Exécution des modèles sur votre GPU sans latence réseau." 
-        />
-        <BenefitItem 
-          icon={ShieldCheck} 
-          title="SÉCURITÉ" 
-          desc="Données stockées localement. Aucun flux ne quitte l'usine." 
-        />
-        <BenefitItem 
-          icon={Monitor} 
-          title="MULTI-ÉCRAN" 
-          desc="Gestion native des fenêtres et affichage industriel." 
-        />
-        <BenefitItem 
-          icon={CheckCircle2} 
-          title="AUTONOME" 
-          desc="Fonctionne sans connexion Internet (Mode Offline complet)." 
-        />
-      </div>
 
       <Card className="p-4 border-border bg-black/40 flex flex-col sm:flex-row items-center justify-between gap-4">
         <div className="flex items-center gap-3">
@@ -147,7 +133,7 @@ export function DownloadApp() {
   );
 }
 
-function DownloadCard({ title, icon: Icon, recommended, href, version, ext }: any) {
+function DownloadCard({ title, icon: Icon, recommended, onDownload, version, ext }: any) {
   return (
     <Card className={cn(
       "p-6 flex flex-col items-center text-center gap-4 transition-all hover:scale-[1.02] shadow-xl",
@@ -168,26 +154,16 @@ function DownloadCard({ title, icon: Icon, recommended, href, version, ext }: an
           "w-full font-headline font-bold uppercase text-xs h-10 shadow-lg",
           recommended ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-muted/80"
         )}
-        onClick={() => window.open(href, '_blank')}
+        onClick={onDownload}
       >
         <Download className="w-4 h-4 mr-2" />
         Télécharger {ext}
       </Button>
       {recommended && (
         <Badge variant="secondary" className="text-[8px] uppercase px-3">
-          Conseillé pour vous
+          Cible Détectée
         </Badge>
       )}
     </Card>
-  );
-}
-
-function BenefitItem({ icon: Icon, title, desc }: any) {
-  return (
-    <div className="p-4 border border-border bg-card/20 rounded-sm">
-      <Icon className="w-5 h-5 text-secondary mb-3" />
-      <h4 className="text-xs font-bold font-headline uppercase mb-1">{title}</h4>
-      <p className="text-[10px] text-muted-foreground leading-relaxed font-code">{desc}</p>
-    </div>
   );
 }

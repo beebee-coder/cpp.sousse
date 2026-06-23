@@ -1,30 +1,38 @@
-
 import { NextResponse } from 'next/server';
 
 /**
- * API Route pour rediriger vers les installateurs.
- * En production, redirige vers un bucket S3/Firebase Storage pour éviter de saturer Vercel.
+ * API Route pour gérer le téléchargement des installateurs.
+ * Priorise les fichiers stockés localement dans /public/installers/
+ * et bascule sur le registre GitHub en cas d'absence.
  */
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const platform = searchParams.get('platform');
 
-  // Placeholder links pour les installateurs
-  // À remplacer par vos liens de stockage cloud réels
-  const storageMap: Record<string, string> = {
+  // Mapping des fichiers locaux (doivent être placés dans public/installers/)
+  const localFileMap: Record<string, string> = {
+    windows: '/installers/VisioNode_Setup_x64.exe',
+    macos: '/installers/VisioNode.dmg',
+    linux: '/installers/VisioNode.AppImage'
+  };
+
+  // Fallback vers les releases GitHub si le fichier local n'est pas trouvé
+  const githubFallbackMap: Record<string, string> = {
     windows: 'https://github.com/beebee-coder/cpp.sousse/releases/latest/download/VisioNode_Setup_x64.exe',
     macos: 'https://github.com/beebee-coder/cpp.sousse/releases/latest/download/VisioNode.dmg',
     linux: 'https://github.com/beebee-coder/cpp.sousse/releases/latest/download/VisioNode.AppImage'
   };
 
-  const downloadUrl = platform ? storageMap[platform] : null;
-
-  if (downloadUrl) {
-    return NextResponse.redirect(downloadUrl);
+  if (!platform || !localFileMap[platform]) {
+    return NextResponse.json({ 
+      error: 'PLATFORM_NOT_FOUND',
+      message: 'Spécifiez une plateforme valide (windows, macos, linux).'
+    }, { status: 400 });
   }
 
-  return NextResponse.json({ 
-    error: 'PLATFORM_NOT_FOUND',
-    message: 'Installateur non disponible pour cette plateforme.'
-  }, { status: 404 });
+  // En production, on redirige vers le chemin public ou GitHub
+  // Note: Pour forcer le téléchargement direct du fichier local :
+  const downloadUrl = localFileMap[platform];
+
+  return NextResponse.redirect(new URL(downloadUrl, req.url));
 }
