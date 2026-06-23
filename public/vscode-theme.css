@@ -1,9 +1,9 @@
-/* VSCode Industrial Dark Theme Fallback */
+/* Minimal VS Code Theme for stabilization */
 :root {
   --vscode-editor-background: #0d1117;
   --vscode-editor-foreground: #c9d1d9;
 }
-pre, code {
-  background-color: var(--vscode-editor-background) !important;
-  color: var(--vscode-editor-foreground) !important;
+.vscode-dark {
+  background-color: var(--vscode-editor-background);
+  color: var(--vscode-editor-foreground);
 }

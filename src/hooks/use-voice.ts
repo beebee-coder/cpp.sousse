@@ -26,10 +26,11 @@ export function useVoice(options: VoiceOptions = {}) {
   });
 
   const onResultRef = useRef(options.onResult);
+  const optionsRef = useRef(options);
   const recognitionRef = useRef<any>(null);
   const isManuallyStopped = useRef(false);
-  const optionsRef = useRef(options);
 
+  // Mise à jour des références sans redéclencher les hooks
   useEffect(() => {
     onResultRef.current = options.onResult;
     optionsRef.current = options;
@@ -60,7 +61,7 @@ export function useVoice(options: VoiceOptions = {}) {
         }
 
         if (segment.trim()) {
-          console.log(`[VOICE_HOOK] 🎙️ Capture: "${segment.trim()}"`);
+          console.log(`[VOICE_HOOK] 🎙️ Texte détecté: "${segment.trim()}"`);
           onResultRef.current?.(segment.trim());
         }
       };
@@ -71,6 +72,7 @@ export function useVoice(options: VoiceOptions = {}) {
 
       recognition.onend = () => {
         setState(prev => ({ ...prev, isListening: false }));
+        // Redémarrage automatique si nécessaire
         if (optionsRef.current.autoRestart && !isManuallyStopped.current) {
           try { recognition.start(); } catch (e) {}
         }
@@ -85,9 +87,10 @@ export function useVoice(options: VoiceOptions = {}) {
 
       recognitionRef.current = recognition;
     } catch (e) {
-      console.error('[VOICE_HOOK] Init Failed', e);
+      console.error('[VOICE_HOOK] Initialisation échouée', e);
     }
 
+    // Nettoyage impératif pour éviter la violation "unload"
     return () => {
       if (recognitionRef.current) {
         recognitionRef.current.onresult = null;
