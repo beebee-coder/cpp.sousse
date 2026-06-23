@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useRef, useEffect } from 'react';
@@ -18,7 +19,9 @@ import {
   Eye,
   AlertTriangle,
   Upload,
-  FileJson
+  FileJson,
+  Mic,
+  MicOff
 } from 'lucide-react';
 
 import { Card } from '@/components/ui/card';
@@ -36,6 +39,7 @@ import { useToast } from '@/hooks/use-toast';
 import { apiClient } from '@/lib/api-client';
 import { usePlatform } from '@/components/PlatformProvider';
 import { DashboardSidebar } from '@/components/dashboard/Sidebar';
+import { useVoice } from '@/hooks/use-voice';
 import { cn } from '@/lib/utils';
 
 interface ProcedureStep {
@@ -76,6 +80,41 @@ export default function DatasetPage() {
 
   const [isUploading, setIsUploading] = useState(false);
   
+  // Voice Integration State
+  const [activeVoiceField, setActiveVoiceField] = useState<{ type: string, index?: number } | null>(null);
+
+  const { isListening, isSupported, startListening, stopListening } = useVoice({
+    onResult: (text) => {
+      if (!activeVoiceField) return;
+      
+      const { type, index } = activeVoiceField;
+      if (type === 'question') setQuestion(prev => (prev ? prev + ' ' + text : text));
+      else if (type === 'answer') setAnswer(prev => (prev ? prev + ' ' + text : text));
+      else if (type === 'procTitle') setProcTitle(prev => (prev ? prev + ' ' + text : text));
+      else if (type === 'stepTitle' && typeof index === 'number') {
+        const newSteps = [...procSteps];
+        newSteps[index].title = newSteps[index].title ? newSteps[index].title + ' ' + text : text;
+        setProcSteps(newSteps);
+      }
+      else if (type === 'stepDesc' && typeof index === 'number') {
+        const newSteps = [...procSteps];
+        newSteps[index].description = newSteps[index].description ? newSteps[index].description + ' ' + text : text;
+        setProcSteps(newSteps);
+      }
+    },
+    onEnd: () => setActiveVoiceField(null)
+  });
+
+  const toggleVoice = (type: string, index?: number) => {
+    if (isListening) {
+      stopListening();
+      setActiveVoiceField(null);
+    } else {
+      setActiveVoiceField({ type, index });
+      startListening();
+    }
+  };
+
   const [cameraOpen, setCameraModalOpen] = useState(false);
   const [cameraType, setCameraType] = useState<'image' | 'video'>('image');
   const [activeStepIndex, setActiveStepIndex] = useState<number | null>(null);
@@ -83,16 +122,12 @@ export default function DatasetPage() {
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
 
-  const [previewOpen, setPreviewOpen] = useState(false);
-  const [previewAsset, setPreviewAsset] = useState<{ url: string, type: 'image' | 'video' } | null>(null);
-  
   const videoRef = useRef<HTMLVideoElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
 
   const desktopPhotoRef = useRef<HTMLInputElement>(null);
   const desktopVideoRef = useRef<HTMLInputElement>(null);
-  const fallbackFileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -234,7 +269,6 @@ export default function DatasetPage() {
       const uploadItems = [];
       
       for (const item of qaItems) {
-        // 1. Document JSON principal
         uploadItems.push({
           id: `doc-${item.id}`,
           projectId: 'project-001',
@@ -244,7 +278,6 @@ export default function DatasetPage() {
           createdAt: new Date()
         });
 
-        // 2. Assets associés
         if (item.mediaAssets) {
           for (const asset of item.mediaAssets) {
             const base64 = await new Promise<string>((res) => {
@@ -310,37 +343,115 @@ export default function DatasetPage() {
             <form onSubmit={handleAddItem} className="space-y-6">
               {mode === 'qa' ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Textarea value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="SYMPTÔME..." className="h-32 bg-background font-code text-xs uppercase" />
-                  <Textarea value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="RÉSOLUTION..." className="h-32 bg-background font-code text-xs uppercase" />
+                  <div className="relative group">
+                    <Textarea value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="SYMPTÔME..." className="h-32 bg-background font-code text-xs uppercase pr-10" />
+                    <Button 
+                      type="button"
+                      variant="ghost" 
+                      size="icon" 
+                      onClick={() => toggleVoice('question')}
+                      className={cn(
+                        "absolute top-2 right-2 h-7 w-7 transition-all",
+                        activeVoiceField?.type === 'question' ? "bg-red-500/20 text-red-500 animate-pulse" : "text-primary opacity-30 group-hover:opacity-100"
+                      )}
+                      disabled={!isSupported}
+                    >
+                      {activeVoiceField?.type === 'question' ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
+                    </Button>
+                  </div>
+                  <div className="relative group">
+                    <Textarea value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="RÉSOLUTION..." className="h-32 bg-background font-code text-xs uppercase pr-10" />
+                    <Button 
+                      type="button"
+                      variant="ghost" 
+                      size="icon" 
+                      onClick={() => toggleVoice('answer')}
+                      className={cn(
+                        "absolute top-2 right-2 h-7 w-7 transition-all",
+                        activeVoiceField?.type === 'answer' ? "bg-red-500/20 text-red-500 animate-pulse" : "text-primary opacity-30 group-hover:opacity-100"
+                      )}
+                      disabled={!isSupported}
+                    >
+                      {activeVoiceField?.type === 'answer' ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
+                    </Button>
+                  </div>
                 </div>
               ) : (
                 <div className="space-y-4">
-                  <Input value={procTitle} onChange={(e) => setProcTitle(e.target.value)} placeholder="TITRE PROCÉDURE" className="bg-background font-headline uppercase" />
+                  <div className="relative group">
+                    <Input value={procTitle} onChange={(e) => setProcTitle(e.target.value)} placeholder="TITRE PROCÉDURE" className="bg-background font-headline uppercase pr-10" />
+                    <Button 
+                      type="button"
+                      variant="ghost" 
+                      size="icon" 
+                      onClick={() => toggleVoice('procTitle')}
+                      className={cn(
+                        "absolute top-1.5 right-2 h-7 w-7 transition-all",
+                        activeVoiceField?.type === 'procTitle' ? "bg-red-500/20 text-red-500 animate-pulse" : "text-primary opacity-30 group-hover:opacity-100"
+                      )}
+                      disabled={!isSupported}
+                    >
+                      {activeVoiceField?.type === 'procTitle' ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
+                    </Button>
+                  </div>
                   {procSteps.map((step, index) => (
                     <Card key={step.id} className="p-4 border-border bg-black/30 space-y-4">
                       <div className="flex justify-between items-center border-b border-border/50 pb-2">
                         <span className="text-[10px] font-bold font-code text-secondary">ÉTAPE {index + 1}</span>
                         <Button variant="ghost" size="icon" onClick={() => setProcSteps(procSteps.filter(s => s.id !== step.id))} className="h-6 w-6 text-destructive"><Trash2 className="w-3 h-3" /></Button>
                       </div>
-                      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                        <Input placeholder="ACTION" value={step.title} onChange={(e) => { const n = [...procSteps]; n[index].title = e.target.value; setProcSteps(n); }} className="h-8 text-[11px] font-code uppercase" />
-                        <div className="flex gap-2">
-                          <Button variant="outline" size="sm" className="flex-1 h-8 text-[9px] font-code" onClick={(e) => handleTriggerCapture(e, index, 'image')}><Camera className="w-3 h-3 mr-2" /> PHOTO</Button>
-                          <Button variant="outline" size="sm" className="flex-1 h-8 text-[9px] font-code" onClick={(e) => handleTriggerCapture(e, index, 'video')}><Video className="w-3 h-3 mr-2" /> VIDEO</Button>
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                          <div className="relative group">
+                            <Input placeholder="TITRE ACTION" value={step.title} onChange={(e) => { const n = [...procSteps]; n[index].title = e.target.value; setProcSteps(n); }} className="h-9 text-[11px] font-code uppercase pr-10" />
+                            <Button 
+                              type="button"
+                              variant="ghost" 
+                              size="icon" 
+                              onClick={() => toggleVoice('stepTitle', index)}
+                              className={cn(
+                                "absolute top-1 right-2 h-7 w-7 transition-all",
+                                (activeVoiceField?.type === 'stepTitle' && activeVoiceField.index === index) ? "bg-red-500/20 text-red-500 animate-pulse" : "text-primary opacity-30 group-hover:opacity-100"
+                              )}
+                              disabled={!isSupported}
+                            >
+                              {(activeVoiceField?.type === 'stepTitle' && activeVoiceField.index === index) ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
+                            </Button>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button variant="outline" size="sm" className="flex-1 h-9 text-[9px] font-code" onClick={(e) => handleTriggerCapture(e, index, 'image')}><Camera className="w-3.5 h-3.5 mr-2" /> PHOTO</Button>
+                            <Button variant="outline" size="sm" className="flex-1 h-9 text-[9px] font-code" onClick={(e) => handleTriggerCapture(e, index, 'video')}><Video className="w-3.5 h-3.5 mr-2" /> VIDEO</Button>
+                          </div>
+                        </div>
+                        <div className="relative group">
+                          <Textarea placeholder="DESCRIPTION DÉTAILLÉE..." value={step.description} onChange={(e) => { const n = [...procSteps]; n[index].description = e.target.value; setProcSteps(n); }} className="h-20 bg-background/50 font-code text-[11px] uppercase pr-10" />
+                          <Button 
+                            type="button"
+                            variant="ghost" 
+                            size="icon" 
+                            onClick={() => toggleVoice('stepDesc', index)}
+                            className={cn(
+                              "absolute top-2 right-2 h-7 w-7 transition-all",
+                              (activeVoiceField?.type === 'stepDesc' && activeVoiceField.index === index) ? "bg-red-500/20 text-red-500 animate-pulse" : "text-primary opacity-30 group-hover:opacity-100"
+                            )}
+                            disabled={!isSupported}
+                          >
+                            {(activeVoiceField?.type === 'stepDesc' && activeVoiceField.index === index) ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
+                          </Button>
                         </div>
                         {(step.imagePreview || step.videoPreview) && (
                           <div className="flex gap-2 items-center">
-                            <Badge variant="outline" className="text-[8px] uppercase">Média attaché</Badge>
+                            <Badge variant="outline" className="text-[8px] uppercase bg-secondary/10 text-secondary border-secondary/20 px-2 py-0.5">Média attaché</Badge>
                           </div>
                         )}
                       </div>
                     </Card>
                   ))}
-                  <Button type="button" variant="outline" onClick={() => setProcSteps([...procSteps, { id: Date.now().toString(), title: '', description: '', normalConditions: '', abnormalConditions: '', alarms: '' }])} className="w-full border-dashed h-9 text-[10px] uppercase font-code"><Plus className="w-3.5 h-3.5 mr-2" /> Ajouter Étape</Button>
+                  <Button type="button" variant="outline" onClick={() => setProcSteps([...procSteps, { id: Date.now().toString(), title: '', description: '', normalConditions: '', abnormalConditions: '', alarms: '' }])} className="w-full border-dashed h-9 text-[10px] uppercase font-code border-primary/30 text-primary hover:bg-primary/5"><Plus className="w-3.5 h-3.5 mr-2" /> Ajouter Étape</Button>
                 </div>
               )}
-              <div className="flex justify-end">
-                <Button type="submit" size="sm" className="font-headline font-bold uppercase text-[10px] h-9 px-8 bg-primary">Ajouter à la file</Button>
+              <div className="flex justify-end pt-4 border-t border-border/50">
+                <Button type="submit" size="sm" className="font-headline font-bold uppercase text-[10px] h-10 px-8 bg-primary shadow-lg shadow-primary/20">Ajouter à la file d'attente</Button>
               </div>
             </form>
           </Card>
@@ -349,19 +460,19 @@ export default function DatasetPage() {
             <div className="space-y-4 pb-12">
               <div className="flex justify-between items-center px-2">
                 <h3 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2"><Layers className="w-4 h-4 text-primary" /> File d'attente ({qaItems.length})</h3>
-                <Button onClick={handleFinalSubmitToWebBDD} disabled={isUploading} className="bg-primary text-[10px] uppercase font-bold h-9 px-6">
+                <Button onClick={handleFinalSubmitToWebBDD} disabled={isUploading} className="bg-primary text-[10px] uppercase font-bold h-9 px-6 shadow-xl">
                   {isUploading ? <RefreshCw className="w-3.5 h-3.5 mr-2 animate-spin" /> : <UploadCloud className="w-3.5 h-3.5 mr-2" />} 
                   Uplink vers BDD Web (JSON)
                 </Button>
               </div>
               <div className="grid grid-cols-1 gap-2">
                 {qaItems.map((item) => (
-                  <Card key={item.id} className="p-3 border-border bg-black/20 font-code text-[9px] flex justify-between items-center rounded-sm">
+                  <Card key={item.id} className="p-3 border-border bg-black/20 font-code text-[9px] flex justify-between items-center rounded-sm group hover:border-primary/30 transition-colors">
                     <div className="truncate flex items-center gap-3">
-                      <Badge variant="outline" className="text-[8px]">{item.type === 'procedure' ? 'PROCÉDURE' : 'Q/R'}</Badge>
-                      <span className="text-muted-foreground uppercase">{item.label}</span>
+                      <Badge variant="outline" className={cn("text-[8px] py-0 px-1.5", item.type === 'procedure' ? "text-secondary border-secondary/20" : "text-primary border-primary/20")}>{item.type === 'procedure' ? 'PROCÉDURE' : 'Q/R'}</Badge>
+                      <span className="text-muted-foreground uppercase truncate max-w-[200px] sm:max-w-md">{item.label}</span>
                     </div>
-                    <Button variant="ghost" size="icon" onClick={() => setQaItems(qaItems.filter(i => i.id !== item.id))} className="h-7 w-7"><Trash2 className="w-3 h-3 text-destructive" /></Button>
+                    <Button variant="ghost" size="icon" onClick={() => setQaItems(qaItems.filter(i => i.id !== item.id))} className="h-7 w-7 opacity-30 group-hover:opacity-100 hover:text-destructive transition-opacity"><Trash2 className="w-3 h-3" /></Button>
                   </Card>
                 ))}
               </div>
@@ -378,9 +489,9 @@ export default function DatasetPage() {
           </div>
           <div className="p-4 flex items-center justify-center gap-6 bg-card/90">
             {cameraType === 'image' ? (
-              <Button onClick={capturePhoto} className="h-14 w-14 rounded-full bg-primary shadow-2xl border-4 border-background"><Camera className="w-6 h-6" /></Button>
+              <Button onClick={capturePhoto} className="h-14 w-14 rounded-full bg-primary shadow-2xl border-4 border-background hover:scale-110 transition-transform"><Camera className="w-6 h-6" /></Button>
             ) : (
-              <Button onClick={toggleRecording} className={cn("h-14 w-14 rounded-full shadow-2xl border-4 border-background", isRecording ? "bg-red-600 animate-pulse" : "bg-secondary")}><Video className="w-6 h-6" /></Button>
+              <Button onClick={toggleRecording} className={cn("h-14 w-14 rounded-full shadow-2xl border-4 border-background hover:scale-110 transition-transform", isRecording ? "bg-red-600 animate-pulse" : "bg-secondary")}><Video className="w-6 h-6" /></Button>
             )}
           </div>
         </DialogContent>
