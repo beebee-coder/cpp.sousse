@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -102,7 +103,6 @@ export function useVoice(options: VoiceOptions = {}) {
 
     recognitionRef.current = recognition;
 
-    // NETTOYAGE : Utilise uniquement le cycle de vie useEffect (évite la violation 'unload')
     return () => {
       if (recognitionRef.current) {
         recognitionRef.current.onstart = null;

@@ -1,9 +1,11 @@
-/* VisioNode Industrial VSCode Theme Stub */
+
+/* VS Code Dark Modern Theme Variables for VisioNode Console */
 :root {
   --vscode-editor-background: #0d1117;
   --vscode-editor-foreground: #c9d1d9;
-}
-.vscode-dark {
-  background-color: var(--vscode-editor-background);
-  color: var(--vscode-editor-foreground);
+  --vscode-editorLineNumber-foreground: #484f58;
+  --vscode-editor-selectionBackground: #1f6feb44;
+  --vscode-editorCursor-foreground: #58a6ff;
+  --vscode-editorBracketMatch-background: #388bfd33;
+  --vscode-editorBracketMatch-border: #388bfd66;
 }

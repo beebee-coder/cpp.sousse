@@ -1,4 +1,4 @@
-// src/app/api/dataset/route.ts
+
 import { NextResponse } from 'next/server';
 import { postgresClient } from '@/lib/db/postgres-client';
 
@@ -8,7 +8,6 @@ import { postgresClient } from '@/lib/db/postgres-client';
  */
 export async function GET() {
   try {
-    // Récupération des données du dataset via le registre cloud simulé
     const dataset = await postgresClient.getCloudData('project-001');
     
     return NextResponse.json({
@@ -17,7 +16,7 @@ export async function GET() {
       timestamp: new Date().toISOString()
     });
   } catch (error) {
-    console.error('[DATASET_AUDIT] Error fetching dataset:', error);
+    console.error('[DATASET_API] Error fetching dataset:', error);
     return NextResponse.json(
       { 
         success: false, 
@@ -34,8 +33,6 @@ export async function POST(request: Request) {
     const body = await request.json();
     const timestamp = new Date().toISOString();
     
-    // Logique d'ajout au dataset via le registre cloud (Neon simulation)
-    // On encapsule la donnée reçue (texte vocal ou JSON)
     await postgresClient.upsertCloudData([
       {
         id: `audit-${Date.now()}`,
@@ -54,7 +51,7 @@ export async function POST(request: Request) {
       message: 'Donnée enregistrée avec succès.'
     });
   } catch (error) {
-    console.error('[DATASET_AUDIT] Error adding to dataset:', error);
+    console.error('[DATASET_API] Error adding to dataset:', error);
     return NextResponse.json(
       { success: false, error: 'Failed to add to dataset' },
       { status: 500 }
