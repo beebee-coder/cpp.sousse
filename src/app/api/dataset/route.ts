@@ -1,11 +1,15 @@
 // src/app/api/dataset/route.ts
 import { NextResponse } from 'next/server';
-import { getDataset } from '@/lib/db/sync-engine';
+import { postgresClient } from '@/lib/db/postgres-client';
 
+/**
+ * API Route pour la gestion du dataset (RAG).
+ * Sert de tampon pour les captures vocales et les nouveaux documents avant synchronisation.
+ */
 export async function GET() {
   try {
-    // Récupération des données du dataset
-    const dataset = await getDataset();
+    // Récupération des données du dataset via le registre cloud simulé
+    const dataset = await postgresClient.getCloudData('project-001');
     
     return NextResponse.json({
       success: true,
@@ -28,12 +32,26 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    // Logique d'ajout au dataset
-    const result = await addToDataset(body);
+    const timestamp = new Date().toISOString();
+    
+    // Logique d'ajout au dataset via le registre cloud (Neon simulation)
+    // On encapsule la donnée reçue (texte vocal ou JSON)
+    await postgresClient.upsertCloudData([
+      {
+        id: `audit-${Date.now()}`,
+        projectId: 'project-001',
+        type: 'document',
+        content: JSON.stringify({ ...body, source: 'voice_input' }),
+        tags: ['voice_audit'],
+        createdAt: new Date()
+      }
+    ]);
+    
+    console.log(`📡 [DATASET_API] [${timestamp}] Item enregistré dans le tampon cloud.`);
     
     return NextResponse.json({
       success: true,
-      data: result
+      message: 'Donnée enregistrée avec succès.'
     });
   } catch (error) {
     console.error('[DATASET_AUDIT] Error adding to dataset:', error);
