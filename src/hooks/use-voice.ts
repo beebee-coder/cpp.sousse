@@ -16,7 +16,8 @@ interface VoiceState {
 }
 
 /**
- * Hook de reconnaissance vocale stable pour environnement industriel.
+ * Hook de reconnaissance vocale ultra-stable pour environnement industriel.
+ * Gère les permissions, les interruptions et les politiques de sécurité modernes.
  */
 export function useVoice(options: VoiceOptions = {}) {
   const [state, setState] = useState<VoiceState>({
@@ -28,7 +29,9 @@ export function useVoice(options: VoiceOptions = {}) {
   const recognitionRef = useRef<any>(null);
   const isManuallyStopped = useRef(false);
   const optionsRef = useRef(options);
+  const hasPermissionError = useRef(false);
 
+  // Mise à jour synchronisée des options via ref pour éviter les boucles d'effet
   useEffect(() => {
     optionsRef.current = options;
   }, [options]);
@@ -50,6 +53,7 @@ export function useVoice(options: VoiceOptions = {}) {
 
     recognition.onstart = () => {
       setState(prev => ({ ...prev, isListening: true, error: null }));
+      hasPermissionError.current = false;
     };
 
     recognition.onresult = (event: any) => {
@@ -66,10 +70,18 @@ export function useVoice(options: VoiceOptions = {}) {
 
     recognition.onend = () => {
       setState(prev => ({ ...prev, isListening: false }));
-      if (optionsRef.current.autoRestart && !isManuallyStopped.current) {
+      
+      // AUTO-RESTART SECURITY: Ne pas redémarrer si arrêt manuel ou erreur critique de permission
+      const shouldRestart = optionsRef.current.autoRestart && 
+                           !isManuallyStopped.current && 
+                           !hasPermissionError.current;
+
+      if (shouldRestart) {
         try {
           recognition.start();
-        } catch (e) {}
+        } catch (e) {
+          console.warn("[VOICE_HOOK] Échec redémarrage automatique.");
+        }
       }
     };
 
@@ -77,9 +89,10 @@ export function useVoice(options: VoiceOptions = {}) {
       const err = event.error;
       if (err === 'no-speech') return;
 
-      // Utilisation de warn au lieu de error pour les permissions afin d'éviter l'overlay Next.js
+      // Gestion spécifique des permissions pour éviter le spam console et l'overlay Next.js
       if (err === 'not-allowed' || err === 'service-not-allowed') {
-        console.warn(`[VOICE_HOOK] ⚠️ Permission microphone refusée ou indisponible.`);
+        hasPermissionError.current = true; // Bloque les tentatives de redémarrage auto
+        console.warn(`[VOICE_HOOK] ⚠️ Permission microphone refusée ou indisponible (SSL requis pour Speech API).`);
       } else {
         console.error(`[VOICE_HOOK] ❌ Erreur système : ${err}`);
       }
@@ -89,6 +102,7 @@ export function useVoice(options: VoiceOptions = {}) {
 
     recognitionRef.current = recognition;
 
+    // NETTOYAGE : Utilise uniquement le cycle de vie useEffect (évite la violation 'unload')
     return () => {
       if (recognitionRef.current) {
         recognitionRef.current.onstart = null;
@@ -104,10 +118,13 @@ export function useVoice(options: VoiceOptions = {}) {
 
   const startListening = useCallback(() => {
     isManuallyStopped.current = false;
+    hasPermissionError.current = false;
     if (recognitionRef.current) {
       try {
         recognitionRef.current.start();
-      } catch (e) {}
+      } catch (e) {
+        console.warn("[VOICE_HOOK] Impossible de démarrer la reconnaissance.");
+      }
     }
   }, []);
 

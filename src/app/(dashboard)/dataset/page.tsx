@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { 
   Database, 
   Plus, 
@@ -10,7 +10,8 @@ import {
   MicOff,
   Sparkles,
   Loader2,
-  AlertTriangle
+  AlertTriangle,
+  Trash2
 } from 'lucide-react';
 
 import { Card } from '@/components/ui/card';
@@ -37,7 +38,7 @@ interface QAItem {
 }
 
 export default function DatasetPage() {
-  // 1. TOUS LES HOOKS AU SOMMET (ORDRE CONSTANT)
+  // --- 1. TOUS LES HOOKS AU SOMMET (ORDRE CONSTANT) ---
   const { toast } = useToast();
   const [mounted, setMounted] = useState(false);
   const [mode, setMode] = useState<'qa' | 'procedure'>('qa');
@@ -52,19 +53,23 @@ export default function DatasetPage() {
   const [isGuideActive, setIsGuideActive] = useState(false);
   const [activeUIField, setActiveUIField] = useState<{ type: string, index?: number } | null>(null);
   
-  const targetFieldRef = useRef<{ type: string, index?: number } | null>(null);
+  // Référence pour maintenir la liaison avec la voix sans re-rendu intempestif
+  const activeVoiceFieldRef = useRef<{ type: string, index?: number } | null>(null);
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
+  // Synchronisation de la ref avec l'état UI
   useEffect(() => {
-    targetFieldRef.current = activeUIField;
+    activeVoiceFieldRef.current = activeUIField;
   }, [activeUIField]);
 
   const handleVoiceResult = useCallback((text: string) => {
-    const target = targetFieldRef.current;
+    const target = activeVoiceFieldRef.current;
     if (!target) return;
+
+    console.log(`🎙️ [DATASET_AUDIT] Injection voix dans [${target.type}${target.index !== undefined ? ':' + target.index : ''}] : ${text}`);
 
     if (target.type === 'question') {
       setQuestion(prev => prev ? `${prev} ${text}` : text);
@@ -85,17 +90,20 @@ export default function DatasetPage() {
     }
   }, []);
 
-  const voice = useVoice({
+  // Paramètres voix mémoïsés pour éviter les cycles de hooks
+  const voiceOptions = useMemo(() => ({
     onResult: handleVoiceResult,
     autoRestart: true,
     lang: 'fr-FR'
-  });
+  }), [handleVoiceResult]);
+
+  const voice = useVoice(voiceOptions);
 
   useEffect(() => {
     if (voice.error === 'not-allowed') {
       toast({
         title: "Microphone Bloqué",
-        description: "Accès refusé. Vérifiez vos paramètres système ou utilisez HTTPS.",
+        description: "Accès refusé. Vérifiez les permissions de votre navigateur ou utilisez HTTPS.",
         variant: "destructive"
       });
     }
@@ -110,12 +118,13 @@ export default function DatasetPage() {
     } else {
       voice.stopListening();
       setActiveUIField({ type, index });
+      // Délai court pour assurer l'arrêt propre avant redémarrage sur une nouvelle cible
       setTimeout(() => {
         voice.startListening();
         if (isGuideActive) {
           voice.speak(type === 'question' ? "Décrivez le symptôme." : "Décrivez la résolution.");
         }
-      }, 100);
+      }, 50);
     }
   };
 
@@ -157,142 +166,164 @@ export default function DatasetPage() {
     }
   };
 
+  const removeItem = (id: string) => {
+    setQaItems(prev => prev.filter(i => i.id !== id));
+  };
+
+  // --- RENDU ---
+  if (!mounted) {
+    return (
+      <div className="flex h-screen bg-background items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-primary opacity-20" />
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col lg:flex-row h-screen bg-background overflow-hidden">
       <DashboardSidebar />
 
       <main className="flex-1 flex flex-col min-w-0 h-full overflow-y-auto terminal-scroll">
-        {!mounted ? (
-          <div className="flex-1 flex items-center justify-center">
-            <Loader2 className="w-10 h-10 animate-spin text-primary opacity-20" />
+        <header className="h-16 border-b border-border bg-card/30 flex items-center justify-between px-6 shrink-0">
+          <div className="flex items-center gap-4">
+            <div className="lg:hidden w-10" />
+            <Database className="w-4 h-4 text-primary" />
+            <span className="font-headline font-bold text-xs uppercase tracking-widest text-primary">Capture RAG</span>
           </div>
-        ) : (
-          <>
-            <header className="h-16 border-b border-border bg-card/30 flex items-center justify-between px-6 shrink-0">
-              <div className="flex items-center gap-4">
-                <div className="lg:hidden w-10" />
-                <Database className="w-4 h-4 text-primary" />
-                <span className="font-headline font-bold text-xs uppercase tracking-widest text-primary">Capture RAG</span>
-              </div>
 
-              <div className="flex items-center gap-4">
-                {voice.error === 'not-allowed' && (
-                  <div className="flex items-center gap-2 text-destructive animate-pulse">
-                    <AlertTriangle className="w-3 h-3" />
-                    <span className="text-[8px] font-code uppercase">Microphone Bloqué</span>
+          <div className="flex items-center gap-4">
+            {voice.error === 'not-allowed' && (
+              <div className="flex items-center gap-2 text-destructive animate-pulse">
+                <AlertTriangle className="w-3 h-3" />
+                <span className="text-[8px] font-code uppercase">Microphone Bloqué</span>
+              </div>
+            )}
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              onClick={() => setIsGuideActive(!isGuideActive)}
+              className={cn("h-9 text-[9px] font-code uppercase", isGuideActive ? "text-secondary" : "text-muted-foreground")}
+            >
+              <Sparkles className="w-3.5 h-3.5 mr-2" />
+              Audit Guidé {isGuideActive ? "ON" : "OFF"}
+            </Button>
+            <div className="flex bg-muted/30 p-1 rounded-sm border border-border">
+              <button onClick={() => setMode('qa')} className={cn("px-3 py-1 text-[9px] uppercase rounded-sm", mode === 'qa' ? "bg-primary text-primary-foreground" : "text-muted-foreground")}>FAQ</button>
+              <button onClick={() => setMode('procedure')} className={cn("px-3 py-1 text-[9px] uppercase rounded-sm", mode === 'procedure' ? "bg-secondary text-secondary-foreground" : "text-muted-foreground")}>Procédure</button>
+            </div>
+          </div>
+        </header>
+
+        <div className="p-4 lg:p-8 max-w-5xl mx-auto w-full space-y-6">
+          <Card className="p-6 border-border bg-card/50 space-y-6 rounded-sm shadow-2xl">
+            <form onSubmit={handleAddItem} className="space-y-6">
+              {mode === 'qa' ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="relative">
+                    <Textarea 
+                      value={question} 
+                      onChange={(e) => setQuestion(e.target.value)} 
+                      placeholder="SYMPTÔME / QUESTION..." 
+                      className={cn("h-32 bg-background font-code text-xs uppercase transition-all", activeUIField?.type === 'question' && "ring-2 ring-red-500 border-red-500 animate-pulse")}
+                    />
+                    <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('question')} className={cn("absolute top-2 right-2 h-7 w-7", activeUIField?.type === 'question' ? "text-red-500" : "text-primary")}>
+                      {voice.isListening && activeUIField?.type === 'question' ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
+                    </Button>
                   </div>
-                )}
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
-                  onClick={() => setIsGuideActive(!isGuideActive)}
-                  className={cn("h-9 text-[9px] font-code uppercase", isGuideActive ? "text-secondary" : "text-muted-foreground")}
-                >
-                  <Sparkles className="w-3.5 h-3.5 mr-2" />
-                  Audit Guidé {isGuideActive ? "ON" : "OFF"}
-                </Button>
-                <div className="flex bg-muted/30 p-1 rounded-sm border border-border">
-                  <button onClick={() => setMode('qa')} className={cn("px-3 py-1 text-[9px] uppercase rounded-sm", mode === 'qa' ? "bg-primary text-primary-foreground" : "text-muted-foreground")}>FAQ</button>
-                  <button onClick={() => setMode('procedure')} className={cn("px-3 py-1 text-[9px] uppercase rounded-sm", mode === 'procedure' ? "bg-secondary text-secondary-foreground" : "text-muted-foreground")}>Procédure</button>
-                </div>
-              </div>
-            </header>
-
-            <div className="p-4 lg:p-8 max-w-5xl mx-auto w-full space-y-6">
-              <Card className="p-6 border-border bg-card/50 space-y-6 rounded-sm shadow-2xl">
-                <form onSubmit={handleAddItem} className="space-y-6">
-                  {mode === 'qa' ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="relative">
-                        <Textarea 
-                          value={question} 
-                          onChange={(e) => setQuestion(e.target.value)} 
-                          placeholder="SYMPTÔME / QUESTION..." 
-                          className={cn("h-32 bg-background font-code text-xs uppercase transition-all", activeUIField?.type === 'question' && "ring-2 ring-red-500 border-red-500 animate-pulse")}
-                        />
-                        <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('question')} className={cn("absolute top-2 right-2 h-7 w-7", activeUIField?.type === 'question' ? "text-red-500" : "text-primary")}>
-                          {voice.isListening && activeUIField?.type === 'question' ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
-                        </Button>
-                      </div>
-                      <div className="relative">
-                        <Textarea 
-                          value={answer} 
-                          onChange={(e) => setAnswer(e.target.value)} 
-                          placeholder="RÉSOLUTION / RÉPONSE..." 
-                          className={cn("h-32 bg-background font-code text-xs uppercase transition-all", activeUIField?.type === 'answer' && "ring-2 ring-red-500 border-red-500 animate-pulse")}
-                        />
-                        <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('answer')} className={cn("absolute top-2 right-2 h-7 w-7", activeUIField?.type === 'answer' ? "text-red-500" : "text-primary")}>
-                           {voice.isListening && activeUIField?.type === 'answer' ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
-                        </Button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      <div className="relative">
-                        <Input 
-                          value={procTitle} 
-                          onChange={(e) => setProcTitle(e.target.value)} 
-                          placeholder="TITRE DE LA PROCÉDURE" 
-                          className={cn("bg-background uppercase h-12 text-sm font-bold", activeUIField?.type === 'procTitle' && "ring-2 ring-red-500 border-red-500")} 
-                        />
-                        <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('procTitle')} className={cn("absolute top-2.5 right-2 h-7 w-7", activeUIField?.type === 'procTitle' ? "text-red-500" : "text-primary")}>
-                          <Mic className="w-3.5 h-3.5" />
-                        </Button>
-                      </div>
-
-                      {procSteps.map((step, index) => (
-                        <Card key={step.id} className="p-4 border-border bg-black/30 space-y-4">
-                          <div className="flex justify-between items-center border-b border-border/50 pb-2">
-                            <span className="text-[10px] font-bold text-secondary uppercase">Étape {index + 1}</span>
-                            <div className="relative">
-                              <Input 
-                                placeholder="DURÉE" 
-                                value={step.duration} 
-                                onChange={(e) => { const n = [...procSteps]; n[index].duration = e.target.value; setProcSteps(n); }} 
-                                className={cn("h-7 w-32 text-[9px] bg-background/20", activeUIField?.type === 'stepDuration' && activeUIField?.index === index && "ring-1 ring-red-500")}
-                              />
-                              <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepDuration', index)} className="absolute right-0 top-0 h-7 w-7"><Mic className="w-2.5 h-2.5" /></Button>
-                            </div>
-                          </div>
-                          <div className="relative">
-                            <Input 
-                              placeholder="ACTION" 
-                              value={step.title} 
-                              onChange={(e) => { const n = [...procSteps]; n[index].title = e.target.value; setProcSteps(n); }} 
-                              className={cn("h-8 text-[10px] uppercase", activeUIField?.type === 'stepTitle' && activeUIField?.index === index && "ring-1 ring-red-500")}
-                            />
-                            <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepTitle', index)} className="absolute top-0.5 right-1 h-7 w-7"><Mic className="w-3 h-3" /></Button>
-                          </div>
-                        </Card>
-                      ))}
-                      <Button type="button" variant="outline" onClick={() => setProcSteps([...procSteps, { id: Date.now().toString(), title: '', duration: '' }])} className="w-full border-dashed h-10 text-[10px] uppercase">
-                        <Plus className="w-3 h-3 mr-2" /> Ajouter Étape
-                      </Button>
-                    </div>
-                  )}
-
-                  <Button type="submit" className="w-full font-headline font-bold uppercase text-xs h-10 bg-primary">
-                    Enregistrer dans la file
-                  </Button>
-                </form>
-              </Card>
-
-              {qaItems.length > 0 && (
-                <div className="space-y-3 pb-12">
-                  <div className="flex justify-between items-center px-2">
-                    <h3 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-                      <Layers className="w-3.5 h-3.5" /> File d'attente ({qaItems.length})
-                    </h3>
-                    <Button onClick={handleFinalSubmit} disabled={isUploading} size="sm" className="bg-secondary text-secondary-foreground text-[9px] uppercase font-bold">
-                      {isUploading ? <Loader2 className="w-3 h-3 mr-2 animate-spin" /> : <UploadCloud className="w-3 h-3 mr-2" />} 
-                      Pousser vers Cloud
+                  <div className="relative">
+                    <Textarea 
+                      value={answer} 
+                      onChange={(e) => setAnswer(e.target.value)} 
+                      placeholder="RÉSOLUTION / RÉPONSE..." 
+                      className={cn("h-32 bg-background font-code text-xs uppercase transition-all", activeUIField?.type === 'answer' && "ring-2 ring-red-500 border-red-500 animate-pulse")}
+                    />
+                    <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('answer')} className={cn("absolute top-2 right-2 h-7 w-7", activeUIField?.type === 'answer' ? "text-red-500" : "text-primary")}>
+                       {voice.isListening && activeUIField?.type === 'answer' ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
                     </Button>
                   </div>
                 </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="relative">
+                    <Input 
+                      value={procTitle} 
+                      onChange={(e) => setProcTitle(e.target.value)} 
+                      placeholder="TITRE DE LA PROCÉDURE" 
+                      className={cn("bg-background uppercase h-12 text-sm font-bold", activeUIField?.type === 'procTitle' && "ring-2 ring-red-500 border-red-500")} 
+                    />
+                    <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('procTitle')} className={cn("absolute top-2.5 right-2 h-7 w-7", activeUIField?.type === 'procTitle' ? "text-red-500" : "text-primary")}>
+                      <Mic className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
+
+                  {procSteps.map((step, index) => (
+                    <Card key={step.id} className="p-4 border-border bg-black/30 space-y-4">
+                      <div className="flex justify-between items-center border-b border-border/50 pb-2">
+                        <span className="text-[10px] font-bold text-secondary uppercase">Étape {index + 1}</span>
+                        <div className="relative">
+                          <Input 
+                            placeholder="DURÉE" 
+                            value={step.duration} 
+                            onChange={(e) => { const n = [...procSteps]; n[index].duration = e.target.value; setProcSteps(n); }} 
+                            className={cn("h-7 w-32 text-[9px] bg-background/20", activeUIField?.type === 'stepDuration' && activeUIField?.index === index && "ring-1 ring-red-500")}
+                          />
+                          <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepDuration', index)} className="absolute right-0 top-0 h-7 w-7"><Mic className="w-2.5 h-2.5" /></Button>
+                        </div>
+                      </div>
+                      <div className="relative">
+                        <Input 
+                          placeholder="ACTION" 
+                          value={step.title} 
+                          onChange={(e) => { const n = [...procSteps]; n[index].title = e.target.value; setProcSteps(n); }} 
+                          className={cn("h-8 text-[10px] uppercase", activeUIField?.type === 'stepTitle' && activeUIField?.index === index && "ring-1 ring-red-500")}
+                        />
+                        <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepTitle', index)} className="absolute top-0.5 right-1 h-7 w-7"><Mic className="w-3 h-3" /></Button>
+                      </div>
+                    </Card>
+                  ))}
+                  <Button type="button" variant="outline" onClick={() => setProcSteps([...procSteps, { id: Date.now().toString(), title: '', duration: '' }])} className="w-full border-dashed h-10 text-[10px] uppercase">
+                    <Plus className="w-3 h-3 mr-2" /> Ajouter Étape
+                  </Button>
+                </div>
               )}
+
+              <Button type="submit" className="w-full font-headline font-bold uppercase text-xs h-10 bg-primary">
+                Enregistrer dans la file
+              </Button>
+            </form>
+          </Card>
+
+          {qaItems.length > 0 && (
+            <div className="space-y-3 pb-12">
+              <div className="flex justify-between items-center px-2">
+                <h3 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+                  <Layers className="w-3.5 h-3.5" /> File d'attente ({qaItems.length})
+                </h3>
+                <Button onClick={handleFinalSubmit} disabled={isUploading} size="sm" className="bg-secondary text-secondary-foreground text-[9px] uppercase font-bold">
+                  {isUploading ? <Loader2 className="w-3 h-3 mr-2 animate-spin" /> : <UploadCloud className="w-3 h-3 mr-2" />} 
+                  Pousser vers Cloud
+                </Button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {qaItems.map(item => (
+                  <Card key={item.id} className="p-4 border-border bg-card/20 relative group">
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      onClick={() => removeItem(item.id)}
+                      className="absolute top-2 right-2 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity text-destructive"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </Button>
+                    <p className="text-[10px] font-bold text-primary uppercase truncate pr-8 mb-1">{item.label}</p>
+                    <p className="text-[9px] font-code text-muted-foreground line-clamp-2 italic">{item.details}</p>
+                  </Card>
+                ))}
+              </div>
             </div>
-          </>
-        )}
+          )}
+        </div>
       </main>
     </div>
   );
