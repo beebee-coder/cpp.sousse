@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -14,12 +13,16 @@ export function useVoice(options: VoiceOptions = {}) {
   const [isListening, setIsListening] = useState(false);
   const [isSupported, setIsSupported] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  // Utilisation de Refs pour éviter de recréer l'objet recognition à chaque changement de state parent
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
+
   const recognitionRef = useRef<any>(null);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    // Vérification de la compatibilité navigateur
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     
     if (SpeechRecognition) {
@@ -33,17 +36,23 @@ export function useVoice(options: VoiceOptions = {}) {
         recognition.lang = options.lang || 'fr-FR';
 
         recognition.onresult = (event: any) => {
-          const text = event.results[0][0].transcript;
-          if (options.onResult) options.onResult(text);
+          // Récupération du dernier résultat transcrit
+          const results = event.results;
+          const transcript = results[results.length - 1][0].transcript;
+          
+          if (optionsRef.current.onResult) {
+            optionsRef.current.onResult(transcript);
+          }
         };
 
         recognition.onend = () => {
           setIsListening(false);
-          if (options.onEnd) options.onEnd();
+          if (optionsRef.current.onEnd) {
+            optionsRef.current.onEnd();
+          }
         };
 
         recognition.onerror = (event: any) => {
-          // "not-allowed" signifie que l'utilisateur ou le navigateur bloque le micro
           const errorMsg = event.error === 'not-allowed' 
             ? "Accès micro refusé. Vérifiez vos paramètres navigateur." 
             : event.error;
@@ -51,7 +60,9 @@ export function useVoice(options: VoiceOptions = {}) {
           setError(errorMsg);
           setIsListening(false);
           
-          if (options.onError) options.onError(errorMsg);
+          if (optionsRef.current.onError) {
+            optionsRef.current.onError(errorMsg);
+          }
         };
       } catch (e) {
         console.warn("[VOICE] Échec initialisation API Speech.");
@@ -61,14 +72,16 @@ export function useVoice(options: VoiceOptions = {}) {
 
     return () => {
       if (recognitionRef.current) {
+        // Nettoyage des listeners pour éviter les fuites mémoire
+        recognitionRef.current.onresult = null;
+        recognitionRef.current.onend = null;
+        recognitionRef.current.onerror = null;
         try {
           recognitionRef.current.stop();
-        } catch (e) {
-          // Ignorer
-        }
+        } catch (e) {}
       }
     };
-  }, [options.lang, options.onResult, options.onEnd, options.onError]);
+  }, [options.lang]);
 
   const startListening = useCallback(() => {
     setError(null);
@@ -88,9 +101,7 @@ export function useVoice(options: VoiceOptions = {}) {
     if (!recognitionRef.current) return;
     try {
       recognitionRef.current.stop();
-    } catch (e) {
-      // Ignorer
-    }
+    } catch (e) {}
     setIsListening(false);
   }, []);
 

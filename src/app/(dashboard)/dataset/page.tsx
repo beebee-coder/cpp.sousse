@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from 'react';
@@ -89,29 +88,47 @@ export default function DatasetPage() {
   const [isGuideActive, setIsGuideActive] = useState(false);
   const [lastGuidedField, setLastGuidedField] = useState<string>('');
   
-  // Voice Integration
+  // Voice Integration State & Refs
   const [activeVoiceField, setActiveVoiceField] = useState<{ type: string, index?: number } | null>(null);
+  const activeVoiceFieldRef = useRef<{ type: string, index?: number } | null>(null);
+
+  useEffect(() => {
+    activeVoiceFieldRef.current = activeVoiceField;
+  }, [activeVoiceField]);
 
   const { isListening, isSupported, startListening, stopListening, speak } = useVoice({
     onResult: (text) => {
-      if (!activeVoiceField) return;
+      const field = activeVoiceFieldRef.current;
+      if (!field) return;
       
-      const { type, index } = activeVoiceField;
-      if (type === 'question') setQuestion(prev => (prev ? prev + ' ' + text : text));
-      else if (type === 'answer') setAnswer(prev => (prev ? prev + ' ' + text : text));
-      else if (type === 'procTitle') setProcTitle(prev => (prev ? prev + ' ' + text : text));
-      else if (typeof index === 'number') {
-        const newSteps = [...procSteps];
-        if (type === 'stepTitle') newSteps[index].title = newSteps[index].title ? newSteps[index].title + ' ' + text : text;
-        else if (type === 'stepDesc') newSteps[index].description = newSteps[index].description ? newSteps[index].description + ' ' + text : text;
-        else if (type === 'stepNormal') newSteps[index].normalConditions = newSteps[index].normalConditions ? newSteps[index].normalConditions + ' ' + text : text;
-        else if (type === 'stepAbnormal') newSteps[index].abnormalConditions = newSteps[index].abnormalConditions ? newSteps[index].abnormalConditions + ' ' + text : text;
-        else if (type === 'stepAlarms') newSteps[index].alarms = newSteps[index].alarms ? newSteps[index].alarms + ' ' + text : text;
-        else if (type === 'stepDuration') newSteps[index].duration = newSteps[index].duration ? newSteps[index].duration + ' ' + text : text;
-        setProcSteps(newSteps);
+      const { type, index } = field;
+      
+      if (type === 'question') {
+        setQuestion(prev => (prev ? prev + ' ' + text : text));
+      } else if (type === 'answer') {
+        setAnswer(prev => (prev ? prev + ' ' + text : text));
+      } else if (type === 'procTitle') {
+        setProcTitle(prev => (prev ? prev + ' ' + text : text));
+      } else if (typeof index === 'number') {
+        setProcSteps(prevSteps => {
+          const newSteps = [...prevSteps];
+          const step = newSteps[index];
+          if (!step) return prevSteps;
+
+          if (type === 'stepTitle') step.title = step.title ? step.title + ' ' + text : text;
+          else if (type === 'stepDesc') step.description = step.description ? step.description + ' ' + text : text;
+          else if (type === 'stepNormal') step.normalConditions = step.normalConditions ? step.normalConditions + ' ' + text : text;
+          else if (type === 'stepAbnormal') step.abnormalConditions = step.abnormalConditions ? step.abnormalConditions + ' ' + text : text;
+          else if (type === 'stepAlarms') step.alarms = step.alarms ? step.alarms + ' ' + text : text;
+          else if (type === 'stepDuration') step.duration = step.duration ? step.duration + ' ' + text : text;
+          
+          return newSteps;
+        });
       }
     },
-    onEnd: () => setActiveVoiceField(null)
+    onEnd: () => {
+      // On ne reset pas activeVoiceFieldRef immédiatement pour permettre la fin du traitement
+    }
   });
 
   // AI Guidance Logic
@@ -396,10 +413,10 @@ export default function DatasetPage() {
                       placeholder="SYMPTÔME..." 
                       className={cn(
                         "h-32 bg-background font-code text-xs uppercase pr-10 transition-all",
-                        (isListening && activeVoiceField?.type === 'question') && "ring-2 ring-red-500 animate-pulse border-red-500/50"
+                        (isListening && activeVoiceField?.type === 'question') && "ring-2 ring-red-500 animate-pulse border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.3)]"
                       )} 
                     />
-                    <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('question')} className={cn("absolute top-2 right-2 h-7 w-7 transition-all", (isListening && activeVoiceField?.type === 'question') ? "bg-red-500/20 text-red-500 animate-pulse" : "text-primary opacity-30 group-hover:opacity-100")} disabled={!isSupported}>
+                    <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('question')} className={cn("absolute top-2 right-2 h-7 w-7 transition-all", (isListening && activeVoiceField?.type === 'question') ? "bg-red-500 text-white animate-pulse" : "text-primary opacity-30 group-hover:opacity-100")} disabled={!isSupported}>
                       {(isListening && activeVoiceField?.type === 'question') ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
                     </Button>
                   </div>
@@ -411,10 +428,10 @@ export default function DatasetPage() {
                       placeholder="RÉSOLUTION..." 
                       className={cn(
                         "h-32 bg-background font-code text-xs uppercase pr-10 transition-all",
-                        (isListening && activeVoiceField?.type === 'answer') && "ring-2 ring-red-500 animate-pulse border-red-500/50"
+                        (isListening && activeVoiceField?.type === 'answer') && "ring-2 ring-red-500 animate-pulse border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.3)]"
                       )} 
                     />
-                    <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('answer')} className={cn("absolute top-2 right-2 h-7 w-7 transition-all", (isListening && activeVoiceField?.type === 'answer') ? "bg-red-500/20 text-red-500 animate-pulse" : "text-primary opacity-30 group-hover:opacity-100")} disabled={!isSupported}>
+                    <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('answer')} className={cn("absolute top-2 right-2 h-7 w-7 transition-all", (isListening && activeVoiceField?.type === 'answer') ? "bg-red-500 text-white animate-pulse" : "text-primary opacity-30 group-hover:opacity-100")} disabled={!isSupported}>
                       {(isListening && activeVoiceField?.type === 'answer') ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
                     </Button>
                   </div>
@@ -429,10 +446,10 @@ export default function DatasetPage() {
                       placeholder="TITRE PROCÉDURE" 
                       className={cn(
                         "bg-background font-headline uppercase pr-10 transition-all",
-                        (isListening && activeVoiceField?.type === 'procTitle') && "ring-2 ring-red-500 animate-pulse border-red-500/50"
+                        (isListening && activeVoiceField?.type === 'procTitle') && "ring-2 ring-red-500 animate-pulse border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.3)]"
                       )} 
                     />
-                    <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('procTitle')} className={cn("absolute top-1.5 right-2 h-7 w-7 transition-all", (isListening && activeVoiceField?.type === 'procTitle') ? "bg-red-500/20 text-red-500 animate-pulse" : "text-primary opacity-30 group-hover:opacity-100")} disabled={!isSupported}>
+                    <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('procTitle')} className={cn("absolute top-1.5 right-2 h-7 w-7 transition-all", (isListening && activeVoiceField?.type === 'procTitle') ? "bg-red-500 text-white animate-pulse" : "text-primary opacity-30 group-hover:opacity-100")} disabled={!isSupported}>
                       {(isListening && activeVoiceField?.type === 'procTitle') ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
                     </Button>
                   </div>
@@ -451,10 +468,10 @@ export default function DatasetPage() {
                               onChange={(e) => { const n = [...procSteps]; n[index].duration = e.target.value; setProcSteps(n); }} 
                               className={cn(
                                 "h-6 w-32 text-[9px] font-code bg-background/20 border-none uppercase transition-all",
-                                (isListening && activeVoiceField?.type === 'stepDuration' && activeVoiceField.index === index) && "ring-1 ring-red-500 animate-pulse"
+                                (isListening && activeVoiceField?.type === 'stepDuration' && activeVoiceField.index === index) && "ring-1 ring-red-500 animate-pulse bg-red-500/10"
                               )}
                             />
-                            <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepDuration', index)} className={cn("h-5 w-5 transition-all", (isListening && activeVoiceField?.type === 'stepDuration' && activeVoiceField.index === index) ? "bg-red-500/20 text-red-500 animate-pulse" : "text-primary opacity-0 group-hover:opacity-50")} disabled={!isSupported}>
+                            <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepDuration', index)} className={cn("h-5 w-5 transition-all", (isListening && activeVoiceField?.type === 'stepDuration' && activeVoiceField.index === index) ? "bg-red-500 text-white animate-pulse" : "text-primary opacity-0 group-hover:opacity-50")} disabled={!isSupported}>
                               {(isListening && activeVoiceField?.type === 'stepDuration' && activeVoiceField.index === index) ? <MicOff className="w-2.5 h-2.5" /> : <Mic className="w-2.5 h-2.5" />}
                             </Button>
                           </div>
@@ -472,10 +489,10 @@ export default function DatasetPage() {
                               onChange={(e) => { const n = [...procSteps]; n[index].title = e.target.value; setProcSteps(n); }} 
                               className={cn(
                                 "h-9 text-[11px] font-code uppercase pr-10 transition-all",
-                                (isListening && activeVoiceField?.type === 'stepTitle' && activeVoiceField.index === index) && "ring-2 ring-red-500 animate-pulse border-red-500/50"
+                                (isListening && activeVoiceField?.type === 'stepTitle' && activeVoiceField.index === index) && "ring-2 ring-red-500 animate-pulse border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.3)]"
                               )} 
                             />
-                            <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepTitle', index)} className={cn("absolute top-1 right-2 h-7 w-7 transition-all", (isListening && activeVoiceField?.type === 'stepTitle' && activeVoiceField.index === index) ? "bg-red-500/20 text-red-500 animate-pulse" : "text-primary opacity-30 group-hover:opacity-100")} disabled={!isSupported}>
+                            <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepTitle', index)} className={cn("absolute top-1 right-2 h-7 w-7 transition-all", (isListening && activeVoiceField?.type === 'stepTitle' && activeVoiceField.index === index) ? "bg-red-500 text-white animate-pulse" : "text-primary opacity-30 group-hover:opacity-100")} disabled={!isSupported}>
                               {(isListening && activeVoiceField?.type === 'stepTitle' && activeVoiceField.index === index) ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
                             </Button>
                           </div>
@@ -493,10 +510,10 @@ export default function DatasetPage() {
                             onChange={(e) => { const n = [...procSteps]; n[index].description = e.target.value; setProcSteps(n); }} 
                             className={cn(
                               "h-20 bg-background/50 font-code text-[11px] uppercase pr-10 transition-all",
-                              (isListening && activeVoiceField?.type === 'stepDesc' && activeVoiceField.index === index) && "ring-2 ring-red-500 animate-pulse border-red-500/50"
+                              (isListening && activeVoiceField?.type === 'stepDesc' && activeVoiceField.index === index) && "ring-2 ring-red-500 animate-pulse border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.3)]"
                             )} 
                           />
-                          <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepDesc', index)} className={cn("absolute top-2 right-2 h-7 w-7 transition-all", (isListening && activeVoiceField?.type === 'stepDesc' && activeVoiceField.index === index) ? "bg-red-500/20 text-red-500 animate-pulse" : "text-primary opacity-30 group-hover:opacity-100")} disabled={!isSupported}>
+                          <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepDesc', index)} className={cn("absolute top-2 right-2 h-7 w-7 transition-all", (isListening && activeVoiceField?.type === 'stepDesc' && activeVoiceField.index === index) ? "bg-red-500 text-white animate-pulse" : "text-primary opacity-30 group-hover:opacity-100")} disabled={!isSupported}>
                             {(isListening && activeVoiceField?.type === 'stepDesc' && activeVoiceField.index === index) ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
                           </Button>
                         </div>
@@ -512,11 +529,11 @@ export default function DatasetPage() {
                               onChange={(e) => { const n = [...procSteps]; n[index].normalConditions = e.target.value; setProcSteps(n); }} 
                               className={cn(
                                 "h-8 text-[10px] font-code bg-background/20 pr-8 transition-all",
-                                (isListening && activeVoiceField?.type === 'stepNormal' && activeVoiceField.index === index) && "ring-1 ring-red-500 animate-pulse border-red-500/50"
+                                (isListening && activeVoiceField?.type === 'stepNormal' && activeVoiceField.index === index) && "ring-1 ring-red-500 animate-pulse border-red-500/50 bg-red-500/5"
                               )} 
                               placeholder="NOMINAL..." 
                             />
-                            <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepNormal', index)} className={cn("absolute bottom-1 right-1 h-6 w-6 transition-all", (isListening && activeVoiceField?.type === 'stepNormal' && activeVoiceField.index === index) ? "bg-red-500/20 text-red-500 animate-pulse" : "text-primary opacity-0 group-hover:opacity-40")} disabled={!isSupported}>
+                            <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepNormal', index)} className={cn("absolute bottom-1 right-1 h-6 w-6 transition-all", (isListening && activeVoiceField?.type === 'stepNormal' && activeVoiceField.index === index) ? "bg-red-500 text-white animate-pulse" : "text-primary opacity-0 group-hover:opacity-40")} disabled={!isSupported}>
                               {(isListening && activeVoiceField?.type === 'stepNormal' && activeVoiceField.index === index) ? <MicOff className="w-3 h-3" /> : <Mic className="w-3 h-3" />}
                             </Button>
                           </div>
@@ -531,11 +548,11 @@ export default function DatasetPage() {
                               onChange={(e) => { const n = [...procSteps]; n[index].abnormalConditions = e.target.value; setProcSteps(n); }} 
                               className={cn(
                                 "h-8 text-[10px] font-code bg-background/20 pr-8 transition-all",
-                                (isListening && activeVoiceField?.type === 'stepAbnormal' && activeVoiceField.index === index) && "ring-1 ring-red-500 animate-pulse border-red-500/50"
+                                (isListening && activeVoiceField?.type === 'stepAbnormal' && activeVoiceField.index === index) && "ring-1 ring-red-500 animate-pulse border-red-500/50 bg-red-500/5"
                               )} 
                               placeholder="DÉRIVE..." 
                             />
-                            <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepAbnormal', index)} className={cn("absolute bottom-1 right-1 h-6 w-6 transition-all", (isListening && activeVoiceField?.type === 'stepAbnormal' && activeVoiceField.index === index) ? "bg-red-500/20 text-red-500 animate-pulse" : "text-primary opacity-0 group-hover:opacity-40")} disabled={!isSupported}>
+                            <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepAbnormal', index)} className={cn("absolute bottom-1 right-1 h-6 w-6 transition-all", (isListening && activeVoiceField?.type === 'stepAbnormal' && activeVoiceField.index === index) ? "bg-red-500 text-white animate-pulse" : "text-primary opacity-0 group-hover:opacity-40")} disabled={!isSupported}>
                               {(isListening && activeVoiceField?.type === 'stepAbnormal' && activeVoiceField.index === index) ? <MicOff className="w-3 h-3" /> : <Mic className="w-3 h-3" />}
                             </Button>
                           </div>
@@ -550,11 +567,11 @@ export default function DatasetPage() {
                               onChange={(e) => { const n = [...procSteps]; n[index].alarms = e.target.value; setProcSteps(n); }} 
                               className={cn(
                                 "h-8 text-[10px] font-code bg-background/20 pr-8 transition-all",
-                                (isListening && activeVoiceField?.type === 'stepAlarms' && activeVoiceField.index === index) && "ring-1 ring-red-500 animate-pulse border-red-500/50"
+                                (isListening && activeVoiceField?.type === 'stepAlarms' && activeVoiceField.index === index) && "ring-1 ring-red-500 animate-pulse border-red-500/50 bg-red-500/5"
                               )} 
                               placeholder="ALERTES..." 
                             />
-                            <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepAlarms', index)} className={cn("absolute bottom-1 right-1 h-6 w-6 transition-all", (isListening && activeVoiceField?.type === 'stepAlarms' && activeVoiceField.index === index) ? "bg-red-500/20 text-red-500 animate-pulse" : "text-primary opacity-0 group-hover:opacity-40")} disabled={!isSupported}>
+                            <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepAlarms', index)} className={cn("absolute bottom-1 right-1 h-6 w-6 transition-all", (isListening && activeVoiceField?.type === 'stepAlarms' && activeVoiceField.index === index) ? "bg-red-500 text-white animate-pulse" : "text-primary opacity-0 group-hover:opacity-40")} disabled={!isSupported}>
                               {(isListening && activeVoiceField?.type === 'stepAlarms' && activeVoiceField.index === index) ? <MicOff className="w-3 h-3" /> : <Mic className="w-3 h-3" />}
                             </Button>
                           </div>
