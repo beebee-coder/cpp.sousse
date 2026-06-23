@@ -103,6 +103,7 @@ export default function DatasetPage() {
     };
   }, []);
 
+  // Séquencement du montage DOM pour la vidéo
   useEffect(() => {
     if (cameraOpen && cameraStream && videoRef.current) {
       videoRef.current.srcObject = cameraStream;
@@ -297,11 +298,13 @@ export default function DatasetPage() {
     if (qaItems.length === 0) return;
     setIsIngesting(true);
     try {
+      // 1. Ingestion Textuelle (Weaviate/Chroma)
       await apiClient.post('/api/vector/ingest', {
         items: qaItems.map(i => ({ question: i.label, answer: i.details })),
         metadata: { collection: 'industrial_manuals' }
       });
       
+      // 2. Upload des Assets (Atomique)
       const itemsWithAssets = qaItems.filter(i => i.mediaAssets?.length);
       for (const item of itemsWithAssets) {
         for (const asset of item.mediaAssets!) {
@@ -312,7 +315,8 @@ export default function DatasetPage() {
           });
           
           await apiClient.post('/api/sync/upload', {
-            userId: 'admin', projectId: 'project-001',
+            userId: 'admin',
+            projectId: 'project-001',
             items: [{ 
               id: `asset-${Date.now()}`, 
               type: 'provisional_asset', 
@@ -339,6 +343,7 @@ export default function DatasetPage() {
     <div className="flex flex-col lg:flex-row h-screen bg-background overflow-hidden">
       <DashboardSidebar />
       
+      {/* Inputs cachés pour Desktop */}
       <input type="file" accept="image/*" ref={desktopPhotoRef} className="hidden" onChange={(e) => {
         const file = e.target.files?.[0];
         if (file && activeStepIndex !== null) processCapturedFile(file, activeStepIndex, 'image');

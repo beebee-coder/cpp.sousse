@@ -12,40 +12,49 @@ export function useSync() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const isMounted = useRef(false);
 
   const refreshState = useCallback(async () => {
-    const state = await syncEngine.getSyncState(USER_ID);
-    setSyncState(state);
+    if (!isMounted.current) return;
+    try {
+      const state = await syncEngine.getSyncState(USER_ID);
+      setSyncState(state);
+    } catch (e) {
+      console.warn("Sync refresh failed");
+    }
   }, []);
 
   const triggerSync = useCallback(async () => {
-    if (isSyncing) return;
+    if (isSyncing || !isMounted.current) return;
     setIsSyncing(true);
     setLastError(null);
     try {
       await syncEngine.syncAll(USER_ID, DEFAULT_PROJECT);
       await refreshState();
     } catch (e: any) {
-      setLastError(e.message);
+      setLastError(e.message || "Erreur de synchronisation");
     } finally {
-      setIsSyncing(false);
+      if (isMounted.current) setIsSyncing(false);
     }
   }, [isSyncing, refreshState]);
 
   useEffect(() => {
+    isMounted.current = true;
     refreshState();
-    // Auto-sync polling every 30s
+    
+    // Auto-sync polling every 60s
     timerRef.current = setInterval(() => {
       refreshState();
-    }, 30000);
+    }, 60000);
 
     return () => {
+      isMounted.current = false;
       if (timerRef.current) clearInterval(timerRef.current);
     };
   }, [refreshState]);
 
   const formatLastSync = () => {
-    if (!syncState || syncState.lastSync.getTime() === 0) return 'JAMAIS';
+    if (!syncState || !syncState.lastSync || syncState.lastSync.getTime() === 0) return 'JAMAIS';
     return syncState.lastSync.toLocaleTimeString();
   };
 

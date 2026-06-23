@@ -157,6 +157,7 @@ export function DashboardSidebar() {
 
   return (
     <>
+      {/* Mobile Trigger */}
       <div className="lg:hidden fixed top-4 left-4 z-50">
         <Sheet open={open} onOpenChange={setOpen}>
           <SheetTrigger asChild>
@@ -175,6 +176,7 @@ export function DashboardSidebar() {
         </Sheet>
       </div>
 
+      {/* Desktop Permanent Sidebar */}
       <div className="hidden lg:flex w-64 border-r border-border bg-card flex-col h-full shrink-0 overflow-hidden">
         <SidebarContent 
           pathname={pathname} 
