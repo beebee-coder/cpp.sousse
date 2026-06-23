@@ -1,18 +1,11 @@
-
-/* VisioNode Dark Industrial Theme */
+/* Minimal VS Code Theme for industrial cockpit */
 :root {
-  --vscode-editor-background: #0d1216;
-  --vscode-editor-foreground: #e2e8f0;
-  --vscode-editor-selectionBackground: rgba(50, 181, 212, 0.3);
-  --vscode-editorLineNumber-foreground: #4a5568;
-  --vscode-editorActiveLineNumber-foreground: #32b5d4;
-  --vscode-editor-lineHighlightBackground: rgba(50, 181, 212, 0.05);
+  --vscode-editor-background: #0d1117;
+  --vscode-editor-foreground: #c9d1d9;
+  --vscode-editor-lineHighlightBackground: #161b22;
 }
 
 .monaco-editor {
-  background-color: var(--vscode-editor-background) !important;
-}
-
-.monaco-editor .margin {
-  background-color: var(--vscode-editor-background) !important;
+  background-color: var(--vscode-editor-background);
+  color: var(--vscode-editor-foreground);
 }

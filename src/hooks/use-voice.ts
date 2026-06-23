@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -65,6 +64,7 @@ export function useVoice(options: VoiceOptions = {}) {
 
         if (finalSegment.trim()) {
           const cleanText = finalSegment.trim();
+          console.log(`[VOICE_HOOK] 🎙️ Texte détecté: "${cleanText}"`);
           if (onResultRef.current) {
             onResultRef.current(cleanText);
           }
@@ -73,10 +73,12 @@ export function useVoice(options: VoiceOptions = {}) {
       };
 
       recognition.onstart = () => {
+        console.log(`[VOICE_HOOK] 🟢 Micro actif`);
         setState(prev => ({ ...prev, isListening: true, error: null }));
       };
 
       recognition.onend = () => {
+        console.log(`[VOICE_HOOK] 🔴 Micro inactif`);
         setState(prev => ({ ...prev, isListening: false }));
         if (onEndRef.current) onEndRef.current();
 
@@ -87,10 +89,10 @@ export function useVoice(options: VoiceOptions = {}) {
 
       recognition.onerror = (event: any) => {
         if (event.error === 'not-allowed') {
-          console.error(`[VOICE_HOOK] ❌ Accès microphone refusé : ${event.error}`);
+          console.error(`[VOICE_HOOK] ❌ Accès microphone refusé: check permissions`);
           setState(prev => ({ ...prev, error: 'not-allowed', isListening: false }));
         } else if (event.error !== 'no-speech') {
-          console.error(`[VOICE_HOOK] ❌ Erreur : ${event.error}`);
+          console.error(`[VOICE_HOOK] ❌ Erreur Speech: ${event.error}`);
           setState(prev => ({ ...prev, error: event.error, isListening: false }));
         }
       };

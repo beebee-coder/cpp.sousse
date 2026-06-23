@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from 'react';
@@ -64,9 +63,14 @@ export default function DatasetPage() {
 
   const handleVoiceResult = useCallback((text: string) => {
     const target = activeVoiceFieldRef.current;
-    if (!target) return;
+    if (!target) {
+      console.warn(`[DATASET_AUDIT] ⚠️ Aucun champ cible identifié pour le texte: "${text}"`);
+      return;
+    }
 
     const cleanText = text.trim();
+    console.log(`[DATASET_AUDIT] 🎯 Injection dans ${target.type}${target.index !== undefined ? ` [index ${target.index}]` : ''}`);
+
     if (target.type === 'question') {
       setQuestion(prev => prev ? `${prev} ${cleanText}` : cleanText);
     } else if (target.type === 'answer') {
@@ -101,7 +105,7 @@ export default function DatasetPage() {
     if (voiceError === 'not-allowed') {
       toast({
         title: "Microphone Bloqué",
-        description: "L'accès au micro a été refusé. Veuillez vérifier les permissions dans votre navigateur (icône cadenas dans la barre d'adresse).",
+        description: "L'accès au micro a été refusé. Veuillez vérifier les permissions dans votre navigateur.",
         variant: "destructive"
       });
     }
@@ -112,12 +116,14 @@ export default function DatasetPage() {
     const isCurrentlyActive = isListening && activeUIField?.type === type && activeUIField?.index === index;
 
     if (isCurrentlyActive) {
+      console.log(`[DATASET_AUDIT] 🔇 Désactivation vocale`);
       stopListening();
       activeVoiceFieldRef.current = null;
       setActiveUIField(null);
     } else {
       if (isListening) stopListening();
       
+      console.log(`[DATASET_AUDIT] 🎙️ Activation vocale pour: ${type}`);
       activeVoiceFieldRef.current = target;
       setActiveUIField(target);
 
@@ -200,7 +206,7 @@ export default function DatasetPage() {
               className={cn("h-9 text-[9px] font-code uppercase", isGuideActive ? "text-secondary" : "text-muted-foreground")}
             >
               <Sparkles className="w-3.5 h-3.5 mr-2" />
-              Guide IA {isGuideActive ? "ON" : "OFF"}
+              Assistant IA {isGuideActive ? "ON" : "OFF"}
             </Button>
             <div className="flex bg-muted/30 p-1 rounded-sm border border-border">
               <button onClick={() => setMode('qa')} className={cn("px-3 py-1 text-[9px] uppercase rounded-sm", mode === 'qa' ? "bg-primary text-primary-foreground" : "text-muted-foreground")}>FAQ</button>
@@ -290,6 +296,7 @@ export default function DatasetPage() {
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                           {['Normal', 'Abnormal', 'Alarms'].map((f) => {
                             const fieldKey = f === 'Alarms' ? 'alarms' : f.toLowerCase() + 'Conditions';
+                            const uiType = `step${f}`;
                             return (
                               <div key={f} className="relative">
                                 <Input 
@@ -300,9 +307,9 @@ export default function DatasetPage() {
                                     (n[index] as any)[fieldKey] = e.target.value; 
                                     setProcSteps(n); 
                                   }} 
-                                  className={cn("h-7 text-[9px]", activeUIField?.type === `step${f}` && activeUIField?.index === index && "ring-1 ring-red-500")}
+                                  className={cn("h-7 text-[9px]", activeUIField?.type === uiType && activeUIField?.index === index && "ring-1 ring-red-500")}
                                 />
-                                <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice(`step${f}`, index)} className="absolute right-0 top-0 h-7 w-7"><Mic className="w-2.5 h-2.5" /></Button>
+                                <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice(uiType, index)} className="absolute right-0 top-0 h-7 w-7"><Mic className="w-2.5 h-2.5" /></Button>
                               </div>
                             );
                           })}
