@@ -68,7 +68,7 @@ export function useVoice(options: VoiceOptions = {}) {
         }
       }
     };
-  }, [options.lang]);
+  }, [options.lang, options.onResult, options.onEnd, options.onError]);
 
   const startListening = useCallback(() => {
     setError(null);

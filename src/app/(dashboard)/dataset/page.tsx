@@ -122,7 +122,7 @@ export default function DatasetPage() {
   }, [isGuideActive, lastGuidedField, speak]);
 
   const toggleVoice = (type: string, index?: number) => {
-    if (isListening) {
+    if (isListening && activeVoiceField?.type === type && activeVoiceField?.index === index) {
       stopListening();
       setActiveVoiceField(null);
     } else {
@@ -394,10 +394,13 @@ export default function DatasetPage() {
                       onChange={(e) => setQuestion(e.target.value)} 
                       onFocus={() => triggerGuidance('qa-q', "Veuillez décrire le symptôme ou le problème industriel rencontré.")}
                       placeholder="SYMPTÔME..." 
-                      className="h-32 bg-background font-code text-xs uppercase pr-10" 
+                      className={cn(
+                        "h-32 bg-background font-code text-xs uppercase pr-10 transition-all",
+                        (isListening && activeVoiceField?.type === 'question') && "ring-2 ring-red-500 animate-pulse border-red-500/50"
+                      )} 
                     />
-                    <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('question')} className={cn("absolute top-2 right-2 h-7 w-7 transition-all", activeVoiceField?.type === 'question' ? "bg-red-500/20 text-red-500 animate-pulse" : "text-primary opacity-30 group-hover:opacity-100")} disabled={!isSupported}>
-                      {activeVoiceField?.type === 'question' ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
+                    <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('question')} className={cn("absolute top-2 right-2 h-7 w-7 transition-all", (isListening && activeVoiceField?.type === 'question') ? "bg-red-500/20 text-red-500 animate-pulse" : "text-primary opacity-30 group-hover:opacity-100")} disabled={!isSupported}>
+                      {(isListening && activeVoiceField?.type === 'question') ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
                     </Button>
                   </div>
                   <div className="relative group">
@@ -406,10 +409,13 @@ export default function DatasetPage() {
                       onChange={(e) => setAnswer(e.target.value)} 
                       onFocus={() => triggerGuidance('qa-a', "Indiquez la résolution technique ou la démarche de maintenance.")}
                       placeholder="RÉSOLUTION..." 
-                      className="h-32 bg-background font-code text-xs uppercase pr-10" 
+                      className={cn(
+                        "h-32 bg-background font-code text-xs uppercase pr-10 transition-all",
+                        (isListening && activeVoiceField?.type === 'answer') && "ring-2 ring-red-500 animate-pulse border-red-500/50"
+                      )} 
                     />
-                    <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('answer')} className={cn("absolute top-2 right-2 h-7 w-7 transition-all", activeVoiceField?.type === 'answer' ? "bg-red-500/20 text-red-500 animate-pulse" : "text-primary opacity-30 group-hover:opacity-100")} disabled={!isSupported}>
-                      {activeVoiceField?.type === 'answer' ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
+                    <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('answer')} className={cn("absolute top-2 right-2 h-7 w-7 transition-all", (isListening && activeVoiceField?.type === 'answer') ? "bg-red-500/20 text-red-500 animate-pulse" : "text-primary opacity-30 group-hover:opacity-100")} disabled={!isSupported}>
+                      {(isListening && activeVoiceField?.type === 'answer') ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
                     </Button>
                   </div>
                 </div>
@@ -421,10 +427,13 @@ export default function DatasetPage() {
                       onChange={(e) => setProcTitle(e.target.value)} 
                       onFocus={() => triggerGuidance('proc-title', "Quel est le titre général de cette nouvelle procédure ?")}
                       placeholder="TITRE PROCÉDURE" 
-                      className="bg-background font-headline uppercase pr-10" 
+                      className={cn(
+                        "bg-background font-headline uppercase pr-10 transition-all",
+                        (isListening && activeVoiceField?.type === 'procTitle') && "ring-2 ring-red-500 animate-pulse border-red-500/50"
+                      )} 
                     />
-                    <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('procTitle')} className={cn("absolute top-1.5 right-2 h-7 w-7 transition-all", activeVoiceField?.type === 'procTitle' ? "bg-red-500/20 text-red-500 animate-pulse" : "text-primary opacity-30 group-hover:opacity-100")} disabled={!isSupported}>
-                      {activeVoiceField?.type === 'procTitle' ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
+                    <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('procTitle')} className={cn("absolute top-1.5 right-2 h-7 w-7 transition-all", (isListening && activeVoiceField?.type === 'procTitle') ? "bg-red-500/20 text-red-500 animate-pulse" : "text-primary opacity-30 group-hover:opacity-100")} disabled={!isSupported}>
+                      {(isListening && activeVoiceField?.type === 'procTitle') ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
                     </Button>
                   </div>
                   
@@ -440,10 +449,13 @@ export default function DatasetPage() {
                               value={step.duration} 
                               onFocus={() => triggerGuidance(`step-dur-${index}`, `Combien de temps faut-il pour accomplir l'étape ${index + 1} ?`)}
                               onChange={(e) => { const n = [...procSteps]; n[index].duration = e.target.value; setProcSteps(n); }} 
-                              className="h-6 w-32 text-[9px] font-code bg-background/20 border-none uppercase"
+                              className={cn(
+                                "h-6 w-32 text-[9px] font-code bg-background/20 border-none uppercase transition-all",
+                                (isListening && activeVoiceField?.type === 'stepDuration' && activeVoiceField.index === index) && "ring-1 ring-red-500 animate-pulse"
+                              )}
                             />
-                            <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepDuration', index)} className={cn("h-5 w-5 transition-all", (activeVoiceField?.type === 'stepDuration' && activeVoiceField.index === index) ? "bg-red-500/20 text-red-500 animate-pulse" : "text-primary opacity-0 group-hover:opacity-50")} disabled={!isSupported}>
-                              {(activeVoiceField?.type === 'stepDuration' && activeVoiceField.index === index) ? <MicOff className="w-2.5 h-2.5" /> : <Mic className="w-2.5 h-2.5" />}
+                            <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepDuration', index)} className={cn("h-5 w-5 transition-all", (isListening && activeVoiceField?.type === 'stepDuration' && activeVoiceField.index === index) ? "bg-red-500/20 text-red-500 animate-pulse" : "text-primary opacity-0 group-hover:opacity-50")} disabled={!isSupported}>
+                              {(isListening && activeVoiceField?.type === 'stepDuration' && activeVoiceField.index === index) ? <MicOff className="w-2.5 h-2.5" /> : <Mic className="w-2.5 h-2.5" />}
                             </Button>
                           </div>
                         </div>
@@ -458,10 +470,13 @@ export default function DatasetPage() {
                               value={step.title} 
                               onFocus={() => triggerGuidance(`step-title-${index}`, `Nommez l'action spécifique de l'étape ${index + 1}.`)}
                               onChange={(e) => { const n = [...procSteps]; n[index].title = e.target.value; setProcSteps(n); }} 
-                              className="h-9 text-[11px] font-code uppercase pr-10" 
+                              className={cn(
+                                "h-9 text-[11px] font-code uppercase pr-10 transition-all",
+                                (isListening && activeVoiceField?.type === 'stepTitle' && activeVoiceField.index === index) && "ring-2 ring-red-500 animate-pulse border-red-500/50"
+                              )} 
                             />
-                            <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepTitle', index)} className={cn("absolute top-1 right-2 h-7 w-7 transition-all", (activeVoiceField?.type === 'stepTitle' && activeVoiceField.index === index) ? "bg-red-500/20 text-red-500 animate-pulse" : "text-primary opacity-30 group-hover:opacity-100")} disabled={!isSupported}>
-                              {(activeVoiceField?.type === 'stepTitle' && activeVoiceField.index === index) ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
+                            <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepTitle', index)} className={cn("absolute top-1 right-2 h-7 w-7 transition-all", (isListening && activeVoiceField?.type === 'stepTitle' && activeVoiceField.index === index) ? "bg-red-500/20 text-red-500 animate-pulse" : "text-primary opacity-30 group-hover:opacity-100")} disabled={!isSupported}>
+                              {(isListening && activeVoiceField?.type === 'stepTitle' && activeVoiceField.index === index) ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
                             </Button>
                           </div>
                           <div className="flex gap-2">
@@ -476,10 +491,13 @@ export default function DatasetPage() {
                             value={step.description} 
                             onFocus={() => triggerGuidance(`step-desc-${index}`, "Détaillez les manipulations techniques à effectuer pour cette étape.")}
                             onChange={(e) => { const n = [...procSteps]; n[index].description = e.target.value; setProcSteps(n); }} 
-                            className="h-20 bg-background/50 font-code text-[11px] uppercase pr-10" 
+                            className={cn(
+                              "h-20 bg-background/50 font-code text-[11px] uppercase pr-10 transition-all",
+                              (isListening && activeVoiceField?.type === 'stepDesc' && activeVoiceField.index === index) && "ring-2 ring-red-500 animate-pulse border-red-500/50"
+                            )} 
                           />
-                          <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepDesc', index)} className={cn("absolute top-2 right-2 h-7 w-7 transition-all", (activeVoiceField?.type === 'stepDesc' && activeVoiceField.index === index) ? "bg-red-500/20 text-red-500 animate-pulse" : "text-primary opacity-30 group-hover:opacity-100")} disabled={!isSupported}>
-                            {(activeVoiceField?.type === 'stepDesc' && activeVoiceField.index === index) ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
+                          <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepDesc', index)} className={cn("absolute top-2 right-2 h-7 w-7 transition-all", (isListening && activeVoiceField?.type === 'stepDesc' && activeVoiceField.index === index) ? "bg-red-500/20 text-red-500 animate-pulse" : "text-primary opacity-30 group-hover:opacity-100")} disabled={!isSupported}>
+                            {(isListening && activeVoiceField?.type === 'stepDesc' && activeVoiceField.index === index) ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
                           </Button>
                         </div>
 
@@ -492,11 +510,14 @@ export default function DatasetPage() {
                               value={step.normalConditions} 
                               onFocus={() => triggerGuidance(`step-norm-${index}`, "Quels sont les paramètres ou l'état nominal attendu ?")}
                               onChange={(e) => { const n = [...procSteps]; n[index].normalConditions = e.target.value; setProcSteps(n); }} 
-                              className="h-8 text-[10px] font-code bg-background/20 pr-8" 
+                              className={cn(
+                                "h-8 text-[10px] font-code bg-background/20 pr-8 transition-all",
+                                (isListening && activeVoiceField?.type === 'stepNormal' && activeVoiceField.index === index) && "ring-1 ring-red-500 animate-pulse border-red-500/50"
+                              )} 
                               placeholder="NOMINAL..." 
                             />
-                            <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepNormal', index)} className={cn("absolute bottom-1 right-1 h-6 w-6 transition-all", (activeVoiceField?.type === 'stepNormal' && activeVoiceField.index === index) ? "bg-red-500/20 text-red-500 animate-pulse" : "text-primary opacity-0 group-hover:opacity-40")} disabled={!isSupported}>
-                              {(activeVoiceField?.type === 'stepNormal' && activeVoiceField.index === index) ? <MicOff className="w-3 h-3" /> : <Mic className="w-3 h-3" />}
+                            <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepNormal', index)} className={cn("absolute bottom-1 right-1 h-6 w-6 transition-all", (isListening && activeVoiceField?.type === 'stepNormal' && activeVoiceField.index === index) ? "bg-red-500/20 text-red-500 animate-pulse" : "text-primary opacity-0 group-hover:opacity-40")} disabled={!isSupported}>
+                              {(isListening && activeVoiceField?.type === 'stepNormal' && activeVoiceField.index === index) ? <MicOff className="w-3 h-3" /> : <Mic className="w-3 h-3" />}
                             </Button>
                           </div>
                           
@@ -508,11 +529,14 @@ export default function DatasetPage() {
                               value={step.abnormalConditions} 
                               onFocus={() => triggerGuidance(`step-abnorm-${index}`, "Quels sont les signes de dérive ou de dysfonctionnement ?")}
                               onChange={(e) => { const n = [...procSteps]; n[index].abnormalConditions = e.target.value; setProcSteps(n); }} 
-                              className="h-8 text-[10px] font-code bg-background/20 pr-8" 
+                              className={cn(
+                                "h-8 text-[10px] font-code bg-background/20 pr-8 transition-all",
+                                (isListening && activeVoiceField?.type === 'stepAbnormal' && activeVoiceField.index === index) && "ring-1 ring-red-500 animate-pulse border-red-500/50"
+                              )} 
                               placeholder="DÉRIVE..." 
                             />
-                            <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepAbnormal', index)} className={cn("absolute bottom-1 right-1 h-6 w-6 transition-all", (activeVoiceField?.type === 'stepAbnormal' && activeVoiceField.index === index) ? "bg-red-500/20 text-red-500 animate-pulse" : "text-primary opacity-0 group-hover:opacity-40")} disabled={!isSupported}>
-                              {(activeVoiceField?.type === 'stepAbnormal' && activeVoiceField.index === index) ? <MicOff className="w-3 h-3" /> : <Mic className="w-3 h-3" />}
+                            <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepAbnormal', index)} className={cn("absolute bottom-1 right-1 h-6 w-6 transition-all", (isListening && activeVoiceField?.type === 'stepAbnormal' && activeVoiceField.index === index) ? "bg-red-500/20 text-red-500 animate-pulse" : "text-primary opacity-0 group-hover:opacity-40")} disabled={!isSupported}>
+                              {(isListening && activeVoiceField?.type === 'stepAbnormal' && activeVoiceField.index === index) ? <MicOff className="w-3 h-3" /> : <Mic className="w-3 h-3" />}
                             </Button>
                           </div>
 
@@ -524,11 +548,14 @@ export default function DatasetPage() {
                               value={step.alarms} 
                               onFocus={() => triggerGuidance(`step-alarms-${index}`, "Précisez les seuils critiques et les alertes système.")}
                               onChange={(e) => { const n = [...procSteps]; n[index].alarms = e.target.value; setProcSteps(n); }} 
-                              className="h-8 text-[10px] font-code bg-background/20 pr-8" 
+                              className={cn(
+                                "h-8 text-[10px] font-code bg-background/20 pr-8 transition-all",
+                                (isListening && activeVoiceField?.type === 'stepAlarms' && activeVoiceField.index === index) && "ring-1 ring-red-500 animate-pulse border-red-500/50"
+                              )} 
                               placeholder="ALERTES..." 
                             />
-                            <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepAlarms', index)} className={cn("absolute bottom-1 right-1 h-6 w-6 transition-all", (activeVoiceField?.type === 'stepAlarms' && activeVoiceField.index === index) ? "bg-red-500/20 text-red-500 animate-pulse" : "text-primary opacity-0 group-hover:opacity-40")} disabled={!isSupported}>
-                              {(activeVoiceField?.type === 'stepAlarms' && activeVoiceField.index === index) ? <MicOff className="w-3 h-3" /> : <Mic className="w-3 h-3" />}
+                            <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepAlarms', index)} className={cn("absolute bottom-1 right-1 h-6 w-6 transition-all", (isListening && activeVoiceField?.type === 'stepAlarms' && activeVoiceField.index === index) ? "bg-red-500/20 text-red-500 animate-pulse" : "text-primary opacity-0 group-hover:opacity-40")} disabled={!isSupported}>
+                              {(isListening && activeVoiceField?.type === 'stepAlarms' && activeVoiceField.index === index) ? <MicOff className="w-3 h-3" /> : <Mic className="w-3 h-3" />}
                             </Button>
                           </div>
                         </div>
