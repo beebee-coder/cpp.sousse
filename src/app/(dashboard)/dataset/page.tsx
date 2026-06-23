@@ -9,7 +9,8 @@ import {
   Mic,
   MicOff,
   Sparkles,
-  Loader2
+  Loader2,
+  AlertTriangle
 } from 'lucide-react';
 
 import { Card } from '@/components/ui/card';
@@ -54,24 +55,19 @@ export default function DatasetPage() {
   // Cette Ref permet au moteur vocal de savoir où écrire sans dépendre du cycle de rendu
   const targetFieldRef = useRef<{ type: string, index?: number } | null>(null);
 
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   // Synchronisation de la Ref avec l'état UI
   useEffect(() => {
     targetFieldRef.current = activeUIField;
   }, [activeUIField]);
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
   // Callback de traitement des résultats vocaux
   const handleVoiceResult = useCallback((text: string) => {
     const target = targetFieldRef.current;
-    if (!target) {
-      console.warn(`[DATASET_AUDIT] ⚠️ Aucune cible active pour l'injection : "${text}"`);
-      return;
-    }
-
-    console.log(`[DATASET_AUDIT] 🎯 Injection dans ${target.type} -> ${text}`);
+    if (!target) return;
 
     if (target.type === 'question') {
       setQuestion(prev => prev ? `${prev} ${text}` : text);
@@ -102,7 +98,7 @@ export default function DatasetPage() {
     if (voice.error === 'not-allowed') {
       toast({
         title: "Microphone Bloqué",
-        description: "Veuillez autoriser l'accès au microphone dans votre navigateur.",
+        description: "Accès refusé. Vérifiez vos paramètres système ou utilisez HTTPS.",
         variant: "destructive"
       });
     }
@@ -164,7 +160,6 @@ export default function DatasetPage() {
     }
   };
 
-  // 2. RENDU CONDITIONNEL DANS LE JSX POUR RESPECTER LES HOOKS
   return (
     <div className="flex flex-col lg:flex-row h-screen bg-background overflow-hidden">
       <DashboardSidebar />
@@ -184,6 +179,12 @@ export default function DatasetPage() {
               </div>
 
               <div className="flex items-center gap-4">
+                {voice.error === 'not-allowed' && (
+                  <div className="flex items-center gap-2 text-destructive animate-pulse">
+                    <AlertTriangle className="w-3 h-3" />
+                    <span className="text-[8px] font-code uppercase">Microphone Bloqué</span>
+                  </div>
+                )}
                 <Button 
                   variant="ghost" 
                   size="sm" 

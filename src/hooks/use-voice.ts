@@ -47,7 +47,7 @@ export function useVoice(options: VoiceOptions = {}) {
 
     const recognition = new SpeechRecognition();
     recognition.continuous = true;
-    recognition.interimResults = false;
+    recognition.interimResults = true;
     recognition.lang = optionsRef.current.lang || 'fr-FR';
 
     recognition.onstart = () => {
@@ -57,12 +57,16 @@ export function useVoice(options: VoiceOptions = {}) {
 
     recognition.onresult = (event: any) => {
       const lastIndex = event.resultIndex;
-      const segment = event.results[lastIndex][0].transcript;
+      const result = event.results[lastIndex];
       
-      if (segment && segment.trim()) {
-        console.log(`[VOICE_HOOK] 🗣️ Texte capturé : "${segment.trim()}"`);
-        if (optionsRef.current.onResult) {
-          optionsRef.current.onResult(segment.trim());
+      // On ne traite que les segments finaux pour garantir une injection propre dans les champs
+      if (result.isFinal) {
+        const segment = result[0].transcript;
+        if (segment && segment.trim()) {
+          console.log(`[VOICE_HOOK] ✅ Texte validé : "${segment.trim()}"`);
+          if (optionsRef.current.onResult) {
+            optionsRef.current.onResult(segment.trim());
+          }
         }
       }
     };
@@ -73,21 +77,27 @@ export function useVoice(options: VoiceOptions = {}) {
         try {
           recognition.start();
         } catch (e) {
-          // Déjà démarré, erreur ignorée
+          // Échec de redémarrage ignoré
         }
       }
     };
 
     recognition.onerror = (event: any) => {
-      if (event.error !== 'no-speech') {
-        console.error(`[VOICE_HOOK] ❌ Erreur système : ${event.error}`);
-        setState(prev => ({ ...prev, error: event.error, isListening: false }));
+      const err = event.error;
+      if (err === 'no-speech') return;
+
+      // On utilise warn au lieu de error pour 'not-allowed' pour éviter de bloquer l'UI de dev
+      if (err === 'not-allowed' || err === 'service-not-allowed') {
+        console.warn(`[VOICE_HOOK] ⚠️ Permission microphone refusée ou indisponible (SSL requis pour Speech API).`);
+      } else {
+        console.error(`[VOICE_HOOK] ❌ Erreur système : ${err}`);
       }
+      
+      setState(prev => ({ ...prev, error: err, isListening: false }));
     };
 
     recognitionRef.current = recognition;
 
-    // Nettoyage agressif pour respecter les politiques de sécurité (unload protection)
     return () => {
       if (recognitionRef.current) {
         recognitionRef.current.onstart = null;
@@ -107,7 +117,7 @@ export function useVoice(options: VoiceOptions = {}) {
       try {
         recognitionRef.current.start();
       } catch (e) {
-        console.warn('[VOICE_HOOK] Microphone déjà en cours d\'utilisation.');
+        console.warn('[VOICE_HOOK] Microphone indisponible ou déjà actif.');
       }
     }
   }, []);
