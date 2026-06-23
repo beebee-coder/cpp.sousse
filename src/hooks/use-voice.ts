@@ -19,21 +19,29 @@ interface VoiceState {
   transcript: string;
 }
 
+/**
+ * Hook de reconnaissance vocale ultra-stable.
+ * Utilise des références pour éviter les cycles de re-rendu et les erreurs d'ordre de hooks.
+ */
 export function useVoice(options: VoiceOptions = {}) {
   const [state, setState] = useState<VoiceState>({
     isListening: false,
-    isSupported: false,
+    isSupported: true,
     error: null,
     transcript: ''
   });
 
+  // Utilisation de Refs pour les options pour éviter de dépendre d'elles dans les effets
   const onResultRef = useRef(options.onResult);
   const recognitionRef = useRef<any>(null);
   const isManuallyStopped = useRef(false);
+  const optionsRef = useRef(options);
 
+  // Mise à jour des références à chaque rendu
   useEffect(() => {
     onResultRef.current = options.onResult;
-  }, [options.onResult]);
+    optionsRef.current = options;
+  });
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -47,9 +55,9 @@ export function useVoice(options: VoiceOptions = {}) {
 
     try {
       const recognition = new SpeechRecognition();
-      recognition.continuous = options.continuous ?? true;
-      recognition.interimResults = options.interimResults ?? true;
-      recognition.lang = options.lang || 'fr-FR';
+      recognition.continuous = optionsRef.current.continuous ?? true;
+      recognition.interimResults = optionsRef.current.interimResults ?? true;
+      recognition.lang = optionsRef.current.lang || 'fr-FR';
 
       recognition.onresult = (event: any) => {
         let finalSegment = '';
@@ -78,7 +86,7 @@ export function useVoice(options: VoiceOptions = {}) {
         console.log(`[VOICE_HOOK] 🔴 Micro Inactif`);
         setState(prev => ({ ...prev, isListening: false }));
         
-        if (options.autoRestart && !isManuallyStopped.current && !state.error) {
+        if (optionsRef.current.autoRestart && !isManuallyStopped.current) {
           try { recognition.start(); } catch (e) {}
         }
       };
@@ -92,8 +100,6 @@ export function useVoice(options: VoiceOptions = {}) {
       };
 
       recognitionRef.current = recognition;
-      setState(prev => ({ ...prev, isSupported: true }));
-
     } catch (error) {
       console.error('[VOICE_HOOK] Initialisation échouée');
     }
@@ -106,7 +112,7 @@ export function useVoice(options: VoiceOptions = {}) {
         try { recognitionRef.current.stop(); } catch (e) {}
       }
     };
-  }, [options.lang, options.continuous, options.interimResults, options.autoRestart, state.error]);
+  }, []); // Exécuté une seule fois pour garantir la stabilité des hooks
 
   const startListening = useCallback(() => {
     isManuallyStopped.current = false;
