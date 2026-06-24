@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
@@ -71,40 +70,47 @@ export default function BDDPage() {
     setMounted(true);
   }, []);
 
+  /**
+   * Fusionne l'état des dossiers ouverts avec la nouvelle arborescence.
+   */
+  const mergeTreeState = useCallback((oldTree: FSNode[], newTree: FSNode[]): FSNode[] => {
+    const findOld = (id: string): FSNode | undefined => {
+      const search = (nodes: FSNode[]): FSNode | undefined => {
+        for (const n of nodes) {
+          if (n.id === id) return n;
+          if (n.children) {
+            const found = search(n.children);
+            if (found) return found;
+          }
+        }
+        return undefined;
+      };
+      return search(oldTree);
+    };
+
+    return newTree.map(node => {
+      const old = findOld(node.id);
+      return {
+        ...node,
+        isOpen: old?.isOpen ?? node.isOpen,
+        children: node.children ? mergeTreeState(oldTree, node.children) : undefined
+      };
+    });
+  }, []);
+
   const refreshRegistry = useCallback(async (isInitial = false) => {
     setIsLoading(true);
     try {
       const res = await apiClient.get<any>('/api/registry');
       if (res.success && Array.isArray(res.tree)) {
-        setTree(prev => {
-          const applyOpen = (nodes: FSNode[]): FSNode[] => nodes.map(node => {
-            const old = findInTree(prev, node.id);
-            return {
-              ...node,
-              isOpen: old?.isOpen ?? node.isOpen,
-              children: node.children ? applyOpen(node.children) : undefined
-            };
-          });
-          return applyOpen(res.tree);
-        });
+        setTree(prev => mergeTreeState(prev, res.tree));
       }
     } catch (e) {
       if (!isInitial) toast({ title: "Erreur réseau", variant: "destructive" });
     } finally {
       setIsLoading(false);
     }
-  }, [toast]);
-
-  const findInTree = (nodes: FSNode[], id: string): FSNode | null => {
-    for (const n of nodes) {
-      if (n.id === id) return n;
-      if (n.children) {
-        const found = findInTree(n.children, id);
-        if (found) return found;
-      }
-    }
-    return null;
-  };
+  }, [toast, mergeTreeState]);
 
   const refreshChroma = useCallback(async () => {
     setIsLoading(true);
@@ -140,16 +146,23 @@ export default function BDDPage() {
           setSelectedFile(node.id);
           setFileContent(res.content);
           setIsEditing(false);
+        } else {
+          throw new Error(res.error);
         }
       } catch (e: any) {
-        toast({ title: "Lecture impossible", variant: "destructive" });
+        toast({ title: "Fichier indisponible", description: "Il a peut-être été supprimé.", variant: "destructive" });
+        await refreshRegistry();
       }
     }
   };
 
+  /**
+   * Suppression Physique Radical (Optimiste).
+   */
   const deleteItem = async (id: string) => {
     if (!confirm(`Supprimer physiquement "${id}" et tout son contenu ?`)) return;
     
+    // MISE À JOUR OPTIMISTE : On retire l'élément de l'UI immédiatement
     const previousTree = [...tree];
     const removeFromTree = (nodes: FSNode[]): FSNode[] => {
       return nodes
@@ -168,11 +181,12 @@ export default function BDDPage() {
     try {
       const res = await apiClient.delete<any>(`/api/registry?path=${encodeURIComponent(id)}`);
       if (res.success) {
-        toast({ title: "Élément supprimé du disque" });
+        toast({ title: "Élément supprimé du registre" });
       } else {
         throw new Error(res.error || "Erreur serveur");
       }
     } catch (error: any) {
+      // ROLLBACK en cas d'échec
       setTree(previousTree);
       toast({ title: "Échec de suppression", description: error.message, variant: "destructive" });
     }
@@ -184,7 +198,7 @@ export default function BDDPage() {
       const res = await apiClient.put('/api/registry', { path: selectedFile, content: fileContent });
       if (res.success) {
         setIsEditing(false);
-        toast({ title: "Fichier sauvegardé" });
+        toast({ title: "Modification sauvegardée" });
         await refreshRegistry();
       }
     } catch (e: any) {
@@ -215,11 +229,11 @@ export default function BDDPage() {
       const res = await apiClient.patch('/api/registry', { path: renameModal.path, newName: renameValue });
       if (res.success) {
         setRenameModal({ ...renameModal, isOpen: false });
-        toast({ title: "Renommé" });
+        toast({ title: "Renommé avec succès" });
         await refreshRegistry();
       }
     } catch (e: any) {
-      toast({ title: "Erreur", variant: "destructive" });
+      toast({ title: "Erreur lors du renommage", variant: "destructive" });
     }
   };
 

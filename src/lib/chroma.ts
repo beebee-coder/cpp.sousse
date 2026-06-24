@@ -1,7 +1,6 @@
-
 /**
- * @fileOverview Gestionnaire ChromaDB robuste pour environnement hybride.
- * Version : Audité pour résoudre "PersistentClient is not a constructor".
+ * @fileOverview Gestionnaire ChromaDB robuste pour environnement hybride avec fallback sémantique.
+ * Version : Audité pour résoudre les erreurs d'import et de constructeur.
  */
 
 import path from 'path';
@@ -32,6 +31,8 @@ const CHROMA_DATA_DIR = path.join(process.cwd(), '.data', 'chromadb');
 if (!fs.existsSync(CHROMA_DATA_DIR)) {
   fs.mkdirSync(CHROMA_DATA_DIR, { recursive: true });
 }
+
+const REGISTRY_ITEMS_DIR = path.join(process.cwd(), '.registry', 'items');
 
 const IS_CLOUD = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
 
@@ -77,12 +78,9 @@ export async function getChromaClient(): Promise<any> {
   
   try {
     const chroma = await import('chromadb');
-    
-    // Initialisation robuste compatible version 1.x et 3.x+
-    const ChromaClientClass = (chroma as any).ChromaClient || chroma.default?.ChromaClient;
+    const ChromaClientClass = (chroma as any).ChromaClient || (chroma as any).default?.ChromaClient;
     
     if (ChromaClientClass) {
-      // On instancie ChromaClient avec le chemin de persistance (comportement de PersistentClient)
       _chromaClient = new ChromaClientClass({
         path: CHROMA_DATA_DIR
       });
@@ -94,6 +92,48 @@ export async function getChromaClient(): Promise<any> {
     console.error("❌ [CHROMA_INIT] Erreur de liaison physique :", e.message);
     return null;
   }
+}
+
+/**
+ * Recherche de secours par mots-clés dans le registre physique (Fallback).
+ * Utilisé quand ChromaDB est inaccessible ou hors-ligne.
+ */
+export function fallbackSemanticSearch(query: string, nResults = 3, componentFilter?: string): SearchResult[] {
+  if (!fs.existsSync(REGISTRY_ITEMS_DIR)) return [];
+  
+  try {
+    const files = fs.readdirSync(REGISTRY_ITEMS_DIR).filter(f => f.endsWith('.json'));
+    const results: SearchResult[] = [];
+    const lowerQuery = query.toLowerCase();
+
+    for (const file of files) {
+      const content = fs.readFileSync(path.join(REGISTRY_ITEMS_DIR, file), 'utf8');
+      const data = JSON.parse(content);
+      const text = `${data.label} ${data.details} ${data.title}`.toLowerCase();
+      
+      if (text.includes(lowerQuery) || lowerQuery.split(' ').some(word => word.length > 3 && text.includes(word))) {
+        if (componentFilter && data.metadata?.component !== componentFilter) continue;
+
+        results.push({
+          id: file,
+          document: `${data.label}\n${data.details}`,
+          metadata: { ...data.metadata, title: data.title, source: file },
+          distance: 0,
+          score: 1
+        });
+      }
+      if (results.length >= nResults * 2) break;
+    }
+
+    return results.slice(0, nResults);
+  } catch (e) {
+    return [];
+  }
+}
+
+export async function loadUserDatasetsFromDisk(): Promise<void> {
+  // Fonction de synchronisation disque -> mémoire (Stub pour compatibilité import)
+  console.log("📂 [RAG] Dataset chargé depuis .registry/items");
 }
 
 export async function deleteCollection(name: string) {

@@ -1,4 +1,3 @@
-
 import fs from 'fs';
 import path from 'path';
 
@@ -116,6 +115,10 @@ export const postgresClient = {
     }
   },
 
+  /**
+   * Suppression physique radicale (Récursive).
+   * Supprime le fichier ou le dossier et tout son contenu.
+   */
   async deleteItem(relPath: string) {
     ensureRegistry();
     const safePath = path.normalize(relPath).replace(/^(\.\.(\/|\\|$))+/, '');
@@ -123,8 +126,11 @@ export const postgresClient = {
     
     const fullPath = path.join(REGISTRY_ROOT, safePath);
     if (fs.existsSync(fullPath)) {
+      // Suppression physique récursive réelle
       fs.rmSync(fullPath, { recursive: true, force: true });
-      console.log(`✅ [POSTGRES_CLIENT] Suppression physique : ${fullPath}`);
+      console.log(`✅ [POSTGRES_CLIENT] Suppression physique terminée : ${fullPath}`);
+    } else {
+      throw new Error("ELEMENT_INTROUVABLE");
     }
   },
 
