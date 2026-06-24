@@ -1,3 +1,4 @@
+
 /**
  * @fileOverview Gestionnaire ChromaDB sécurisé pour l'environnement hybride.
  * Optimisé pour le centre d'entraînement IA (RAG).
@@ -28,10 +29,6 @@ export interface SearchResult {
 // ─── DÉTECTION D'ENVIRONNEMENT CRITIQUE ──────────────────────────────────────
 const IS_CLOUD = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
 
-// ─── GHOSTING DES DÉPENDANCES LOURDES ────────────────────────────────────────
-const TRANSFORMERS_LIB = '@huggingface/transformers';
-const CHROMADB_LIB = 'chromadb';
-
 let _pipeline: any = null;
 
 async function getPipeline(): Promise<any> {
@@ -39,8 +36,8 @@ async function getPipeline(): Promise<any> {
   
   if (_pipeline) return _pipeline;
   try {
-    // Utilisation d'un import dynamique pour éviter l'analyse statique Vercel
-    const { pipeline } = await import(TRANSFORMERS_LIB);
+    // Utilisation d'un import dynamique statique pour éviter les alertes de dépendance
+    const { pipeline } = await import('@huggingface/transformers');
     _pipeline = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
     return _pipeline;
   } catch (e) {
@@ -51,7 +48,6 @@ async function getPipeline(): Promise<any> {
 
 /**
  * Fonction d'embedding locale.
- * Sur Cloud, cette classe est inerte pour préserver le poids du bundle.
  */
 export class LocalEmbeddingFunction {
   async generate(texts: string[]): Promise<number[][]> {
@@ -81,11 +77,11 @@ let _chromaClient: any = null;
 
 export async function getChromaClient(): Promise<any> {
   if (IS_CLOUD) return null;
-
   if (_chromaClient) return _chromaClient;
   
   try {
-    const { ChromaClient } = await import(CHROMADB_LIB);
+    // Utilisation d'un import dynamique statique
+    const { ChromaClient } = await import('chromadb');
     const chromaUrl = process.env.CHROMA_URL ?? 'http://127.0.0.1:8000';
     _chromaClient = new ChromaClient({ path: chromaUrl });
     return _chromaClient;

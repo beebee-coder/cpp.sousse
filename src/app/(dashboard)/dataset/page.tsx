@@ -57,7 +57,7 @@ interface QAItem {
 export default function DatasetPage() {
   const { toast } = useToast();
   
-  // -- 1. TOUS LES HOOKS AU SOMMET (ORDRE FIXE) --
+  // -- 1. TOUS LES HOOKS AU SOMMET (ORDRE FIXE POUR REACT 19) --
   const [mounted, setMounted] = useState(false);
   const [mode, setMode] = useState<'qa' | 'procedure'>('qa');
   const [qaItems, setQaItems] = useState<QAItem[]>([]);
@@ -70,7 +70,6 @@ export default function DatasetPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [isGuideActive, setIsGuideActive] = useState(false);
   
-  // Media States
   const [mediaModal, setMediaModal] = useState<{ isOpen: boolean, type: 'image' | 'video', stepIndex: number | null }>({
     isOpen: false,
     type: 'image',
@@ -87,17 +86,13 @@ export default function DatasetPage() {
   const [activeUIField, setActiveUIField] = useState<{ type: string, index?: number } | null>(null);
   const activeVoiceFieldRef = useRef<{ type: string, index?: number } | null>(null);
 
-  // Synchronisation de la Ref pour le moteur vocal
   useEffect(() => {
     activeVoiceFieldRef.current = activeUIField;
   }, [activeUIField]);
 
-  // Handler de résultat vocal ultra-stable
   const handleVoiceResult = useCallback((text: string) => {
     const target = activeVoiceFieldRef.current;
     if (!target) return;
-
-    console.log(`[DATASET_AUDIT] Injection vocale -> ${target.type} [${target.index ?? 'root'}]`);
 
     if (target.type === 'question') {
       setQuestion(prev => prev ? `${prev} ${text}` : text);
@@ -115,7 +110,6 @@ export default function DatasetPage() {
         else if (target.type === 'stepDescription') s.description = s.description ? `${s.description} ${text}` : text;
         else if (target.type === 'stepConditions') s.conditions = s.conditions ? `${s.conditions} ${text}` : text;
         else if (target.type === 'stepAlarms') s.alarms = s.alarms ? `${s.alarms} ${text}` : text;
-        
         next[target.index!] = s;
         return next;
       });
@@ -132,7 +126,6 @@ export default function DatasetPage() {
     setMounted(true);
   }, []);
 
-  // Gestion robuste du flux caméra
   useEffect(() => {
     const startStream = async () => {
       if (!mediaModal.isOpen) return;
@@ -168,8 +161,6 @@ export default function DatasetPage() {
     return () => stopStream();
   }, [mediaModal.isOpen, mediaModal.type, toast]);
 
-  // -- 2. LOGIQUE MÉTIER --
-
   const toggleVoice = (type: string, index?: number) => {
     const isCurrentlyActive = voice.isListening && activeUIField?.type === type && activeUIField?.index === index;
     if (isCurrentlyActive) {
@@ -190,9 +181,8 @@ export default function DatasetPage() {
     const ctx = canvas.getContext('2d');
     if (ctx) {
       ctx.drawImage(videoRef.current, 0, 0);
-      const dataUri = canvas.toDataURL('image/jpeg');
       const next = [...procSteps];
-      next[mediaModal.stepIndex].images = `CAP_${Date.now()}_IMG`; // Simulé pour l'indexation RAG
+      next[mediaModal.stepIndex].images = `CAP_${Date.now()}_IMG`;
       setProcSteps(next);
       toast({ title: "Image capturée", description: "Asset rattaché à l'étape." });
       setMediaModal(prev => ({ ...prev, isOpen: false }));
@@ -207,7 +197,7 @@ export default function DatasetPage() {
     recorder.onstop = () => {
       if (mediaModal.stepIndex === null) return;
       const next = [...procSteps];
-      next[mediaModal.stepIndex].video = `CAP_${Date.now()}_VID`; // Référence simulée
+      next[mediaModal.stepIndex].video = `CAP_${Date.now()}_VID`;
       setProcSteps(next);
       toast({ title: "Vidéo enregistrée", description: "Séquence rattachée à l'étape." });
     };
@@ -270,9 +260,17 @@ export default function DatasetPage() {
     }
   };
 
-  // -- 3. RENDU (PROTECTION HYDRATATION DANS LE JSX) --
-
-  if (!mounted) return null;
+  // PROTECTION HYDRATATION : On ne rend le contenu qu'après le montage initial
+  if (!mounted) {
+    return (
+      <div className="flex flex-col lg:flex-row h-screen bg-background overflow-hidden">
+        <DashboardSidebar />
+        <main className="flex-1 flex items-center justify-center">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col lg:flex-row h-screen bg-background overflow-hidden">
@@ -304,11 +302,11 @@ export default function DatasetPage() {
         </header>
 
         <div className="p-4 lg:p-8 max-w-5xl mx-auto w-full space-y-8">
-          {voice.error && (voice.error.includes('allowed') || voice.error.includes('service')) && (
+          {voice.error && (voice.error === 'not-allowed') && (
             <Card className="p-4 border-destructive/30 bg-destructive/5 animate-pulse">
               <div className="flex items-center gap-3">
                 <AlertTriangle className="w-5 h-5 text-destructive" />
-                <p className="text-[10px] font-code text-destructive uppercase font-bold">Microphone Bloqué ou Non Supporté. Vérifiez le SSL et les permissions.</p>
+                <p className="text-[10px] font-code text-destructive uppercase font-bold">Microphone Bloqué. Vérifiez le SSL et les permissions du navigateur.</p>
               </div>
             </Card>
           )}
@@ -323,7 +321,7 @@ export default function DatasetPage() {
                       value={question} 
                       onChange={(e) => setQuestion(e.target.value)} 
                       placeholder="EX: ÉCHAUFFEMENT POMPE P-101..." 
-                      className={cn("h-32 bg-background font-code text-xs uppercase", activeUIField?.type === 'question' && "ring-2 ring-red-500 shadow-[0_0_10px_rgba(239,68,68,0.3)]")}
+                      className={cn("h-32 bg-background font-code text-xs uppercase", activeUIField?.type === 'question' && "ring-2 ring-red-500")}
                     />
                     <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('question')} className={cn("absolute top-8 right-2 h-7 w-7", activeUIField?.type === 'question' ? "text-red-500" : "text-primary")}>
                       <Mic className="w-3.5 h-3.5" />
@@ -335,7 +333,7 @@ export default function DatasetPage() {
                       value={answer} 
                       onChange={(e) => setAnswer(e.target.value)} 
                       placeholder="EX: VÉRIFIER LUBRIFICATION PALIER 2..." 
-                      className={cn("h-32 bg-background font-code text-xs uppercase", activeUIField?.type === 'answer' && "ring-2 ring-red-500 shadow-[0_0_10px_rgba(239,68,68,0.3)]")}
+                      className={cn("h-32 bg-background font-code text-xs uppercase", activeUIField?.type === 'answer' && "ring-2 ring-red-500")}
                     />
                     <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('answer')} className={cn("absolute top-8 right-2 h-7 w-7", activeUIField?.type === 'answer' ? "text-red-500" : "text-secondary")}>
                        <Mic className="w-3.5 h-3.5" />
@@ -401,16 +399,16 @@ export default function DatasetPage() {
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div className="relative">
-                            <p className="text-[8px] font-bold uppercase text-secondary mb-1">Images (Capture/Ref)</p>
+                            <p className="text-[8px] font-bold uppercase text-secondary mb-1">Images (Capture)</p>
                             <div className="flex gap-1">
-                              <Input placeholder="ID Image..." value={step.images} onChange={(e) => { const n = [...procSteps]; n[index].images = e.target.value; setProcSteps(n); }} className="h-8 text-[9px] uppercase bg-secondary/5"/>
+                              <Input placeholder="ID Image..." value={step.images} onChange={(e) => { const n = [...procSteps]; n[index].images = e.target.value; setProcSteps(n); }} className="h-8 text-[9px] uppercase bg-secondary/5" readOnly/>
                               <Button type="button" variant="secondary" size="icon" onClick={() => setMediaModal({ isOpen: true, type: 'image', stepIndex: index })} className="h-8 w-8 shrink-0"><Camera className="w-3.5 h-3.5" /></Button>
                             </div>
                           </div>
                           <div className="relative">
-                            <p className="text-[8px] font-bold uppercase text-secondary mb-1">Vidéo (Capture/Path)</p>
+                            <p className="text-[8px] font-bold uppercase text-secondary mb-1">Vidéo (Capture)</p>
                             <div className="flex gap-1">
-                              <Input placeholder="ID Vidéo..." value={step.video} onChange={(e) => { const n = [...procSteps]; n[index].video = e.target.value; setProcSteps(n); }} className="h-8 text-[9px] uppercase bg-secondary/5"/>
+                              <Input placeholder="ID Vidéo..." value={step.video} onChange={(e) => { const n = [...procSteps]; n[index].video = e.target.value; setProcSteps(n); }} className="h-8 text-[9px] uppercase bg-secondary/5" readOnly/>
                               <Button type="button" variant="secondary" size="icon" onClick={() => setMediaModal({ isOpen: true, type: 'video', stepIndex: index })} className="h-8 w-8 shrink-0"><VideoIcon className="w-3.5 h-3.5" /></Button>
                             </div>
                           </div>
@@ -454,7 +452,6 @@ export default function DatasetPage() {
         </div>
       </main>
 
-      {/* MODAL MULTIMÉDIA STABILISÉ */}
       <Dialog 
         open={mediaModal.isOpen} 
         onOpenChange={(open) => {
@@ -479,11 +476,8 @@ export default function DatasetPage() {
               muted={mediaModal.type === 'image'} 
               className="w-full h-full object-cover"
             />
-            <div className="absolute inset-0 pointer-events-none border-[20px] border-black/20" />
-            <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle,transparent_40%,rgba(0,0,0,0.4)_100%)]" />
-            
             {isCapturing && (
-              <div className="absolute top-4 right-4 bg-red-600 text-white px-2 py-1 rounded-sm text-[10px] font-code animate-pulse flex items-center gap-2 shadow-lg">
+              <div className="absolute top-4 right-4 bg-red-600 text-white px-2 py-1 rounded-sm text-[10px] font-code animate-pulse flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-white animate-ping" />
                 REC | {recordingTime}s
               </div>
@@ -491,16 +485,16 @@ export default function DatasetPage() {
           </div>
           <div className="flex justify-center gap-4 mt-4">
             {mediaModal.type === 'image' ? (
-              <Button onClick={captureImage} className="bg-primary text-primary-foreground font-bold uppercase text-[10px] h-10 px-8 hover:shadow-[0_0_15px_rgba(50,181,212,0.4)]">
+              <Button onClick={captureImage} className="bg-primary text-primary-foreground font-bold uppercase text-[10px] h-10 px-8">
                 <Camera className="w-4 h-4 mr-2" /> Capturer l'image
               </Button>
             ) : (
               !isCapturing ? (
-                <Button onClick={startRecording} className="bg-red-600 text-white font-bold uppercase text-[10px] h-10 px-8 hover:bg-red-700 hover:shadow-[0_0_15px_rgba(220,38,38,0.4)]">
+                <Button onClick={startRecording} className="bg-red-600 text-white font-bold uppercase text-[10px] h-10 px-8">
                   <VideoIcon className="w-4 h-4 mr-2" /> Lancer l'enregistrement
                 </Button>
               ) : (
-                <Button onClick={stopRecording} className="bg-white text-black font-bold uppercase text-[10px] h-10 px-8 hover:bg-gray-200">
+                <Button onClick={stopRecording} className="bg-white text-black font-bold uppercase text-[10px] h-10 px-8">
                   <StopCircle className="w-4 h-4 mr-2" /> Arrêter la capture
                 </Button>
               )
