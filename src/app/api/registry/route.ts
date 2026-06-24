@@ -7,6 +7,7 @@ export const dynamic = 'force-dynamic';
 
 /**
  * API de gestion physique du Registre (FS).
+ * Cette route gère les opérations CRUD sur les fichiers de configuration.
  */
 export const GET = createHybridRoute<any, any>({
   name: 'REGISTRY_EXPLORER',
@@ -15,8 +16,12 @@ export const GET = createHybridRoute<any, any>({
     const targetPath = searchParams.get('path');
     
     if (targetPath) {
-      const content = await postgresClient.getFile(targetPath);
-      return { success: true, content };
+      try {
+        const content = await postgresClient.getFile(targetPath);
+        return { success: true, content };
+      } catch (e: any) {
+        return NextResponse.json({ success: false, error: e.message }, { status: 404 });
+      }
     }
     
     const tree = await postgresClient.getRegistryTree();
@@ -55,6 +60,9 @@ export const PATCH = createHybridRoute<{ path: string; newName: string }, any>({
   }
 });
 
+/**
+ * Endpoint de suppression physique
+ */
 export const DELETE = createHybridRoute<any, any>({
   name: 'REGISTRY_DELETE',
   webHandler: async (req) => {
@@ -66,10 +74,11 @@ export const DELETE = createHybridRoute<any, any>({
     }
     
     try {
+      console.log(`📡 [API_REGISTRY] Demande de suppression : ${targetPath}`);
       await postgresClient.deleteItem(targetPath);
-      return { success: true };
+      return { success: true, message: "ELEMENT_SUPPRIME" };
     } catch (error: any) {
-      console.error(`❌ [REGISTRY_DELETE] Échec :`, error.message);
+      console.error(`❌ [API_REGISTRY] Échec suppression :`, error.message);
       return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
   }

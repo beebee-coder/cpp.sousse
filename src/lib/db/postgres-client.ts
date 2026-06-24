@@ -4,12 +4,11 @@ import path from 'path';
 
 /**
  * Infrastructure de liaison physique pour le Registre.
- * Utilise un dossier caché '.registry' pour éviter les redémarrages Next.js en dev.
+ * Utilise un dossier 'registry' à la racine.
  */
 
-const REGISTRY_ROOT = path.join(process.cwd(), '.registry');
+const REGISTRY_ROOT = path.join(process.cwd(), 'registry');
 
-// Assure l'existence du répertoire racine et du sous-dossier items
 const ensureRegistry = () => {
   try {
     if (!fs.existsSync(REGISTRY_ROOT)) {
@@ -26,7 +25,7 @@ const ensureRegistry = () => {
 
 export const postgresClient = {
   /**
-   * Récupère l'arborescence complète du répertoire .registry/
+   * Récupère l'arborescence complète du répertoire registry/
    */
   getRegistryTree: async (dir = REGISTRY_ROOT): Promise<any[]> => {
     ensureRegistry();
@@ -39,8 +38,8 @@ export const postgresClient = {
         const fullPath = path.join(dir, entry.name);
         const relativePath = path.relative(REGISTRY_ROOT, fullPath).replace(/\\/g, '/');
         
-        // Ignorer les fichiers système cachés (sauf .registry lui-même au départ)
-        if (entry.name.startsWith('.') && fullPath !== REGISTRY_ROOT) return null;
+        // Ignorer les fichiers système cachés
+        if (entry.name.startsWith('.')) return null;
 
         if (entry.isDirectory()) {
           const children = await postgresClient.getRegistryTree(fullPath);
@@ -123,26 +122,28 @@ export const postgresClient = {
   },
 
   /**
-   * Supprime physiquement un fichier ou un dossier (récursif)
+   * Supprime physiquement un fichier ou un dossier (récursif et forcé)
    */
   deleteItem: async (relPath: string) => {
     ensureRegistry();
-    const normalizedPath = path.normalize(relPath).replace(/^(\.\.(\/|\\|$))+/, '');
-    if (!normalizedPath || normalizedPath === '.' || normalizedPath === '/') {
-      throw new Error("SUPPRESSION_NON_AUTORISEE_SUR_RACINE");
+    // Sécurité : Empêcher la sortie de la racine registry/
+    const safePath = path.normalize(relPath).replace(/^(\.\.(\/|\\|$))+/, '');
+    if (!safePath || safePath === '.' || safePath === '/') {
+      throw new Error("ACCES_INTERDIT_RACINE");
     }
     
-    const fullPath = path.join(REGISTRY_ROOT, normalizedPath);
+    const fullPath = path.join(REGISTRY_ROOT, safePath);
+    
     if (fs.existsSync(fullPath)) {
       try {
-        // Utilisation de rmSync avec recursive: true pour supprimer réellement le répertoire et son contenu
+        // rmSync avec recursive et force est l'alternative la plus robuste
         fs.rmSync(fullPath, { recursive: true, force: true });
         console.log(`🗑️ [postgresClient] Suppression physique réussie : ${fullPath}`);
       } catch (err: any) {
         throw new Error(`ERREUR_FS_DELETE : ${err.message}`);
       }
     } else {
-      throw new Error("ÉLÉMENT_A_SUPPRIMER_INTROUVABLE");
+      console.warn(`⚠️ [postgresClient] Élément déjà absent du disque : ${fullPath}`);
     }
   },
 

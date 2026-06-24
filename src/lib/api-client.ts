@@ -48,12 +48,21 @@ class ApiClient {
           headers: { 'Content-Type': 'application/json' },
           body: data ? JSON.stringify(data) : undefined,
         });
+        
         const json = await response.json();
-        if (!response.ok) throw new Error(json.error || `ERREUR_HTTP_${response.status}`);
+        
+        // CRUCIAL : Si le serveur renvoie un code d'erreur, ne pas simuler success: true
+        if (!response.ok) {
+          return { 
+            success: false, 
+            error: json.error || `ERREUR_HTTP_${response.status}`,
+            details: json.details 
+          };
+        }
+        
         return json;
       });
       
-      // On retourne le résultat brut qui contient déjà le champ success du serveur
       return { ...result, timestamp } as ApiResponse<T>;
     } catch (error: any) {
       const msg = error.name === 'AbortError' ? 'TIMEOUT_LIAISON' : error.message;
@@ -67,7 +76,7 @@ class ApiClient {
       const result = await executeHybridRequest<any, any>(endpoint, null, async () => {
         const response = await this.fetchWithTimeout(endpoint, { method: 'GET' });
         const json = await response.json();
-        if (!response.ok) throw new Error(json.error || `ERREUR_HTTP_${response.status}`);
+        if (!response.ok) return { success: false, error: json.error };
         return json;
       });
       return { ...result, timestamp } as ApiResponse<T>;
@@ -94,7 +103,14 @@ class ApiClient {
       const result = await executeHybridRequest<any, any>(endpoint, null, async () => {
         const response = await this.fetchWithTimeout(endpoint, { method: 'DELETE' });
         const json = await response.json();
-        if (!response.ok) throw new Error(json.error || `ERREUR_HTTP_${response.status}`);
+        
+        if (!response.ok) {
+          return { 
+            success: false, 
+            error: json.error || "ECHEC_SUPPRESSION_SERVEUR" 
+          };
+        }
+        
         return json;
       });
       return { ...result, timestamp } as ApiResponse<T>;

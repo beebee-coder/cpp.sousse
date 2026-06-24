@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
@@ -218,11 +217,10 @@ export default function BDDPage() {
   };
 
   const deleteItem = async (id: string) => {
-    if (!confirm("Supprimer définitivement cet élément et tout son contenu physique ?")) return;
+    if (!confirm(`Supprimer physiquement "${id}" et tout son contenu ? Cette action est irréversible.`)) return;
     
-    const oldTree = JSON.parse(JSON.stringify(tree));
-    
-    // Mise à jour optimiste IMMÉDIATE
+    // 1. MISE À JOUR OPTIMISTE IMMÉDIATE
+    const oldTree = [...tree];
     const removeFromTree = (nodes: FSNode[]): FSNode[] => {
       return nodes
         .filter(node => node.id !== id)
@@ -233,16 +231,21 @@ export default function BDDPage() {
     };
     
     setTree(prev => removeFromTree(prev));
-    if (selectedFile === id) setSelectedFile(null);
+    if (selectedFile === id || (selectedFile && selectedFile.startsWith(id + '/'))) {
+      setSelectedFile(null);
+    }
 
     try {
+      // 2. APPEL API RÉEL
       const res = await apiClient.delete(`/api/registry?path=${encodeURIComponent(id)}`);
+      
       if (res.success) {
-        toast({ title: "Élément supprimé physiquement" });
+        toast({ title: "Élément effacé du disque" });
       } else {
-        throw new Error(res.error || "Erreur serveur");
+        throw new Error(res.error || "Le serveur a refusé la suppression");
       }
     } catch (error: any) {
+      // 3. ROLLBACK EN CAS D'ÉCHEC
       toast({ title: "Échec de suppression", description: error.message, variant: "destructive" });
       setTree(oldTree);
     }
@@ -324,12 +327,12 @@ export default function BDDPage() {
             <div className="lg:hidden w-10" />
             <div className="flex items-center gap-2">
               <HardDrive className="w-4 h-4 text-primary" />
-              <span className="font-headline font-bold text-xs uppercase tracking-widest text-primary">Registre Physique</span>
+              <span className="font-headline font-bold text-xs uppercase tracking-widest text-primary">Gestionnaire d'Actifs</span>
             </div>
           </div>
           <div className="flex bg-muted/30 p-1 rounded-sm border border-border">
-            <button onClick={() => setMode('web')} className={cn("px-3 py-1 text-[10px] font-code uppercase rounded-sm transition-all", mode === 'web' ? "bg-primary text-primary-foreground font-bold" : "text-muted-foreground hover:text-foreground")}>Registre .registry/</button>
-            <button onClick={() => setMode('chroma')} className={cn("px-3 py-1 text-[10px] font-code uppercase rounded-sm transition-all", mode === 'chroma' ? "bg-secondary text-secondary-foreground font-bold" : "text-muted-foreground hover:text-foreground")}>Vecteurs .data/</button>
+            <button onClick={() => setMode('web')} className={cn("px-3 py-1 text-[10px] font-code uppercase rounded-sm transition-all", mode === 'web' ? "bg-primary text-primary-foreground font-bold" : "text-muted-foreground hover:text-foreground")}>Registre (registry/)</button>
+            <button onClick={() => setMode('chroma')} className={cn("px-3 py-1 text-[10px] font-code uppercase rounded-sm transition-all", mode === 'chroma' ? "bg-secondary text-secondary-foreground font-bold" : "text-muted-foreground hover:text-foreground")}>Vecteurs (.data/)</button>
           </div>
         </header>
 
@@ -421,7 +424,7 @@ export default function BDDPage() {
             </DialogTitle>
           </DialogHeader>
           <div className="py-4 space-y-3">
-            <p className="text-[10px] font-code text-muted-foreground uppercase mb-2">Cible : .registry/{newModal.parent || 'racine'}</p>
+            <p className="text-[10px] font-code text-muted-foreground uppercase mb-2">Cible : registry/{newModal.parent || 'racine'}</p>
             <input 
               value={newName} 
               onChange={(e) => setNewName(e.target.value)} 
