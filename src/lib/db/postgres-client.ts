@@ -48,7 +48,7 @@ export const postgresClient = {
             id: relativePath,
             name: entry.name,
             type: 'folder',
-            children
+            children: children || []
           };
         } else {
           const stats = fs.statSync(fullPath);
@@ -62,8 +62,8 @@ export const postgresClient = {
       }));
 
       return tree
-        .filter(n => n !== null)
-        .sort((a: any, b: any) => {
+        .filter((n): n is any => n !== null)
+        .sort((a, b) => {
           if (a.type === 'folder' && b.type !== 'folder') return -1;
           if (a.type !== 'folder' && b.type === 'folder') return 1;
           return a.name.localeCompare(b.name);

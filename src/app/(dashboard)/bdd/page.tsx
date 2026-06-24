@@ -216,7 +216,10 @@ export default function BDDPage() {
   const deleteItem = async (id: string) => {
     if (!confirm("Supprimer définitivement cet élément physique ?")) return;
     
-    // Mise à jour optimiste immédiate de l'UI
+    // 1. Sauvegarde pour rollback potentiel
+    const oldTree = [...tree];
+    
+    // 2. Mise à jour optimiste immédiate de l'UI
     const removeFromTree = (nodes: FSNode[]): FSNode[] => {
       return nodes.filter(node => {
         if (node.id === id) return false;
@@ -230,18 +233,18 @@ export default function BDDPage() {
     setTree(prev => removeFromTree([...prev]));
     if (selectedFile === id) setSelectedFile(null);
 
+    // 3. Suppression physique réelle
     try {
       const res = await apiClient.delete(`/api/registry?path=${encodeURIComponent(id)}`);
       if (res.success) {
-        toast({ title: "Élément supprimé" });
-        // Synchronisation finale avec le serveur
-        await refreshRegistry();
+        toast({ title: "Élément supprimé physiquement" });
       } else {
-        throw new Error(res.error);
+        throw new Error(res.error || "Erreur inconnue");
       }
     } catch (error: any) {
       toast({ title: "Erreur de suppression", description: error.message, variant: "destructive" });
-      await refreshRegistry(); // Restauration de l'état réel en cas d'échec
+      // Rollback UI en cas d'échec
+      setTree(oldTree);
     }
   };
 
@@ -423,11 +426,11 @@ export default function BDDPage() {
           </DialogHeader>
           <div className="py-4 space-y-3">
             <p className="text-[10px] font-code text-muted-foreground uppercase mb-2">Cible : .registry/{newModal.parent || 'racine'}</p>
-            <Input 
+            <input 
               value={newName} 
               onChange={(e) => setNewName(e.target.value)} 
               placeholder={newModal.type === 'file' ? "Nom du fichier" : "Nom du répertoire"}
-              className="bg-muted border-primary/20 font-code h-10 uppercase text-xs"
+              className="w-full bg-muted border border-primary/20 p-2 font-code rounded-sm uppercase text-xs outline-none focus:border-primary/50"
               autoFocus
               onKeyDown={(e) => e.key === 'Enter' && createNew()}
             />
@@ -450,11 +453,11 @@ export default function BDDPage() {
           </DialogHeader>
           <div className="py-4 space-y-3">
             <p className="text-[10px] font-code text-muted-foreground uppercase mb-2">Ancien : {renameModal.oldName}</p>
-            <Input 
+            <input 
               value={renameValue} 
               onChange={(e) => setRenameValue(e.target.value)} 
               placeholder="Nouveau nom..."
-              className="bg-muted border-secondary/20 font-code h-10 uppercase text-xs"
+              className="w-full bg-muted border border-secondary/20 p-2 font-code rounded-sm uppercase text-xs outline-none focus:border-secondary/50"
               autoFocus
               onKeyDown={(e) => e.key === 'Enter' && handleRename()}
             />
