@@ -1,3 +1,4 @@
+
 /**
  * @fileOverview Client API centralisé pour VisioNode.
  * Supporte les appels hybrides (Web/Desktop) avec gestion de timeout et méthodes HTTP étendues.
@@ -22,9 +23,6 @@ class ApiClient {
     return ApiClient.instance;
   }
 
-  /**
-   * Exécute un fetch avec un timeout intégré pour éviter de bloquer l'UI industrielle.
-   */
   private async fetchWithTimeout(url: string, options: RequestInit, timeout = 15000): Promise<Response> {
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), timeout);
@@ -41,9 +39,6 @@ class ApiClient {
     }
   }
 
-  /**
-   * Méthode générique pour les requêtes avec corps (POST, PUT, PATCH).
-   */
   private async requestWithBody<T>(endpoint: string, method: string, data: any): Promise<ApiResponse<T>> {
     const timestamp = new Date().toLocaleTimeString();
     try {
@@ -51,7 +46,7 @@ class ApiClient {
         const response = await this.fetchWithTimeout(endpoint, {
           method,
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(data),
+          body: data ? JSON.stringify(data) : undefined,
         });
         if (!response.ok) throw new Error(`ERREUR_HTTP_${response.status}`);
         return await response.json();
@@ -73,8 +68,7 @@ class ApiClient {
       });
       return { ...result, timestamp };
     } catch (error: any) {
-      const msg = error.name === 'AbortError' ? 'TIMEOUT_LIAISON' : error.message;
-      return { error: msg, offline: true, timestamp } as any;
+      return { error: error.message, offline: true, timestamp } as any;
     }
   }
 
@@ -98,9 +92,9 @@ class ApiClient {
         if (!response.ok) throw new Error(`ERREUR_HTTP_${response.status}`);
         return await response.json();
       });
-      return { ...result, timestamp };
+      return { ...result, timestamp, success: true };
     } catch (error: any) {
-      return { error: error.message, offline: true, timestamp } as any;
+      return { error: error.message, offline: true, timestamp, success: false } as any;
     }
   }
 }
