@@ -31,7 +31,6 @@ export interface SearchResult {
 const CHROMA_DATA_DIR = path.join(process.cwd(), 'data', 'chromadb');
 if (!fs.existsSync(CHROMA_DATA_DIR)) {
   fs.mkdirSync(CHROMA_DATA_DIR, { recursive: true });
-  fs.writeFileSync(path.join(CHROMA_DATA_DIR, '.gitkeep'), '');
 }
 
 const IS_CLOUD = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
@@ -73,16 +72,27 @@ export function getLocalEmbedder(): LocalEmbeddingFunction {
 
 let _chromaClient: any = null;
 
+/**
+ * Récupère le client ChromaDB. 
+ * En mode local, utilise le PersistentClient pour s'ancrer sur le répertoire physique.
+ */
 export async function getChromaClient(): Promise<any> {
   if (IS_CLOUD) return null;
   if (_chromaClient) return _chromaClient;
   try {
+    // Import dynamique pour éviter de charger les modules lourds côté client
     const { ChromaClient } = await import('chromadb');
-    // En local, on peut pointer vers le serveur Chroma ou utiliser la persistance
-    const chromaUrl = process.env.CHROMA_URL ?? 'http://127.0.0.1:8000';
-    _chromaClient = new ChromaClient({ path: chromaUrl });
+    
+    // Si nous sommes dans l'IDE ou en mode Desktop, nous utilisons la persistance locale
+    // Note: Certaines versions de chromadb utilisent PersistentClient, d'autres ChromaClient({ path })
+    _chromaClient = new ChromaClient({ 
+      path: `file://${CHROMA_DATA_DIR}` 
+    });
+    
+    console.log(`🧠 [CHROMA_INIT] Moteur ancré sur : ${CHROMA_DATA_DIR}`);
     return _chromaClient;
-  } catch {
+  } catch (e: any) {
+    console.error("❌ [CHROMA_INIT] Erreur de liaison physique :", e.message);
     return null;
   }
 }
@@ -92,7 +102,8 @@ export async function listCollections() {
   try {
     const client = await getChromaClient();
     if (!client) return [];
-    return await client.listCollections();
+    const collections = await client.listCollections();
+    return collections;
   } catch {
     return [];
   }
@@ -102,7 +113,10 @@ export async function getOrCreateCollection(name: string, embeddingFunction: any
   if (IS_CLOUD) throw new Error("FONCTIONNALITÉ_LOCALE_UNIQUEMENT");
   const client = await getChromaClient();
   if (!client) throw new Error("MOTEUR_LOCAL_INDISPONIBLE");
-  return await client.getOrCreateCollection({ name, embeddingFunction });
+  return await client.getOrCreateCollection({ 
+    name, 
+    embeddingFunction 
+  });
 }
 
 export async function addDocuments(collectionName: string, documents: DocumentToAdd[], embeddingFunction: any = getLocalEmbedder()) {
@@ -194,5 +208,25 @@ export async function searchAcrossCollections(query: string, nResultsPerCollecti
     return all.sort((a, b) => b.score - a.score).slice(0, nResultsPerCollection * 2);
   } catch {
     return [];
+  }
+}
+
+/**
+ * Initialisation automatique des manuels pour la démonstration.
+ */
+export async function seedIndustrialManuals() {
+  if (IS_CLOUD) return;
+  try {
+    const collections = await listCollections();
+    if (collections.some((c: any) => c.name === 'industrial_manuals')) return;
+
+    console.log("📥 [SEED] Initialisation des manuels industriels locaux...");
+    const docs = [
+      { id: 'man-001', content: 'Le panneau de contrôle Alpha nécessite une pression de 5 bars.', metadata: { component: 'industrial-control', title: 'Manuel Alpha' } },
+      { id: 'man-002', content: 'La pompe centrifuge Beta doit être lubrifiée tous les 6 mois.', metadata: { component: 'pump-system', title: 'Maintenance Beta' } }
+    ];
+    await addDocuments('industrial_manuals', docs);
+  } catch (e) {
+    console.error("❌ [SEED] Échec :", e);
   }
 }

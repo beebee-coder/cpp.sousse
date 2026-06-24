@@ -1,8 +1,7 @@
-
 export const dynamic = 'force-dynamic';
 
 import { createHybridRoute } from '@/lib/api-route-creator';
-import { listCollections, deleteCollection, getOrCreateCollection } from '@/lib/chroma';
+import { listCollections, deleteCollection, getOrCreateCollection, getChromaClient } from '@/lib/chroma';
 
 /**
  * Route hybride pour lister les collections (ou classes Cloud).
@@ -35,10 +34,28 @@ export const GET = createHybridRoute<any, any>({
       }
     }
 
-    // Mode Local : ChromaDB
+    // Mode Local : ChromaDB Physique
     try {
       const collections = await listCollections();
-      return { success: true, count: collections.length, collections, provider: 'CHROMA_LOCAL' };
+      
+      // Enrichir avec le nombre de documents si possible
+      const enrichedCollections = await Promise.all(collections.map(async (c: any) => {
+        try {
+          const client = await getChromaClient();
+          const collection = await client.getCollection({ name: c.name });
+          const count = await collection.count();
+          return { ...c, count };
+        } catch {
+          return { ...c, count: 0 };
+        }
+      }));
+
+      return { 
+        success: true, 
+        count: collections.length, 
+        collections: enrichedCollections, 
+        provider: 'CHROMA_PERSISTENT_LOCAL' 
+      };
     } catch (e: any) {
       return { success: false, error: 'LOCAL_DB_UNREACHABLE', details: e.message, collections: [] };
     }
