@@ -4,7 +4,7 @@ import path from 'path';
 
 /**
  * Infrastructure de liaison physique pour le Registre.
- * Utilise un dossier caché '.registry' pour éviter les redémarrages Next.js.
+ * Utilise un dossier caché '.registry' pour éviter les redémarrages Next.js en dev.
  */
 
 const REGISTRY_ROOT = path.join(process.cwd(), '.registry');
@@ -39,8 +39,8 @@ export const postgresClient = {
         const fullPath = path.join(dir, entry.name);
         const relativePath = path.relative(REGISTRY_ROOT, fullPath);
         
-        // Ignorer les fichiers système cachés (sauf .registry lui-même)
-        if (entry.name.startsWith('.') && entry.name !== '.registry') return null;
+        // Ignorer les fichiers système cachés (sauf .registry lui-même au départ)
+        if (entry.name.startsWith('.') && fullPath !== REGISTRY_ROOT) return null;
 
         if (entry.isDirectory()) {
           const children = await postgresClient.getRegistryTree(fullPath);
@@ -133,7 +133,7 @@ export const postgresClient = {
     const fullPath = path.join(REGISTRY_ROOT, relPath);
     if (fs.existsSync(fullPath)) {
       try {
-        // fs.rmSync avec recursive: true supprime le fichier ou le répertoire entier
+        // fs.rmSync avec recursive: true supprime physiquement le fichier ou le répertoire entier
         fs.rmSync(fullPath, { recursive: true, force: true });
         console.log(`🗑️ [postgresClient] Supprimé physiquement : ${fullPath}`);
       } catch (err: any) {

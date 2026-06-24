@@ -147,15 +147,19 @@ export default function BDDPage() {
   const saveFileChanges = async () => {
     if (!selectedFile) return;
     try {
-      await apiClient.put('/api/registry', { 
+      const res = await apiClient.put('/api/registry', { 
         path: selectedFile, 
         content: fileContent 
       });
-      setIsEditing(false);
-      toast({ title: "Fichier mis à jour" });
-      await refreshRegistry();
-    } catch (e) {
-      toast({ title: "Erreur de sauvegarde", variant: "destructive" });
+      if (res.success) {
+        setIsEditing(false);
+        toast({ title: "Fichier mis à jour" });
+        await refreshRegistry();
+      } else {
+        throw new Error(res.error);
+      }
+    } catch (e: any) {
+      toast({ title: "Erreur de sauvegarde", description: e.message, variant: "destructive" });
     }
   };
 
@@ -176,9 +180,11 @@ export default function BDDPage() {
         setNewName('');
         toast({ title: newModal.type === 'file' ? "Fichier créé" : "Répertoire créé" });
         await refreshRegistry();
+      } else {
+        throw new Error(res.error);
       }
-    } catch (e) {
-      toast({ title: "Erreur de création physique", variant: "destructive" });
+    } catch (e: any) {
+      toast({ title: "Erreur de création physique", description: e.message, variant: "destructive" });
     }
   };
 
@@ -199,25 +205,43 @@ export default function BDDPage() {
         setRenameModal({ ...renameModal, isOpen: false });
         toast({ title: "Élément renommé" });
         await refreshRegistry();
+      } else {
+        throw new Error(res.error);
       }
-    } catch (e) {
-      toast({ title: "Erreur de renommage", variant: "destructive" });
+    } catch (e: any) {
+      toast({ title: "Erreur de renommage", description: e.message, variant: "destructive" });
     }
   };
 
   const deleteItem = async (id: string) => {
     if (!confirm("Supprimer définitivement cet élément physique ?")) return;
+    
+    // Mise à jour optimiste immédiate de l'UI
+    const removeFromTree = (nodes: FSNode[]): FSNode[] => {
+      return nodes.filter(node => {
+        if (node.id === id) return false;
+        if (node.children) {
+          node.children = removeFromTree(node.children);
+        }
+        return true;
+      });
+    };
+    
+    setTree(prev => removeFromTree([...prev]));
+    if (selectedFile === id) setSelectedFile(null);
+
     try {
       const res = await apiClient.delete(`/api/registry?path=${encodeURIComponent(id)}`);
       if (res.success) {
-        if (selectedFile === id) setSelectedFile(null);
-        toast({ title: "Élément supprimé physiquement" });
+        toast({ title: "Élément supprimé" });
+        // Synchronisation finale avec le serveur
         await refreshRegistry();
       } else {
         throw new Error(res.error);
       }
     } catch (error: any) {
       toast({ title: "Erreur de suppression", description: error.message, variant: "destructive" });
+      await refreshRegistry(); // Restauration de l'état réel en cas d'échec
     }
   };
 
