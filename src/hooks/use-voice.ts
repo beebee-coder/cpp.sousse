@@ -27,6 +27,7 @@ export function useVoice(options: VoiceOptions = {}) {
   const isManuallyStopped = useRef(false);
   const hasPermissionError = useRef(false);
   
+  // Utilisation d'une Ref pour les options pour éviter les cycles de hooks React
   const optionsRef = useRef(options);
   useEffect(() => {
     optionsRef.current = options;
@@ -69,6 +70,7 @@ export function useVoice(options: VoiceOptions = {}) {
     recognition.onend = () => {
       setState(prev => ({ ...prev, isListening: false }));
       
+      // Sécurité : Ne pas redémarrer si l'erreur est liée aux permissions
       const shouldRestart = optionsRef.current.autoRestart && 
                            !isManuallyStopped.current && 
                            !hasPermissionError.current;
@@ -100,6 +102,7 @@ export function useVoice(options: VoiceOptions = {}) {
 
     return () => {
       if (recognitionRef.current) {
+        // Suppression sécurisée des callbacks pour éviter les violations de politique "unload"
         recognitionRef.current.onstart = null;
         recognitionRef.current.onresult = null;
         recognitionRef.current.onend = null;
