@@ -11,7 +11,6 @@ const nextConfig: NextConfig = {
   // Modules natifs et lourds à exclure strictement du bundle d'exécution Serverless
   serverExternalPackages: [
     'onnxruntime-node', 
-    '@huggingface/transformers', 
     'chromadb', 
     'groq-sdk',
     'weaviate-client',

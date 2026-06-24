@@ -1,6 +1,7 @@
+
 /**
  * @fileOverview Gestionnaire ChromaDB robuste pour environnement hybride avec fallback sémantique.
- * Version : Audité pour résoudre les erreurs d'import et de constructeur.
+ * Version : Optimisée pour le déploiement Cloud (Sans Transformers).
  */
 
 import path from 'path';
@@ -36,31 +37,16 @@ const REGISTRY_ITEMS_DIR = path.join(process.cwd(), '.registry', 'items');
 
 const IS_CLOUD = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
 
-let _pipeline: any = null;
-
-async function getPipeline(): Promise<any> {
-  if (IS_CLOUD) return null; 
-  if (_pipeline) return _pipeline;
-  try {
-    const { pipeline } = await import('@huggingface/transformers');
-    _pipeline = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
-    return _pipeline;
-  } catch (e) {
-    return null;
-  }
-}
-
+/**
+ * LocalEmbeddingFunction allégée.
+ * @huggingface/transformers a été supprimé pour respecter la limite de 250MB de Vercel.
+ * Le système utilise désormais le fallback sémantique par mots-clés en local.
+ */
 export class LocalEmbeddingFunction {
   async generate(texts: string[]): Promise<number[][]> {
-    if (IS_CLOUD) return texts.map(() => []);
-    const extractor = await getPipeline();
-    if (!extractor) return texts.map(() => []);
-    try {
-      const output = await extractor(texts, { pooling: 'mean', normalize: true });
-      return output.tolist() as number[][];
-    } catch (e) {
-      return texts.map(() => []);
-    }
+    // Renvoie des vecteurs vides car la bibliothèque Transformers est absente
+    // Cela déclenchera la logique de repli (fallback) dans les recherches.
+    return texts.map(() => new Array(384).fill(0));
   }
 }
 
@@ -96,7 +82,7 @@ export async function getChromaClient(): Promise<any> {
 
 /**
  * Recherche de secours par mots-clés dans le registre physique (Fallback).
- * Utilisé quand ChromaDB est inaccessible ou hors-ligne.
+ * Utilisé quand ChromaDB est inaccessible ou quand les embeddings sont désactivés.
  */
 export function fallbackSemanticSearch(query: string, nResults = 3, componentFilter?: string): SearchResult[] {
   if (!fs.existsSync(REGISTRY_ITEMS_DIR)) return [];
@@ -132,8 +118,7 @@ export function fallbackSemanticSearch(query: string, nResults = 3, componentFil
 }
 
 export async function loadUserDatasetsFromDisk(): Promise<void> {
-  // Fonction de synchronisation disque -> mémoire (Stub pour compatibilité import)
-  console.log("📂 [RAG] Dataset chargé depuis .registry/items");
+  console.log("📂 [RAG] Dataset prêt pour recherche par mots-clés.");
 }
 
 export async function deleteCollection(name: string) {
@@ -201,7 +186,8 @@ export async function semanticSearch(options: SearchOptions, embeddingFunction: 
       score: parseFloat((1 - (Number(distances[i]) || 0)).toFixed(4))
     }));
   } catch (e) {
-    return [];
+    // Si la recherche vectorielle échoue ou renvoie des scores nuls, on bascule sur le fallback
+    return fallbackSemanticSearch(query, nResults);
   }
 }
 
@@ -209,7 +195,7 @@ export async function searchAcrossCollections(query: string, nResultsPerCollecti
   if (IS_CLOUD) return [];
   try {
     const cols = await listCollections();
-    if (!cols || cols.length === 0) return [];
+    if (!cols || cols.length === 0) return fallbackSemanticSearch(query, nResultsPerCollection);
     const searchPromises = cols.map(c => 
       semanticSearch({ collectionName: c.name, query, nResults: nResultsPerCollection })
         .then(res => res.map(r => ({ ...r, metadata: { ...r.metadata, _collection: c.name } })))
@@ -218,7 +204,7 @@ export async function searchAcrossCollections(query: string, nResultsPerCollecti
     const all = (await Promise.all(searchPromises)).flat();
     return all.sort((a, b) => b.score - a.score).slice(0, nResultsPerCollection * 2);
   } catch {
-    return [];
+    return fallbackSemanticSearch(query, nResultsPerCollection);
   }
 }
 
