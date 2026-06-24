@@ -1,89 +1,87 @@
+
 import fs from 'fs';
 import path from 'path';
 
 /**
- * Infrastructure de liaison physique pour le Registre Cloud simulé.
- * En environnement de développement (Firebase Studio/Local), 
- * utilise le système de fichiers pour garantir une persistance réelle.
+ * Infrastructure de liaison physique pour le Registre Cloud (simulé).
+ * Stocke chaque document comme un fichier JSON individuel pour une visibilité maximale.
  */
 
 const REGISTRY_DIR = path.join(process.cwd(), 'registry');
-const REGISTRY_FILE = path.join(REGISTRY_DIR, 'cloud_registry.json');
+const ITEMS_DIR = path.join(REGISTRY_DIR, 'items');
 
-// Assure l'existence du dossier de registre physique
-if (!fs.existsSync(REGISTRY_DIR)) {
-  fs.mkdirSync(REGISTRY_DIR, { recursive: true });
-}
-
-if (!fs.existsSync(REGISTRY_FILE)) {
-  fs.writeFileSync(REGISTRY_FILE, JSON.stringify([], null, 2));
-}
+// Assure l'existence des répertoires physiques
+if (!fs.existsSync(REGISTRY_DIR)) fs.mkdirSync(REGISTRY_DIR, { recursive: true });
+if (!fs.existsSync(ITEMS_DIR)) fs.mkdirSync(ITEMS_DIR, { recursive: true });
 
 export const postgresClient = {
   /**
-   * Récupère les données depuis le fichier JSON physique (Simulation Neon).
+   * Récupère les données en scannant le dossier registry/items/.
    */
   getCloudData: async (projectId: string, lastSyncDate?: Date): Promise<any[]> => {
     try {
-      const raw = fs.readFileSync(REGISTRY_FILE, 'utf8');
-      const allData: any[] = JSON.parse(raw);
+      if (!fs.existsSync(ITEMS_DIR)) return [];
       
-      const projectData = allData.filter(d => d.projectId === projectId);
-      
-      if (lastSyncDate) {
-        const threshold = lastSyncDate.getTime();
-        return projectData.filter(d => new Date(d.createdAt).getTime() > threshold);
+      const files = fs.readdirSync(ITEMS_DIR);
+      const items: any[] = [];
+
+      for (const file of files) {
+        if (!file.endsWith('.json')) continue;
+        const raw = fs.readFileSync(path.join(ITEMS_DIR, file), 'utf8');
+        const data = JSON.parse(raw);
+        
+        if (data.projectId === projectId) {
+          if (lastSyncDate) {
+            if (new Date(data.createdAt).getTime() > lastSyncDate.getTime()) {
+              items.push(data);
+            }
+          } else {
+            items.push(data);
+          }
+        }
       }
-      return projectData;
+      return items;
     } catch (e) {
-      console.error("❌ [NEON_FS] Erreur lecture registre :", e);
+      console.error("❌ [NEON_FS] Erreur lecture dossier items :", e);
       return [];
     }
   },
 
   /**
-   * Insère les données physiquement sur le disque.
+   * Insère chaque item dans un fichier JSON physique distinct.
    */
   upsertCloudData: async (items: any[]): Promise<void> => {
     try {
-      const raw = fs.readFileSync(REGISTRY_FILE, 'utf8');
-      const existing: any[] = JSON.parse(raw);
-      
-      const newRegistry = [...existing];
-
       items.forEach(newItem => {
-        const idx = newRegistry.findIndex(d => d.id === newItem.id);
+        const id = newItem.id.replace(/[^a-zA-Z0-9-]/g, '_');
+        const filePath = path.join(ITEMS_DIR, `${id}.json`);
         const dataToSave = {
           ...newItem,
           createdAt: newItem.createdAt || new Date().toISOString()
         };
-
-        if (idx !== -1) {
-          newRegistry[idx] = dataToSave;
-        } else {
-          newRegistry.push(dataToSave);
-        }
+        fs.writeFileSync(filePath, JSON.stringify(dataToSave, null, 2));
       });
-
-      fs.writeFileSync(REGISTRY_FILE, JSON.stringify(newRegistry, null, 2));
-      console.log(`✅ [NEON_FS] ${items.length} items synchronisés physiquement dans registry/cloud_registry.json`);
+      console.log(`✅ [NEON_FS] ${items.length} fichiers JSON créés dans registry/items/`);
     } catch (e) {
-      console.error("❌ [NEON_FS] Erreur écriture registre :", e);
+      console.error("❌ [NEON_FS] Erreur écriture fichiers items :", e);
       throw new Error("REGISTRY_WRITE_FAILED");
     }
   },
 
   /**
-   * Supprime des items du registre physique.
+   * Supprime physiquement les fichiers du disque.
    */
   deleteItems: async (projectId: string, ids: string[]): Promise<void> => {
     try {
-      const raw = fs.readFileSync(REGISTRY_FILE, 'utf8');
-      const allData: any[] = JSON.parse(raw);
-      const filtered = allData.filter(d => !(d.projectId === projectId && ids.includes(d.id)));
-      fs.writeFileSync(REGISTRY_FILE, JSON.stringify(filtered, null, 2));
+      ids.forEach(id => {
+        const safeId = id.replace(/[^a-zA-Z0-9-]/g, '_');
+        const filePath = path.join(ITEMS_DIR, `${safeId}.json`);
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+        }
+      });
     } catch (e) {
-      console.error("❌ [NEON_FS] Erreur purge registre :", e);
+      console.error("❌ [NEON_FS] Erreur purge fichiers items :", e);
     }
   }
 };

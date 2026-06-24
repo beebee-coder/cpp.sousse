@@ -1,6 +1,7 @@
+
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { 
   Database, 
   Plus, 
@@ -8,20 +9,12 @@ import {
   Layers,
   Mic,
   MicOff,
-  Sparkles,
   Loader2,
-  AlertTriangle,
   Trash2,
-  ChevronDown,
-  Info,
-  ShieldAlert,
-  Image as ImageIcon,
-  Video as VideoIcon,
-  Bell,
   Camera,
-  StopCircle,
-  CheckCircle2,
-  X
+  Video as VideoIcon,
+  X,
+  CheckCircle2
 } from 'lucide-react';
 
 import { Card } from '@/components/ui/card';
@@ -56,6 +49,7 @@ interface QAItem {
 export default function DatasetPage() {
   const { toast } = useToast();
   
+  // 1. Tous les Hooks au sommet absolu
   const [mounted, setMounted] = useState(false);
   const [mode, setMode] = useState<'qa' | 'procedure'>('qa');
   const [qaItems, setQaItems] = useState<QAItem[]>([]);
@@ -66,7 +60,7 @@ export default function DatasetPage() {
     { id: '1', title: '', duration: '', description: '', conditions: '', alarms: '', images: '', video: '' }
   ]);
   const [isUploading, setIsUploading] = useState(false);
-  const [isGuideActive, setIsGuideActive] = useState(false);
+  const [activeUIField, setActiveUIField] = useState<{ type: string, index?: number } | null>(null);
   
   const [mediaModal, setMediaModal] = useState<{ isOpen: boolean, type: 'image' | 'video', stepIndex: number | null }>({
     isOpen: false,
@@ -80,11 +74,10 @@ export default function DatasetPage() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
-  
-  const [activeUIField, setActiveUIField] = useState<{ type: string, index?: number } | null>(null);
   const activeVoiceFieldRef = useRef<{ type: string, index?: number } | null>(null);
 
   useEffect(() => {
+    setMounted(true);
     activeVoiceFieldRef.current = activeUIField;
   }, [activeUIField]);
 
@@ -92,19 +85,14 @@ export default function DatasetPage() {
     const target = activeVoiceFieldRef.current;
     if (!target) return;
 
-    if (target.type === 'question') {
-      setQuestion(prev => prev ? `${prev} ${text}` : text);
-    } else if (target.type === 'answer') {
-      setAnswer(prev => prev ? `${prev} ${text}` : text);
-    } else if (target.type === 'procTitle') {
-      setProcTitle(prev => prev ? `${prev} ${text}` : text);
-    } else if (typeof target.index === 'number') {
+    if (target.type === 'question') setQuestion(p => p ? `${p} ${text}` : text);
+    else if (target.type === 'answer') setAnswer(p => p ? `${p} ${text}` : text);
+    else if (target.type === 'procTitle') setProcTitle(p => p ? `${p} ${text}` : text);
+    else if (typeof target.index === 'number') {
       setProcSteps(prev => {
         const next = [...prev];
-        if (!next[target.index!]) return prev;
         const s = { ...next[target.index!] };
         if (target.type === 'stepTitle') s.title = s.title ? `${s.title} ${text}` : text;
-        else if (target.type === 'stepDuration') s.duration = s.duration ? `${s.duration} ${text}` : text;
         else if (target.type === 'stepDescription') s.description = s.description ? `${s.description} ${text}` : text;
         else if (target.type === 'stepConditions') s.conditions = s.conditions ? `${s.conditions} ${text}` : text;
         else if (target.type === 'stepAlarms') s.alarms = s.alarms ? `${s.alarms} ${text}` : text;
@@ -114,41 +102,19 @@ export default function DatasetPage() {
     }
   }, []);
 
-  const voice = useVoice({
-    onResult: handleVoiceResult,
-    autoRestart: true,
-    lang: 'fr-FR'
-  });
+  const voice = useVoice({ onResult: handleVoiceResult, autoRestart: true });
 
   useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  useEffect(() => {
-    const startStream = async () => {
-      if (!mediaModal.isOpen) return;
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-          video: true, 
-          audio: mediaModal.type === 'video' 
-        });
-        streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-        }
-      } catch (err) {
-        toast({ title: "Erreur Caméra", variant: "destructive" });
-        setMediaModal(prev => ({ ...prev, isOpen: false }));
-      }
-    };
-
-    if (mediaModal.isOpen) startStream();
-    else {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(t => t.stop());
-        streamRef.current = null;
-      }
+    if (!mediaModal.isOpen) {
+      if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
+      return;
     }
+    navigator.mediaDevices.getUserMedia({ video: true, audio: mediaModal.type === 'video' })
+      .then(s => {
+        streamRef.current = s;
+        if (videoRef.current) videoRef.current.srcObject = s;
+      })
+      .catch(() => toast({ title: "Erreur Caméra", variant: "destructive" }));
   }, [mediaModal.isOpen, mediaModal.type, toast]);
 
   const toggleVoice = (type: string, index?: number) => {
@@ -163,36 +129,28 @@ export default function DatasetPage() {
 
   const captureImage = () => {
     if (!videoRef.current || mediaModal.stepIndex === null) return;
-    const canvas = document.createElement('canvas');
-    canvas.width = videoRef.current.videoWidth;
-    canvas.height = videoRef.current.videoHeight;
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      ctx.drawImage(videoRef.current, 0, 0);
-      const next = [...procSteps];
-      next[mediaModal.stepIndex].images = `CAP_${Date.now()}_IMG`;
-      setProcSteps(next);
-      setMediaModal(prev => ({ ...prev, isOpen: false }));
-      toast({ title: "Image capturée", description: "Enregistrée dans le tampon cloud." });
-    }
+    const n = [...procSteps];
+    n[mediaModal.stepIndex].images = `IMG_CAP_${Date.now()}`;
+    setProcSteps(n);
+    setMediaModal(p => ({ ...p, isOpen: false }));
+    toast({ title: "Image capturée" });
   };
 
   const startRecording = () => {
     if (!streamRef.current) return;
     chunksRef.current = [];
-    const recorder = new MediaRecorder(streamRef.current);
-    recorder.ondataavailable = (e) => chunksRef.current.push(e.data);
-    recorder.onstop = () => {
-      if (mediaModal.stepIndex === null) return;
-      const next = [...procSteps];
-      next[mediaModal.stepIndex].video = `CAP_${Date.now()}_VID`;
-      setProcSteps(next);
+    const rec = new MediaRecorder(streamRef.current);
+    rec.ondataavailable = e => chunksRef.current.push(e.data);
+    rec.onstop = () => {
+      const n = [...procSteps];
+      n[mediaModal.stepIndex!].video = `VID_CAP_${Date.now()}`;
+      setProcSteps(n);
     };
-    recorder.start();
-    mediaRecorderRef.current = recorder;
+    rec.start();
+    mediaRecorderRef.current = rec;
     setIsCapturing(true);
-    const interval = setInterval(() => setRecordingTime(t => t + 1), 1000);
-    (mediaRecorderRef.current as any)._interval = interval;
+    const itv = setInterval(() => setRecordingTime(t => t + 1), 1000);
+    (rec as any)._interval = itv;
   };
 
   const stopRecording = () => {
@@ -200,8 +158,8 @@ export default function DatasetPage() {
       mediaRecorderRef.current.stop();
       clearInterval((mediaRecorderRef.current as any)._interval);
       setIsCapturing(false);
-      setMediaModal(prev => ({ ...prev, isOpen: false }));
-      toast({ title: "Vidéo enregistrée", description: "Enregistrée dans le tampon cloud." });
+      setMediaModal(p => ({ ...p, isOpen: false }));
+      toast({ title: "Vidéo enregistrée" });
     }
   };
 
@@ -209,39 +167,34 @@ export default function DatasetPage() {
     e.preventDefault();
     if (mode === 'qa') {
       if (!question.trim() || !answer.trim()) return;
-      setQaItems(prev => [{ id: Date.now().toString(), type: 'qa', label: question, details: answer }, ...prev]);
+      setQaItems(p => [{ id: `qa-${Date.now()}`, type: 'qa', label: question, details: answer }, ...p]);
       setQuestion(''); setAnswer('');
     } else {
       if (!procTitle.trim()) return;
-      const details = procSteps.map((s, i) => 
-        `[Action ${i+1}]: ${s.title}\nDescription: ${s.description}\nDurée: ${s.duration}\nConditions: ${s.conditions}\nAlarmes: ${s.alarms}\nAssets: ${s.images}, ${s.video}`
-      ).join('\n\n');
-      setQaItems(prev => [{ id: Date.now().toString(), type: 'procedure', label: procTitle, details }, ...prev]);
+      const details = procSteps.map((s, i) => `[Action ${i+1}]: ${s.title}\nDescription: ${s.description}\nDurée: ${s.duration}\nConditions: ${s.conditions}\nAlarmes: ${s.alarms}\nAssets: ${s.images}, ${s.video}`).join('\n\n');
+      setQaItems(p => [{ id: `proc-${Date.now()}`, type: 'procedure', label: procTitle, details }, ...p]);
       setProcTitle('');
       setProcSteps([{ id: '1', title: '', duration: '', description: '', conditions: '', alarms: '', images: '', video: '' }]);
     }
-    toast({ title: "Enregistré dans le registre provisoire." });
+    toast({ title: "Ajouté au registre provisoire" });
   };
 
   const handleFinalSubmit = async () => {
-    if (qaItems.length === 0) return;
     setIsUploading(true);
     try {
-      const items = qaItems.map(item => ({
-        id: `doc-${item.id}`,
+      const items = qaItems.map(it => ({
+        id: it.id,
         projectId: 'project-001',
-        type: 'document' as const,
-        content: JSON.stringify({ label: item.label, details: item.details, type: item.type }),
-        tags: [item.type],
+        type: 'document',
+        content: JSON.stringify({ label: it.label, details: it.details, type: it.type }),
+        tags: [it.type],
         createdAt: new Date().toISOString()
       }));
-      const res = await apiClient.post<any>('/api/sync/upload', { userId: 'admin', projectId: 'project-001', items });
-      if (res.error) throw new Error(res.error);
-      
-      toast({ title: "Synchronisation Cloud Terminée", description: "Les données sont désormais persistantes physiquement." });
+      await apiClient.post('/api/sync/upload', { userId: 'admin', projectId: 'project-001', items });
+      toast({ title: "Fichiers JSON créés physiquement", description: "Vérifiez registry/items/ dans votre explorateur." });
       setQaItems([]);
-    } catch (e: any) {
-      toast({ title: "Échec Synchronisation", description: e.message, variant: "destructive" });
+    } catch (e) {
+      toast({ title: "Échec Sync Physique", variant: "destructive" });
     } finally {
       setIsUploading(false);
     }
@@ -252,7 +205,6 @@ export default function DatasetPage() {
   return (
     <div className="flex flex-col lg:flex-row h-screen bg-background overflow-hidden">
       <DashboardSidebar />
-
       <main className="flex-1 flex flex-col min-w-0 h-full overflow-y-auto terminal-scroll">
         <header className="h-16 border-b border-border bg-card/30 flex items-center justify-between px-6 shrink-0">
           <div className="flex items-center gap-4">
@@ -260,28 +212,25 @@ export default function DatasetPage() {
             <Database className="w-4 h-4 text-primary" />
             <span className="font-headline font-bold text-xs uppercase tracking-widest text-primary">Capture RAG Physique</span>
           </div>
-
-          <div className="flex items-center gap-4">
-            <div className="flex bg-muted/30 p-1 rounded-sm border border-border">
-              <button onClick={() => setMode('qa')} className={cn("px-3 py-1 text-[9px] uppercase rounded-sm", mode === 'qa' ? "bg-primary text-primary-foreground font-bold" : "text-muted-foreground")}>FAQ</button>
-              <button onClick={() => setMode('procedure')} className={cn("px-3 py-1 text-[9px] uppercase rounded-sm", mode === 'procedure' ? "bg-secondary text-secondary-foreground font-bold" : "text-muted-foreground")}>Procédure</button>
-            </div>
+          <div className="flex bg-muted/30 p-1 rounded-sm border border-border">
+            <button onClick={() => setMode('qa')} className={cn("px-3 py-1 text-[9px] uppercase rounded-sm", mode === 'qa' ? "bg-primary text-primary-foreground font-bold" : "text-muted-foreground")}>FAQ</button>
+            <button onClick={() => setMode('procedure')} className={cn("px-3 py-1 text-[9px] uppercase rounded-sm", mode === 'procedure' ? "bg-secondary text-secondary-foreground font-bold" : "text-muted-foreground")}>Procédure</button>
           </div>
         </header>
 
         <div className="p-4 lg:p-8 max-w-5xl mx-auto w-full space-y-8">
-          <Card className="p-6 border-border bg-card/50 space-y-6 rounded-sm shadow-2xl">
+          <Card className="p-6 border-border bg-card/50 space-y-6 shadow-2xl">
             <form onSubmit={handleAddItem} className="space-y-6">
               {mode === 'qa' ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="relative">
                     <p className="text-[10px] font-bold text-primary mb-2 uppercase">Question / Symptôme</p>
-                    <Textarea value={question} onChange={(e) => setQuestion(e.target.value)} className={cn("h-32 bg-background font-code text-xs", activeUIField?.type === 'question' && "ring-2 ring-red-500")} />
+                    <Textarea value={question} onChange={(e) => setQuestion(e.target.value)} className={cn("h-32 bg-background font-code text-xs", activeUIField?.type === 'question' && "ring-1 ring-red-500")} />
                     <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('question')} className="absolute top-8 right-2 h-7 w-7"><Mic className="w-3.5 h-3.5" /></Button>
                   </div>
                   <div className="relative">
                     <p className="text-[10px] font-bold text-secondary mb-2 uppercase">Réponse / Action</p>
-                    <Textarea value={answer} onChange={(e) => setAnswer(e.target.value)} className={cn("h-32 bg-background font-code text-xs", activeUIField?.type === 'answer' && "ring-2 ring-red-500")} />
+                    <Textarea value={answer} onChange={(e) => setAnswer(e.target.value)} className={cn("h-32 bg-background font-code text-xs", activeUIField?.type === 'answer' && "ring-1 ring-red-500")} />
                     <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('answer')} className="absolute top-8 right-2 h-7 w-7 text-secondary"><Mic className="w-3.5 h-3.5" /></Button>
                   </div>
                 </div>
@@ -289,10 +238,9 @@ export default function DatasetPage() {
                 <div className="space-y-6">
                   <div className="relative">
                     <p className="text-[10px] font-bold text-primary mb-2 uppercase">Titre de la procédure</p>
-                    <Input value={procTitle} onChange={(e) => setProcTitle(e.target.value)} className={cn("bg-background uppercase h-12 text-sm font-bold", activeUIField?.type === 'procTitle' && "ring-2 ring-red-500")} />
+                    <Input value={procTitle} onChange={(e) => setProcTitle(e.target.value)} className={cn("bg-background uppercase h-12 text-sm font-bold", activeUIField?.type === 'procTitle' && "ring-1 ring-red-500")} />
                     <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('procTitle')} className="absolute top-8 right-2 h-7 w-7"><Mic className="w-3.5 h-3.5" /></Button>
                   </div>
-
                   <div className="space-y-4">
                     {procSteps.map((step, index) => (
                       <Card key={step.id} className="p-4 border-border bg-black/30 space-y-4 relative">
@@ -303,33 +251,30 @@ export default function DatasetPage() {
                              <Button type="button" variant="ghost" size="icon" onClick={() => setProcSteps(prev => prev.filter(s => s.id !== step.id))} className="h-7 w-7 text-muted-foreground hover:text-destructive" disabled={procSteps.length <= 1}><Trash2 className="w-3.5 h-3.5" /></Button>
                           </div>
                         </div>
-                        
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div className="relative">
                              <p className="text-[8px] font-bold uppercase text-muted-foreground mb-1">Action</p>
-                             <Input value={step.title} onChange={(e) => { const n = [...procSteps]; n[index].title = e.target.value; setProcSteps(n); }} className="h-8 text-[10px]" />
+                             <Input value={step.title} onChange={(e) => { const n = [...procSteps]; n[index].title = e.target.value; setProcSteps(n); }} className={cn("h-8 text-[10px]", activeUIField?.type === 'stepTitle' && activeUIField.index === index && "ring-1 ring-red-500")} />
                              <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepTitle', index)} className="absolute top-5 right-1 h-7 w-7"><Mic className="w-3 h-3" /></Button>
                           </div>
                           <div className="relative">
-                             <p className="text-[8px] font-bold uppercase text-muted-foreground mb-1">Détails</p>
-                             <Input value={step.description} onChange={(e) => { const n = [...procSteps]; n[index].description = e.target.value; setProcSteps(n); }} className="h-8 text-[10px]" />
+                             <p className="text-[8px] font-bold uppercase text-muted-foreground mb-1">Description Détaillée</p>
+                             <Input value={step.description} onChange={(e) => { const n = [...procSteps]; n[index].description = e.target.value; setProcSteps(n); }} className={cn("h-8 text-[10px]", activeUIField?.type === 'stepDescription' && activeUIField.index === index && "ring-1 ring-red-500")} />
                              <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepDescription', index)} className="absolute top-5 right-1 h-7 w-7"><Mic className="w-3 h-3" /></Button>
                           </div>
                         </div>
-
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div className="relative">
                              <p className="text-[8px] font-bold uppercase text-primary mb-1">Conditions</p>
-                             <Input value={step.conditions} onChange={(e) => { const n = [...procSteps]; n[index].conditions = e.target.value; setProcSteps(n); }} className="h-8 text-[10px]" />
+                             <Input value={step.conditions} onChange={(e) => { const n = [...procSteps]; n[index].conditions = e.target.value; setProcSteps(n); }} className={cn("h-8 text-[10px]", activeUIField?.type === 'stepConditions' && activeUIField.index === index && "ring-1 ring-red-500")} />
                              <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepConditions', index)} className="absolute top-5 right-1 h-7 w-7 text-primary"><Mic className="w-3 h-3" /></Button>
                           </div>
                           <div className="relative">
                              <p className="text-[8px] font-bold uppercase text-destructive mb-1">Alarmes</p>
-                             <Input value={step.alarms} onChange={(e) => { const n = [...procSteps]; n[index].alarms = e.target.value; setProcSteps(n); }} className="h-8 text-[10px]" />
+                             <Input value={step.alarms} onChange={(e) => { const n = [...procSteps]; n[index].alarms = e.target.value; setProcSteps(n); }} className={cn("h-8 text-[10px]", activeUIField?.type === 'stepAlarms' && activeUIField.index === index && "ring-1 ring-red-500")} />
                              <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepAlarms', index)} className="absolute top-5 right-1 h-7 w-7 text-destructive"><Mic className="w-3 h-3" /></Button>
                           </div>
                         </div>
-
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div className="flex gap-1 items-end">
                             <div className="flex-1">
@@ -349,16 +294,10 @@ export default function DatasetPage() {
                       </Card>
                     ))}
                   </div>
-
-                  <Button type="button" variant="outline" onClick={() => setProcSteps([...procSteps, { id: Date.now().toString(), title: '', duration: '', description: '', conditions: '', alarms: '', images: '', video: '' }])} className="w-full border-dashed h-10 text-[10px] uppercase">
-                    <Plus className="w-3 h-3 mr-2" /> Ajouter une action
-                  </Button>
+                  <Button type="button" variant="outline" onClick={() => setProcSteps([...procSteps, { id: Date.now().toString(), title: '', duration: '', description: '', conditions: '', alarms: '', images: '', video: '' }])} className="w-full border-dashed h-10 text-[10px] uppercase"><Plus className="w-3 h-3 mr-2" /> Ajouter une action</Button>
                 </div>
               )}
-
-              <Button type="submit" className="w-full font-bold uppercase text-xs h-10 bg-primary text-primary-foreground">
-                Sauvegarder dans le tampon Cloud
-              </Button>
+              <Button type="submit" className="w-full font-bold uppercase text-xs h-10 bg-primary text-primary-foreground">Ajouter au Registre Provisoire</Button>
             </form>
           </Card>
 
@@ -366,11 +305,8 @@ export default function DatasetPage() {
             <div className="space-y-4 pb-12">
               <div className="flex justify-between items-center">
                 <h3 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2"><Layers className="w-3.5 h-3.5" /> Registre Provisoire ({qaItems.length})</h3>
-                <Button onClick={handleFinalSubmit} disabled={isUploading} size="sm" className="bg-secondary text-secondary-foreground text-[9px] font-bold">
-                  {isUploading ? <Loader2 className="w-3 h-3 mr-2 animate-spin" /> : <UploadCloud className="w-3 h-3 mr-2" />} Synchronisation Physique
-                </Button>
+                <Button onClick={handleFinalSubmit} disabled={isUploading} size="sm" className="bg-secondary text-secondary-foreground text-[9px] font-bold">{isUploading ? <Loader2 className="w-3 h-3 mr-2 animate-spin" /> : <UploadCloud className="w-3 h-3 mr-2" />} Synchronisation Physique</Button>
               </div>
-
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {qaItems.map(item => (
                   <Card key={item.id} className="p-4 border-border bg-card/20 relative group">
