@@ -1,76 +1,89 @@
-import { CloudData } from './types';
+import fs from 'fs';
+import path from 'path';
 
 /**
- * Infrastructure de liaison Neon Postgres (Prête pour Neon Serverless).
- * Cette classe assure la persistance cloud sécurisée pour le transfert multi-stations.
+ * Infrastructure de liaison physique pour le Registre Cloud simulé.
+ * En environnement de développement (Firebase Studio/Local), 
+ * utilise le système de fichiers pour garantir une persistance réelle.
  */
+
+const REGISTRY_DIR = path.join(process.cwd(), 'registry');
+const REGISTRY_FILE = path.join(REGISTRY_DIR, 'cloud_registry.json');
+
+// Assure l'existence du dossier de registre physique
+if (!fs.existsSync(REGISTRY_DIR)) {
+  fs.mkdirSync(REGISTRY_DIR, { recursive: true });
+}
+
+if (!fs.existsSync(REGISTRY_FILE)) {
+  fs.writeFileSync(REGISTRY_FILE, JSON.stringify([], null, 2));
+}
+
 export const postgresClient = {
   /**
-   * Récupère les données delta (nouvelles modifications) depuis le registre Neon.
+   * Récupère les données depuis le fichier JSON physique (Simulation Neon).
    */
-  getCloudData: async (projectId: string, lastSyncDate?: Date): Promise<CloudData[]> => {
-    // Note: Dans une version finale, ce code effectuera un appel SQL réel via la DATABASE_URL.
-    // Actuellement simulé via LocalStorage pour le mode Browser de Firebase Studio.
-    if (typeof window === 'undefined') return [];
-    
-    const key = `visionode_neon_db_${projectId}`;
-    const raw = localStorage.getItem(key);
-    let allData: CloudData[] = raw ? JSON.parse(raw) : [];
-    
-    if (lastSyncDate) {
-      const threshold = lastSyncDate.getTime();
-      return allData.filter(d => new Date(d.createdAt).getTime() > threshold);
+  getCloudData: async (projectId: string, lastSyncDate?: Date): Promise<any[]> => {
+    try {
+      const raw = fs.readFileSync(REGISTRY_FILE, 'utf8');
+      const allData: any[] = JSON.parse(raw);
+      
+      const projectData = allData.filter(d => d.projectId === projectId);
+      
+      if (lastSyncDate) {
+        const threshold = lastSyncDate.getTime();
+        return projectData.filter(d => new Date(d.createdAt).getTime() > threshold);
+      }
+      return projectData;
+    } catch (e) {
+      console.error("❌ [NEON_FS] Erreur lecture registre :", e);
+      return [];
     }
-    return allData;
   },
 
   /**
-   * Insère ou met à jour des données de manière atomique dans le registre cloud.
+   * Insère les données physiquement sur le disque.
    */
-  upsertCloudData: async (items: CloudData[]): Promise<void> => {
-    if (typeof window === 'undefined') return;
-    
-    // Groupement par projet pour assurer l'isolation des données industrielles
-    const grouped: Record<string, CloudData[]> = {};
-    items.forEach(item => {
-      if (!grouped[item.projectId]) grouped[item.projectId] = [];
-      grouped[item.projectId].push(item);
-    });
-
-    for (const pid of Object.keys(grouped)) {
-      const key = `visionode_neon_db_${pid}`;
-      const existingRaw = localStorage.getItem(key);
-      let existing: CloudData[] = existingRaw ? JSON.parse(existingRaw) : [];
+  upsertCloudData: async (items: any[]): Promise<void> => {
+    try {
+      const raw = fs.readFileSync(REGISTRY_FILE, 'utf8');
+      const existing: any[] = JSON.parse(raw);
       
-      grouped[pid].forEach(newItem => {
-        const idx = existing.findIndex(d => d.id === newItem.id);
+      const newRegistry = [...existing];
+
+      items.forEach(newItem => {
+        const idx = newRegistry.findIndex(d => d.id === newItem.id);
+        const dataToSave = {
+          ...newItem,
+          createdAt: newItem.createdAt || new Date().toISOString()
+        };
+
         if (idx !== -1) {
-          existing[idx] = { ...newItem, createdAt: new Date() };
+          newRegistry[idx] = dataToSave;
         } else {
-          existing.push({ ...newItem, createdAt: new Date() });
+          newRegistry.push(dataToSave);
         }
       });
-      
-      try {
-        localStorage.setItem(key, JSON.stringify(existing));
-      } catch (e) {
-        console.error("❌ [NEON_INFRA] Quota de registre cloud saturé.");
-        throw new Error("REGISTRY_SATURATED");
-      }
+
+      fs.writeFileSync(REGISTRY_FILE, JSON.stringify(newRegistry, null, 2));
+      console.log(`✅ [NEON_FS] ${items.length} items synchronisés physiquement dans registry/cloud_registry.json`);
+    } catch (e) {
+      console.error("❌ [NEON_FS] Erreur écriture registre :", e);
+      throw new Error("REGISTRY_WRITE_FAILED");
     }
   },
 
   /**
-   * Purge les assets provisoires une fois qu'ils ont été sécurisés sur la station locale.
+   * Supprime des items du registre physique.
    */
   deleteItems: async (projectId: string, ids: string[]): Promise<void> => {
-    if (typeof window === 'undefined') return;
-    const key = `visionode_neon_db_${projectId}`;
-    const raw = localStorage.getItem(key);
-    if (raw) {
-      const data: CloudData[] = JSON.parse(raw);
-      const filtered = data.filter(d => !ids.includes(d.id));
-      localStorage.setItem(key, JSON.stringify(filtered));
+    try {
+      const raw = fs.readFileSync(REGISTRY_FILE, 'utf8');
+      const allData: any[] = JSON.parse(raw);
+      const filtered = allData.filter(d => !(d.projectId === projectId && ids.includes(d.id)));
+      fs.writeFileSync(REGISTRY_FILE, JSON.stringify(filtered, null, 2));
+    } catch (e) {
+      console.error("❌ [NEON_FS] Erreur purge registre :", e);
     }
   }
 };

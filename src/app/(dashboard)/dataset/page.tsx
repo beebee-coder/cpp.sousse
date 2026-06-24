@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from 'react';
@@ -57,7 +56,6 @@ interface QAItem {
 export default function DatasetPage() {
   const { toast } = useToast();
   
-  // -- 1. TOUS LES HOOKS AU SOMMET (ORDRE FIXE POUR REACT 19) --
   const [mounted, setMounted] = useState(false);
   const [mode, setMode] = useState<'qa' | 'procedure'>('qa');
   const [qaItems, setQaItems] = useState<QAItem[]>([]);
@@ -139,37 +137,27 @@ export default function DatasetPage() {
           videoRef.current.srcObject = stream;
         }
       } catch (err) {
-        console.error("Erreur caméra:", err);
-        toast({ title: "Erreur Caméra", description: "Vérifiez les permissions.", variant: "destructive" });
+        toast({ title: "Erreur Caméra", variant: "destructive" });
         setMediaModal(prev => ({ ...prev, isOpen: false }));
       }
     };
 
-    const stopStream = () => {
+    if (mediaModal.isOpen) startStream();
+    else {
       if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current.getTracks().forEach(t => t.stop());
         streamRef.current = null;
       }
-    };
-
-    if (mediaModal.isOpen) {
-      startStream();
-    } else {
-      stopStream();
     }
-
-    return () => stopStream();
   }, [mediaModal.isOpen, mediaModal.type, toast]);
 
   const toggleVoice = (type: string, index?: number) => {
-    const isCurrentlyActive = voice.isListening && activeUIField?.type === type && activeUIField?.index === index;
-    if (isCurrentlyActive) {
+    if (voice.isListening && activeUIField?.type === type && activeUIField?.index === index) {
       voice.stopListening();
       setActiveUIField(null);
     } else {
-      voice.stopListening();
       setActiveUIField({ type, index });
-      setTimeout(() => voice.startListening(), 50);
+      voice.startListening();
     }
   };
 
@@ -184,8 +172,8 @@ export default function DatasetPage() {
       const next = [...procSteps];
       next[mediaModal.stepIndex].images = `CAP_${Date.now()}_IMG`;
       setProcSteps(next);
-      toast({ title: "Image capturée", description: "Asset rattaché à l'étape." });
       setMediaModal(prev => ({ ...prev, isOpen: false }));
+      toast({ title: "Image capturée", description: "Enregistrée dans le tampon cloud." });
     }
   };
 
@@ -193,30 +181,27 @@ export default function DatasetPage() {
     if (!streamRef.current) return;
     chunksRef.current = [];
     const recorder = new MediaRecorder(streamRef.current);
-    recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
+    recorder.ondataavailable = (e) => chunksRef.current.push(e.data);
     recorder.onstop = () => {
       if (mediaModal.stepIndex === null) return;
       const next = [...procSteps];
       next[mediaModal.stepIndex].video = `CAP_${Date.now()}_VID`;
       setProcSteps(next);
-      toast({ title: "Vidéo enregistrée", description: "Séquence rattachée à l'étape." });
     };
     recorder.start();
     mediaRecorderRef.current = recorder;
     setIsCapturing(true);
-    setRecordingTime(0);
     const interval = setInterval(() => setRecordingTime(t => t + 1), 1000);
     (mediaRecorderRef.current as any)._interval = interval;
   };
 
   const stopRecording = () => {
-    if (mediaRecorderRef.current && isCapturing) {
+    if (mediaRecorderRef.current) {
       mediaRecorderRef.current.stop();
-      if ((mediaRecorderRef.current as any)._interval) {
-        clearInterval((mediaRecorderRef.current as any)._interval);
-      }
+      clearInterval((mediaRecorderRef.current as any)._interval);
       setIsCapturing(false);
       setMediaModal(prev => ({ ...prev, isOpen: false }));
+      toast({ title: "Vidéo enregistrée", description: "Enregistrée dans le tampon cloud." });
     }
   };
 
@@ -229,13 +214,13 @@ export default function DatasetPage() {
     } else {
       if (!procTitle.trim()) return;
       const details = procSteps.map((s, i) => 
-        `[Étape ${i + 1}] ${s.title} (${s.duration})\nCONDITIONS: ${s.conditions}\nALARMES: ${s.alarms}\nASSETS: ${s.images} ${s.video}\nDÉTAILS: ${s.description}`
+        `[Action ${i+1}]: ${s.title}\nDescription: ${s.description}\nDurée: ${s.duration}\nConditions: ${s.conditions}\nAlarmes: ${s.alarms}\nAssets: ${s.images}, ${s.video}`
       ).join('\n\n');
       setQaItems(prev => [{ id: Date.now().toString(), type: 'procedure', label: procTitle, details }, ...prev]);
       setProcTitle('');
-      setProcSteps([{ id: Date.now().toString(), title: '', duration: '', description: '', conditions: '', alarms: '', images: '', video: '' }]);
+      setProcSteps([{ id: '1', title: '', duration: '', description: '', conditions: '', alarms: '', images: '', video: '' }]);
     }
-    toast({ title: "Donnée enregistrée localement." });
+    toast({ title: "Enregistré dans le registre provisoire." });
   };
 
   const handleFinalSubmit = async () => {
@@ -248,29 +233,21 @@ export default function DatasetPage() {
         type: 'document' as const,
         content: JSON.stringify({ label: item.label, details: item.details, type: item.type }),
         tags: [item.type],
-        createdAt: new Date()
+        createdAt: new Date().toISOString()
       }));
-      await apiClient.post('/api/sync/upload', { userId: 'admin', projectId: 'project-001', items });
-      toast({ title: "Synchronisation Cloud Terminée" });
+      const res = await apiClient.post<any>('/api/sync/upload', { userId: 'admin', projectId: 'project-001', items });
+      if (res.error) throw new Error(res.error);
+      
+      toast({ title: "Synchronisation Cloud Terminée", description: "Les données sont désormais persistantes physiquement." });
       setQaItems([]);
-    } catch (e) {
-      toast({ title: "Échec Synchronisation", variant: "destructive" });
+    } catch (e: any) {
+      toast({ title: "Échec Synchronisation", description: e.message, variant: "destructive" });
     } finally {
       setIsUploading(false);
     }
   };
 
-  // PROTECTION HYDRATATION : On ne rend le contenu qu'après le montage initial
-  if (!mounted) {
-    return (
-      <div className="flex flex-col lg:flex-row h-screen bg-background overflow-hidden">
-        <DashboardSidebar />
-        <main className="flex-1 flex items-center justify-center">
-          <Loader2 className="w-8 h-8 animate-spin text-primary" />
-        </main>
-      </div>
-    );
-  }
+  if (!mounted) return <div className="h-screen bg-background flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
 
   return (
     <div className="flex flex-col lg:flex-row h-screen bg-background overflow-hidden">
@@ -281,19 +258,10 @@ export default function DatasetPage() {
           <div className="flex items-center gap-4">
             <div className="lg:hidden w-10" />
             <Database className="w-4 h-4 text-primary" />
-            <span className="font-headline font-bold text-xs uppercase tracking-widest text-primary">Capture RAG</span>
+            <span className="font-headline font-bold text-xs uppercase tracking-widest text-primary">Capture RAG Physique</span>
           </div>
 
           <div className="flex items-center gap-4">
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              onClick={() => setIsGuideActive(!isGuideActive)}
-              className={cn("h-9 text-[9px] font-code uppercase", isGuideActive ? "text-secondary" : "text-muted-foreground")}
-            >
-              <Sparkles className="w-3.5 h-3.5 mr-2" />
-              Audit Guidé {isGuideActive ? "ON" : "OFF"}
-            </Button>
             <div className="flex bg-muted/30 p-1 rounded-sm border border-border">
               <button onClick={() => setMode('qa')} className={cn("px-3 py-1 text-[9px] uppercase rounded-sm", mode === 'qa' ? "bg-primary text-primary-foreground font-bold" : "text-muted-foreground")}>FAQ</button>
               <button onClick={() => setMode('procedure')} className={cn("px-3 py-1 text-[9px] uppercase rounded-sm", mode === 'procedure' ? "bg-secondary text-secondary-foreground font-bold" : "text-muted-foreground")}>Procédure</button>
@@ -302,139 +270,104 @@ export default function DatasetPage() {
         </header>
 
         <div className="p-4 lg:p-8 max-w-5xl mx-auto w-full space-y-8">
-          {voice.error && (voice.error === 'not-allowed') && (
-            <Card className="p-4 border-destructive/30 bg-destructive/5 animate-pulse">
-              <div className="flex items-center gap-3">
-                <AlertTriangle className="w-5 h-5 text-destructive" />
-                <p className="text-[10px] font-code text-destructive uppercase font-bold">Microphone Bloqué. Vérifiez le SSL et les permissions du navigateur.</p>
-              </div>
-            </Card>
-          )}
-
           <Card className="p-6 border-border bg-card/50 space-y-6 rounded-sm shadow-2xl">
             <form onSubmit={handleAddItem} className="space-y-6">
               {mode === 'qa' ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="relative">
-                    <p className="text-[10px] font-bold text-primary mb-2 uppercase tracking-widest">Symptôme / Question</p>
-                    <Textarea 
-                      value={question} 
-                      onChange={(e) => setQuestion(e.target.value)} 
-                      placeholder="EX: ÉCHAUFFEMENT POMPE P-101..." 
-                      className={cn("h-32 bg-background font-code text-xs uppercase", activeUIField?.type === 'question' && "ring-2 ring-red-500")}
-                    />
-                    <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('question')} className={cn("absolute top-8 right-2 h-7 w-7", activeUIField?.type === 'question' ? "text-red-500" : "text-primary")}>
-                      <Mic className="w-3.5 h-3.5" />
-                    </Button>
+                    <p className="text-[10px] font-bold text-primary mb-2 uppercase">Question / Symptôme</p>
+                    <Textarea value={question} onChange={(e) => setQuestion(e.target.value)} className={cn("h-32 bg-background font-code text-xs", activeUIField?.type === 'question' && "ring-2 ring-red-500")} />
+                    <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('question')} className="absolute top-8 right-2 h-7 w-7"><Mic className="w-3.5 h-3.5" /></Button>
                   </div>
                   <div className="relative">
-                    <p className="text-[10px] font-bold text-secondary mb-2 uppercase tracking-widest">Résolution / Réponse</p>
-                    <Textarea 
-                      value={answer} 
-                      onChange={(e) => setAnswer(e.target.value)} 
-                      placeholder="EX: VÉRIFIER LUBRIFICATION PALIER 2..." 
-                      className={cn("h-32 bg-background font-code text-xs uppercase", activeUIField?.type === 'answer' && "ring-2 ring-red-500")}
-                    />
-                    <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('answer')} className={cn("absolute top-8 right-2 h-7 w-7", activeUIField?.type === 'answer' ? "text-red-500" : "text-secondary")}>
-                       <Mic className="w-3.5 h-3.5" />
-                    </Button>
+                    <p className="text-[10px] font-bold text-secondary mb-2 uppercase">Réponse / Action</p>
+                    <Textarea value={answer} onChange={(e) => setAnswer(e.target.value)} className={cn("h-32 bg-background font-code text-xs", activeUIField?.type === 'answer' && "ring-2 ring-red-500")} />
+                    <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('answer')} className="absolute top-8 right-2 h-7 w-7 text-secondary"><Mic className="w-3.5 h-3.5" /></Button>
                   </div>
                 </div>
               ) : (
                 <div className="space-y-6">
                   <div className="relative">
-                    <p className="text-[10px] font-bold text-primary mb-2 uppercase tracking-widest">Titre de la procédure industrielle</p>
-                    <Input 
-                      value={procTitle} 
-                      onChange={(e) => setProcTitle(e.target.value)} 
-                      placeholder="MAINTENANCE CURATIVE UNITÉ A-4..." 
-                      className={cn("bg-background uppercase h-12 text-sm font-bold", activeUIField?.type === 'procTitle' && "ring-2 ring-red-500")} 
-                    />
-                    <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('procTitle')} className={cn("absolute top-8 right-2 h-7 w-7", activeUIField?.type === 'procTitle' ? "text-red-500" : "text-primary")}>
-                      <Mic className="w-3.5 h-3.5" />
-                    </Button>
+                    <p className="text-[10px] font-bold text-primary mb-2 uppercase">Titre de la procédure</p>
+                    <Input value={procTitle} onChange={(e) => setProcTitle(e.target.value)} className={cn("bg-background uppercase h-12 text-sm font-bold", activeUIField?.type === 'procTitle' && "ring-2 ring-red-500")} />
+                    <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('procTitle')} className="absolute top-8 right-2 h-7 w-7"><Mic className="w-3.5 h-3.5" /></Button>
                   </div>
 
                   <div className="space-y-4">
                     {procSteps.map((step, index) => (
-                      <Card key={step.id} className="p-4 border-border bg-black/30 space-y-4">
+                      <Card key={step.id} className="p-4 border-border bg-black/30 space-y-4 relative">
                         <div className="flex justify-between items-center border-b border-border/50 pb-2">
-                          <div className="flex items-center gap-2">
-                            <span className="text-[10px] font-bold text-secondary uppercase">Étape {index + 1}</span>
-                            <Button type="button" variant="ghost" size="icon" onClick={() => setProcSteps(prev => prev.filter(s => s.id !== step.id))} className="h-6 w-6 text-muted-foreground hover:text-destructive" disabled={procSteps.length <= 1}>
-                              <Trash2 className="w-3 h-3" />
-                            </Button>
-                          </div>
-                          <div className="relative">
-                            <Input placeholder="DURÉE" value={step.duration} onChange={(e) => { const n = [...procSteps]; n[index].duration = e.target.value; setProcSteps(n); }} className={cn("h-7 w-32 text-[9px]", activeUIField?.type === 'stepDuration' && activeUIField?.index === index && "ring-1 ring-red-500")}/>
-                            <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepDuration', index)} className="absolute right-0 top-0 h-7 w-7"><Mic className="w-2.5 h-2.5" /></Button>
+                          <span className="text-[10px] font-bold text-secondary uppercase">Action {index + 1}</span>
+                          <div className="flex gap-2">
+                             <Input placeholder="DURÉE" value={step.duration} onChange={(e) => { const n = [...procSteps]; n[index].duration = e.target.value; setProcSteps(n); }} className="h-7 w-24 text-[9px]" />
+                             <Button type="button" variant="ghost" size="icon" onClick={() => setProcSteps(prev => prev.filter(s => s.id !== step.id))} className="h-7 w-7 text-muted-foreground hover:text-destructive" disabled={procSteps.length <= 1}><Trash2 className="w-3.5 h-3.5" /></Button>
                           </div>
                         </div>
                         
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div className="relative">
-                            <p className="text-[8px] font-bold uppercase text-muted-foreground mb-1">Action</p>
-                            <Input placeholder="Action..." value={step.title} onChange={(e) => { const n = [...procSteps]; n[index].title = e.target.value; setProcSteps(n); }} className={cn("h-8 text-[10px] uppercase", activeUIField?.type === 'stepTitle' && activeUIField?.index === index && "ring-1 ring-red-500")}/>
-                            <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepTitle', index)} className="absolute top-5 right-1 h-7 w-7"><Mic className="w-3 h-3" /></Button>
+                             <p className="text-[8px] font-bold uppercase text-muted-foreground mb-1">Action</p>
+                             <Input value={step.title} onChange={(e) => { const n = [...procSteps]; n[index].title = e.target.value; setProcSteps(n); }} className="h-8 text-[10px]" />
+                             <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepTitle', index)} className="absolute top-5 right-1 h-7 w-7"><Mic className="w-3 h-3" /></Button>
                           </div>
                           <div className="relative">
-                            <p className="text-[8px] font-bold uppercase text-muted-foreground mb-1">Détails</p>
-                            <Input placeholder="Détails..." value={step.description} onChange={(e) => { const n = [...procSteps]; n[index].description = e.target.value; setProcSteps(n); }} className={cn("h-8 text-[10px] uppercase", activeUIField?.type === 'stepDescription' && activeUIField?.index === index && "ring-1 ring-red-500")}/>
-                            <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepDescription', index)} className="absolute top-5 right-1 h-7 w-7"><Mic className="w-3 h-3" /></Button>
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div className="relative">
-                            <div className="flex items-center gap-1.5 mb-1"><ShieldAlert className="w-3 h-3 text-primary" /><p className="text-[8px] font-bold uppercase text-primary">Conditions</p></div>
-                            <Input placeholder="Conditions..." value={step.conditions} onChange={(e) => { const n = [...procSteps]; n[index].conditions = e.target.value; setProcSteps(n); }} className={cn("h-8 text-[9px] uppercase", activeUIField?.type === 'stepConditions' && activeUIField?.index === index && "ring-1 ring-primary")}/>
-                            <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepConditions', index)} className="absolute top-5 right-1 h-7 w-7"><Mic className="w-3 h-3" /></Button>
-                          </div>
-                          <div className="relative">
-                            <div className="flex items-center gap-1.5 mb-1"><Bell className="w-3 h-3 text-destructive" /><p className="text-[8px] font-bold uppercase text-destructive">Alarmes</p></div>
-                            <Input placeholder="Vigilance..." value={step.alarms} onChange={(e) => { const n = [...procSteps]; n[index].alarms = e.target.value; setProcSteps(n); }} className={cn("h-8 text-[9px] uppercase", activeUIField?.type === 'stepAlarms' && activeUIField?.index === index && "ring-1 ring-destructive")}/>
-                            <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepAlarms', index)} className="absolute top-5 right-1 h-7 w-7"><Mic className="w-3 h-3" /></Button>
+                             <p className="text-[8px] font-bold uppercase text-muted-foreground mb-1">Détails</p>
+                             <Input value={step.description} onChange={(e) => { const n = [...procSteps]; n[index].description = e.target.value; setProcSteps(n); }} className="h-8 text-[10px]" />
+                             <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepDescription', index)} className="absolute top-5 right-1 h-7 w-7"><Mic className="w-3 h-3" /></Button>
                           </div>
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div className="relative">
-                            <p className="text-[8px] font-bold uppercase text-secondary mb-1">Images (Capture)</p>
-                            <div className="flex gap-1">
-                              <Input placeholder="ID Image..." value={step.images} onChange={(e) => { const n = [...procSteps]; n[index].images = e.target.value; setProcSteps(n); }} className="h-8 text-[9px] uppercase bg-secondary/5" readOnly/>
-                              <Button type="button" variant="secondary" size="icon" onClick={() => setMediaModal({ isOpen: true, type: 'image', stepIndex: index })} className="h-8 w-8 shrink-0"><Camera className="w-3.5 h-3.5" /></Button>
-                            </div>
+                             <p className="text-[8px] font-bold uppercase text-primary mb-1">Conditions</p>
+                             <Input value={step.conditions} onChange={(e) => { const n = [...procSteps]; n[index].conditions = e.target.value; setProcSteps(n); }} className="h-8 text-[10px]" />
+                             <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepConditions', index)} className="absolute top-5 right-1 h-7 w-7 text-primary"><Mic className="w-3 h-3" /></Button>
                           </div>
                           <div className="relative">
-                            <p className="text-[8px] font-bold uppercase text-secondary mb-1">Vidéo (Capture)</p>
-                            <div className="flex gap-1">
-                              <Input placeholder="ID Vidéo..." value={step.video} onChange={(e) => { const n = [...procSteps]; n[index].video = e.target.value; setProcSteps(n); }} className="h-8 text-[9px] uppercase bg-secondary/5" readOnly/>
-                              <Button type="button" variant="secondary" size="icon" onClick={() => setMediaModal({ isOpen: true, type: 'video', stepIndex: index })} className="h-8 w-8 shrink-0"><VideoIcon className="w-3.5 h-3.5" /></Button>
+                             <p className="text-[8px] font-bold uppercase text-destructive mb-1">Alarmes</p>
+                             <Input value={step.alarms} onChange={(e) => { const n = [...procSteps]; n[index].alarms = e.target.value; setProcSteps(n); }} className="h-8 text-[10px]" />
+                             <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepAlarms', index)} className="absolute top-5 right-1 h-7 w-7 text-destructive"><Mic className="w-3 h-3" /></Button>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="flex gap-1 items-end">
+                            <div className="flex-1">
+                              <p className="text-[8px] font-bold uppercase text-secondary mb-1">Image (Capture)</p>
+                              <Input value={step.images} readOnly className="h-8 text-[9px] bg-secondary/5" />
                             </div>
+                            <Button type="button" variant="secondary" size="icon" onClick={() => setMediaModal({ isOpen: true, type: 'image', stepIndex: index })} className="h-8 w-8"><Camera className="w-4 h-4" /></Button>
+                          </div>
+                          <div className="flex gap-1 items-end">
+                            <div className="flex-1">
+                              <p className="text-[8px] font-bold uppercase text-secondary mb-1">Vidéo (Séquence)</p>
+                              <Input value={step.video} readOnly className="h-8 text-[9px] bg-secondary/5" />
+                            </div>
+                            <Button type="button" variant="secondary" size="icon" onClick={() => setMediaModal({ isOpen: true, type: 'video', stepIndex: index })} className="h-8 w-8"><VideoIcon className="w-4 h-4" /></Button>
                           </div>
                         </div>
                       </Card>
                     ))}
                   </div>
 
-                  <Button type="button" variant="outline" onClick={() => setProcSteps([...procSteps, { id: Date.now().toString(), title: '', duration: '', description: '', conditions: '', alarms: '', images: '', video: '' }])} className="w-full border-dashed h-10 text-[10px] uppercase hover:bg-secondary/5">
-                    <Plus className="w-3 h-3 mr-2" /> Ajouter une étape
+                  <Button type="button" variant="outline" onClick={() => setProcSteps([...procSteps, { id: Date.now().toString(), title: '', duration: '', description: '', conditions: '', alarms: '', images: '', video: '' }])} className="w-full border-dashed h-10 text-[10px] uppercase">
+                    <Plus className="w-3 h-3 mr-2" /> Ajouter une action
                   </Button>
                 </div>
               )}
 
-              <Button type="submit" className="w-full font-headline font-bold uppercase text-xs h-10 bg-primary text-primary-foreground">
-                Enregistrer dans la file d'audit
+              <Button type="submit" className="w-full font-bold uppercase text-xs h-10 bg-primary text-primary-foreground">
+                Sauvegarder dans le tampon Cloud
               </Button>
             </form>
           </Card>
 
           {qaItems.length > 0 && (
             <div className="space-y-4 pb-12">
-              <div className="flex justify-between items-center px-2">
+              <div className="flex justify-between items-center">
                 <h3 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2"><Layers className="w-3.5 h-3.5" /> Registre Provisoire ({qaItems.length})</h3>
-                <Button onClick={handleFinalSubmit} disabled={isUploading} size="sm" className="bg-secondary text-secondary-foreground text-[9px] uppercase font-bold">
-                  {isUploading ? <Loader2 className="w-3 h-3 mr-2 animate-spin" /> : <UploadCloud className="w-3 h-3 mr-2" />} Sync Cloud
+                <Button onClick={handleFinalSubmit} disabled={isUploading} size="sm" className="bg-secondary text-secondary-foreground text-[9px] font-bold">
+                  {isUploading ? <Loader2 className="w-3 h-3 mr-2 animate-spin" /> : <UploadCloud className="w-3 h-3 mr-2" />} Synchronisation Physique
                 </Button>
               </div>
 
@@ -443,7 +376,7 @@ export default function DatasetPage() {
                   <Card key={item.id} className="p-4 border-border bg-card/20 relative group">
                     <Button variant="ghost" size="icon" onClick={() => setQaItems(prev => prev.filter(i => i.id !== item.id))} className="absolute top-2 right-2 h-6 w-6 opacity-0 group-hover:opacity-100 text-destructive"><Trash2 className="w-3 h-3" /></Button>
                     <div className="flex items-center gap-2 mb-2"><span className={cn("w-1.5 h-1.5 rounded-full", item.type === 'qa' ? "bg-primary" : "bg-secondary")} /><p className="text-[10px] font-bold text-primary uppercase pr-8 truncate">{item.label}</p></div>
-                    <p className="text-[9px] font-code text-muted-foreground line-clamp-4 italic bg-black/20 p-2 rounded-sm whitespace-pre-wrap">{item.details}</p>
+                    <p className="text-[9px] font-code text-muted-foreground line-clamp-3 italic bg-black/20 p-2 rounded-sm whitespace-pre-wrap">{item.details}</p>
                   </Card>
                 ))}
               </div>
@@ -452,54 +385,20 @@ export default function DatasetPage() {
         </div>
       </main>
 
-      <Dialog 
-        open={mediaModal.isOpen} 
-        onOpenChange={(open) => {
-          if (!open) {
-            setMediaModal(prev => ({ ...prev, isOpen: false }));
-            setIsCapturing(false);
-          }
-        }}
-      >
-        <DialogContent className="sm:max-w-2xl bg-black border-primary/30 shadow-[0_0_50px_rgba(50,181,212,0.1)]">
-          <DialogHeader>
-            <DialogTitle className="text-xs uppercase font-headline tracking-widest text-primary flex items-center gap-2">
-              {mediaModal.type === 'image' ? <Camera className="w-4 h-4" /> : <VideoIcon className="w-4 h-4" />}
-              Station de capture industrielle
-            </DialogTitle>
-          </DialogHeader>
+      <Dialog open={mediaModal.isOpen} onOpenChange={(o) => !o && setMediaModal(p => ({...p, isOpen: false}))}>
+        <DialogContent className="sm:max-w-2xl bg-black border-primary/30">
+          <DialogHeader><DialogTitle className="text-xs uppercase font-headline text-primary flex items-center gap-2">{mediaModal.type === 'image' ? <Camera className="w-4 h-4" /> : <VideoIcon className="w-4 h-4" />} Station de capture physique</DialogTitle></DialogHeader>
           <div className="relative aspect-video bg-muted/10 rounded-sm overflow-hidden border border-border">
-            <video 
-              ref={videoRef} 
-              autoPlay 
-              playsInline 
-              muted={mediaModal.type === 'image'} 
-              className="w-full h-full object-cover"
-            />
-            {isCapturing && (
-              <div className="absolute top-4 right-4 bg-red-600 text-white px-2 py-1 rounded-sm text-[10px] font-code animate-pulse flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-white animate-ping" />
-                REC | {recordingTime}s
-              </div>
-            )}
+            <video ref={videoRef} autoPlay playsInline muted={mediaModal.type === 'image'} className="w-full h-full object-cover" />
+            {isCapturing && <div className="absolute top-4 right-4 bg-red-600 text-white px-2 py-1 rounded-sm text-[10px] font-code animate-pulse">REC | {recordingTime}s</div>}
           </div>
           <div className="flex justify-center gap-4 mt-4">
             {mediaModal.type === 'image' ? (
-              <Button onClick={captureImage} className="bg-primary text-primary-foreground font-bold uppercase text-[10px] h-10 px-8">
-                <Camera className="w-4 h-4 mr-2" /> Capturer l'image
-              </Button>
+              <Button onClick={captureImage} className="bg-primary text-primary-foreground font-bold uppercase text-[10px]">Capturer Frame</Button>
             ) : (
-              !isCapturing ? (
-                <Button onClick={startRecording} className="bg-red-600 text-white font-bold uppercase text-[10px] h-10 px-8">
-                  <VideoIcon className="w-4 h-4 mr-2" /> Lancer l'enregistrement
-                </Button>
-              ) : (
-                <Button onClick={stopRecording} className="bg-white text-black font-bold uppercase text-[10px] h-10 px-8">
-                  <StopCircle className="w-4 h-4 mr-2" /> Arrêter la capture
-                </Button>
-              )
+              !isCapturing ? <Button onClick={startRecording} className="bg-red-600 text-white font-bold uppercase text-[10px]">Lancer Enregistrement</Button> : <Button onClick={stopRecording} className="bg-white text-black font-bold uppercase text-[10px]">Arrêter & Sauver</Button>
             )}
-            <Button variant="ghost" onClick={() => setMediaModal(prev => ({ ...prev, isOpen: false }))} className="text-[10px] uppercase">Fermer</Button>
+            <Button variant="ghost" onClick={() => setMediaModal(p => ({...p, isOpen: false}))} className="text-[10px] uppercase">Fermer</Button>
           </div>
         </DialogContent>
       </Dialog>

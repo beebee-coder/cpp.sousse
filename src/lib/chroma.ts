@@ -1,9 +1,10 @@
-
 /**
  * @fileOverview Gestionnaire ChromaDB sécurisé pour l'environnement hybride.
- * Optimisé pour le centre d'entraînement IA (RAG).
- * Isolation stricte des bibliothèques lourdes pour le déploiement Cloud.
+ * Configure la persistance physique pour le développement local et Tauri.
  */
+
+import path from 'path';
+import fs from 'fs';
 
 export interface DocumentToAdd {
   id: string;
@@ -26,17 +27,21 @@ export interface SearchResult {
   score: number;
 }
 
-// ─── DÉTECTION D'ENVIRONNEMENT CRITIQUE ──────────────────────────────────────
+// ─── INITIALISATION PHYSIQUE DES RÉPERTOIRES ────────────────────────────────
+const CHROMA_DATA_DIR = path.join(process.cwd(), 'data', 'chromadb');
+if (!fs.existsSync(CHROMA_DATA_DIR)) {
+  fs.mkdirSync(CHROMA_DATA_DIR, { recursive: true });
+  fs.writeFileSync(path.join(CHROMA_DATA_DIR, '.gitkeep'), '');
+}
+
 const IS_CLOUD = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
 
 let _pipeline: any = null;
 
 async function getPipeline(): Promise<any> {
   if (IS_CLOUD) return null; 
-  
   if (_pipeline) return _pipeline;
   try {
-    // Utilisation d'un import dynamique statique pour éviter les alertes de dépendance
     const { pipeline } = await import('@huggingface/transformers');
     _pipeline = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
     return _pipeline;
@@ -46,21 +51,15 @@ async function getPipeline(): Promise<any> {
   }
 }
 
-/**
- * Fonction d'embedding locale.
- */
 export class LocalEmbeddingFunction {
   async generate(texts: string[]): Promise<number[][]> {
     if (IS_CLOUD) return texts.map(() => []);
-
     const extractor = await getPipeline();
     if (!extractor) return texts.map(() => []);
-    
     try {
       const output = await extractor(texts, { pooling: 'mean', normalize: true });
       return output.tolist() as number[][];
     } catch (e) {
-      console.error("❌ [RAG_LOCAL] Échec génération vecteur :", e);
       return texts.map(() => []);
     }
   }
@@ -72,16 +71,14 @@ export function getLocalEmbedder(): LocalEmbeddingFunction {
   return _localEmbedder;
 }
 
-// ─── CLIENT CHROMADB SINGLETON ───────────────────────────────────────────────
 let _chromaClient: any = null;
 
 export async function getChromaClient(): Promise<any> {
   if (IS_CLOUD) return null;
   if (_chromaClient) return _chromaClient;
-  
   try {
-    // Utilisation d'un import dynamique statique
     const { ChromaClient } = await import('chromadb');
+    // En local, on peut pointer vers le serveur Chroma ou utiliser la persistance
     const chromaUrl = process.env.CHROMA_URL ?? 'http://127.0.0.1:8000';
     _chromaClient = new ChromaClient({ path: chromaUrl });
     return _chromaClient;
@@ -156,26 +153,8 @@ export async function semanticSearch(options: SearchOptions, embeddingFunction: 
       score: parseFloat((1 - (Number(distances[i]) || 0)).toFixed(4))
     }));
   } catch (e: any) {
-    console.error(`❌ [SEARCH_ERROR] ${e.message}`);
     return [];
   }
-}
-
-export async function seedIndustrialManuals() {
-  if (IS_CLOUD) return; 
-  try {
-    const client = await getChromaClient();
-    if (!client) return;
-    const col = await client.getOrCreateCollection({ name: 'industrial_manuals', embeddingFunction: getLocalEmbedder() });
-    const count = await col.count();
-    if (count === 0) {
-      console.log("ℹ️ [SEED] Initialisation des manuels industriels par défaut.");
-    }
-  } catch (e) {}
-}
-
-export function fallbackSemanticSearch(query: string, nResults = 3, componentFilter?: string): SearchResult[] {
-  return []; 
 }
 
 export async function searchAcrossCollections(query: string, nResultsPerCollection = 3): Promise<SearchResult[]> {
