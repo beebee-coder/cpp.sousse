@@ -92,7 +92,8 @@ class ApiClient {
         if (!response.ok) return { success: false, error: json.error || "ECHEC_SUPPRESSION" };
         return json;
       });
-      return { ...result, timestamp, success: result.success ?? true } as ApiResponse<T>;
+      // Si result.success est explicitement false, on le préserve
+      return { ...result, timestamp, success: result.success === false ? false : (result.success ?? true) } as ApiResponse<T>;
     } catch (error: any) {
       return { error: error.message, offline: true, timestamp, success: false } as any;
     }

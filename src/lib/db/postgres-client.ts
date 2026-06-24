@@ -142,7 +142,6 @@ export const postgresClient = {
     
     if (fs.existsSync(fullPath)) {
       try {
-        // Utilisation de fs.rmSync avec recursive et force pour une suppression radicale
         fs.rmSync(fullPath, { recursive: true, force: true });
         console.log(`✅ [POSTGRES_CLIENT] Suppression physique radicale : ${fullPath}`);
       } catch (e: any) {

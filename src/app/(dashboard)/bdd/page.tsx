@@ -167,6 +167,7 @@ export default function BDDPage() {
       const res = await apiClient.delete<any>(`/api/registry?path=${encodeURIComponent(id)}`);
       if (res.success) {
         toast({ title: "Élément supprimé du registre" });
+        // On rafraîchit quand même en arrière-plan pour être sûr de la cohérence
         await refreshRegistry();
       } else {
         throw new Error(res.error || "Erreur serveur");
