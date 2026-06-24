@@ -68,9 +68,6 @@ export default function BDDPage() {
     setMounted(true);
   }, []);
 
-  /**
-   * Fusionne le nouvel état de l'arborescence avec l'ancien pour préserver l'ouverture des dossiers.
-   */
   const mergeTreeState = useCallback((newNodes: FSNode[], oldNodes: FSNode[]): FSNode[] => {
     const openPaths = new Set<string>();
     const collectOpen = (nodes: FSNode[]) => {
@@ -155,10 +152,10 @@ export default function BDDPage() {
         content: fileContent 
       });
       setIsEditing(false);
-      toast({ title: "Fichier mis à jour sur le disque" });
+      toast({ title: "Fichier mis à jour" });
       await refreshRegistry();
     } catch (e) {
-      toast({ title: "Erreur de sauvegarde physique", variant: "destructive" });
+      toast({ title: "Erreur de sauvegarde", variant: "destructive" });
     }
   };
 
@@ -168,16 +165,18 @@ export default function BDDPage() {
     const finalPath = newModal.type === 'file' && !path.endsWith('.json') ? `${path}.json` : path;
     
     try {
-      await apiClient.post('/api/registry', { 
+      const res = await apiClient.post('/api/registry', { 
         path: finalPath, 
         type: newModal.type,
         content: newModal.type === 'file' ? '{}' : undefined
       });
-      setNewModal({ ...newModal, isOpen: false });
-      setNewName('');
-      toast({ title: newModal.type === 'file' ? "Fichier créé" : "Répertoire créé" });
-      // Rafraîchissement instantané
-      await refreshRegistry();
+      
+      if (res.success) {
+        setNewModal({ ...newModal, isOpen: false });
+        setNewName('');
+        toast({ title: newModal.type === 'file' ? "Fichier créé" : "Répertoire créé" });
+        await refreshRegistry();
+      }
     } catch (e) {
       toast({ title: "Erreur de création physique", variant: "destructive" });
     }
@@ -198,12 +197,7 @@ export default function BDDPage() {
       
       if (res.success) {
         setRenameModal({ ...renameModal, isOpen: false });
-        if (selectedFile === renameModal.path) {
-          const pathParts = renameModal.path.split('/');
-          pathParts[pathParts.length - 1] = finalRename;
-          setSelectedFile(pathParts.join('/'));
-        }
-        toast({ title: "Actif renommé avec succès" });
+        toast({ title: "Élément renommé" });
         await refreshRegistry();
       }
     } catch (e) {
@@ -212,31 +206,28 @@ export default function BDDPage() {
   };
 
   const deleteItem = async (id: string) => {
-    if (!confirm("Supprimer définitivement cet élément physique du disque ?")) return;
+    if (!confirm("Supprimer définitivement cet élément physique ?")) return;
     try {
       const res = await apiClient.delete(`/api/registry?path=${encodeURIComponent(id)}`);
-      if (!res.success) throw new Error(res.error);
-      
-      if (selectedFile === id) setSelectedFile(null);
-      toast({ title: "Élément supprimé physiquement" });
-      // Mise à jour instantanée du tree local pour réactivité maximale
-      setTree(prev => {
-        const update = (nodes: FSNode[]): FSNode[] => nodes
-          .filter(n => n.id !== id)
-          .map(n => n.children ? { ...n, children: update(n.children) } : n);
-        return update(prev);
-      });
-      await refreshRegistry();
+      if (res.success) {
+        if (selectedFile === id) setSelectedFile(null);
+        toast({ title: "Élément supprimé physiquement" });
+        await refreshRegistry();
+      } else {
+        throw new Error(res.error);
+      }
     } catch (error: any) {
       toast({ title: "Erreur de suppression", description: error.message, variant: "destructive" });
     }
   };
 
   const toggleFolder = (id: string) => {
-    const update = (nodes: FSNode[]): FSNode[] => nodes.map(n => 
-      n.id === id ? { ...n, isOpen: !n.isOpen } : (n.children ? { ...n, children: update(n.children) } : n)
-    );
-    setTree(update(tree));
+    setTree(prev => {
+      const update = (nodes: FSNode[]): FSNode[] => nodes.map(n => 
+        n.id === id ? { ...n, isOpen: !n.isOpen } : (n.children ? { ...n, children: update(n.children) } : n)
+      );
+      return update(prev);
+    });
   };
 
   const renderTree = (nodes: FSNode[], depth = 0) => {
@@ -244,7 +235,7 @@ export default function BDDPage() {
       return depth === 0 ? (
         <div className="flex flex-col items-center justify-center py-10 opacity-20">
           <HardDrive className="w-8 h-8 mb-2" />
-          <p className="text-[9px] uppercase font-code">Répertoire vide</p>
+          <p className="text-[9px] uppercase font-code">Registre vide</p>
         </div>
       ) : null;
     }
@@ -306,12 +297,12 @@ export default function BDDPage() {
             <div className="lg:hidden w-10" />
             <div className="flex items-center gap-2">
               <HardDrive className="w-4 h-4 text-primary" />
-              <span className="font-headline font-bold text-xs uppercase tracking-widest text-primary">Explorateur Physique</span>
+              <span className="font-headline font-bold text-xs uppercase tracking-widest text-primary">Registre Physique</span>
             </div>
           </div>
           <div className="flex bg-muted/30 p-1 rounded-sm border border-border">
-            <button onClick={() => setMode('web')} className={cn("px-3 py-1 text-[10px] font-code uppercase rounded-sm transition-all", mode === 'web' ? "bg-primary text-primary-foreground font-bold" : "text-muted-foreground hover:text-foreground")}>Registre registry/</button>
-            <button onClick={() => setMode('chroma')} className={cn("px-3 py-1 text-[10px] font-code uppercase rounded-sm transition-all", mode === 'chroma' ? "bg-secondary text-secondary-foreground font-bold" : "text-muted-foreground hover:text-foreground")}>Moteur data/</button>
+            <button onClick={() => setMode('web')} className={cn("px-3 py-1 text-[10px] font-code uppercase rounded-sm transition-all", mode === 'web' ? "bg-primary text-primary-foreground font-bold" : "text-muted-foreground hover:text-foreground")}>Registre .registry/</button>
+            <button onClick={() => setMode('chroma')} className={cn("px-3 py-1 text-[10px] font-code uppercase rounded-sm transition-all", mode === 'chroma' ? "bg-secondary text-secondary-foreground font-bold" : "text-muted-foreground hover:text-foreground")}>Vecteurs .data/</button>
           </div>
         </header>
 
@@ -325,10 +316,10 @@ export default function BDDPage() {
               <div className="flex items-center gap-1">
                 {mode === 'web' && (
                   <>
-                    <Button title="Nouveau Répertoire" variant="ghost" size="icon" className="h-6 w-6" onClick={() => setNewModal({ isOpen: true, type: 'folder', parent: null })}>
+                    <Button title="Racine: Dossier" variant="ghost" size="icon" className="h-6 w-6" onClick={() => setNewModal({ isOpen: true, type: 'folder', parent: null })}>
                       <FolderPlus className="w-3.5 h-3.5" />
                     </Button>
-                    <Button title="Nouveau Fichier" variant="ghost" size="icon" className="h-6 w-6" onClick={() => setNewModal({ isOpen: true, type: 'file', parent: null })}>
+                    <Button title="Racine: Fichier" variant="ghost" size="icon" className="h-6 w-6" onClick={() => setNewModal({ isOpen: true, type: 'file', parent: null })}>
                       <FilePlus className="w-3.5 h-3.5" />
                     </Button>
                   </>
@@ -389,7 +380,7 @@ export default function BDDPage() {
               <div className="flex-1 flex flex-col items-center justify-center opacity-30">
                 <HardDrive className="w-16 h-16 mb-4 text-primary animate-pulse" />
                 <p className="font-code text-xs uppercase tracking-widest text-center px-6 leading-relaxed">
-                  SÉLECTIONNEZ UN ACTIF PHYSIQUE<br/>POUR AUDIT OU MODIFICATION DIRECTE
+                  SÉLECTIONNEZ UN ACTIF PHYSIQUE<br/>POUR AUDIT OU MODIFICATION
                 </p>
               </div>
             )}
@@ -399,7 +390,7 @@ export default function BDDPage() {
 
       {/* New Item Modal */}
       <Dialog open={newModal.isOpen} onOpenChange={(o) => !o && setNewModal({ ...newModal, isOpen: false })}>
-        <DialogContent className="bg-black border-primary/40 shadow-[0_0_30px_rgba(50,181,212,0.1)]">
+        <DialogContent className="bg-black border-primary/40 shadow-2xl">
           <DialogHeader>
             <DialogTitle className="text-xs uppercase font-headline text-primary flex items-center gap-2 tracking-widest">
               {newModal.type === 'file' ? <FilePlus className="w-4 h-4" /> : <FolderPlus className="w-4 h-4" />}
@@ -407,11 +398,11 @@ export default function BDDPage() {
             </DialogTitle>
           </DialogHeader>
           <div className="py-4 space-y-3">
-            <p className="text-[10px] font-code text-muted-foreground uppercase mb-2">Emplacement : registry/{newModal.parent || 'racine'}</p>
+            <p className="text-[10px] font-code text-muted-foreground uppercase mb-2">Cible : .registry/{newModal.parent || 'racine'}</p>
             <Input 
               value={newName} 
               onChange={(e) => setNewName(e.target.value)} 
-              placeholder={newModal.type === 'file' ? "Nom du fichier (ex: manual_motor)" : "Nom du répertoire"}
+              placeholder={newModal.type === 'file' ? "Nom du fichier" : "Nom du répertoire"}
               className="bg-muted border-primary/20 font-code h-10 uppercase text-xs"
               autoFocus
               onKeyDown={(e) => e.key === 'Enter' && createNew()}
@@ -419,26 +410,26 @@ export default function BDDPage() {
           </div>
           <DialogFooter className="gap-2">
             <Button variant="ghost" onClick={() => setNewModal({ ...newModal, isOpen: false })} className="text-[10px] uppercase font-bold">Annuler</Button>
-            <Button onClick={createNew} className="bg-primary text-primary-foreground font-bold uppercase text-[10px] px-6">Confirmer</Button>
+            <Button onClick={createNew} className="bg-primary text-primary-foreground font-bold uppercase text-[10px] px-6">Créer</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       {/* Rename Modal */}
       <Dialog open={renameModal.isOpen} onOpenChange={(o) => !o && setRenameModal({ ...renameModal, isOpen: false })}>
-        <DialogContent className="bg-black border-secondary/40 shadow-[0_0_30px_rgba(46,184,146,0.1)]">
+        <DialogContent className="bg-black border-secondary/40 shadow-2xl">
           <DialogHeader>
             <DialogTitle className="text-xs uppercase font-headline text-secondary flex items-center gap-2 tracking-widest">
               <Type className="w-4 h-4" />
-              Renommer l'actif physique
+              Renommer l'actif
             </DialogTitle>
           </DialogHeader>
           <div className="py-4 space-y-3">
-            <p className="text-[10px] font-code text-muted-foreground uppercase mb-2">Ancien nom : {renameModal.oldName}</p>
+            <p className="text-[10px] font-code text-muted-foreground uppercase mb-2">Ancien : {renameModal.oldName}</p>
             <Input 
               value={renameValue} 
               onChange={(e) => setRenameValue(e.target.value)} 
-              placeholder="Nouveau nom technique..."
+              placeholder="Nouveau nom..."
               className="bg-muted border-secondary/20 font-code h-10 uppercase text-xs"
               autoFocus
               onKeyDown={(e) => e.key === 'Enter' && handleRename()}

@@ -4,10 +4,10 @@ import path from 'path';
 
 /**
  * Infrastructure de liaison physique pour le Registre.
- * Utilise un dossier racine 'registry' pour les données auditées.
+ * Utilise un dossier caché '.registry' pour éviter les redémarrages Next.js.
  */
 
-const REGISTRY_ROOT = path.join(process.cwd(), 'registry');
+const REGISTRY_ROOT = path.join(process.cwd(), '.registry');
 
 // Assure l'existence du répertoire racine et du sous-dossier items
 const ensureRegistry = () => {
@@ -26,7 +26,7 @@ const ensureRegistry = () => {
 
 export const postgresClient = {
   /**
-   * Récupère l'arborescence complète du répertoire registry/
+   * Récupère l'arborescence complète du répertoire .registry/
    */
   getRegistryTree: async (dir = REGISTRY_ROOT): Promise<any[]> => {
     ensureRegistry();
@@ -39,8 +39,8 @@ export const postgresClient = {
         const fullPath = path.join(dir, entry.name);
         const relativePath = path.relative(REGISTRY_ROOT, fullPath);
         
-        // Ignorer les fichiers système cachés
-        if (entry.name.startsWith('.')) return null;
+        // Ignorer les fichiers système cachés (sauf .registry lui-même)
+        if (entry.name.startsWith('.') && entry.name !== '.registry') return null;
 
         if (entry.isDirectory()) {
           const children = await postgresClient.getRegistryTree(fullPath);
@@ -61,7 +61,6 @@ export const postgresClient = {
         }
       }));
 
-      // Filtrer les nulls et trier (dossiers en premier)
       return tree
         .filter(n => n !== null)
         .sort((a: any, b: any) => {
@@ -80,7 +79,6 @@ export const postgresClient = {
    */
   getFile: async (relPath: string) => {
     ensureRegistry();
-    if (relPath.includes('..')) throw new Error("CHEMIN_NON_AUTORISE");
     const fullPath = path.join(REGISTRY_ROOT, relPath);
     if (!fs.existsSync(fullPath)) throw new Error("FICHIER_INTROUVABLE");
     return fs.readFileSync(fullPath, 'utf8');
@@ -91,7 +89,6 @@ export const postgresClient = {
    */
   saveFile: async (relPath: string, content: string) => {
     ensureRegistry();
-    if (relPath.includes('..')) throw new Error("CHEMIN_NON_AUTORISE");
     const fullPath = path.join(REGISTRY_ROOT, relPath);
     const dir = path.dirname(fullPath);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -99,11 +96,10 @@ export const postgresClient = {
   },
 
   /**
-   * Crée un nouveau répertoire (Récursif par défaut)
+   * Crée un nouveau répertoire
    */
   createFolder: async (relPath: string) => {
     ensureRegistry();
-    if (relPath.includes('..')) throw new Error("CHEMIN_NON_AUTORISE");
     const fullPath = path.join(REGISTRY_ROOT, relPath);
     if (!fs.existsSync(fullPath)) {
       fs.mkdirSync(fullPath, { recursive: true });
@@ -115,7 +111,6 @@ export const postgresClient = {
    */
   renameItem: async (oldPath: string, newName: string) => {
     ensureRegistry();
-    if (oldPath.includes('..') || newName.includes('..')) throw new Error("CHEMIN_NON_AUTORISE");
     const oldFullPath = path.join(REGISTRY_ROOT, oldPath);
     const dir = path.dirname(oldFullPath);
     const newFullPath = path.join(dir, newName);
@@ -128,7 +123,7 @@ export const postgresClient = {
   },
 
   /**
-   * Supprime un fichier ou un dossier (récursif)
+   * Supprime physiquement un fichier ou un dossier (récursif)
    */
   deleteItem: async (relPath: string) => {
     ensureRegistry();
@@ -138,8 +133,9 @@ export const postgresClient = {
     const fullPath = path.join(REGISTRY_ROOT, relPath);
     if (fs.existsSync(fullPath)) {
       try {
+        // fs.rmSync avec recursive: true supprime le fichier ou le répertoire entier
         fs.rmSync(fullPath, { recursive: true, force: true });
-        console.log(`🗑️ [postgresClient] Supprimé : ${fullPath}`);
+        console.log(`🗑️ [postgresClient] Supprimé physiquement : ${fullPath}`);
       } catch (err: any) {
         throw new Error(`ERREUR_FS_DELETE : ${err.message}`);
       }
@@ -149,7 +145,7 @@ export const postgresClient = {
   },
 
   /**
-   * Méthode d'upload de masse pour les captures RAG
+   * Méthode d'upload pour les captures RAG
    */
   upsertCloudData: async (items: any[]): Promise<void> => {
     ensureRegistry();
@@ -180,26 +176,6 @@ export const postgresClient = {
       };
 
       fs.writeFileSync(filePath, JSON.stringify(dataToSave, null, 2));
-    });
-  },
-
-  /**
-   * Méthode de suppression par IDs
-   */
-  deleteItems: async (projectId: string, ids: string[]): Promise<void> => {
-    ensureRegistry();
-    const itemsDir = path.join(REGISTRY_ROOT, 'items');
-    if (!fs.existsSync(itemsDir)) return;
-    const files = fs.readdirSync(itemsDir);
-    files.forEach(file => {
-      const fullPath = path.join(itemsDir, file);
-      try {
-        const raw = fs.readFileSync(fullPath, 'utf8');
-        const data = JSON.parse(raw);
-        if (ids.includes(data.id)) {
-          fs.unlinkSync(fullPath);
-        }
-      } catch (e) {}
     });
   }
 };

@@ -1,7 +1,7 @@
 
 /**
  * @fileOverview Gestionnaire ChromaDB sécurisé pour l'environnement hybride.
- * Configure la persistance physique pour le développement local et Tauri.
+ * Configure la persistance physique dans un dossier caché .data.
  */
 
 import path from 'path';
@@ -29,7 +29,7 @@ export interface SearchResult {
 }
 
 // ─── INITIALISATION PHYSIQUE DES RÉPERTOIRES ────────────────────────────────
-const CHROMA_DATA_DIR = path.join(process.cwd(), 'data', 'chromadb');
+const CHROMA_DATA_DIR = path.join(process.cwd(), '.data', 'chromadb');
 if (!fs.existsSync(CHROMA_DATA_DIR)) {
   fs.mkdirSync(CHROMA_DATA_DIR, { recursive: true });
 }
@@ -75,7 +75,7 @@ let _chromaClient: any = null;
 
 /**
  * Récupère le client ChromaDB. 
- * Utilisation défensive pour supporter différentes versions de l'SDK.
+ * Supporte PersistentClient (v3+) ou ChromaClient standard.
  */
 export async function getChromaClient(): Promise<any> {
   if (IS_CLOUD) return null;
@@ -83,13 +83,12 @@ export async function getChromaClient(): Promise<any> {
   try {
     const chroma = await import('chromadb');
     
-    // Détection du constructeur approprié selon la version
+    // Détection robuste du constructeur
     if ((chroma as any).PersistentClient) {
       _chromaClient = new (chroma as any).PersistentClient({ 
         path: CHROMA_DATA_DIR 
       });
-    } else if ((chroma as any).ChromaClient) {
-      // Fallback vers ChromaClient standard (certaines versions acceptent path directement)
+    } else {
       _chromaClient = new (chroma as any).ChromaClient({ 
         path: CHROMA_DATA_DIR 
       } as any);
