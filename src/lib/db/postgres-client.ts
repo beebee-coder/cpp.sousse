@@ -1,3 +1,4 @@
+
 import fs from 'fs';
 import path from 'path';
 
@@ -134,15 +135,24 @@ export const postgresClient = {
 
   async deleteItem(relPath: string) {
     ensureRegistry();
+    // Protection contre la suppression de la racine
     const safePath = path.normalize(relPath).replace(/^(\.\.(\/|\\|$))+/, '');
-    if (!safePath || safePath === '.' || safePath === '/') throw new Error("ACCES_INTERDIT");
+    if (!safePath || safePath === '.' || safePath === '/') throw new Error("ACCES_INTERDIT_RACINE");
     
     const fullPath = path.join(REGISTRY_ROOT, safePath);
+    
     if (fs.existsSync(fullPath)) {
-      fs.rmSync(fullPath, { recursive: true, force: true });
-      console.log(`✅ [POSTGRES_CLIENT] Suppression physique terminée : ${fullPath}`);
+      try {
+        // Suppression radicale récursive (fichiers et dossiers)
+        fs.rmSync(fullPath, { recursive: true, force: true });
+        console.log(`✅ [POSTGRES_CLIENT] Suppression physique radicale : ${fullPath}`);
+      } catch (e: any) {
+        console.error(`❌ [POSTGRES_CLIENT] Échec suppression système : ${e.message}`);
+        throw new Error(`ERREUR_SYSTEME_FICHIER : ${e.message}`);
+      }
     } else {
-      throw new Error("ELEMENT_INTROUVABLE");
+      console.warn(`⚠️ [POSTGRES_CLIENT] Tentative de suppression d'un élément inexistant : ${fullPath}`);
+      throw new Error("ELEMENT_DEJA_ABSENT_DU_DISQUE");
     }
   },
 

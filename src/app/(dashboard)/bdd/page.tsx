@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
@@ -70,7 +71,7 @@ export default function BDDPage() {
     setMounted(true);
   }, []);
 
-  const mergeTreeState = useCallback((oldTree: FSNode[], newTree: FSNode[]): FSNode[] => {
+  const mergeTreeState = useCallback((oldTree: FSNode[], newNodes: FSNode[]): FSNode[] => {
     const applyOpen = (nodes: FSNode[]): FSNode[] => {
       return nodes.map(node => {
         const old = oldTree.find(o => o.id === node.id);
@@ -82,7 +83,7 @@ export default function BDDPage() {
         };
       });
     };
-    return applyOpen(newTree);
+    return applyOpen(newNodes);
   }, []);
 
   const refreshRegistry = useCallback(async (isInitial = false) => {
@@ -146,6 +147,7 @@ export default function BDDPage() {
   const deleteItem = async (id: string) => {
     if (!confirm(`Supprimer physiquement "${id}" et tout son contenu ?`)) return;
     
+    // MISE À JOUR OPTIMISTE : On retire l'élément immédiatement de l'interface
     const previousTree = [...tree];
     const removeFromTree = (nodes: FSNode[]): FSNode[] => {
       return nodes
@@ -165,12 +167,19 @@ export default function BDDPage() {
       const res = await apiClient.delete<any>(`/api/registry?path=${encodeURIComponent(id)}`);
       if (res.success) {
         toast({ title: "Élément supprimé du registre" });
+        // On rafraîchit quand même pour être sûr de l'état final
+        await refreshRegistry();
       } else {
         throw new Error(res.error || "Erreur serveur");
       }
     } catch (error: any) {
+      // ROLLBACK en cas d'échec (ex: permission disque sur Vercel)
       setTree(previousTree);
-      toast({ title: "Échec de suppression", description: error.message, variant: "destructive" });
+      toast({ 
+        title: "Échec de suppression physique", 
+        description: error.message, 
+        variant: "destructive" 
+      });
     }
   };
 
