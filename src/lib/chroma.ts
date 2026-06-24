@@ -75,36 +75,31 @@ let _chromaClient: any = null;
 
 /**
  * Récupère le client ChromaDB. 
- * Utilise PersistentClient (v3+) pour le stockage local.
+ * Utilise ChromaClient avec un chemin de base pour la persistance.
  */
 export async function getChromaClient(): Promise<any> {
   if (IS_CLOUD) return null;
   if (_chromaClient) return _chromaClient;
   try {
-    const { PersistentClient } = await import('chromadb');
+    const chroma = await import('chromadb');
     
-    // Utilisation du PersistentClient moderne
-    _chromaClient = new PersistentClient({ 
-      path: CHROMA_DATA_DIR 
-    });
+    // Utilisation du ChromaClient standard qui gère la persistance selon la version installée
+    // Si PersistentClient est disponible, on l'utilise, sinon ChromaClient avec path.
+    if ((chroma as any).PersistentClient) {
+      _chromaClient = new (chroma as any).PersistentClient({ 
+        path: CHROMA_DATA_DIR 
+      });
+    } else {
+      _chromaClient = new chroma.ChromaClient({ 
+        path: CHROMA_DATA_DIR 
+      } as any);
+    }
     
     console.log(`🧠 [CHROMA_INIT] Moteur ancré sur : ${CHROMA_DATA_DIR}`);
     return _chromaClient;
   } catch (e: any) {
     console.error("❌ [CHROMA_INIT] Erreur de liaison physique :", e.message);
     return null;
-  }
-}
-
-export async function listCollections() {
-  if (IS_CLOUD) return [];
-  try {
-    const client = await getChromaClient();
-    if (!client) return [];
-    const collections = await client.listCollections();
-    return collections;
-  } catch {
-    return [];
   }
 }
 
@@ -120,6 +115,18 @@ export async function deleteCollection(name: string) {
     }
   } catch (e: any) {
     console.error(`❌ [CHROMA_DELETE] Erreur :`, e.message);
+  }
+}
+
+export async function listCollections() {
+  if (IS_CLOUD) return [];
+  try {
+    const client = await getChromaClient();
+    if (!client) return [];
+    const collections = await client.listCollections();
+    return collections;
+  } catch {
+    return [];
   }
 }
 

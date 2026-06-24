@@ -176,6 +176,7 @@ export default function BDDPage() {
       setNewModal({ ...newModal, isOpen: false });
       setNewName('');
       toast({ title: newModal.type === 'file' ? "Fichier créé" : "Répertoire créé" });
+      // Rafraîchissement instantané
       await refreshRegistry();
     } catch (e) {
       toast({ title: "Erreur de création physique", variant: "destructive" });
@@ -213,12 +214,18 @@ export default function BDDPage() {
   const deleteItem = async (id: string) => {
     if (!confirm("Supprimer définitivement cet élément physique du disque ?")) return;
     try {
-      // Utilisation de encodeURIComponent pour les chemins complexes
       const res = await apiClient.delete(`/api/registry?path=${encodeURIComponent(id)}`);
       if (!res.success) throw new Error(res.error);
       
       if (selectedFile === id) setSelectedFile(null);
       toast({ title: "Élément supprimé physiquement" });
+      // Mise à jour instantanée du tree local pour réactivité maximale
+      setTree(prev => {
+        const update = (nodes: FSNode[]): FSNode[] => nodes
+          .filter(n => n.id !== id)
+          .map(n => n.children ? { ...n, children: update(n.children) } : n);
+        return update(prev);
+      });
       await refreshRegistry();
     } catch (error: any) {
       toast({ title: "Erreur de suppression", description: error.message, variant: "destructive" });

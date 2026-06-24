@@ -11,12 +11,16 @@ const REGISTRY_ROOT = path.join(process.cwd(), 'registry');
 
 // Assure l'existence du répertoire racine et du sous-dossier items
 const ensureRegistry = () => {
-  if (!fs.existsSync(REGISTRY_ROOT)) {
-    fs.mkdirSync(REGISTRY_ROOT, { recursive: true });
-  }
-  const itemsDir = path.join(REGISTRY_ROOT, 'items');
-  if (!fs.existsSync(itemsDir)) {
-    fs.mkdirSync(itemsDir, { recursive: true });
+  try {
+    if (!fs.existsSync(REGISTRY_ROOT)) {
+      fs.mkdirSync(REGISTRY_ROOT, { recursive: true });
+    }
+    const itemsDir = path.join(REGISTRY_ROOT, 'items');
+    if (!fs.existsSync(itemsDir)) {
+      fs.mkdirSync(itemsDir, { recursive: true });
+    }
+  } catch (e) {
+    console.error("❌ [ensureRegistry] Échec d'accès disque :", e);
   }
 };
 
@@ -47,11 +51,12 @@ export const postgresClient = {
             children
           };
         } else {
+          const stats = fs.statSync(fullPath);
           return {
             id: relativePath,
             name: entry.name,
             type: 'file',
-            size: fs.statSync(fullPath).size
+            size: stats.size
           };
         }
       }));
