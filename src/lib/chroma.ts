@@ -105,6 +105,13 @@ export async function listCollections() {
   }
 }
 
+export async function deleteCollection(name: string) {
+  if (IS_CLOUD) throw new Error("FONCTIONNALITÉ_LOCALE_UNIQUEMENT");
+  const client = await getChromaClient();
+  if (!client) throw new Error("MOTEUR_LOCAL_INDISPONIBLE");
+  return await client.deleteCollection({ name });
+}
+
 export async function getOrCreateCollection(name: string, embeddingFunction: any = getLocalEmbedder()) {
   if (IS_CLOUD) throw new Error("FONCTIONNALITÉ_LOCALE_UNIQUEMENT");
   const client = await getChromaClient();
@@ -210,7 +217,7 @@ export async function searchAcrossCollections(query: string, nResultsPerCollecti
     const cols = await listCollections();
     if (!cols || cols.length === 0) return [];
     
-    const searchPromises = cols.map(c => 
+    const searchPromises = cols.map((c: any) => 
       semanticSearch({ collectionName: c.name, query, nResults: nResultsPerCollection })
         .then(res => res.map(r => ({ ...r, metadata: { ...r.metadata, _collection: c.name } })))
         .catch(() => [] as SearchResult[])

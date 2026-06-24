@@ -36,7 +36,7 @@ export default function ChatPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Intégration Voice STT
-  const { isListening, isSupported, startListening, stopListening, speak, cancelSpeak } = useVoice({
+  const { isListening, isSupported, startListening, stopListening, speak } = useVoice({
     onResult: (text) => setInput(text),
     onEnd: () => {
       // Optionnel : envoyer automatiquement si le texte est assez long

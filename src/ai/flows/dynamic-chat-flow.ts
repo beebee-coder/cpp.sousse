@@ -5,8 +5,7 @@
 import Groq from 'groq-sdk';
 import { 
   searchAcrossCollections, 
-  fallbackSemanticSearch, 
-  loadUserDatasetsFromDisk 
+  fallbackSemanticSearch 
 } from '@/lib/chroma';
 
 type ChatMessage = {

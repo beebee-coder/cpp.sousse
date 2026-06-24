@@ -18,7 +18,7 @@ export const GET = createHybridRoute<any, any>({
         const client = await getWeaviateClient();
         const schema = await client.collections.listAll();
         
-        const collections = schema.map(c => ({
+        const collections = schema.map((c: any) => ({
           name: c.name,
           metadata: { provider: 'weaviate-cloud' }
         }));

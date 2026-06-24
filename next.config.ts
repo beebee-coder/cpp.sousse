@@ -23,6 +23,9 @@ const nextConfig: NextConfig = {
   // Mode export pour Tauri (Statique), standard pour Vercel (Dynamique)
   output: isDesktop ? 'export' : undefined,
   
+  // Ignore les API routes (.ts) en mode Desktop car Tauri ne supporte pas le serveur Next.js
+  ...(isDesktop && { pageExtensions: ['tsx', 'jsx', 'js'] }),
+  
   images: {
     // Désactivation de l'optimisation pour éviter les timeouts serveur sur les placeholders
     unoptimized: true,

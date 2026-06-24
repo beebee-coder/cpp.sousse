@@ -34,7 +34,7 @@ import { apiClient } from '@/lib/api-client';
 import { DashboardSidebar } from '@/components/dashboard/Sidebar';
 import { useVoice } from '@/hooks/use-voice';
 import { cn } from '@/lib/utils';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 
 interface ProcedureStep {
   id: string;
@@ -135,37 +135,53 @@ export default function DatasetPage() {
   // Gestion robuste du flux caméra
   useEffect(() => {
     const startStream = async () => {
+      console.log(`[CAMERA_AUDIT] Début de startStream. mediaModal.isOpen=${mediaModal.isOpen}, type=${mediaModal.type}`);
       if (!mediaModal.isOpen) return;
       try {
+        console.log(`[CAMERA_AUDIT] Demande d'accès getUserMedia (video: true, audio: ${mediaModal.type === 'video'})`);
         const stream = await navigator.mediaDevices.getUserMedia({ 
           video: true, 
           audio: mediaModal.type === 'video' 
         });
+        console.log(`[CAMERA_AUDIT] Accès accordé. Pistes trouvées:`, stream.getTracks().map(t => `${t.kind} (${t.label})`));
         streamRef.current = stream;
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
+          console.log(`[CAMERA_AUDIT] Flux assigné à la balise vidéo.`);
+        } else {
+          console.warn(`[CAMERA_AUDIT] Attention: videoRef.current est null !`);
         }
-      } catch (err) {
-        console.error("Erreur caméra:", err);
-        toast({ title: "Erreur Caméra", description: "Vérifiez les permissions.", variant: "destructive" });
+      } catch (err: any) {
+        console.warn(`[CAMERA_AUDIT] Erreur caméra interceptée:`, err.name, err.message, err);
+        const errorDesc = err.name === 'NotFoundError' ? 'Aucune caméra trouvée sur cet appareil.' : 'Vérifiez les permissions de votre navigateur.';
+        toast({ title: "Erreur Caméra", description: errorDesc, variant: "destructive" });
         setMediaModal(prev => ({ ...prev, isOpen: false }));
       }
     };
 
     const stopStream = () => {
+      console.log(`[CAMERA_AUDIT] Exécution de stopStream. Flux actif: ${!!streamRef.current}`);
       if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current.getTracks().forEach(track => {
+          console.log(`[CAMERA_AUDIT] Arrêt de la piste: ${track.kind}`);
+          track.stop();
+        });
         streamRef.current = null;
       }
     };
 
     if (mediaModal.isOpen) {
+      console.log(`[CAMERA_AUDIT] mediaModal est ouvert, appel de startStream.`);
       startStream();
     } else {
+      console.log(`[CAMERA_AUDIT] mediaModal est fermé, appel de stopStream.`);
       stopStream();
     }
 
-    return () => stopStream();
+    return () => {
+      console.log(`[CAMERA_AUDIT] Nettoyage (cleanup) du useEffect de la caméra.`);
+      stopStream();
+    };
   }, [mediaModal.isOpen, mediaModal.type, toast]);
 
   // -- 2. LOGIQUE MÉTIER --
@@ -470,6 +486,9 @@ export default function DatasetPage() {
               {mediaModal.type === 'image' ? <Camera className="w-4 h-4" /> : <VideoIcon className="w-4 h-4" />}
               Station de capture industrielle
             </DialogTitle>
+            <DialogDescription className="sr-only">
+              Station de capture multimédia pour le dataset industriel
+            </DialogDescription>
           </DialogHeader>
           <div className="relative aspect-video bg-muted/10 rounded-sm overflow-hidden border border-border">
             <video 
