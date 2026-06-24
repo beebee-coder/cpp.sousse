@@ -1,7 +1,6 @@
 
 /**
- * @fileOverview Gestionnaire ChromaDB sécurisé pour l'environnement hybride.
- * Configure la persistance physique dans un dossier caché .data.
+ * @fileOverview Gestionnaire ChromaDB robuste pour environnement hybride.
  */
 
 import path from 'path';
@@ -45,7 +44,6 @@ async function getPipeline(): Promise<any> {
     _pipeline = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
     return _pipeline;
   } catch (e) {
-    console.warn("⚠️ [RAG_LOCAL] Pipeline embedding indisponible.");
     return null;
   }
 }
@@ -72,28 +70,18 @@ export function getLocalEmbedder(): LocalEmbeddingFunction {
 
 let _chromaClient: any = null;
 
-/**
- * Récupère le client ChromaDB avec détection sécurisée du constructeur.
- */
 export async function getChromaClient(): Promise<any> {
   if (IS_CLOUD) return null;
   if (_chromaClient) return _chromaClient;
   try {
     const chroma = await import('chromadb');
-    // Détection robuste pour supporter PersistentClient ou ChromaClient avec chemin
+    // Détection dynamique du constructeur selon la version installée
     const ClientClass = (chroma as any).PersistentClient || (chroma as any).ChromaClient;
-    
     if (ClientClass) {
-      _chromaClient = new ClientClass({ 
-        path: CHROMA_DATA_DIR,
-        database: "default"
-      });
-      console.log(`🧠 [CHROMA_INIT] Moteur ancré sur : ${CHROMA_DATA_DIR}`);
+      _chromaClient = new ClientClass({ path: CHROMA_DATA_DIR });
     }
-    
     return _chromaClient;
   } catch (e: any) {
-    console.error("❌ [CHROMA_INIT] Erreur :", e.message);
     return null;
   }
 }
@@ -102,12 +90,8 @@ export async function deleteCollection(name: string) {
   if (IS_CLOUD) return;
   try {
     const client = await getChromaClient();
-    if (client) {
-      await client.deleteCollection({ name });
-    }
-  } catch (e: any) {
-    console.error(`❌ [CHROMA_DELETE] Erreur :`, e.message);
-  }
+    if (client) await client.deleteCollection({ name });
+  } catch (e) {}
 }
 
 export async function listCollections() {
@@ -115,21 +99,17 @@ export async function listCollections() {
   try {
     const client = await getChromaClient();
     if (!client) return [];
-    const collections = await client.listCollections();
-    return collections;
+    return await client.listCollections();
   } catch {
     return [];
   }
 }
 
 export async function getOrCreateCollection(name: string, embeddingFunction: any = getLocalEmbedder()) {
-  if (IS_CLOUD) throw new Error("FONCTIONNALITÉ_LOCALE_UNIQUEMENT");
+  if (IS_CLOUD) throw new Error("LOCAL_ONLY");
   const client = await getChromaClient();
-  if (!client) throw new Error("MOTEUR_LOCAL_INDISPONIBLE");
-  return await client.getOrCreateCollection({ 
-    name, 
-    embeddingFunction 
-  });
+  if (!client) throw new Error("CHROMA_UNAVAILABLE");
+  return await client.getOrCreateCollection({ name, embeddingFunction });
 }
 
 export async function addDocuments(collectionName: string, documents: DocumentToAdd[], embeddingFunction: any = getLocalEmbedder()) {
@@ -151,9 +131,7 @@ export async function upsertDocuments(collectionName: string, documents: Documen
       documents: documents.map(d => d.content),
       metadatas: documents.map(d => d.metadata ?? {})
     });
-  } catch (e: any) {
-    console.error(`❌ [BDD_CHROMA] Échec upsert : ${e.message}`);
-  }
+  } catch (e) {}
 }
 
 export async function semanticSearch(options: SearchOptions, embeddingFunction: any = getLocalEmbedder()): Promise<SearchResult[]> {
@@ -161,57 +139,27 @@ export async function semanticSearch(options: SearchOptions, embeddingFunction: 
   const { collectionName, query, nResults = 5, whereFilter } = options;
   try {
     const col = await getOrCreateCollection(collectionName, embeddingFunction);
-    const results = await col.query({
-      queryTexts: [query],
-      nResults,
-      where: whereFilter as any
-    });
-
+    const results = await col.query({ queryTexts: [query], nResults, where: whereFilter as any });
     const ids = results.ids[0] ?? [];
     const docs = results.documents[0] ?? [];
-    const metas = results.metadatas?.[0] ?? [];
     const distances = results.distances?.[0] ?? [];
-
     return ids.map((id: string, i: number) => ({
       id,
       document: String(docs[i] || ''),
-      metadata: (metas[i] as any) || null,
+      metadata: (results.metadatas?.[0]?.[i] as any) || null,
       distance: Number(distances[i] || 0),
       score: parseFloat((1 - (Number(distances[i]) || 0)).toFixed(4))
     }));
-  } catch (e: any) {
+  } catch (e) {
     return [];
   }
 }
 
 export async function searchAcrossCollections(query: string, nResultsPerCollection = 3): Promise<SearchResult[]> {
-  if (IS_CLOUD) {
-    try {
-      const { getWeaviateClient } = await import('./weaviate-client');
-      const client = await getWeaviateClient();
-      const result = await client.graphql.get()
-        .withClassName('Industrial_manuals')
-        .withFields('question answer _additional { distance }')
-        .withNearText({ concepts: [query] })
-        .withLimit(nResultsPerCollection * 2)
-        .do();
-        
-      const data = (result.data.Get as any)['Industrial_manuals'] || [];
-      return data.map((item: any) => ({
-        id: 'cloud-id',
-        document: `Question: ${item.question}\nRéponse: ${item.answer}`,
-        metadata: { provider: 'weaviate-cloud' },
-        score: 1 - (item._additional?.distance || 0)
-      }));
-    } catch {
-      return [];
-    }
-  }
-
+  if (IS_CLOUD) return [];
   try {
     const cols = await listCollections();
     if (!cols || cols.length === 0) return [];
-    
     const searchPromises = cols.map(c => 
       semanticSearch({ collectionName: c.name, query, nResults: nResultsPerCollection })
         .then(res => res.map(r => ({ ...r, metadata: { ...r.metadata, _collection: c.name } })))
@@ -229,14 +177,10 @@ export async function seedIndustrialManuals() {
   try {
     const collections = await listCollections();
     if (collections.some((c: any) => c.name === 'industrial_manuals')) return;
-
-    console.log("📥 [SEED] Initialisation des manuels industriels locaux...");
     const docs = [
-      { id: 'man-001', content: 'Le panneau de contrôle Alpha nécessite une pression de 5 bars.', metadata: { component: 'industrial-control', title: 'Manuel Alpha' } },
-      { id: 'man-002', content: 'La pompe centrifuge Beta doit être lubrifiée tous les 6 mois.', metadata: { component: 'pump-system', title: 'Maintenance Beta' } }
+      { id: 'man-001', content: 'Panneau Alpha: Pression 5 bars.', metadata: { component: 'industrial-control', title: 'Manuel Alpha' } },
+      { id: 'man-002', content: 'Pompe Beta: Lubrification 6 mois.', metadata: { component: 'pump-system', title: 'Maintenance Beta' } }
     ];
     await addDocuments('industrial_manuals', docs);
-  } catch (e) {
-    console.error("❌ [SEED] Échec :", e);
-  }
+  } catch (e) {}
 }

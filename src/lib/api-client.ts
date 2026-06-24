@@ -1,7 +1,6 @@
 
 /**
  * @fileOverview Client API centralisé pour VisioNode.
- * Supporte les appels hybrides (Web/Desktop) avec gestion de timeout et méthodes HTTP étendues.
  */
 
 import { executeHybridRequest } from './api-hybrid';
@@ -27,10 +26,7 @@ class ApiClient {
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), timeout);
     try {
-      const response = await fetch(url, {
-        ...options,
-        signal: controller.signal
-      });
+      const response = await fetch(url, { ...options, signal: controller.signal });
       clearTimeout(id);
       return response;
     } catch (e) {
@@ -48,25 +44,13 @@ class ApiClient {
           headers: { 'Content-Type': 'application/json' },
           body: data ? JSON.stringify(data) : undefined,
         });
-        
         const json = await response.json();
-        
-        // CRUCIAL : Si le serveur renvoie un code d'erreur, ne pas simuler success: true
-        if (!response.ok) {
-          return { 
-            success: false, 
-            error: json.error || `ERREUR_HTTP_${response.status}`,
-            details: json.details 
-          };
-        }
-        
+        if (!response.ok) return { success: false, error: json.error || `HTTP_${response.status}` };
         return json;
       });
-      
-      return { ...result, timestamp } as ApiResponse<T>;
+      return { ...result, timestamp, success: result.success ?? true } as ApiResponse<T>;
     } catch (error: any) {
-      const msg = error.name === 'AbortError' ? 'TIMEOUT_LIAISON' : error.message;
-      return { error: msg, offline: true, timestamp, success: false } as any;
+      return { error: error.message, offline: true, timestamp, success: false } as any;
     }
   }
 
@@ -79,7 +63,7 @@ class ApiClient {
         if (!response.ok) return { success: false, error: json.error };
         return json;
       });
-      return { ...result, timestamp } as ApiResponse<T>;
+      return { ...result, timestamp, success: result.success ?? true } as ApiResponse<T>;
     } catch (error: any) {
       return { error: error.message, offline: true, timestamp, success: false } as any;
     }
@@ -103,17 +87,10 @@ class ApiClient {
       const result = await executeHybridRequest<any, any>(endpoint, null, async () => {
         const response = await this.fetchWithTimeout(endpoint, { method: 'DELETE' });
         const json = await response.json();
-        
-        if (!response.ok) {
-          return { 
-            success: false, 
-            error: json.error || "ECHEC_SUPPRESSION_SERVEUR" 
-          };
-        }
-        
+        if (!response.ok) return { success: false, error: json.error || "ECHEC_SUPPRESSION" };
         return json;
       });
-      return { ...result, timestamp } as ApiResponse<T>;
+      return { ...result, timestamp, success: result.success ?? true } as ApiResponse<T>;
     } catch (error: any) {
       return { error: error.message, offline: true, timestamp, success: false } as any;
     }
