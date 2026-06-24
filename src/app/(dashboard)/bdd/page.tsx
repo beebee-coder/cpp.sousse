@@ -17,7 +17,8 @@ import {
   Save,
   FolderPlus,
   FilePlus,
-  Type
+  Type,
+  Loader2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -42,7 +43,7 @@ export default function BDDPage() {
   const [mounted, setMounted] = useState(false);
   const [mode, setMode] = useState<'chroma' | 'web'>('web');
   const [tree, setTree] = useState<FSNode[]>([]);
-  const [isSyncing, setIsSyncing] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   
   // Editor states
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
@@ -93,36 +94,39 @@ export default function BDDPage() {
   }, []);
 
   const refreshRegistry = useCallback(async (isInitial = false) => {
-    if (!isInitial) setIsSyncing(true);
+    setIsLoading(true);
     try {
       const res = await apiClient.get<any>('/api/registry');
       if (res.success && Array.isArray(res.tree)) {
         setTree(prev => mergeTreeState(res.tree, prev));
+      } else {
+        setTree([]);
       }
     } catch (e) {
-      if (!isInitial) toast({ title: "Erreur de lecture", variant: "destructive" });
+      if (!isInitial) toast({ title: "Erreur de lecture physique", variant: "destructive" });
+      setTree([]);
     } finally {
-      setIsSyncing(false);
+      setIsLoading(false);
     }
   }, [toast, mergeTreeState]);
 
   const refreshChroma = useCallback(async () => {
-    setIsSyncing(true);
+    setIsLoading(true);
     try {
       const res = await apiClient.get<any>('/api/vector/collections');
       if (res && res.success) {
         const chromaNodes = res.collections.map((c: any) => ({
           id: `chroma-${c.name}`,
-          name: `${c.name} (${c.count || 0} docs)`,
+          name: `${c.name.toUpperCase()} (${c.count || 0} DOCS)`,
           type: 'collection' as const,
           count: c.count
         }));
-        setTree([{ id: 'root-chroma', name: 'INDEX_LOCAL_CHROMA', type: 'folder', isOpen: true, children: chromaNodes }]);
+        setTree([{ id: 'root-chroma', name: 'INDEX_CHROMA_PERSISTENT', type: 'folder', isOpen: true, children: chromaNodes }]);
       }
     } catch (e) {
-      setTree([{ id: 'error', name: 'MOTEUR_INDISPONIBLE', type: 'folder' }]);
+      setTree([{ id: 'error', name: 'MOTEUR_CHROMA_INDISPONIBLE', type: 'folder' }]);
     } finally {
-      setIsSyncing(false);
+      setIsLoading(false);
     }
   }, []);
 
@@ -141,7 +145,7 @@ export default function BDDPage() {
         setFileContent(res.content);
         setIsEditing(false);
       } catch (e) {
-        toast({ title: "Échec de lecture", variant: "destructive" });
+        toast({ title: "Échec de lecture fichier", variant: "destructive" });
       }
     }
   };
@@ -154,10 +158,10 @@ export default function BDDPage() {
         content: fileContent 
       });
       setIsEditing(false);
-      toast({ title: "Fichier mis à jour" });
+      toast({ title: "Fichier mis à jour sur le disque" });
       await refreshRegistry();
     } catch (e) {
-      toast({ title: "Erreur de sauvegarde", variant: "destructive" });
+      toast({ title: "Erreur de sauvegarde physique", variant: "destructive" });
     }
   };
 
@@ -177,7 +181,7 @@ export default function BDDPage() {
       toast({ title: newModal.type === 'file' ? "Fichier créé" : "Répertoire créé" });
       await refreshRegistry();
     } catch (e) {
-      toast({ title: "Erreur de création", variant: "destructive" });
+      toast({ title: "Erreur de création physique", variant: "destructive" });
     }
   };
 
@@ -197,7 +201,7 @@ export default function BDDPage() {
       if (res.success) {
         setRenameModal({ ...renameModal, isOpen: false });
         if (selectedFile === renameModal.path) setSelectedFile(null);
-        toast({ title: "Élément renommé" });
+        toast({ title: "Actif renommé avec succès" });
         await refreshRegistry();
       }
     } catch (e) {
@@ -206,16 +210,16 @@ export default function BDDPage() {
   };
 
   const deleteItem = async (id: string) => {
-    if (!confirm("Supprimer définitivement cet élément physique ?")) return;
+    if (!confirm("Supprimer définitivement cet élément physique du disque ?")) return;
     try {
       const res = await apiClient.delete(`/api/registry?path=${encodeURIComponent(id)}`);
-      if (res.error) throw new Error(res.error);
+      if (!res.success) throw new Error(res.error);
       
       if (selectedFile === id) setSelectedFile(null);
-      toast({ title: "Élément supprimé" });
+      toast({ title: "Élément supprimé physiquement" });
       await refreshRegistry();
-    } catch (e) {
-      toast({ title: "Erreur de suppression", variant: "destructive" });
+    } catch (error: any) {
+      toast({ title: "Erreur de suppression", description: error.message, variant: "destructive" });
     }
   };
 
@@ -227,6 +231,15 @@ export default function BDDPage() {
   };
 
   const renderTree = (nodes: FSNode[], depth = 0) => {
+    if (!nodes || nodes.length === 0) {
+      return depth === 0 ? (
+        <div className="flex flex-col items-center justify-center py-10 opacity-20">
+          <HardDrive className="w-8 h-8 mb-2" />
+          <p className="text-[9px] uppercase font-code">Répertoire vide</p>
+        </div>
+      ) : null;
+    }
+
     return nodes.map(node => (
       <div key={node.id} className="select-none">
         <div 
@@ -255,8 +268,8 @@ export default function BDDPage() {
             <div className="hidden group-hover:flex items-center gap-0.5 shrink-0 ml-2">
               {node.type === 'folder' && (
                 <>
-                  <button title="Fichier" onClick={(e) => { e.stopPropagation(); setNewModal({ isOpen: true, type: 'file', parent: node.id }); }} className="p-1 hover:text-primary transition-colors"><FilePlus className="w-3 h-3" /></button>
-                  <button title="Dossier" onClick={(e) => { e.stopPropagation(); setNewModal({ isOpen: true, type: 'folder', parent: node.id }); }} className="p-1 hover:text-primary transition-colors"><FolderPlus className="w-3 h-3" /></button>
+                  <button title="Nouveau Fichier" onClick={(e) => { e.stopPropagation(); setNewModal({ isOpen: true, type: 'file', parent: node.id }); }} className="p-1 hover:text-primary transition-colors"><FilePlus className="w-3 h-3" /></button>
+                  <button title="Nouveau Dossier" onClick={(e) => { e.stopPropagation(); setNewModal({ isOpen: true, type: 'folder', parent: node.id }); }} className="p-1 hover:text-primary transition-colors"><FolderPlus className="w-3 h-3" /></button>
                 </>
               )}
               <button title="Renommer" onClick={(e) => { e.stopPropagation(); setRenameModal({ isOpen: true, path: node.id, oldName: node.name, type: node.type as any }); setRenameValue(node.name); }} className="p-1 hover:text-secondary transition-colors"><Type className="w-3 h-3" /></button>
@@ -288,15 +301,18 @@ export default function BDDPage() {
             </div>
           </div>
           <div className="flex bg-muted/30 p-1 rounded-sm border border-border">
-            <button onClick={() => setMode('web')} className={cn("px-3 py-1 text-[10px] font-code uppercase rounded-sm transition-all", mode === 'web' ? "bg-primary text-primary-foreground font-bold" : "text-muted-foreground hover:text-foreground")}>Registre /registry</button>
-            <button onClick={() => setMode('chroma')} className={cn("px-3 py-1 text-[10px] font-code uppercase rounded-sm transition-all", mode === 'chroma' ? "bg-secondary text-secondary-foreground font-bold" : "text-muted-foreground hover:text-foreground")}>Moteur Chroma</button>
+            <button onClick={() => setMode('web')} className={cn("px-3 py-1 text-[10px] font-code uppercase rounded-sm transition-all", mode === 'web' ? "bg-primary text-primary-foreground font-bold" : "text-muted-foreground hover:text-foreground")}>Registre .registry/</button>
+            <button onClick={() => setMode('chroma')} className={cn("px-3 py-1 text-[10px] font-code uppercase rounded-sm transition-all", mode === 'chroma' ? "bg-secondary text-secondary-foreground font-bold" : "text-muted-foreground hover:text-foreground")}>Moteur .data/</button>
           </div>
         </header>
 
         <div className="flex-1 p-4 lg:p-6 overflow-hidden flex flex-col lg:flex-row gap-6">
-          <Card className="w-full lg:w-80 flex flex-col bg-black/40 border-border overflow-hidden shrink-0">
+          <Card className="w-full lg:w-80 flex flex-col bg-black/40 border-border overflow-hidden shrink-0 shadow-2xl">
             <div className="p-3 border-b border-border bg-card/50 flex items-center justify-between">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Arborescence</span>
+              <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+                {isLoading && <Loader2 className="w-3 h-3 animate-spin text-primary" />}
+                Arborescence
+              </span>
               <div className="flex items-center gap-1">
                 {mode === 'web' && (
                   <>
@@ -309,11 +325,11 @@ export default function BDDPage() {
                   </>
                 )}
                 <Button title="Rafraîchir" variant="ghost" size="icon" className="h-6 w-6" onClick={() => mode === 'web' ? refreshRegistry() : refreshChroma()}>
-                  <RefreshCw className={cn("w-3.5 h-3.5", isSyncing && "animate-spin")} />
+                  <RefreshCw className={cn("w-3.5 h-3.5", isLoading && "animate-spin")} />
                 </Button>
               </div>
             </div>
-            <div className="flex-1 overflow-auto terminal-scroll p-2">
+            <div className="flex-1 overflow-auto terminal-scroll p-2 bg-black/20">
               {renderTree(tree)}
             </div>
           </Card>
@@ -364,7 +380,7 @@ export default function BDDPage() {
               <div className="flex-1 flex flex-col items-center justify-center opacity-30">
                 <HardDrive className="w-16 h-16 mb-4 text-primary animate-pulse" />
                 <p className="font-code text-xs uppercase tracking-widest text-center px-6 leading-relaxed">
-                  SÉLECTIONNEZ UN ACTIF PHYSIQUE<br/>POUR AUDIT OU MODIFICATION
+                  SÉLECTIONNEZ UN ACTIF PHYSIQUE<br/>POUR AUDIT OU MODIFICATION DIRECTE
                 </p>
               </div>
             )}
@@ -382,7 +398,7 @@ export default function BDDPage() {
             </DialogTitle>
           </DialogHeader>
           <div className="py-4 space-y-3">
-            <p className="text-[10px] font-code text-muted-foreground uppercase mb-2">Emplacement : registry/{newModal.parent || 'racine'}</p>
+            <p className="text-[10px] font-code text-muted-foreground uppercase mb-2">Emplacement : .registry/{newModal.parent || 'racine'}</p>
             <Input 
               value={newName} 
               onChange={(e) => setNewName(e.target.value)} 
@@ -405,7 +421,7 @@ export default function BDDPage() {
           <DialogHeader>
             <DialogTitle className="text-xs uppercase font-headline text-secondary flex items-center gap-2 tracking-widest">
               <Type className="w-4 h-4" />
-              Renommer l'élément
+              Renommer l'actif physique
             </DialogTitle>
           </DialogHeader>
           <div className="py-4 space-y-3">

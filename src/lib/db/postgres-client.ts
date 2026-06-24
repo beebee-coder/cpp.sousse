@@ -10,8 +10,14 @@ import path from 'path';
 
 const REGISTRY_ROOT = path.join(process.cwd(), '.registry');
 
-// Assure l'existence du répertoire racine
-if (!fs.existsSync(REGISTRY_ROOT)) fs.mkdirSync(REGISTRY_ROOT, { recursive: true });
+// Assure l'existence du répertoire racine et du sous-dossier items
+if (!fs.existsSync(REGISTRY_ROOT)) {
+  fs.mkdirSync(REGISTRY_ROOT, { recursive: true });
+}
+const ITEMS_DIR = path.join(REGISTRY_ROOT, 'items');
+if (!fs.existsSync(ITEMS_DIR)) {
+  fs.mkdirSync(ITEMS_DIR, { recursive: true });
+}
 
 export const postgresClient = {
   /**
@@ -19,35 +25,47 @@ export const postgresClient = {
    */
   getRegistryTree: async (dir = REGISTRY_ROOT): Promise<any[]> => {
     if (!fs.existsSync(dir)) return [];
-    const entries = fs.readdirSync(dir, { withFileTypes: true });
     
-    const tree = await Promise.all(entries.map(async (entry) => {
-      const fullPath = path.join(dir, entry.name);
-      const relativePath = path.relative(REGISTRY_ROOT, fullPath);
+    try {
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
       
-      if (entry.isDirectory()) {
-        return {
-          id: relativePath,
-          name: entry.name,
-          type: 'folder',
-          children: await postgresClient.getRegistryTree(fullPath)
-        };
-      } else {
-        return {
-          id: relativePath,
-          name: entry.name,
-          type: 'file',
-          size: fs.statSync(fullPath).size
-        };
-      }
-    }));
+      const tree = await Promise.all(entries.map(async (entry) => {
+        const fullPath = path.join(dir, entry.name);
+        const relativePath = path.relative(REGISTRY_ROOT, fullPath);
+        
+        // Ignorer les fichiers système cachés
+        if (entry.name.startsWith('.')) return null;
 
-    // Trier les dossiers en premier, puis par nom
-    return tree.sort((a, b) => {
-      if (a.type === 'folder' && b.type !== 'folder') return -1;
-      if (a.type !== 'folder' && b.type === 'folder') return 1;
-      return a.name.localeCompare(b.name);
-    });
+        if (entry.isDirectory()) {
+          const children = await postgresClient.getRegistryTree(fullPath);
+          return {
+            id: relativePath,
+            name: entry.name,
+            type: 'folder',
+            children
+          };
+        } else {
+          return {
+            id: relativePath,
+            name: entry.name,
+            type: 'file',
+            size: fs.statSync(fullPath).size
+          };
+        }
+      }));
+
+      // Filtrer les nulls et trier (dossiers en premier)
+      return tree
+        .filter(n => n !== null)
+        .sort((a: any, b: any) => {
+          if (a.type === 'folder' && b.type !== 'folder') return -1;
+          if (a.type !== 'folder' && b.type === 'folder') return 1;
+          return a.name.localeCompare(b.name);
+        });
+    } catch (error) {
+      console.error("❌ [postgresClient.getRegistryTree] Erreur :", error);
+      return [];
+    }
   },
 
   /**
@@ -108,8 +126,7 @@ export const postgresClient = {
    * Méthode d'upload de masse pour les captures RAG
    */
   upsertCloudData: async (items: any[]): Promise<void> => {
-    const itemsDir = path.join(REGISTRY_ROOT, 'items');
-    if (!fs.existsSync(itemsDir)) fs.mkdirSync(itemsDir, { recursive: true });
+    if (!fs.existsSync(ITEMS_DIR)) fs.mkdirSync(ITEMS_DIR, { recursive: true });
 
     items.forEach(newItem => {
       let parsedContent: any = {};
@@ -121,14 +138,18 @@ export const postgresClient = {
 
       const baseName = parsedContent.title || newItem.id;
       const safeId = baseName.toLowerCase().replace(/[^a-zA-Z0-9-]/g, '_');
-      const filePath = path.join(itemsDir, `${safeId}.json`);
+      const filePath = path.join(ITEMS_DIR, `${safeId}.json`);
 
+      // Aplatir la structure pour un accès physique direct
       const dataToSave = {
         id: newItem.id,
         projectId: newItem.projectId,
         type: newItem.type,
         createdAt: newItem.createdAt || new Date().toISOString(),
-        ...parsedContent 
+        label: parsedContent.label || parsedContent.question || "",
+        details: parsedContent.details || parsedContent.answer || "",
+        title: parsedContent.title || baseName,
+        metadata: parsedContent.metadata || {}
       };
 
       fs.writeFileSync(filePath, JSON.stringify(dataToSave, null, 2));
@@ -139,11 +160,10 @@ export const postgresClient = {
    * Méthode de suppression par IDs
    */
   deleteItems: async (projectId: string, ids: string[]): Promise<void> => {
-    const itemsDir = path.join(REGISTRY_ROOT, 'items');
-    if (!fs.existsSync(itemsDir)) return;
-    const files = fs.readdirSync(itemsDir);
+    if (!fs.existsSync(ITEMS_DIR)) return;
+    const files = fs.readdirSync(ITEMS_DIR);
     files.forEach(file => {
-      const fullPath = path.join(itemsDir, file);
+      const fullPath = path.join(ITEMS_DIR, file);
       try {
         const raw = fs.readFileSync(fullPath, 'utf8');
         const data = JSON.parse(raw);
