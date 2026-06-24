@@ -2,7 +2,6 @@
 /**
  * @fileOverview Gestionnaire ChromaDB sécurisé pour l'environnement hybride.
  * Configure la persistance physique pour le développement local et Tauri.
- * Utilise un dossier caché (.data) pour éviter les redémarrages de Next.js.
  */
 
 import path from 'path';
@@ -30,7 +29,7 @@ export interface SearchResult {
 }
 
 // ─── INITIALISATION PHYSIQUE DES RÉPERTOIRES ────────────────────────────────
-const CHROMA_DATA_DIR = path.join(process.cwd(), '.data', 'chromadb');
+const CHROMA_DATA_DIR = path.join(process.cwd(), 'data', 'chromadb');
 if (!fs.existsSync(CHROMA_DATA_DIR)) {
   fs.mkdirSync(CHROMA_DATA_DIR, { recursive: true });
 }
@@ -76,7 +75,7 @@ let _chromaClient: any = null;
 
 /**
  * Récupère le client ChromaDB. 
- * Utilise PersistentClient pour éviter les avertissements de dépréciation.
+ * Utilise PersistentClient (v3+) pour le stockage local.
  */
 export async function getChromaClient(): Promise<any> {
   if (IS_CLOUD) return null;
@@ -84,6 +83,7 @@ export async function getChromaClient(): Promise<any> {
   try {
     const { PersistentClient } = await import('chromadb');
     
+    // Utilisation du PersistentClient moderne
     _chromaClient = new PersistentClient({ 
       path: CHROMA_DATA_DIR 
     });
@@ -108,6 +108,9 @@ export async function listCollections() {
   }
 }
 
+/**
+ * Supprime une collection vectorielle.
+ */
 export async function deleteCollection(name: string) {
   if (IS_CLOUD) return;
   try {

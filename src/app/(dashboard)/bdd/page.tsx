@@ -45,12 +45,10 @@ export default function BDDPage() {
   const [tree, setTree] = useState<FSNode[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   
-  // Editor states
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [fileContent, setFileContent] = useState('');
   const [isEditing, setIsEditing] = useState(false);
   
-  // New Item Modal states
   const [newModal, setNewModal] = useState<{ isOpen: boolean; type: 'file' | 'folder'; parent: string | null }>({
     isOpen: false,
     type: 'file',
@@ -58,7 +56,6 @@ export default function BDDPage() {
   });
   const [newName, setNewName] = useState('');
 
-  // Rename Modal states
   const [renameModal, setRenameModal] = useState<{ isOpen: boolean; path: string; oldName: string; type: 'file' | 'folder' }>({
     isOpen: false,
     path: '',
@@ -216,6 +213,7 @@ export default function BDDPage() {
   const deleteItem = async (id: string) => {
     if (!confirm("Supprimer définitivement cet élément physique du disque ?")) return;
     try {
+      // Utilisation de encodeURIComponent pour les chemins complexes
       const res = await apiClient.delete(`/api/registry?path=${encodeURIComponent(id)}`);
       if (!res.success) throw new Error(res.error);
       
@@ -305,8 +303,8 @@ export default function BDDPage() {
             </div>
           </div>
           <div className="flex bg-muted/30 p-1 rounded-sm border border-border">
-            <button onClick={() => setMode('web')} className={cn("px-3 py-1 text-[10px] font-code uppercase rounded-sm transition-all", mode === 'web' ? "bg-primary text-primary-foreground font-bold" : "text-muted-foreground hover:text-foreground")}>Registre .registry/</button>
-            <button onClick={() => setMode('chroma')} className={cn("px-3 py-1 text-[10px] font-code uppercase rounded-sm transition-all", mode === 'chroma' ? "bg-secondary text-secondary-foreground font-bold" : "text-muted-foreground hover:text-foreground")}>Moteur .data/</button>
+            <button onClick={() => setMode('web')} className={cn("px-3 py-1 text-[10px] font-code uppercase rounded-sm transition-all", mode === 'web' ? "bg-primary text-primary-foreground font-bold" : "text-muted-foreground hover:text-foreground")}>Registre registry/</button>
+            <button onClick={() => setMode('chroma')} className={cn("px-3 py-1 text-[10px] font-code uppercase rounded-sm transition-all", mode === 'chroma' ? "bg-secondary text-secondary-foreground font-bold" : "text-muted-foreground hover:text-foreground")}>Moteur data/</button>
           </div>
         </header>
 
@@ -402,7 +400,7 @@ export default function BDDPage() {
             </DialogTitle>
           </DialogHeader>
           <div className="py-4 space-y-3">
-            <p className="text-[10px] font-code text-muted-foreground uppercase mb-2">Emplacement : .registry/{newModal.parent || 'racine'}</p>
+            <p className="text-[10px] font-code text-muted-foreground uppercase mb-2">Emplacement : registry/{newModal.parent || 'racine'}</p>
             <Input 
               value={newName} 
               onChange={(e) => setNewName(e.target.value)} 

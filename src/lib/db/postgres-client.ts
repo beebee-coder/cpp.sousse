@@ -4,11 +4,10 @@ import path from 'path';
 
 /**
  * Infrastructure de liaison physique pour le Registre.
- * Utilise un dossier caché (.registry) pour éviter de déclencher le watcher de Next.js
- * lors des écritures, empêchant ainsi le rechargement intempestif de la page.
+ * Utilise un dossier racine 'registry' pour les données auditées.
  */
 
-const REGISTRY_ROOT = path.join(process.cwd(), '.registry');
+const REGISTRY_ROOT = path.join(process.cwd(), 'registry');
 
 // Assure l'existence du répertoire racine et du sous-dossier items
 const ensureRegistry = () => {
@@ -23,7 +22,7 @@ const ensureRegistry = () => {
 
 export const postgresClient = {
   /**
-   * Récupère l'arborescence complète du répertoire .registry/
+   * Récupère l'arborescence complète du répertoire registry/
    */
   getRegistryTree: async (dir = REGISTRY_ROOT): Promise<any[]> => {
     ensureRegistry();
@@ -36,8 +35,8 @@ export const postgresClient = {
         const fullPath = path.join(dir, entry.name);
         const relativePath = path.relative(REGISTRY_ROOT, fullPath);
         
-        // Ignorer les fichiers système cachés à l'exception du dossier racine lui-même
-        if (entry.name.startsWith('.') && entry.name !== '.registry') return null;
+        // Ignorer les fichiers système cachés
+        if (entry.name.startsWith('.') && entry.name !== 'registry') return null;
 
         if (entry.isDirectory()) {
           const children = await postgresClient.getRegistryTree(fullPath);
@@ -126,6 +125,7 @@ export const postgresClient = {
     ensureRegistry();
     const fullPath = path.join(REGISTRY_ROOT, relPath);
     if (fs.existsSync(fullPath)) {
+      // Suppression récursive sécurisée
       fs.rmSync(fullPath, { recursive: true, force: true });
     }
   },
@@ -136,6 +136,7 @@ export const postgresClient = {
   upsertCloudData: async (items: any[]): Promise<void> => {
     ensureRegistry();
     const itemsDir = path.join(REGISTRY_ROOT, 'items');
+    if (!fs.existsSync(itemsDir)) fs.mkdirSync(itemsDir, { recursive: true });
 
     items.forEach(newItem => {
       let parsedContent: any = {};
@@ -149,7 +150,6 @@ export const postgresClient = {
       const safeId = baseName.toLowerCase().replace(/[^a-zA-Z0-9-]/g, '_');
       const filePath = path.join(itemsDir, `${safeId}.json`);
 
-      // Aplatir la structure pour un accès physique direct
       const dataToSave = {
         id: newItem.id,
         projectId: newItem.projectId,
