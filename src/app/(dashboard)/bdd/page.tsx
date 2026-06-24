@@ -11,7 +11,6 @@ import {
   FileJson,
   ChevronRight,
   ChevronDown,
-  Plus,
   Trash2,
   Edit3,
   Eye,
@@ -71,6 +70,9 @@ export default function BDDPage() {
     setMounted(true);
   }, []);
 
+  /**
+   * Fusionne le nouvel état de l'arborescence avec l'ancien pour préserver l'ouverture des dossiers.
+   */
   const mergeTreeState = useCallback((newNodes: FSNode[], oldNodes: FSNode[]): FSNode[] => {
     const openPaths = new Set<string>();
     const collectOpen = (nodes: FSNode[]) => {
