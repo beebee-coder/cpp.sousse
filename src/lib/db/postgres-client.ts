@@ -4,7 +4,7 @@ import path from 'path';
 
 /**
  * Infrastructure de liaison physique pour le Registre.
- * Supporte désormais la gestion complète des fichiers et répertoires.
+ * Supporte la gestion complète des fichiers et répertoires.
  */
 
 const REGISTRY_ROOT = path.join(process.cwd(), 'registry');
@@ -70,6 +70,21 @@ export const postgresClient = {
     const fullPath = path.join(REGISTRY_ROOT, relPath);
     if (!fs.existsSync(fullPath)) {
       fs.mkdirSync(fullPath, { recursive: true });
+    }
+  },
+
+  /**
+   * Renomme un fichier ou un dossier
+   */
+  renameItem: async (oldPath: string, newName: string) => {
+    const oldFullPath = path.join(REGISTRY_ROOT, oldPath);
+    const dir = path.dirname(oldFullPath);
+    const newFullPath = path.join(dir, newName);
+    
+    if (fs.existsSync(oldFullPath)) {
+      fs.renameSync(oldFullPath, newFullPath);
+    } else {
+      throw new Error("ÉLÉMENT_SOURCE_INTROUVABLE");
     }
   },
 

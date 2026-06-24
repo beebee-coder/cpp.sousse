@@ -41,6 +41,17 @@ export const PUT = createHybridRoute<{ path: string; content: string }, any>({
   }
 });
 
+export const PATCH = createHybridRoute<{ path: string; newName: string }, any>({
+  name: 'REGISTRY_RENAME',
+  webHandler: async (req, body) => {
+    const { path, newName } = body;
+    if (!path || !newName) return { success: false, error: "PARAM_MISSING" };
+    
+    await postgresClient.renameItem(path, newName);
+    return { success: true };
+  }
+});
+
 export async function DELETE(req: Request) {
   const { searchParams } = new URL(req.url);
   const path = searchParams.get('path');

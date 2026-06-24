@@ -7,9 +7,6 @@ import {
   Folder, 
   Database, 
   RefreshCw,
-  CloudLightning,
-  ShieldAlert,
-  Zap,
   HardDrive,
   FileJson,
   ChevronRight,
@@ -21,7 +18,7 @@ import {
   Save,
   FolderPlus,
   FilePlus,
-  X
+  Type
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -52,13 +49,22 @@ export default function BDDPage() {
   const [fileContent, setFileContent] = useState('');
   const [isEditing, setIsEditing] = useState(false);
   
-  // Modal states
+  // New Item Modal states
   const [newModal, setNewModal] = useState<{ isOpen: boolean; type: 'file' | 'folder'; parent: string | null }>({
     isOpen: false,
     type: 'file',
     parent: null
   });
   const [newName, setNewName] = useState('');
+
+  // Rename Modal states
+  const [renameModal, setRenameModal] = useState<{ isOpen: boolean; path: string; oldName: string; type: 'file' | 'folder' }>({
+    isOpen: false,
+    path: '',
+    oldName: '',
+    type: 'file'
+  });
+  const [renameValue, setRenameValue] = useState('');
 
   const refreshRegistry = useCallback(async () => {
     setIsSyncing(true);
@@ -147,6 +153,30 @@ export default function BDDPage() {
     }
   };
 
+  const handleRename = async () => {
+    if (!renameValue.trim()) return;
+    let finalRename = renameValue;
+    if (renameModal.type === 'file' && !finalRename.endsWith('.json')) {
+      finalRename += '.json';
+    }
+
+    try {
+      const res = await apiClient.post('/api/registry', { 
+        path: renameModal.path, 
+        newName: finalRename 
+      }, { method: 'PATCH' } as any);
+      
+      if (res.success) {
+        setRenameModal({ ...renameModal, isOpen: false });
+        if (selectedFile === renameModal.path) setSelectedFile(null);
+        refreshRegistry();
+        toast({ title: "Élément renommé" });
+      }
+    } catch (e) {
+      toast({ title: "Erreur de renommage", variant: "destructive" });
+    }
+  };
+
   const deleteItem = async (id: string) => {
     if (!confirm("Supprimer définitivement cet élément ?")) return;
     try {
@@ -193,8 +223,9 @@ export default function BDDPage() {
           {mode === 'web' && (
             <div className="hidden group-hover:flex items-center gap-1">
               {node.type === 'folder' && (
-                <button onClick={() => setNewModal({ isOpen: true, type: 'file', parent: node.id })} className="p-1 hover:text-primary"><Plus className="w-3 h-3" /></button>
+                <button onClick={(e) => { e.stopPropagation(); setNewModal({ isOpen: true, type: 'file', parent: node.id }); }} className="p-1 hover:text-primary"><Plus className="w-3 h-3" /></button>
               )}
+              <button onClick={(e) => { e.stopPropagation(); setRenameModal({ isOpen: true, path: node.id, oldName: node.name, type: node.type as any }); setRenameValue(node.name); }} className="p-1 hover:text-secondary"><Type className="w-3 h-3" /></button>
               <button onClick={(e) => { e.stopPropagation(); deleteItem(node.id); }} className="p-1 hover:text-destructive"><Trash2 className="w-3 h-3" /></button>
             </div>
           )}
@@ -328,6 +359,32 @@ export default function BDDPage() {
           <DialogFooter>
             <Button variant="ghost" onClick={() => setNewModal({ ...newModal, isOpen: false })} className="text-[10px] uppercase">Annuler</Button>
             <Button onClick={createNew} className="bg-primary text-primary-foreground font-bold uppercase text-[10px]">Créer l'élément</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Rename Modal */}
+      <Dialog open={renameModal.isOpen} onOpenChange={(o) => !o && setRenameModal({ ...renameModal, isOpen: false })}>
+        <DialogContent className="bg-black border-secondary/40">
+          <DialogHeader>
+            <DialogTitle className="text-xs uppercase font-headline text-secondary flex items-center gap-2">
+              <Type className="w-4 h-4" />
+              Renommer l'élément
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <p className="text-[10px] font-code text-muted-foreground uppercase mb-2">Actuel : {renameModal.oldName}</p>
+            <Input 
+              value={renameValue} 
+              onChange={(e) => setRenameValue(e.target.value)} 
+              placeholder="Nouveau nom..."
+              className="bg-muted font-code h-10 uppercase"
+              autoFocus
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setRenameModal({ ...renameModal, isOpen: false })} className="text-[10px] uppercase">Annuler</Button>
+            <Button onClick={handleRename} className="bg-secondary text-secondary-foreground font-bold uppercase text-[10px]">Appliquer le changement</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
