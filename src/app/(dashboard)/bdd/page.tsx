@@ -70,6 +70,7 @@ export default function BDDPage() {
 
   /**
    * Fusionne l'état actuel de l'UI (dossiers ouverts) avec les nouvelles données du serveur.
+   * Utilise une approche pure pour éviter les mutations.
    */
   const mergeTreeState = useCallback((newNodes: FSNode[], oldNodes: FSNode[]): FSNode[] => {
     const openPaths = new Set<string>();
@@ -217,39 +218,38 @@ export default function BDDPage() {
   };
 
   /**
-   * Action de suppression optimiste pour un effet immédiat sans rechargement.
+   * Action de suppression pure et optimiste.
    */
   const deleteItem = async (id: string) => {
-    if (!confirm("Supprimer définitivement cet élément physique ?")) return;
+    if (!confirm("Supprimer définitivement cet élément et tout son contenu ?")) return;
     
-    // 1. Sauvegarde pour rollback potentiel en cas d'erreur serveur
-    const oldTree = [...tree];
+    // 1. Sauvegarde pour rollback
+    const oldTree = JSON.parse(JSON.stringify(tree));
     
-    // 2. Mise à jour optimiste immédiate de l'UI
+    // 2. Mise à jour optimiste IMMÉDIATE (Pure)
     const removeFromTree = (nodes: FSNode[]): FSNode[] => {
-      return nodes.filter(node => {
-        if (node.id === id) return false;
-        if (node.children) {
-          node.children = removeFromTree(node.children);
-        }
-        return true;
-      });
+      return nodes
+        .filter(node => node.id !== id)
+        .map(node => ({
+          ...node,
+          children: node.children ? removeFromTree(node.children) : undefined
+        }));
     };
     
-    setTree(prev => removeFromTree([...prev]));
+    setTree(prev => removeFromTree(prev));
     if (selectedFile === id) setSelectedFile(null);
 
-    // 3. Suppression physique réelle sur le disque
+    // 3. Appel API réel
     try {
       const res = await apiClient.delete(`/api/registry?path=${encodeURIComponent(id)}`);
       if (res.success) {
-        toast({ title: "Élément supprimé" });
+        toast({ title: "Élément supprimé physiquement" });
       } else {
-        throw new Error(res.error || "Erreur inconnue");
+        throw new Error(res.error || "Erreur serveur");
       }
     } catch (error: any) {
-      toast({ title: "Erreur de suppression", description: error.message, variant: "destructive" });
-      // Rollback UI : On restaure l'arborescence si le serveur a échoué
+      toast({ title: "Échec de suppression", description: error.message, variant: "destructive" });
+      // Rollback
       setTree(oldTree);
     }
   };

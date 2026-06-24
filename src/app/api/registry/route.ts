@@ -10,10 +10,10 @@ export const GET = createHybridRoute<any, any>({
   name: 'REGISTRY_EXPLORER',
   webHandler: async (req) => {
     const { searchParams } = new URL(req.url);
-    const path = searchParams.get('path');
+    const targetPath = searchParams.get('path');
     
-    if (path) {
-      const content = await postgresClient.getFile(path);
+    if (targetPath) {
+      const content = await postgresClient.getFile(targetPath);
       return { success: true, content };
     }
     
@@ -45,10 +45,10 @@ export const PUT = createHybridRoute<{ path: string; content: string }, any>({
 export const PATCH = createHybridRoute<{ path: string; newName: string }, any>({
   name: 'REGISTRY_RENAME',
   webHandler: async (req, body) => {
-    const { path, newName } = body;
-    if (!path || !newName) return { success: false, error: "PARAM_MISSING" };
+    const { path: oldPath, newName } = body;
+    if (!oldPath || !newName) return { success: false, error: "PARAM_MISSING" };
     
-    await postgresClient.renameItem(path, newName);
+    await postgresClient.renameItem(oldPath, newName);
     return { success: true };
   }
 });
@@ -57,14 +57,14 @@ export const DELETE = createHybridRoute<any, any>({
   name: 'REGISTRY_DELETE',
   webHandler: async (req) => {
     const { searchParams } = new URL(req.url);
-    const path = searchParams.get('path');
+    const targetPath = searchParams.get('path');
     
-    if (!path) {
+    if (!targetPath) {
       return NextResponse.json({ success: false, error: "PATH_REQUIRED" }, { status: 400 });
     }
     
     try {
-      await postgresClient.deleteItem(path);
+      await postgresClient.deleteItem(targetPath);
       return { success: true };
     } catch (error: any) {
       console.error(`❌ [REGISTRY_DELETE] Échec :`, error.message);

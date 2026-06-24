@@ -138,7 +138,7 @@ export const postgresClient = {
       try {
         // fs.rmSync avec recursive: true supprime physiquement le fichier ou le répertoire entier
         fs.rmSync(fullPath, { recursive: true, force: true });
-        console.log(`🗑️ [postgresClient] Supprimé physiquement : ${fullPath}`);
+        console.log(`🗑️ [postgresClient] Suppression physique réussie : ${fullPath}`);
       } catch (err: any) {
         throw new Error(`ERREUR_FS_DELETE : ${err.message}`);
       }
