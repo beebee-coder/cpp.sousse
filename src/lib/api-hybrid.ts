@@ -1,4 +1,3 @@
-
 import { isDesktop } from './platform';
 
 /**
@@ -39,9 +38,11 @@ export async function executeHybridRequest<TReq, TRes>(
   webFetch: () => Promise<TRes>
 ): Promise<TRes> {
   if (isDesktop) {
-    const localHandler = desktopInterceptors[path];
+    // Nettoyage du chemin pour ignorer les paramètres de requête lors de la correspondance
+    const cleanPath = path.split('?')[0];
+    const localHandler = desktopInterceptors[cleanPath];
     if (localHandler) {
-      console.log(`🔌 [HYBRID_BRIDGE] Interception EXE : ${path}`);
+      console.log(`🔌 [HYBRID_BRIDGE] Interception EXE : ${cleanPath}`);
       return await localHandler(body);
     }
   }

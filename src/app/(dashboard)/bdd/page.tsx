@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
@@ -121,11 +120,10 @@ export default function BDDPage() {
   const saveFileChanges = async () => {
     if (!selectedFile) return;
     try {
-      await apiClient.post('/api/registry', { 
+      await apiClient.put('/api/registry', { 
         path: selectedFile, 
-        type: 'file', 
         content: fileContent 
-      }, { method: 'PUT' } as any);
+      });
       setIsEditing(false);
       toast({ title: "Fichier mis à jour" });
     } catch (e) {
@@ -161,13 +159,14 @@ export default function BDDPage() {
     }
 
     try {
-      const res = await apiClient.post('/api/registry', { 
+      const res = await apiClient.patch('/api/registry', { 
         path: renameModal.path, 
         newName: finalRename 
-      }, { method: 'PATCH' } as any);
+      });
       
       if (res.success) {
         setRenameModal({ ...renameModal, isOpen: false });
+        // Désélectionner si le fichier actif a été renommé pour rafraîchir la vue
         if (selectedFile === renameModal.path) setSelectedFile(null);
         refreshRegistry();
         toast({ title: "Élément renommé" });
@@ -180,7 +179,9 @@ export default function BDDPage() {
   const deleteItem = async (id: string) => {
     if (!confirm("Supprimer définitivement cet élément ?")) return;
     try {
-      await fetch(`/api/registry?path=${id}`, { method: 'DELETE' });
+      const res = await apiClient.delete(`/api/registry?path=${id}`);
+      if (res.error) throw new Error(res.error);
+      
       if (selectedFile === id) setSelectedFile(null);
       refreshRegistry();
       toast({ title: "Élément supprimé" });
