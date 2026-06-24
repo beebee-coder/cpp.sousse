@@ -1,6 +1,7 @@
 
 /**
  * @fileOverview Gestionnaire ChromaDB robuste pour environnement hybride.
+ * Version : Audité pour résoudre "PersistentClient is not a constructor".
  */
 
 import path from 'path';
@@ -73,15 +74,24 @@ let _chromaClient: any = null;
 export async function getChromaClient(): Promise<any> {
   if (IS_CLOUD) return null;
   if (_chromaClient) return _chromaClient;
+  
   try {
     const chroma = await import('chromadb');
-    // Détection dynamique du constructeur selon la version installée
-    const ClientClass = (chroma as any).PersistentClient || (chroma as any).ChromaClient;
-    if (ClientClass) {
-      _chromaClient = new ClientClass({ path: CHROMA_DATA_DIR });
+    
+    // Initialisation robuste compatible version 1.x et 3.x+
+    const ChromaClientClass = (chroma as any).ChromaClient || chroma.default?.ChromaClient;
+    
+    if (ChromaClientClass) {
+      // On instancie ChromaClient avec le chemin de persistance (comportement de PersistentClient)
+      _chromaClient = new ChromaClientClass({
+        path: CHROMA_DATA_DIR
+      });
+      console.log(`🧠 [CHROMA_INIT] Moteur ancré sur : ${CHROMA_DATA_DIR}`);
     }
+    
     return _chromaClient;
   } catch (e: any) {
+    console.error("❌ [CHROMA_INIT] Erreur de liaison physique :", e.message);
     return null;
   }
 }

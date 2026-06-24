@@ -112,6 +112,7 @@ export const postgresClient = {
     if (fs.existsSync(fullPath)) {
       // rmSync avec recursive + force efface RÉELLEMENT le dossier et son contenu
       fs.rmSync(fullPath, { recursive: true, force: true });
+      console.log(`✅ [POSTGRES_CLIENT] Suppression radicale : ${fullPath}`);
     }
   },
 

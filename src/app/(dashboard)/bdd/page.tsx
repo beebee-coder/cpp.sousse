@@ -73,7 +73,18 @@ export default function BDDPage() {
     try {
       const res = await apiClient.get<any>('/api/registry');
       if (res.success && Array.isArray(res.tree)) {
-        setTree(res.tree);
+        // Préserver l'état d'ouverture lors du refresh
+        setTree(prev => {
+          const applyOpen = (nodes: FSNode[]): FSNode[] => nodes.map(node => {
+            const old = findInTree(prev, node.id);
+            return {
+              ...node,
+              isOpen: old?.isOpen ?? node.isOpen,
+              children: node.children ? applyOpen(node.children) : undefined
+            };
+          });
+          return applyOpen(res.tree);
+        });
       }
     } catch (e) {
       if (!isInitial) toast({ title: "Erreur réseau", variant: "destructive" });
@@ -81,6 +92,17 @@ export default function BDDPage() {
       setIsLoading(false);
     }
   }, [toast]);
+
+  const findInTree = (nodes: FSNode[], id: string): FSNode | null => {
+    for (const n of nodes) {
+      if (n.id === id) return n;
+      if (n.children) {
+        const found = findInTree(n.children, id);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
 
   const refreshChroma = useCallback(async () => {
     setIsLoading(true);
@@ -124,9 +146,9 @@ export default function BDDPage() {
   };
 
   const deleteItem = async (id: string) => {
-    if (!confirm(`Supprimer physiquement "${id}" ?`)) return;
+    if (!confirm(`Supprimer physiquement "${id}" et tout son contenu ?`)) return;
     
-    // MISE À JOUR OPTIMISTE : Supprimer visuellement tout de suite
+    // 1. MISE À JOUR OPTIMISTE (Visuel instantané)
     const previousTree = [...tree];
     const removeFromTree = (nodes: FSNode[]): FSNode[] => {
       return nodes
@@ -143,15 +165,17 @@ export default function BDDPage() {
     }
 
     try {
+      // 2. ACTION PHYSIQUE
       const res = await apiClient.delete<any>(`/api/registry?path=${encodeURIComponent(id)}`);
       if (res.success) {
-        toast({ title: "Élément effacé du disque" });
+        toast({ title: "Élément supprimé du disque" });
       } else {
-        throw new Error(res.error);
+        throw new Error(res.error || "Erreur serveur");
       }
     } catch (error: any) {
+      // 3. ROLLBACK EN CAS D'ÉCHEC
+      setTree(previousTree);
       toast({ title: "Échec de suppression", description: error.message, variant: "destructive" });
-      setTree(previousTree); // Rollback en cas d'erreur
     }
   };
 
@@ -232,9 +256,9 @@ export default function BDDPage() {
           </div>
           {mode === 'web' && (
             <div className="hidden group-hover:flex items-center gap-0.5 ml-2">
-              {node.type === 'folder' && <button onClick={(e) => { e.stopPropagation(); setNewModal({ isOpen: true, type: 'file', parent: node.id }); }}><FilePlus className="w-3 h-3 hover:text-primary" /></button>}
-              <button onClick={(e) => { e.stopPropagation(); setRenameModal({ isOpen: true, path: node.id, oldName: node.name, type: node.type as any }); setRenameValue(node.name); }}><Type className="w-3 h-3 hover:text-secondary" /></button>
-              <button onClick={(e) => { e.stopPropagation(); deleteItem(node.id); }}><Trash2 className="w-3 h-3 hover:text-destructive" /></button>
+              {node.type === 'folder' && <button onClick={(e) => { e.stopPropagation(); setNewModal({ isOpen: true, type: 'file', parent: node.id }); }} title="Nouveau fichier"><FilePlus className="w-3 h-3 hover:text-primary" /></button>}
+              <button onClick={(e) => { e.stopPropagation(); setRenameModal({ isOpen: true, path: node.id, oldName: node.name, type: node.type as any }); setRenameValue(node.name); }} title="Renommer"><Type className="w-3 h-3 hover:text-secondary" /></button>
+              <button onClick={(e) => { e.stopPropagation(); deleteItem(node.id); }} title="Supprimer radicalement"><Trash2 className="w-3 h-3 hover:text-destructive" /></button>
             </div>
           )}
         </div>
