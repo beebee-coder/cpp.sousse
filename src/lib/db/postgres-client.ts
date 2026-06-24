@@ -40,7 +40,7 @@ export const postgresClient = {
         const relativePath = path.relative(REGISTRY_ROOT, fullPath);
         
         // Ignorer les fichiers système cachés
-        if (entry.name.startsWith('.') && entry.name !== 'registry') return null;
+        if (entry.name.startsWith('.')) return null;
 
         if (entry.isDirectory()) {
           const children = await postgresClient.getRegistryTree(fullPath);
@@ -80,6 +80,7 @@ export const postgresClient = {
    */
   getFile: async (relPath: string) => {
     ensureRegistry();
+    if (relPath.includes('..')) throw new Error("CHEMIN_NON_AUTORISE");
     const fullPath = path.join(REGISTRY_ROOT, relPath);
     if (!fs.existsSync(fullPath)) throw new Error("FICHIER_INTROUVABLE");
     return fs.readFileSync(fullPath, 'utf8');
@@ -90,6 +91,7 @@ export const postgresClient = {
    */
   saveFile: async (relPath: string, content: string) => {
     ensureRegistry();
+    if (relPath.includes('..')) throw new Error("CHEMIN_NON_AUTORISE");
     const fullPath = path.join(REGISTRY_ROOT, relPath);
     const dir = path.dirname(fullPath);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -101,6 +103,7 @@ export const postgresClient = {
    */
   createFolder: async (relPath: string) => {
     ensureRegistry();
+    if (relPath.includes('..')) throw new Error("CHEMIN_NON_AUTORISE");
     const fullPath = path.join(REGISTRY_ROOT, relPath);
     if (!fs.existsSync(fullPath)) {
       fs.mkdirSync(fullPath, { recursive: true });
@@ -112,6 +115,7 @@ export const postgresClient = {
    */
   renameItem: async (oldPath: string, newName: string) => {
     ensureRegistry();
+    if (oldPath.includes('..') || newName.includes('..')) throw new Error("CHEMIN_NON_AUTORISE");
     const oldFullPath = path.join(REGISTRY_ROOT, oldPath);
     const dir = path.dirname(oldFullPath);
     const newFullPath = path.join(dir, newName);
@@ -128,10 +132,19 @@ export const postgresClient = {
    */
   deleteItem: async (relPath: string) => {
     ensureRegistry();
+    if (!relPath || relPath === '.' || relPath === '/' || relPath.includes('..')) {
+      throw new Error("SUPPRESSION_NON_AUTORISEE_SUR_RACINE");
+    }
     const fullPath = path.join(REGISTRY_ROOT, relPath);
     if (fs.existsSync(fullPath)) {
-      // Suppression récursive sécurisée
-      fs.rmSync(fullPath, { recursive: true, force: true });
+      try {
+        fs.rmSync(fullPath, { recursive: true, force: true });
+        console.log(`🗑️ [postgresClient] Supprimé : ${fullPath}`);
+      } catch (err: any) {
+        throw new Error(`ERREUR_FS_DELETE : ${err.message}`);
+      }
+    } else {
+      throw new Error("ÉLÉMENT_A_SUPPRIMER_INTROUVABLE");
     }
   },
 

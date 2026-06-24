@@ -48,13 +48,15 @@ class ApiClient {
           headers: { 'Content-Type': 'application/json' },
           body: data ? JSON.stringify(data) : undefined,
         });
-        if (!response.ok) throw new Error(`ERREUR_HTTP_${response.status}`);
-        return await response.json();
+        const json = await response.json();
+        if (!response.ok) throw new Error(json.error || `ERREUR_HTTP_${response.status}`);
+        return json;
       });
-      return { ...result, timestamp };
+      // Spread success from result if it exists, otherwise default to true
+      return { success: true, ...result, timestamp };
     } catch (error: any) {
       const msg = error.name === 'AbortError' ? 'TIMEOUT_LIAISON' : error.message;
-      return { error: msg, offline: true, timestamp } as any;
+      return { error: msg, offline: true, timestamp, success: false } as any;
     }
   }
 
@@ -63,12 +65,13 @@ class ApiClient {
     try {
       const result = await executeHybridRequest<any, any>(endpoint, null, async () => {
         const response = await this.fetchWithTimeout(endpoint, { method: 'GET' });
-        if (!response.ok) throw new Error(`ERREUR_HTTP_${response.status}`);
-        return await response.json();
+        const json = await response.json();
+        if (!response.ok) throw new Error(json.error || `ERREUR_HTTP_${response.status}`);
+        return json;
       });
-      return { ...result, timestamp };
+      return { success: true, ...result, timestamp };
     } catch (error: any) {
-      return { error: error.message, offline: true, timestamp } as any;
+      return { error: error.message, offline: true, timestamp, success: false } as any;
     }
   }
 
@@ -89,10 +92,11 @@ class ApiClient {
     try {
       const result = await executeHybridRequest<any, any>(endpoint, null, async () => {
         const response = await this.fetchWithTimeout(endpoint, { method: 'DELETE' });
-        if (!response.ok) throw new Error(`ERREUR_HTTP_${response.status}`);
-        return await response.json();
+        const json = await response.json();
+        if (!response.ok) throw new Error(json.error || `ERREUR_HTTP_${response.status}`);
+        return json;
       });
-      return { ...result, timestamp, success: true };
+      return { success: true, ...result, timestamp };
     } catch (error: any) {
       return { error: error.message, offline: true, timestamp, success: false } as any;
     }
