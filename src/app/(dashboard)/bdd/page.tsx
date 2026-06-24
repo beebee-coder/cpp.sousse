@@ -74,8 +74,8 @@ export default function BDDPage() {
   const mergeTreeState = useCallback((oldTree: FSNode[], newNodes: FSNode[]): FSNode[] => {
     const applyOpen = (nodes: FSNode[]): FSNode[] => {
       return nodes.map(node => {
-        const old = oldTree.find(o => o.id === node.id);
-        const isOpen = old?.isOpen ?? node.isOpen;
+        const oldNode = findNodeById(oldTree, node.id);
+        const isOpen = oldNode?.isOpen ?? node.isOpen;
         return {
           ...node,
           isOpen,
@@ -85,6 +85,17 @@ export default function BDDPage() {
     };
     return applyOpen(newNodes);
   }, []);
+
+  const findNodeById = (nodes: FSNode[], id: string): FSNode | null => {
+    for (const node of nodes) {
+      if (node.id === id) return node;
+      if (node.children) {
+        const found = findNodeById(node.children, id);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
 
   const refreshRegistry = useCallback(async (isInitial = false) => {
     setIsLoading(true);
@@ -147,7 +158,6 @@ export default function BDDPage() {
   const deleteItem = async (id: string) => {
     if (!confirm(`Supprimer physiquement "${id}" et tout son contenu ?`)) return;
     
-    // MISE À JOUR OPTIMISTE : On retire l'élément immédiatement de l'interface
     const previousTree = [...tree];
     const removeFromTree = (nodes: FSNode[]): FSNode[] => {
       return nodes
@@ -167,13 +177,10 @@ export default function BDDPage() {
       const res = await apiClient.delete<any>(`/api/registry?path=${encodeURIComponent(id)}`);
       if (res.success) {
         toast({ title: "Élément supprimé du registre" });
-        // On rafraîchit quand même en arrière-plan pour être sûr de la cohérence
-        await refreshRegistry();
       } else {
         throw new Error(res.error || "Erreur serveur");
       }
     } catch (error: any) {
-      // ROLLBACK en cas d'échec
       setTree(previousTree);
       toast({ 
         title: "Échec de suppression physique", 

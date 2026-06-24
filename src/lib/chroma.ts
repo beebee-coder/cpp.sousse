@@ -39,6 +39,7 @@ const IS_CLOUD = process.env.VERCEL === '1' || process.env.NODE_ENV === 'product
 
 /**
  * LocalEmbeddingFunction allégée.
+ * En l'absence de Transformers.js, renvoie des vecteurs neutres.
  */
 export class LocalEmbeddingFunction {
   async generate(texts: string[]): Promise<number[][]> {
@@ -60,6 +61,7 @@ export async function getChromaClient(): Promise<any> {
   
   try {
     const chroma = await import('chromadb');
+    // Détection robuste du constructeur selon la version de la lib
     const ChromaClientClass = (chroma as any).ChromaClient || (chroma as any).default?.ChromaClient;
     
     if (ChromaClientClass) {
@@ -78,6 +80,7 @@ export async function getChromaClient(): Promise<any> {
 
 /**
  * Recherche de secours par mots-clés dans le registre physique (Fallback).
+ * Indispensable pour le mode Cloud ou si Chroma est instable.
  */
 export function fallbackSemanticSearch(query: string, nResults = 3, componentFilter?: string): SearchResult[] {
   if (!fs.existsSync(REGISTRY_ITEMS_DIR)) return [];
@@ -92,6 +95,7 @@ export function fallbackSemanticSearch(query: string, nResults = 3, componentFil
       const data = JSON.parse(content);
       const text = `${data.label || ''} ${data.details || ''} ${data.title || ''}`.toLowerCase();
       
+      // Simple keyword matching for fallback
       if (text.includes(lowerQuery) || lowerQuery.split(' ').some(word => word.length > 3 && text.includes(word))) {
         if (componentFilter && data.metadata?.component !== componentFilter) continue;
 
@@ -181,6 +185,7 @@ export async function semanticSearch(options: SearchOptions, embeddingFunction: 
       score: parseFloat((1 - (Number(distances[i]) || 0)).toFixed(4))
     }));
   } catch (e) {
+    // Fallback automatique si ChromaDB échoue
     return fallbackSemanticSearch(query, nResults);
   }
 }

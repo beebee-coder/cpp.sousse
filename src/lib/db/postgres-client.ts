@@ -82,7 +82,7 @@ export const postgresClient = {
     
     if (imageExtensions.includes(ext)) {
       const buffer = fs.readFileSync(fullPath);
-      const mimeType = ext === '.svg' ? 'image/svg+xml' : ext === '.png' ? 'image/png' : 'image/jpeg';
+      const mimeType = ext === '.svg' ? 'image/svg+xml' : 'image/jpeg';
       return `data:${mimeType};base64,${buffer.toString('base64')}`;
     }
 
@@ -135,6 +135,7 @@ export const postgresClient = {
 
   async deleteItem(relPath: string) {
     ensureRegistry();
+    // Normalize path and prevent directory traversal
     const safePath = path.normalize(relPath).replace(/^(\.\.(\/|\\|$))+/, '');
     if (!safePath || safePath === '.' || safePath === '/') throw new Error("ACCES_INTERDIT_RACINE");
     
@@ -142,6 +143,7 @@ export const postgresClient = {
     
     if (fs.existsSync(fullPath)) {
       try {
+        // Radical recursive deletion
         fs.rmSync(fullPath, { recursive: true, force: true });
         console.log(`✅ [POSTGRES_CLIENT] Suppression physique radicale : ${fullPath}`);
       } catch (e: any) {
