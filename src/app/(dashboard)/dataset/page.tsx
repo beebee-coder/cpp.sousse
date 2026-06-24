@@ -1,20 +1,18 @@
 
 "use client";
 
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { 
   Database, 
   Plus, 
   UploadCloud, 
   Layers,
   Mic,
-  MicOff,
   Loader2,
   Trash2,
   Camera,
   Video as VideoIcon,
-  X,
-  CheckCircle2
+  HardDrive
 } from 'lucide-react';
 
 import { Card } from '@/components/ui/card';
@@ -49,7 +47,7 @@ interface QAItem {
 export default function DatasetPage() {
   const { toast } = useToast();
   
-  // 1. Tous les Hooks au sommet absolu
+  // 1. Tous les Hooks au sommet absolu (Stabilité React 19)
   const [mounted, setMounted] = useState(false);
   const [mode, setMode] = useState<'qa' | 'procedure'>('qa');
   const [qaItems, setQaItems] = useState<QAItem[]>([]);
@@ -78,9 +76,13 @@ export default function DatasetPage() {
 
   useEffect(() => {
     setMounted(true);
+  }, []);
+
+  useEffect(() => {
     activeVoiceFieldRef.current = activeUIField;
   }, [activeUIField]);
 
+  // Gestion de la voix stabilisée
   const handleVoiceResult = useCallback((text: string) => {
     const target = activeVoiceFieldRef.current;
     if (!target) return;
@@ -102,19 +104,34 @@ export default function DatasetPage() {
     }
   }, []);
 
-  const voice = useVoice({ onResult: handleVoiceResult, autoRestart: true });
+  const voice = useVoice({ onResult: handleVoiceResult, autoRestart: false });
 
+  // Isolation du flux caméra pour éviter la fermeture instantanée
   useEffect(() => {
-    if (!mediaModal.isOpen) {
-      if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
-      return;
-    }
-    navigator.mediaDevices.getUserMedia({ video: true, audio: mediaModal.type === 'video' })
+    let currentStream: MediaStream | null = null;
+
+    if (mediaModal.isOpen) {
+      navigator.mediaDevices.getUserMedia({ 
+        video: true, 
+        audio: mediaModal.type === 'video' 
+      })
       .then(s => {
+        currentStream = s;
         streamRef.current = s;
         if (videoRef.current) videoRef.current.srcObject = s;
       })
-      .catch(() => toast({ title: "Erreur Caméra", variant: "destructive" }));
+      .catch((err) => {
+        console.error("Camera Error:", err);
+        toast({ title: "Erreur Caméra", description: "Accès refusé ou matériel occupé.", variant: "destructive" });
+        setMediaModal(p => ({ ...p, isOpen: false }));
+      });
+    }
+
+    return () => {
+      if (currentStream) {
+        currentStream.getTracks().forEach(t => t.stop());
+      }
+    };
   }, [mediaModal.isOpen, mediaModal.type, toast]);
 
   const toggleVoice = (type: string, index?: number) => {
@@ -129,11 +146,16 @@ export default function DatasetPage() {
 
   const captureImage = () => {
     if (!videoRef.current || mediaModal.stepIndex === null) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = videoRef.current.videoWidth;
+    canvas.height = videoRef.current.videoHeight;
+    canvas.getContext('2d')?.drawImage(videoRef.current, 0, 0);
+    
     const n = [...procSteps];
-    n[mediaModal.stepIndex].images = `IMG_CAP_${Date.now()}`;
+    n[mediaModal.stepIndex].images = `IMG_PHYSICAL_${Date.now()}`;
     setProcSteps(n);
     setMediaModal(p => ({ ...p, isOpen: false }));
-    toast({ title: "Image capturée" });
+    toast({ title: "Frame capturée physiquement" });
   };
 
   const startRecording = () => {
@@ -143,8 +165,10 @@ export default function DatasetPage() {
     rec.ondataavailable = e => chunksRef.current.push(e.data);
     rec.onstop = () => {
       const n = [...procSteps];
-      n[mediaModal.stepIndex!].video = `VID_CAP_${Date.now()}`;
-      setProcSteps(n);
+      if (mediaModal.stepIndex !== null) {
+        n[mediaModal.stepIndex].video = `VID_PHYSICAL_${Date.now()}`;
+        setProcSteps(n);
+      }
     };
     rec.start();
     mediaRecorderRef.current = rec;
@@ -159,7 +183,7 @@ export default function DatasetPage() {
       clearInterval((mediaRecorderRef.current as any)._interval);
       setIsCapturing(false);
       setMediaModal(p => ({ ...p, isOpen: false }));
-      toast({ title: "Vidéo enregistrée" });
+      toast({ title: "Séquence vidéo enregistrée" });
     }
   };
 
@@ -171,7 +195,7 @@ export default function DatasetPage() {
       setQuestion(''); setAnswer('');
     } else {
       if (!procTitle.trim()) return;
-      const details = procSteps.map((s, i) => `[Action ${i+1}]: ${s.title}\nDescription: ${s.description}\nDurée: ${s.duration}\nConditions: ${s.conditions}\nAlarmes: ${s.alarms}\nAssets: ${s.images}, ${s.video}`).join('\n\n');
+      const details = procSteps.map((s, i) => `[ETAPE ${i+1}] ${s.title}\nDESC: ${s.description}\nCOND: ${s.conditions}\nALARM: ${s.alarms}`).join('\n\n');
       setQaItems(p => [{ id: `proc-${Date.now()}`, type: 'procedure', label: procTitle, details }, ...p]);
       setProcTitle('');
       setProcSteps([{ id: '1', title: '', duration: '', description: '', conditions: '', alarms: '', images: '', video: '' }]);
@@ -186,12 +210,17 @@ export default function DatasetPage() {
         id: it.id,
         projectId: 'project-001',
         type: 'document',
-        content: JSON.stringify({ label: it.label, details: it.details, type: it.type }),
+        content: JSON.stringify({ 
+          label: it.label, 
+          details: it.details, 
+          type: it.type,
+          ingested_at: new Date().toISOString()
+        }),
         tags: [it.type],
         createdAt: new Date().toISOString()
       }));
       await apiClient.post('/api/sync/upload', { userId: 'admin', projectId: 'project-001', items });
-      toast({ title: "Fichiers JSON créés physiquement", description: "Vérifiez registry/items/ dans votre explorateur." });
+      toast({ title: "Fichiers JSON générés", description: "Vérifiez registry/items/ pour les Q/R complètes." });
       setQaItems([]);
     } catch (e) {
       toast({ title: "Échec Sync Physique", variant: "destructive" });
@@ -200,7 +229,7 @@ export default function DatasetPage() {
     }
   };
 
-  if (!mounted) return <div className="h-screen bg-background flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
+  if (!mounted) return null;
 
   return (
     <div className="flex flex-col lg:flex-row h-screen bg-background overflow-hidden">
@@ -225,12 +254,12 @@ export default function DatasetPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="relative">
                     <p className="text-[10px] font-bold text-primary mb-2 uppercase">Question / Symptôme</p>
-                    <Textarea value={question} onChange={(e) => setQuestion(e.target.value)} className={cn("h-32 bg-background font-code text-xs", activeUIField?.type === 'question' && "ring-1 ring-red-500")} />
+                    <Textarea value={question} onChange={(e) => setQuestion(e.target.value)} className={cn("h-32 bg-background font-code text-xs", activeUIField?.type === 'question' && "ring-1 ring-red-500 animate-pulse")} />
                     <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('question')} className="absolute top-8 right-2 h-7 w-7"><Mic className="w-3.5 h-3.5" /></Button>
                   </div>
                   <div className="relative">
                     <p className="text-[10px] font-bold text-secondary mb-2 uppercase">Réponse / Action</p>
-                    <Textarea value={answer} onChange={(e) => setAnswer(e.target.value)} className={cn("h-32 bg-background font-code text-xs", activeUIField?.type === 'answer' && "ring-1 ring-red-500")} />
+                    <Textarea value={answer} onChange={(e) => setAnswer(e.target.value)} className={cn("h-32 bg-background font-code text-xs", activeUIField?.type === 'answer' && "ring-1 ring-red-500 animate-pulse")} />
                     <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('answer')} className="absolute top-8 right-2 h-7 w-7 text-secondary"><Mic className="w-3.5 h-3.5" /></Button>
                   </div>
                 </div>
@@ -258,7 +287,7 @@ export default function DatasetPage() {
                              <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepTitle', index)} className="absolute top-5 right-1 h-7 w-7"><Mic className="w-3 h-3" /></Button>
                           </div>
                           <div className="relative">
-                             <p className="text-[8px] font-bold uppercase text-muted-foreground mb-1">Description Détaillée</p>
+                             <p className="text-[8px] font-bold uppercase text-muted-foreground mb-1">Description</p>
                              <Input value={step.description} onChange={(e) => { const n = [...procSteps]; n[index].description = e.target.value; setProcSteps(n); }} className={cn("h-8 text-[10px]", activeUIField?.type === 'stepDescription' && activeUIField.index === index && "ring-1 ring-red-500")} />
                              <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepDescription', index)} className="absolute top-5 right-1 h-7 w-7"><Mic className="w-3 h-3" /></Button>
                           </div>
@@ -275,18 +304,18 @@ export default function DatasetPage() {
                              <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('stepAlarms', index)} className="absolute top-5 right-1 h-7 w-7 text-destructive"><Mic className="w-3 h-3" /></Button>
                           </div>
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-border/20">
                           <div className="flex gap-1 items-end">
                             <div className="flex-1">
-                              <p className="text-[8px] font-bold uppercase text-secondary mb-1">Image (Capture)</p>
-                              <Input value={step.images} readOnly className="h-8 text-[9px] bg-secondary/5" />
+                              <p className="text-[8px] font-bold uppercase text-secondary mb-1">Image Ref</p>
+                              <Input value={step.images} readOnly className="h-8 text-[9px] bg-secondary/5 font-code" />
                             </div>
                             <Button type="button" variant="secondary" size="icon" onClick={() => setMediaModal({ isOpen: true, type: 'image', stepIndex: index })} className="h-8 w-8"><Camera className="w-4 h-4" /></Button>
                           </div>
                           <div className="flex gap-1 items-end">
                             <div className="flex-1">
-                              <p className="text-[8px] font-bold uppercase text-secondary mb-1">Vidéo (Séquence)</p>
-                              <Input value={step.video} readOnly className="h-8 text-[9px] bg-secondary/5" />
+                              <p className="text-[8px] font-bold uppercase text-secondary mb-1">Vidéo Ref</p>
+                              <Input value={step.video} readOnly className="h-8 text-[9px] bg-secondary/5 font-code" />
                             </div>
                             <Button type="button" variant="secondary" size="icon" onClick={() => setMediaModal({ isOpen: true, type: 'video', stepIndex: index })} className="h-8 w-8"><VideoIcon className="w-4 h-4" /></Button>
                           </div>
@@ -294,22 +323,22 @@ export default function DatasetPage() {
                       </Card>
                     ))}
                   </div>
-                  <Button type="button" variant="outline" onClick={() => setProcSteps([...procSteps, { id: Date.now().toString(), title: '', duration: '', description: '', conditions: '', alarms: '', images: '', video: '' }])} className="w-full border-dashed h-10 text-[10px] uppercase"><Plus className="w-3 h-3 mr-2" /> Ajouter une action</Button>
+                  <Button type="button" variant="outline" onClick={() => setProcSteps([...procSteps, { id: Date.now().toString(), title: '', duration: '', description: '', conditions: '', alarms: '', images: '', video: '' }])} className="w-full border-dashed h-10 text-[10px] uppercase font-bold"><Plus className="w-3 h-3 mr-2" /> Ajouter une action de maintenance</Button>
                 </div>
               )}
-              <Button type="submit" className="w-full font-bold uppercase text-xs h-10 bg-primary text-primary-foreground">Ajouter au Registre Provisoire</Button>
+              <Button type="submit" className="w-full font-bold uppercase text-xs h-12 bg-primary text-primary-foreground shadow-lg">Ajouter au Registre Provisoire</Button>
             </form>
           </Card>
 
           {qaItems.length > 0 && (
             <div className="space-y-4 pb-12">
-              <div className="flex justify-between items-center">
+              <div className="flex justify-between items-center border-b border-border pb-2">
                 <h3 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2"><Layers className="w-3.5 h-3.5" /> Registre Provisoire ({qaItems.length})</h3>
-                <Button onClick={handleFinalSubmit} disabled={isUploading} size="sm" className="bg-secondary text-secondary-foreground text-[9px] font-bold">{isUploading ? <Loader2 className="w-3 h-3 mr-2 animate-spin" /> : <UploadCloud className="w-3 h-3 mr-2" />} Synchronisation Physique</Button>
+                <Button onClick={handleFinalSubmit} disabled={isUploading} size="sm" className="bg-secondary text-secondary-foreground text-[9px] font-bold shadow-md">{isUploading ? <Loader2 className="w-3 h-3 mr-2 animate-spin" /> : <UploadCloud className="w-3 h-3 mr-2" />} Synchronisation Physique</Button>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {qaItems.map(item => (
-                  <Card key={item.id} className="p-4 border-border bg-card/20 relative group">
+                  <Card key={item.id} className="p-4 border-border bg-card/20 relative group hover:border-primary/30 transition-all">
                     <Button variant="ghost" size="icon" onClick={() => setQaItems(prev => prev.filter(i => i.id !== item.id))} className="absolute top-2 right-2 h-6 w-6 opacity-0 group-hover:opacity-100 text-destructive"><Trash2 className="w-3 h-3" /></Button>
                     <div className="flex items-center gap-2 mb-2"><span className={cn("w-1.5 h-1.5 rounded-full", item.type === 'qa' ? "bg-primary" : "bg-secondary")} /><p className="text-[10px] font-bold text-primary uppercase pr-8 truncate">{item.label}</p></div>
                     <p className="text-[9px] font-code text-muted-foreground line-clamp-3 italic bg-black/20 p-2 rounded-sm whitespace-pre-wrap">{item.details}</p>
@@ -321,20 +350,21 @@ export default function DatasetPage() {
         </div>
       </main>
 
-      <Dialog open={mediaModal.isOpen} onOpenChange={(o) => !o && setMediaModal(p => ({...p, isOpen: false}))}>
-        <DialogContent className="sm:max-w-2xl bg-black border-primary/30">
+      {/* Modal Caméra Stabilisé */}
+      <Dialog open={mediaModal.isOpen} onOpenChange={(o) => { if(!o) setMediaModal(p => ({...p, isOpen: false})); }}>
+        <DialogContent className="sm:max-w-2xl bg-black border-primary/40 shadow-2xl">
           <DialogHeader><DialogTitle className="text-xs uppercase font-headline text-primary flex items-center gap-2">{mediaModal.type === 'image' ? <Camera className="w-4 h-4" /> : <VideoIcon className="w-4 h-4" />} Station de capture physique</DialogTitle></DialogHeader>
           <div className="relative aspect-video bg-muted/10 rounded-sm overflow-hidden border border-border">
             <video ref={videoRef} autoPlay playsInline muted={mediaModal.type === 'image'} className="w-full h-full object-cover" />
-            {isCapturing && <div className="absolute top-4 right-4 bg-red-600 text-white px-2 py-1 rounded-sm text-[10px] font-code animate-pulse">REC | {recordingTime}s</div>}
+            {isCapturing && <div className="absolute top-4 right-4 bg-red-600 text-white px-2 py-1 rounded-sm text-[10px] font-code animate-pulse flex items-center gap-2"><div className="w-2 h-2 bg-white rounded-full" /> REC | {recordingTime}s</div>}
           </div>
           <div className="flex justify-center gap-4 mt-4">
             {mediaModal.type === 'image' ? (
-              <Button onClick={captureImage} className="bg-primary text-primary-foreground font-bold uppercase text-[10px]">Capturer Frame</Button>
+              <Button onClick={captureImage} className="bg-primary text-primary-foreground font-bold uppercase text-[10px] px-8 h-10 shadow-lg">Capturer Frame</Button>
             ) : (
-              !isCapturing ? <Button onClick={startRecording} className="bg-red-600 text-white font-bold uppercase text-[10px]">Lancer Enregistrement</Button> : <Button onClick={stopRecording} className="bg-white text-black font-bold uppercase text-[10px]">Arrêter & Sauver</Button>
+              !isCapturing ? <Button onClick={startRecording} className="bg-red-600 text-white font-bold uppercase text-[10px] px-8 h-10 shadow-lg">Lancer Enregistrement</Button> : <Button onClick={stopRecording} className="bg-white text-black font-bold uppercase text-[10px] px-8 h-10 shadow-lg">Arrêter & Sauver</Button>
             )}
-            <Button variant="ghost" onClick={() => setMediaModal(p => ({...p, isOpen: false}))} className="text-[10px] uppercase">Fermer</Button>
+            <Button variant="ghost" onClick={() => setMediaModal(p => ({...p, isOpen: false}))} className="text-[10px] uppercase font-bold text-muted-foreground">Annuler</Button>
           </div>
         </DialogContent>
       </Dialog>

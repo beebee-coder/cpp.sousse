@@ -5,6 +5,7 @@ import path from 'path';
 /**
  * Infrastructure de liaison physique pour le Registre Cloud (simulé).
  * Stocke chaque document comme un fichier JSON individuel pour une visibilité maximale.
+ * Les données sont "aplaties" à la racine pour faciliter l'audit humain.
  */
 
 const REGISTRY_DIR = path.join(process.cwd(), 'registry');
@@ -49,19 +50,38 @@ export const postgresClient = {
 
   /**
    * Insère chaque item dans un fichier JSON physique distinct.
+   * Aplatit le contenu pour que Question/Réponse soient visibles à la racine.
    */
   upsertCloudData: async (items: any[]): Promise<void> => {
     try {
       items.forEach(newItem => {
         const id = newItem.id.replace(/[^a-zA-Z0-9-]/g, '_');
         const filePath = path.join(ITEMS_DIR, `${id}.json`);
+        
+        // Extraction et aplatissement du contenu pour l'audit physique
+        let parsedContent = {};
+        if (typeof newItem.content === 'string') {
+          try {
+            parsedContent = JSON.parse(newItem.content);
+          } catch (e) {
+            parsedContent = { raw_text: newItem.content };
+          }
+        } else {
+          parsedContent = newItem.content || {};
+        }
+
         const dataToSave = {
-          ...newItem,
-          createdAt: newItem.createdAt || new Date().toISOString()
+          id: newItem.id,
+          projectId: newItem.projectId,
+          type: newItem.type,
+          tags: newItem.tags,
+          createdAt: newItem.createdAt || new Date().toISOString(),
+          ...parsedContent // Injection de label (Question) et details (Réponse) à la racine
         };
+
         fs.writeFileSync(filePath, JSON.stringify(dataToSave, null, 2));
       });
-      console.log(`✅ [NEON_FS] ${items.length} fichiers JSON créés dans registry/items/`);
+      console.log(`✅ [NEON_FS] ${items.length} fichiers JSON enrichis créés dans registry/items/`);
     } catch (e) {
       console.error("❌ [NEON_FS] Erreur écriture fichiers items :", e);
       throw new Error("REGISTRY_WRITE_FAILED");

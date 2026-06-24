@@ -5,22 +5,18 @@ import { useState, useEffect, useCallback } from 'react';
 import { DashboardSidebar } from '@/components/dashboard/Sidebar';
 import { 
   Folder, 
-  File, 
-  ChevronRight, 
-  ChevronDown, 
   Database, 
   RefreshCw,
-  Server,
   CloudLightning,
   ShieldAlert,
   Zap,
-  ArrowRight,
   HardDrive,
-  FileJson
+  FileJson,
+  ChevronRight,
+  ChevronDown
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { apiClient } from '@/lib/api-client';
 import { useToast } from '@/hooks/use-toast';
@@ -40,15 +36,12 @@ export default function BDDPage() {
   const [tree, setTree] = useState<FSNode[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isPurging, setIsPurging] = useState(false);
-  const [activeProvider, setActiveProvider] = useState<string>('DÉTECTION...');
 
-  // 1. Scan Physique ChromaDB
   const syncChromaState = useCallback(async (isAuto = false) => {
     setIsSyncing(true);
     try {
       const res = await apiClient.get<any>('/api/vector/collections');
       if (res && res.success) {
-        setActiveProvider(res.provider || 'CHROMA');
         const chromaNodes = res.collections.map((c: any) => ({
           id: `chroma-${c.name}`,
           name: `${c.name} (${c.count || 0} docs)`,
@@ -65,18 +58,15 @@ export default function BDDPage() {
             children: chromaNodes 
           }
         ]);
-        
-        if (!isAuto) toast({ title: "Moteur Détecté", description: `Liaison établie avec ${res.provider}.` });
+        if (!isAuto) toast({ title: "Scan Chroma Réussi", description: `Liaison établie avec le moteur local.` });
       }
     } catch (e) {
-      setActiveProvider('ERREUR_LIAISON');
       setTree([{ id: 'error', name: 'MOTEUR_INDISPONIBLE', type: 'folder' }]);
     } finally {
       setIsSyncing(false);
     }
   }, [toast]);
 
-  // 2. Scan Physique Registre Web (Dossier registry/items/)
   const syncWebState = useCallback(async () => {
     setIsSyncing(true);
     try {
@@ -126,21 +116,20 @@ export default function BDDPage() {
       if (res.items && res.items.length > 0) {
         // Ingestion dans ChromaDB
         await apiClient.post('/api/vector/ingest', {
-          items: res.items.map((i: any) => {
-            const data = JSON.parse(i.content);
-            return { question: data.label, answer: data.details };
-          }),
-          metadata: { collection: 'industrial_manuals', source: 'sync_web' }
+          items: res.items.map((i: any) => ({
+            question: i.label || "Sans Titre",
+            answer: i.details || "Sans Contenu"
+          })),
+          metadata: { collection: 'industrial_manuals', source: 'sync_physical_web' }
         });
 
-        // Purge Physique des fichiers JSON
         const ids = res.items.map((i: any) => i.id);
         await apiClient.post('/api/sync/cleanup', { ids, projectId: 'project-001' });
 
-        toast({ title: "Cycle Terminé", description: `${ids.length} fichiers transférés vers Chroma et supprimés de registry/items/.` });
+        toast({ title: "Cycle Terminé", description: `${ids.length} fichiers JSON vectorisés et purgés.` });
         syncWebState();
       } else {
-        toast({ title: "Tampon Vide", description: "Aucun fichier JSON détecté dans le registre." });
+        toast({ title: "Tampon Vide", description: "Aucun fichier JSON détecté." });
       }
     } catch (e) {
       toast({ title: "Échec Cycle", variant: "destructive" });
@@ -165,13 +154,7 @@ export default function BDDPage() {
             </button>
           ) : <div className="w-4.5" />}
           
-          {node.type === 'folder' ? (
-            <Folder className="w-4 h-4 text-primary" />
-          ) : node.type === 'collection' ? (
-            <Database className="w-4 h-4 text-secondary" />
-          ) : (
-            <FileJson className="w-4 h-4 text-muted-foreground" />
-          )}
+          {node.type === 'folder' ? <Folder className="w-4 h-4 text-primary" /> : node.type === 'collection' ? <Database className="w-4 h-4 text-secondary" /> : <FileJson className="w-4 h-4 text-muted-foreground" />}
           
           <span className="text-[11px] font-code uppercase truncate py-0.5">
             {node.name}
@@ -229,7 +212,7 @@ export default function BDDPage() {
                   <HardDrive className={cn("w-16 h-16 mx-auto mb-6", isSyncing ? "text-primary animate-spin" : "text-muted-foreground/30")} />
                   <h3 className="font-headline font-bold text-xl uppercase tracking-widest mb-4 text-white">Moteur Vectoriel Local</h3>
                   <p className="text-xs text-muted-foreground font-code mb-8 leading-relaxed">
-                    Les données sont indexées physiquement dans le répertoire <span className="text-primary">/data/chromadb</span>. 
+                    Les données indexées dans <span className="text-primary">/data/chromadb</span> sont persistantes et sémantiques.
                   </p>
                   <Button variant="outline" size="lg" onClick={() => syncChromaState()} disabled={isSyncing} className="w-full border-primary/30 hover:border-primary text-[11px] uppercase font-code tracking-widest">
                     <RefreshCw className={cn("w-4 h-4 mr-3", isSyncing && "animate-spin")} /> Scanner l'index local
@@ -240,24 +223,23 @@ export default function BDDPage() {
                   <CloudLightning className={cn("w-16 h-16 mx-auto mb-6", isSyncing ? "text-secondary animate-pulse" : "text-muted-foreground/30")} />
                   <h3 className="font-headline font-bold text-xl uppercase tracking-widest mb-4 text-white">Registre Physique Web</h3>
                   <p className="text-xs text-muted-foreground font-code mb-8 leading-relaxed">
-                    Les fichiers JSON dans <span className="text-secondary">/registry/items/</span> servent de tampon. 
-                    Chaque Q/R et procédure est un fichier physique éditable.
+                    Chaque fichier JSON dans <span className="text-secondary">/registry/items/</span> contient une Q/R complète.
                   </p>
                   
                   <div className="space-y-4">
                     <Card className="p-6 border-secondary/20 bg-secondary/5 text-left border-dashed">
                       <div className="flex items-center gap-3 mb-3">
                         <Zap className="w-4 h-4 text-secondary" />
-                        <p className="text-xs font-bold text-secondary uppercase">Action Atomique : Transfert de fichiers</p>
+                        <p className="text-xs font-bold text-secondary uppercase">Ingestion Atomique</p>
                       </div>
                       <p className="text-[11px] font-code text-muted-foreground leading-relaxed">
-                        Le système lit les fichiers JSON, les vectorise dans ChromaDB, puis supprime les fichiers sources pour libérer le registre.
+                        Vectorise les fichiers JSON locaux dans ChromaDB puis purge le dossier temporaire.
                       </p>
                     </Card>
                     
                     <Button onClick={syncWebAndPurge} disabled={isSyncing} className="w-full bg-secondary text-secondary-foreground h-12 text-xs font-code uppercase font-bold shadow-lg">
                       {isPurging ? <ShieldAlert className="w-4 h-4 mr-3 animate-bounce" /> : <RefreshCw className="w-4 h-4 mr-3" />}
-                      {isPurging ? "Liaison Physique en cours..." : "Ingérer & Purger Dossier Items"}
+                      {isPurging ? "Traitement Physique..." : "Ingérer & Purger Items JSON"}
                     </Button>
                   </div>
                 </>
