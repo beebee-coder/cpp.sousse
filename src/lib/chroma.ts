@@ -1,6 +1,8 @@
+
 /**
  * @fileOverview Gestionnaire ChromaDB sécurisé pour l'environnement hybride.
  * Configure la persistance physique pour le développement local et Tauri.
+ * Utilise un dossier caché (.data) pour éviter les redémarrages de Next.js.
  */
 
 import path from 'path';
@@ -28,7 +30,7 @@ export interface SearchResult {
 }
 
 // ─── INITIALISATION PHYSIQUE DES RÉPERTOIRES ────────────────────────────────
-const CHROMA_DATA_DIR = path.join(process.cwd(), 'data', 'chromadb');
+const CHROMA_DATA_DIR = path.join(process.cwd(), '.data', 'chromadb');
 if (!fs.existsSync(CHROMA_DATA_DIR)) {
   fs.mkdirSync(CHROMA_DATA_DIR, { recursive: true });
 }
@@ -74,17 +76,13 @@ let _chromaClient: any = null;
 
 /**
  * Récupère le client ChromaDB. 
- * En mode local, utilise le PersistentClient pour s'ancrer sur le répertoire physique.
  */
 export async function getChromaClient(): Promise<any> {
   if (IS_CLOUD) return null;
   if (_chromaClient) return _chromaClient;
   try {
-    // Import dynamique pour éviter de charger les modules lourds côté client
     const { ChromaClient } = await import('chromadb');
     
-    // Si nous sommes dans l'IDE ou en mode Desktop, nous utilisons la persistance locale
-    // Note: Certaines versions de chromadb utilisent PersistentClient, d'autres ChromaClient({ path })
     _chromaClient = new ChromaClient({ 
       path: `file://${CHROMA_DATA_DIR}` 
     });
@@ -211,9 +209,6 @@ export async function searchAcrossCollections(query: string, nResultsPerCollecti
   }
 }
 
-/**
- * Initialisation automatique des manuels pour la démonstration.
- */
 export async function seedIndustrialManuals() {
   if (IS_CLOUD) return;
   try {

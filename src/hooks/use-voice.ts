@@ -80,6 +80,8 @@ export function useVoice(options: VoiceOptions = {}) {
           console.warn("[VOICE_HOOK] Échec redémarrage automatique.");
         }
       }
+      
+      if (optionsRef.current.onEnd) optionsRef.current.onEnd();
     };
 
     recognition.onerror = (event: any) => {
@@ -88,7 +90,7 @@ export function useVoice(options: VoiceOptions = {}) {
 
       if (err === 'not-allowed' || err === 'service-not-allowed') {
         hasPermissionError.current = true;
-        console.warn(`[VOICE_HOOK] ⚠️ Permission microphone refusée ou indisponible (SSL requis pour Speech API).`);
+        console.warn(`[VOICE_HOOK] ⚠️ Permission microphone refusée ou indisponible.`);
       } else {
         console.warn(`[VOICE_HOOK] ❌ Erreur Speech API : ${err}`);
       }
@@ -141,5 +143,11 @@ export function useVoice(options: VoiceOptions = {}) {
     window.speechSynthesis.speak(utterance);
   }, []);
 
-  return { ...state, startListening, stopListening, speak };
+  const cancelSpeak = useCallback(() => {
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+  }, []);
+
+  return { ...state, startListening, stopListening, speak, cancelSpeak };
 }

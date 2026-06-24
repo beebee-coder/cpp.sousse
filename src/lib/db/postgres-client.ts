@@ -1,19 +1,21 @@
+
 import fs from 'fs';
 import path from 'path';
 
 /**
  * Infrastructure de liaison physique pour le Registre.
- * Supporte la gestion complète des fichiers et répertoires récursifs.
+ * Utilise un dossier caché (.registry) pour éviter de déclencher le watcher de Next.js
+ * lors des écritures, empêchant ainsi le rechargement intempestif de la page.
  */
 
-const REGISTRY_ROOT = path.join(process.cwd(), 'registry');
+const REGISTRY_ROOT = path.join(process.cwd(), '.registry');
 
 // Assure l'existence du répertoire racine
 if (!fs.existsSync(REGISTRY_ROOT)) fs.mkdirSync(REGISTRY_ROOT, { recursive: true });
 
 export const postgresClient = {
   /**
-   * Récupère l'arborescence complète du répertoire registry/
+   * Récupère l'arborescence complète du répertoire .registry/
    */
   getRegistryTree: async (dir = REGISTRY_ROOT): Promise<any[]> => {
     if (!fs.existsSync(dir)) return [];
