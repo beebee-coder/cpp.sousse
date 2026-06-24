@@ -52,8 +52,9 @@ class ApiClient {
         if (!response.ok) throw new Error(json.error || `ERREUR_HTTP_${response.status}`);
         return json;
       });
-      // Spread success from result if it exists, otherwise default to true
-      return { success: true, ...result, timestamp };
+      
+      // On retourne le résultat brut qui contient déjà le champ success du serveur
+      return { ...result, timestamp } as ApiResponse<T>;
     } catch (error: any) {
       const msg = error.name === 'AbortError' ? 'TIMEOUT_LIAISON' : error.message;
       return { error: msg, offline: true, timestamp, success: false } as any;
@@ -69,7 +70,7 @@ class ApiClient {
         if (!response.ok) throw new Error(json.error || `ERREUR_HTTP_${response.status}`);
         return json;
       });
-      return { success: true, ...result, timestamp };
+      return { ...result, timestamp } as ApiResponse<T>;
     } catch (error: any) {
       return { error: error.message, offline: true, timestamp, success: false } as any;
     }
@@ -96,7 +97,7 @@ class ApiClient {
         if (!response.ok) throw new Error(json.error || `ERREUR_HTTP_${response.status}`);
         return json;
       });
-      return { success: true, ...result, timestamp };
+      return { ...result, timestamp } as ApiResponse<T>;
     } catch (error: any) {
       return { error: error.message, offline: true, timestamp, success: false } as any;
     }

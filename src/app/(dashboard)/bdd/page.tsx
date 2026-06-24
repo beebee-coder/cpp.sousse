@@ -70,7 +70,6 @@ export default function BDDPage() {
 
   /**
    * Fusionne l'état actuel de l'UI (dossiers ouverts) avec les nouvelles données du serveur.
-   * Utilise une approche pure pour éviter les mutations.
    */
   const mergeTreeState = useCallback((newNodes: FSNode[], oldNodes: FSNode[]): FSNode[] => {
     const openPaths = new Set<string>();
@@ -219,11 +218,12 @@ export default function BDDPage() {
 
   /**
    * Action de suppression pure et optimiste.
+   * Retire l'élément instantanément de l'interface avant confirmation serveur.
    */
   const deleteItem = async (id: string) => {
-    if (!confirm("Supprimer définitivement cet élément et tout son contenu ?")) return;
+    if (!confirm("Supprimer définitivement cet élément et tout son contenu physique ?")) return;
     
-    // 1. Sauvegarde pour rollback
+    // 1. Sauvegarde pour rollback en cas d'erreur
     const oldTree = JSON.parse(JSON.stringify(tree));
     
     // 2. Mise à jour optimiste IMMÉDIATE (Pure)
@@ -239,7 +239,7 @@ export default function BDDPage() {
     setTree(prev => removeFromTree(prev));
     if (selectedFile === id) setSelectedFile(null);
 
-    // 3. Appel API réel
+    // 3. Appel API réel pour suppression physique
     try {
       const res = await apiClient.delete(`/api/registry?path=${encodeURIComponent(id)}`);
       if (res.success) {
@@ -249,7 +249,7 @@ export default function BDDPage() {
       }
     } catch (error: any) {
       toast({ title: "Échec de suppression", description: error.message, variant: "destructive" });
-      // Rollback
+      // Rollback de l'état UI en cas d'échec serveur
       setTree(oldTree);
     }
   };
