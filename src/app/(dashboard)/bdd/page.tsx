@@ -145,7 +145,7 @@ export default function BDDPage() {
       setNewModal({ ...newModal, isOpen: false });
       setNewName('');
       refreshRegistry();
-      toast({ title: "Élément créé" });
+      toast({ title: newModal.type === 'file' ? "Fichier créé" : "Répertoire créé" });
     } catch (e) {
       toast({ title: "Erreur de création", variant: "destructive" });
     }
@@ -166,7 +166,6 @@ export default function BDDPage() {
       
       if (res.success) {
         setRenameModal({ ...renameModal, isOpen: false });
-        // Désélectionner si le fichier actif a été renommé pour rafraîchir la vue
         if (selectedFile === renameModal.path) setSelectedFile(null);
         refreshRegistry();
         toast({ title: "Élément renommé" });
@@ -212,7 +211,7 @@ export default function BDDPage() {
               <button className="p-0.5 text-muted-foreground">
                 {node.isOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
               </button>
-            ) : <div className="w-4.5" />}
+            ) : <div className="w-4" />}
             
             {node.type === 'folder' ? <Folder className="w-3.5 h-3.5 text-primary" /> : node.type === 'collection' ? <Database className="w-3.5 h-3.5 text-secondary" /> : <FileJson className="w-3.5 h-3.5 text-muted-foreground" />}
             
@@ -222,12 +221,15 @@ export default function BDDPage() {
           </div>
 
           {mode === 'web' && (
-            <div className="hidden group-hover:flex items-center gap-1">
+            <div className="hidden group-hover:flex items-center gap-0.5">
               {node.type === 'folder' && (
-                <button onClick={(e) => { e.stopPropagation(); setNewModal({ isOpen: true, type: 'file', parent: node.id }); }} className="p-1 hover:text-primary"><Plus className="w-3 h-3" /></button>
+                <>
+                  <button title="Nouveau Fichier" onClick={(e) => { e.stopPropagation(); setNewModal({ isOpen: true, type: 'file', parent: node.id }); }} className="p-1 hover:text-primary"><FilePlus className="w-3 h-3" /></button>
+                  <button title="Nouveau Sous-Répertoire" onClick={(e) => { e.stopPropagation(); setNewModal({ isOpen: true, type: 'folder', parent: node.id }); }} className="p-1 hover:text-primary"><FolderPlus className="w-3 h-3" /></button>
+                </>
               )}
-              <button onClick={(e) => { e.stopPropagation(); setRenameModal({ isOpen: true, path: node.id, oldName: node.name, type: node.type as any }); setRenameValue(node.name); }} className="p-1 hover:text-secondary"><Type className="w-3 h-3" /></button>
-              <button onClick={(e) => { e.stopPropagation(); deleteItem(node.id); }} className="p-1 hover:text-destructive"><Trash2 className="w-3 h-3" /></button>
+              <button title="Renommer" onClick={(e) => { e.stopPropagation(); setRenameModal({ isOpen: true, path: node.id, oldName: node.name, type: node.type as any }); setRenameValue(node.name); }} className="p-1 hover:text-secondary"><Type className="w-3 h-3" /></button>
+              <button title="Supprimer" onClick={(e) => { e.stopPropagation(); deleteItem(node.id); }} className="p-1 hover:text-destructive"><Trash2 className="w-3 h-3" /></button>
             </div>
           )}
         </div>
@@ -249,7 +251,7 @@ export default function BDDPage() {
             <div className="lg:hidden w-10" />
             <div className="flex items-center gap-2">
               <HardDrive className="w-4 h-4 text-primary" />
-              <span className="font-headline font-bold text-xs uppercase tracking-widest text-primary">Gestionnaire FS Physique</span>
+              <span className="font-headline font-bold text-xs uppercase tracking-widest text-primary">Gestionnaire de Structure Physique</span>
             </div>
           </div>
           <div className="flex bg-muted/30 p-1 rounded-sm border border-border">
@@ -266,16 +268,16 @@ export default function BDDPage() {
               <div className="flex items-center gap-1">
                 {mode === 'web' && (
                   <>
-                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setNewModal({ isOpen: true, type: 'folder', parent: null })}>
-                      <FolderPlus className="w-3 h-3" />
+                    <Button title="Nouveau Répertoire Racine" variant="ghost" size="icon" className="h-6 w-6" onClick={() => setNewModal({ isOpen: true, type: 'folder', parent: null })}>
+                      <FolderPlus className="w-3.5 h-3.5" />
                     </Button>
-                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setNewModal({ isOpen: true, type: 'file', parent: null })}>
-                      <FilePlus className="w-3 h-3" />
+                    <Button title="Nouveau Fichier Racine" variant="ghost" size="icon" className="h-6 w-6" onClick={() => setNewModal({ isOpen: true, type: 'file', parent: null })}>
+                      <FilePlus className="w-3.5 h-3.5" />
                     </Button>
                   </>
                 )}
-                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => mode === 'web' ? refreshRegistry() : refreshChroma()}>
-                  <RefreshCw className={cn("w-3 h-3", isSyncing && "animate-spin")} />
+                <Button title="Rafraîchir" variant="ghost" size="icon" className="h-6 w-6" onClick={() => mode === 'web' ? refreshRegistry() : refreshChroma()}>
+                  <RefreshCw className={cn("w-3.5 h-3.5", isSyncing && "animate-spin")} />
                 </Button>
               </div>
             </div>
@@ -344,22 +346,22 @@ export default function BDDPage() {
           <DialogHeader>
             <DialogTitle className="text-xs uppercase font-headline text-primary flex items-center gap-2">
               {newModal.type === 'file' ? <FilePlus className="w-4 h-4" /> : <FolderPlus className="w-4 h-4" />}
-              Nouveau {newModal.type === 'file' ? 'Fichier' : 'Dossier'}
+              Nouveau {newModal.type === 'file' ? 'Fichier' : 'Répertoire'}
             </DialogTitle>
           </DialogHeader>
           <div className="py-4">
-            <p className="text-[10px] font-code text-muted-foreground uppercase mb-2">Emplacement : registry/{newModal.parent || 'root'}</p>
+            <p className="text-[10px] font-code text-muted-foreground uppercase mb-2">Emplacement cible : registry/{newModal.parent || 'racine'}</p>
             <Input 
               value={newName} 
               onChange={(e) => setNewName(e.target.value)} 
-              placeholder={newModal.type === 'file' ? "Nom du fichier (ex: panne_moteur)" : "Nom du dossier"}
+              placeholder={newModal.type === 'file' ? "Nom du fichier (ex: config_moteur)" : "Nom du répertoire"}
               className="bg-muted font-code h-10 uppercase"
               autoFocus
             />
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setNewModal({ ...newModal, isOpen: false })} className="text-[10px] uppercase">Annuler</Button>
-            <Button onClick={createNew} className="bg-primary text-primary-foreground font-bold uppercase text-[10px]">Créer l'élément</Button>
+            <Button onClick={createNew} className="bg-primary text-primary-foreground font-bold uppercase text-[10px]">Confirmer Création</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -374,11 +376,11 @@ export default function BDDPage() {
             </DialogTitle>
           </DialogHeader>
           <div className="py-4">
-            <p className="text-[10px] font-code text-muted-foreground uppercase mb-2">Actuel : {renameModal.oldName}</p>
+            <p className="text-[10px] font-code text-muted-foreground uppercase mb-2">Source actuelle : {renameModal.oldName}</p>
             <Input 
               value={renameValue} 
               onChange={(e) => setRenameValue(e.target.value)} 
-              placeholder="Nouveau nom..."
+              placeholder="Nouveau nom technique..."
               className="bg-muted font-code h-10 uppercase"
               autoFocus
             />

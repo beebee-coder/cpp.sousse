@@ -1,10 +1,9 @@
-
 import fs from 'fs';
 import path from 'path';
 
 /**
  * Infrastructure de liaison physique pour le Registre.
- * Supporte la gestion complète des fichiers et répertoires.
+ * Supporte la gestion complète des fichiers et répertoires récursifs.
  */
 
 const REGISTRY_ROOT = path.join(process.cwd(), 'registry');
@@ -41,7 +40,12 @@ export const postgresClient = {
       }
     }));
 
-    return tree;
+    // Trier les dossiers en premier, puis par nom
+    return tree.sort((a, b) => {
+      if (a.type === 'folder' && b.type !== 'folder') return -1;
+      if (a.type !== 'folder' && b.type === 'folder') return 1;
+      return a.name.localeCompare(b.name);
+    });
   },
 
   /**
@@ -64,7 +68,7 @@ export const postgresClient = {
   },
 
   /**
-   * Crée un nouveau répertoire
+   * Crée un nouveau répertoire (Récursif par défaut)
    */
   createFolder: async (relPath: string) => {
     const fullPath = path.join(REGISTRY_ROOT, relPath);
@@ -99,7 +103,7 @@ export const postgresClient = {
   },
 
   /**
-   * Méthode legacy pour compatibilité RAG automatique
+   * Méthode d'upload de masse pour les captures RAG
    */
   upsertCloudData: async (items: any[]): Promise<void> => {
     const itemsDir = path.join(REGISTRY_ROOT, 'items');
@@ -130,18 +134,21 @@ export const postgresClient = {
   },
 
   /**
-   * Méthode legacy pour suppression par IDs
+   * Méthode de suppression par IDs
    */
   deleteItems: async (projectId: string, ids: string[]): Promise<void> => {
     const itemsDir = path.join(REGISTRY_ROOT, 'items');
     if (!fs.existsSync(itemsDir)) return;
     const files = fs.readdirSync(itemsDir);
     files.forEach(file => {
-      const raw = fs.readFileSync(path.join(itemsDir, file), 'utf8');
-      const data = JSON.parse(raw);
-      if (ids.includes(data.id)) {
-        fs.unlinkSync(path.join(itemsDir, file));
-      }
+      const fullPath = path.join(itemsDir, file);
+      try {
+        const raw = fs.readFileSync(fullPath, 'utf8');
+        const data = JSON.parse(raw);
+        if (ids.includes(data.id)) {
+          fs.unlinkSync(fullPath);
+        }
+      } catch (e) {}
     });
   }
 };
