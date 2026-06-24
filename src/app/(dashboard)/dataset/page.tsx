@@ -12,7 +12,8 @@ import {
   Trash2,
   Camera,
   Video as VideoIcon,
-  HardDrive
+  HardDrive,
+  FileText
 } from 'lucide-react';
 
 import { Card } from '@/components/ui/card';
@@ -40,6 +41,7 @@ interface ProcedureStep {
 interface QAItem {
   id: string;
   type: 'qa' | 'procedure';
+  title: string;
   label: string;
   details: string;
 }
@@ -47,16 +49,22 @@ interface QAItem {
 export default function DatasetPage() {
   const { toast } = useToast();
   
-  // 1. Tous les Hooks au sommet absolu (Stabilité React 19)
+  // 1. Hooks au sommet (Stabilité React 19)
   const [mounted, setMounted] = useState(false);
   const [mode, setMode] = useState<'qa' | 'procedure'>('qa');
   const [qaItems, setQaItems] = useState<QAItem[]>([]);
+  
+  // Q/A states
+  const [qaTitle, setQaTitle] = useState('');
   const [question, setQuestion] = useState('');
   const [answer, setAnswer] = useState('');
+  
+  // Procedure states
   const [procTitle, setProcTitle] = useState('');
   const [procSteps, setProcSteps] = useState<ProcedureStep[]>([
     { id: '1', title: '', duration: '', description: '', conditions: '', alarms: '', images: '', video: '' }
   ]);
+  
   const [isUploading, setIsUploading] = useState(false);
   const [activeUIField, setActiveUIField] = useState<{ type: string, index?: number } | null>(null);
   
@@ -65,6 +73,7 @@ export default function DatasetPage() {
     type: 'image',
     stepIndex: null
   });
+  
   const [isCapturing, setIsCapturing] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   
@@ -82,12 +91,12 @@ export default function DatasetPage() {
     activeVoiceFieldRef.current = activeUIField;
   }, [activeUIField]);
 
-  // Gestion de la voix stabilisée
   const handleVoiceResult = useCallback((text: string) => {
     const target = activeVoiceFieldRef.current;
     if (!target) return;
 
-    if (target.type === 'question') setQuestion(p => p ? `${p} ${text}` : text);
+    if (target.type === 'qaTitle') setQaTitle(p => p ? `${p} ${text}` : text);
+    else if (target.type === 'question') setQuestion(p => p ? `${p} ${text}` : text);
     else if (target.type === 'answer') setAnswer(p => p ? `${p} ${text}` : text);
     else if (target.type === 'procTitle') setProcTitle(p => p ? `${p} ${text}` : text);
     else if (typeof target.index === 'number') {
@@ -106,10 +115,8 @@ export default function DatasetPage() {
 
   const voice = useVoice({ onResult: handleVoiceResult, autoRestart: false });
 
-  // Isolation du flux caméra pour éviter la fermeture instantanée
   useEffect(() => {
     let currentStream: MediaStream | null = null;
-
     if (mediaModal.isOpen) {
       navigator.mediaDevices.getUserMedia({ 
         video: true, 
@@ -121,16 +128,12 @@ export default function DatasetPage() {
         if (videoRef.current) videoRef.current.srcObject = s;
       })
       .catch((err) => {
-        console.error("Camera Error:", err);
         toast({ title: "Erreur Caméra", description: "Accès refusé ou matériel occupé.", variant: "destructive" });
         setMediaModal(p => ({ ...p, isOpen: false }));
       });
     }
-
     return () => {
-      if (currentStream) {
-        currentStream.getTracks().forEach(t => t.stop());
-      }
+      if (currentStream) currentStream.getTracks().forEach(t => t.stop());
     };
   }, [mediaModal.isOpen, mediaModal.type, toast]);
 
@@ -150,7 +153,6 @@ export default function DatasetPage() {
     canvas.width = videoRef.current.videoWidth;
     canvas.height = videoRef.current.videoHeight;
     canvas.getContext('2d')?.drawImage(videoRef.current, 0, 0);
-    
     const n = [...procSteps];
     n[mediaModal.stepIndex].images = `IMG_PHYSICAL_${Date.now()}`;
     setProcSteps(n);
@@ -191,12 +193,13 @@ export default function DatasetPage() {
     e.preventDefault();
     if (mode === 'qa') {
       if (!question.trim() || !answer.trim()) return;
-      setQaItems(p => [{ id: `qa-${Date.now()}`, type: 'qa', label: question, details: answer }, ...p]);
-      setQuestion(''); setAnswer('');
+      const finalTitle = qaTitle.trim() || `qa-${Date.now()}`;
+      setQaItems(p => [{ id: `qa-${Date.now()}`, type: 'qa', title: finalTitle, label: question, details: answer }, ...p]);
+      setQuestion(''); setAnswer(''); setQaTitle('');
     } else {
       if (!procTitle.trim()) return;
       const details = procSteps.map((s, i) => `[ETAPE ${i+1}] ${s.title}\nDESC: ${s.description}\nCOND: ${s.conditions}\nALARM: ${s.alarms}`).join('\n\n');
-      setQaItems(p => [{ id: `proc-${Date.now()}`, type: 'procedure', label: procTitle, details }, ...p]);
+      setQaItems(p => [{ id: `proc-${Date.now()}`, type: 'procedure', title: procTitle, label: procTitle, details }, ...p]);
       setProcTitle('');
       setProcSteps([{ id: '1', title: '', duration: '', description: '', conditions: '', alarms: '', images: '', video: '' }]);
     }
@@ -213,6 +216,7 @@ export default function DatasetPage() {
         content: JSON.stringify({ 
           label: it.label, 
           details: it.details, 
+          title: it.title,
           type: it.type,
           ingested_at: new Date().toISOString()
         }),
@@ -251,16 +255,29 @@ export default function DatasetPage() {
           <Card className="p-6 border-border bg-card/50 space-y-6 shadow-2xl">
             <form onSubmit={handleAddItem} className="space-y-6">
               {mode === 'qa' ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-6">
                   <div className="relative">
-                    <p className="text-[10px] font-bold text-primary mb-2 uppercase">Question / Symptôme</p>
-                    <Textarea value={question} onChange={(e) => setQuestion(e.target.value)} className={cn("h-32 bg-background font-code text-xs", activeUIField?.type === 'question' && "ring-1 ring-red-500 animate-pulse")} />
-                    <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('question')} className="absolute top-8 right-2 h-7 w-7"><Mic className="w-3.5 h-3.5" /></Button>
+                    <p className="text-[10px] font-bold text-primary mb-2 uppercase flex items-center gap-2"><FileText className="w-3 h-3" /> Titre / Nom de référence (Génère le nom du fichier)</p>
+                    <Input 
+                      value={qaTitle} 
+                      onChange={(e) => setQaTitle(e.target.value)} 
+                      placeholder="EX: PANNE_POMPE_P01"
+                      className={cn("bg-background font-code uppercase h-10", activeUIField?.type === 'qaTitle' && "ring-1 ring-red-500")} 
+                    />
+                    <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('qaTitle')} className="absolute top-8 right-2 h-7 w-7"><Mic className="w-3.5 h-3.5" /></Button>
                   </div>
-                  <div className="relative">
-                    <p className="text-[10px] font-bold text-secondary mb-2 uppercase">Réponse / Action</p>
-                    <Textarea value={answer} onChange={(e) => setAnswer(e.target.value)} className={cn("h-32 bg-background font-code text-xs", activeUIField?.type === 'answer' && "ring-1 ring-red-500 animate-pulse")} />
-                    <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('answer')} className="absolute top-8 right-2 h-7 w-7 text-secondary"><Mic className="w-3.5 h-3.5" /></Button>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="relative">
+                      <p className="text-[10px] font-bold text-primary mb-2 uppercase">Question / Symptôme</p>
+                      <Textarea value={question} onChange={(e) => setQuestion(e.target.value)} className={cn("h-32 bg-background font-code text-xs", activeUIField?.type === 'question' && "ring-1 ring-red-500 animate-pulse")} />
+                      <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('question')} className="absolute top-8 right-2 h-7 w-7"><Mic className="w-3.5 h-3.5" /></Button>
+                    </div>
+                    <div className="relative">
+                      <p className="text-[10px] font-bold text-secondary mb-2 uppercase">Réponse / Action</p>
+                      <Textarea value={answer} onChange={(e) => setAnswer(e.target.value)} className={cn("h-32 bg-background font-code text-xs", activeUIField?.type === 'answer' && "ring-1 ring-red-500 animate-pulse")} />
+                      <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('answer')} className="absolute top-8 right-2 h-7 w-7 text-secondary"><Mic className="w-3.5 h-3.5" /></Button>
+                    </div>
                   </div>
                 </div>
               ) : (
@@ -340,8 +357,8 @@ export default function DatasetPage() {
                 {qaItems.map(item => (
                   <Card key={item.id} className="p-4 border-border bg-card/20 relative group hover:border-primary/30 transition-all">
                     <Button variant="ghost" size="icon" onClick={() => setQaItems(prev => prev.filter(i => i.id !== item.id))} className="absolute top-2 right-2 h-6 w-6 opacity-0 group-hover:opacity-100 text-destructive"><Trash2 className="w-3 h-3" /></Button>
-                    <div className="flex items-center gap-2 mb-2"><span className={cn("w-1.5 h-1.5 rounded-full", item.type === 'qa' ? "bg-primary" : "bg-secondary")} /><p className="text-[10px] font-bold text-primary uppercase pr-8 truncate">{item.label}</p></div>
-                    <p className="text-[9px] font-code text-muted-foreground line-clamp-3 italic bg-black/20 p-2 rounded-sm whitespace-pre-wrap">{item.details}</p>
+                    <div className="flex items-center gap-2 mb-2"><span className={cn("w-1.5 h-1.5 rounded-full", item.type === 'qa' ? "bg-primary" : "bg-secondary")} /><p className="text-[10px] font-bold text-primary uppercase pr-8 truncate">{item.title}</p></div>
+                    <p className="text-[9px] font-code text-muted-foreground line-clamp-3 italic bg-black/20 p-2 rounded-sm whitespace-pre-wrap">{item.label}</p>
                   </Card>
                 ))}
               </div>
@@ -350,7 +367,6 @@ export default function DatasetPage() {
         </div>
       </main>
 
-      {/* Modal Caméra Stabilisé */}
       <Dialog open={mediaModal.isOpen} onOpenChange={(o) => { if(!o) setMediaModal(p => ({...p, isOpen: false})); }}>
         <DialogContent className="sm:max-w-2xl bg-black border-primary/40 shadow-2xl">
           <DialogHeader><DialogTitle className="text-xs uppercase font-headline text-primary flex items-center gap-2">{mediaModal.type === 'image' ? <Camera className="w-4 h-4" /> : <VideoIcon className="w-4 h-4" />} Station de capture physique</DialogTitle></DialogHeader>

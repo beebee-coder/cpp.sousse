@@ -50,16 +50,13 @@ export const postgresClient = {
 
   /**
    * Insère chaque item dans un fichier JSON physique distinct.
-   * Aplatit le contenu pour que Question/Réponse soient visibles à la racine.
+   * Utilise le titre fourni par l'utilisateur pour nommer le fichier si disponible.
    */
   upsertCloudData: async (items: any[]): Promise<void> => {
     try {
       items.forEach(newItem => {
-        const id = newItem.id.replace(/[^a-zA-Z0-9-]/g, '_');
-        const filePath = path.join(ITEMS_DIR, `${id}.json`);
-        
-        // Extraction et aplatissement du contenu pour l'audit physique
-        let parsedContent = {};
+        // Extraction du contenu pour audit physique
+        let parsedContent: any = {};
         if (typeof newItem.content === 'string') {
           try {
             parsedContent = JSON.parse(newItem.content);
@@ -70,13 +67,18 @@ export const postgresClient = {
           parsedContent = newItem.content || {};
         }
 
+        // Utilisation du titre pour le nom du fichier (sanitisé)
+        const baseName = parsedContent.title || newItem.id;
+        const safeId = baseName.toLowerCase().replace(/[^a-zA-Z0-9-]/g, '_');
+        const filePath = path.join(ITEMS_DIR, `${safeId}.json`);
+
         const dataToSave = {
           id: newItem.id,
           projectId: newItem.projectId,
           type: newItem.type,
           tags: newItem.tags,
           createdAt: newItem.createdAt || new Date().toISOString(),
-          ...parsedContent // Injection de label (Question) et details (Réponse) à la racine
+          ...parsedContent 
         };
 
         fs.writeFileSync(filePath, JSON.stringify(dataToSave, null, 2));
@@ -93,11 +95,14 @@ export const postgresClient = {
    */
   deleteItems: async (projectId: string, ids: string[]): Promise<void> => {
     try {
-      ids.forEach(id => {
-        const safeId = id.replace(/[^a-zA-Z0-9-]/g, '_');
-        const filePath = path.join(ITEMS_DIR, `${safeId}.json`);
-        if (fs.existsSync(filePath)) {
-          fs.unlinkSync(filePath);
+      // Pour la purge, on doit trouver les fichiers par leur ID interne
+      const files = fs.readdirSync(ITEMS_DIR);
+      files.forEach(file => {
+        if (!file.endsWith('.json')) return;
+        const raw = fs.readFileSync(path.join(ITEMS_DIR, file), 'utf8');
+        const data = JSON.parse(raw);
+        if (ids.includes(data.id)) {
+          fs.unlinkSync(path.join(ITEMS_DIR, file));
         }
       });
     } catch (e) {
