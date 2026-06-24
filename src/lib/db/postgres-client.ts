@@ -74,6 +74,23 @@ export const postgresClient = {
     ensureRegistry();
     const fullPath = path.join(REGISTRY_ROOT, relPath);
     if (!fs.existsSync(fullPath)) throw new Error("FICHIER_INTROUVABLE");
+    
+    const ext = path.extname(fullPath).toLowerCase();
+    const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg'];
+    const videoExtensions = ['.mp4', '.webm', '.ogg'];
+    
+    if (imageExtensions.includes(ext)) {
+      const buffer = fs.readFileSync(fullPath);
+      const mimeType = ext === '.svg' ? 'image/svg+xml' : ext === '.png' ? 'image/png' : 'image/jpeg';
+      return `data:${mimeType};base64,${buffer.toString('base64')}`;
+    }
+
+    if (videoExtensions.includes(ext)) {
+      const buffer = fs.readFileSync(fullPath);
+      const mimeType = ext === '.webm' ? 'video/webm' : 'video/mp4';
+      return `data:${mimeType};base64,${buffer.toString('base64')}`;
+    }
+    
     return fs.readFileSync(fullPath, 'utf8');
   },
 
@@ -115,10 +132,6 @@ export const postgresClient = {
     }
   },
 
-  /**
-   * Suppression physique radicale (Récursive).
-   * Supprime le fichier ou le dossier et tout son contenu.
-   */
   async deleteItem(relPath: string) {
     ensureRegistry();
     const safePath = path.normalize(relPath).replace(/^(\.\.(\/|\\|$))+/, '');
@@ -126,7 +139,6 @@ export const postgresClient = {
     
     const fullPath = path.join(REGISTRY_ROOT, safePath);
     if (fs.existsSync(fullPath)) {
-      // Suppression physique récursive réelle
       fs.rmSync(fullPath, { recursive: true, force: true });
       console.log(`✅ [POSTGRES_CLIENT] Suppression physique terminée : ${fullPath}`);
     } else {

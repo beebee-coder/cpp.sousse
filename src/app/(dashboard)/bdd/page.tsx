@@ -70,32 +70,19 @@ export default function BDDPage() {
     setMounted(true);
   }, []);
 
-  /**
-   * Fusionne l'état des dossiers ouverts avec la nouvelle arborescence.
-   */
   const mergeTreeState = useCallback((oldTree: FSNode[], newTree: FSNode[]): FSNode[] => {
-    const findOld = (id: string): FSNode | undefined => {
-      const search = (nodes: FSNode[]): FSNode | undefined => {
-        for (const n of nodes) {
-          if (n.id === id) return n;
-          if (n.children) {
-            const found = search(n.children);
-            if (found) return found;
-          }
-        }
-        return undefined;
-      };
-      return search(oldTree);
+    const applyOpen = (nodes: FSNode[]): FSNode[] => {
+      return nodes.map(node => {
+        const old = oldTree.find(o => o.id === node.id);
+        const isOpen = old?.isOpen ?? node.isOpen;
+        return {
+          ...node,
+          isOpen,
+          children: node.children ? applyOpen(node.children) : undefined
+        };
+      });
     };
-
-    return newTree.map(node => {
-      const old = findOld(node.id);
-      return {
-        ...node,
-        isOpen: old?.isOpen ?? node.isOpen,
-        children: node.children ? mergeTreeState(oldTree, node.children) : undefined
-      };
-    });
+    return applyOpen(newTree);
   }, []);
 
   const refreshRegistry = useCallback(async (isInitial = false) => {
@@ -156,13 +143,9 @@ export default function BDDPage() {
     }
   };
 
-  /**
-   * Suppression Physique Radical (Optimiste).
-   */
   const deleteItem = async (id: string) => {
     if (!confirm(`Supprimer physiquement "${id}" et tout son contenu ?`)) return;
     
-    // MISE À JOUR OPTIMISTE : On retire l'élément de l'UI immédiatement
     const previousTree = [...tree];
     const removeFromTree = (nodes: FSNode[]): FSNode[] => {
       return nodes
@@ -186,7 +169,6 @@ export default function BDDPage() {
         throw new Error(res.error || "Erreur serveur");
       }
     } catch (error: any) {
-      // ROLLBACK en cas d'échec
       setTree(previousTree);
       toast({ title: "Échec de suppression", description: error.message, variant: "destructive" });
     }
@@ -327,10 +309,12 @@ export default function BDDPage() {
                 <div className="p-3 border-b border-border bg-black/40 flex items-center justify-between">
                   <span className="text-[11px] font-code uppercase text-white truncate max-w-[300px]">{selectedFile}</span>
                   <div className="flex gap-2">
-                    <Button variant="ghost" size="sm" onClick={() => setIsEditing(!isEditing)} className="h-7 text-[9px] uppercase">
-                      {isEditing ? <Eye className="w-3 h-3 mr-2" /> : <Edit3 className="w-3 h-3 mr-2" />}
-                      {isEditing ? "Aperçu" : "Éditer"}
-                    </Button>
+                    {selectedFile.endsWith('.json') && (
+                      <Button variant="ghost" size="sm" onClick={() => setIsEditing(!isEditing)} className="h-7 text-[9px] uppercase">
+                        {isEditing ? <Eye className="w-3 h-3 mr-2" /> : <Edit3 className="w-3 h-3 mr-2" />}
+                        {isEditing ? "Aperçu" : "Éditer"}
+                      </Button>
+                    )}
                     {isEditing && <Button variant="secondary" size="sm" onClick={saveFileChanges} className="h-7 text-[9px] uppercase font-bold"><Save className="w-3 h-3 mr-2" /> Sauver</Button>}
                   </div>
                 </div>
@@ -338,13 +322,20 @@ export default function BDDPage() {
                   {isEditing ? (
                     <Textarea value={fileContent} onChange={(e) => setFileContent(e.target.value)} className="w-full h-full bg-black/80 font-code text-[11px] border-none focus-visible:ring-0 p-4 resize-none terminal-scroll" spellCheck={false} />
                   ) : (
-                    <div className="w-full h-full bg-black/40 p-4 overflow-auto terminal-scroll">
+                    <div className="w-full h-full bg-black/40 p-4 overflow-auto terminal-scroll flex items-center justify-center">
                       {selectedFile.endsWith('.json') ? (
-                        <pre className="font-code text-[10px] text-primary/80 whitespace-pre-wrap">{fileContent}</pre>
+                        <pre className="font-code text-[10px] text-primary/80 whitespace-pre-wrap w-full h-full">{fileContent}</pre>
+                      ) : fileContent.startsWith('data:image') ? (
+                        <div className="relative group max-w-full max-h-full">
+                           <img src={fileContent} className="max-w-full max-h-[70vh] rounded-sm shadow-2xl border border-primary/20 object-contain" />
+                           <div className="absolute inset-0 bg-primary/5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none border border-primary/40" />
+                        </div>
+                      ) : fileContent.startsWith('data:video') ? (
+                        <video src={fileContent} controls className="max-w-full max-h-[70vh] rounded-sm shadow-2xl border border-primary/20" />
                       ) : (
-                        <div className="flex flex-col items-center justify-center h-full opacity-50">
+                        <div className="flex flex-col items-center justify-center opacity-50">
                           <ImageIcon className="w-16 h-16 mb-4" />
-                          <p className="font-code text-[10px] uppercase">Fichier binaire (Non éditable)</p>
+                          <p className="font-code text-[10px] uppercase text-center px-4">Prévisualisation non disponible pour ce type de fichier</p>
                         </div>
                       )}
                     </div>
