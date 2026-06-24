@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
@@ -107,7 +108,7 @@ export default function BDDPage() {
   const handleFileClick = async (node: FSNode) => {
     if (node.type === 'file') {
       try {
-        const res = await apiClient.get<any>(`/api/registry?path=${node.id}`);
+        const res = await apiClient.get<any>(`/api/registry?path=${encodeURIComponent(node.id)}`);
         setSelectedFile(node.id);
         setFileContent(res.content);
         setIsEditing(false);
@@ -176,14 +177,14 @@ export default function BDDPage() {
   };
 
   const deleteItem = async (id: string) => {
-    if (!confirm("Supprimer définitivement cet élément ?")) return;
+    if (!confirm("Supprimer définitivement cet élément et tout son contenu physique ?")) return;
     try {
-      const res = await apiClient.delete(`/api/registry?path=${id}`);
+      const res = await apiClient.delete(`/api/registry?path=${encodeURIComponent(id)}`);
       if (res.error) throw new Error(res.error);
       
       if (selectedFile === id) setSelectedFile(null);
       refreshRegistry();
-      toast({ title: "Élément supprimé" });
+      toast({ title: "Élément supprimé physiquement" });
     } catch (e) {
       toast({ title: "Erreur de suppression", variant: "destructive" });
     }

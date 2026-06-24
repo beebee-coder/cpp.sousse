@@ -1,6 +1,7 @@
 
 import { createHybridRoute } from '@/lib/api-route-creator';
 import { postgresClient } from '@/lib/db/postgres-client';
+import { NextResponse } from 'next/server';
 
 /**
  * API de gestion physique du Registre (FS).
@@ -52,11 +53,22 @@ export const PATCH = createHybridRoute<{ path: string; newName: string }, any>({
   }
 });
 
-export async function DELETE(req: Request) {
-  const { searchParams } = new URL(req.url);
-  const path = searchParams.get('path');
-  if (!path) return new Response("Path required", { status: 400 });
-  
-  await postgresClient.deleteItem(path);
-  return new Response(JSON.stringify({ success: true }), { status: 200 });
-}
+export const DELETE = createHybridRoute<any, any>({
+  name: 'REGISTRY_DELETE',
+  webHandler: async (req) => {
+    const { searchParams } = new URL(req.url);
+    const path = searchParams.get('path');
+    
+    if (!path) {
+      return NextResponse.json({ success: false, error: "PATH_REQUIRED" }, { status: 400 });
+    }
+    
+    try {
+      await postgresClient.deleteItem(path);
+      return { success: true };
+    } catch (error: any) {
+      console.error(`❌ [REGISTRY_DELETE] Échec :`, error.message);
+      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    }
+  }
+});
