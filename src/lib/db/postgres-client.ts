@@ -37,7 +37,7 @@ export const postgresClient = {
       
       const tree = await Promise.all(entries.map(async (entry) => {
         const fullPath = path.join(dir, entry.name);
-        const relativePath = path.relative(REGISTRY_ROOT, fullPath);
+        const relativePath = path.relative(REGISTRY_ROOT, fullPath).replace(/\\/g, '/');
         
         // Ignorer les fichiers système cachés (sauf .registry lui-même au départ)
         if (entry.name.startsWith('.') && fullPath !== REGISTRY_ROOT) return null;
@@ -127,7 +127,6 @@ export const postgresClient = {
    */
   deleteItem: async (relPath: string) => {
     ensureRegistry();
-    // Sécurité : Empêcher la suppression en dehors de REGISTRY_ROOT
     const normalizedPath = path.normalize(relPath).replace(/^(\.\.(\/|\\|$))+/, '');
     if (!normalizedPath || normalizedPath === '.' || normalizedPath === '/') {
       throw new Error("SUPPRESSION_NON_AUTORISEE_SUR_RACINE");
@@ -136,7 +135,7 @@ export const postgresClient = {
     const fullPath = path.join(REGISTRY_ROOT, normalizedPath);
     if (fs.existsSync(fullPath)) {
       try {
-        // fs.rmSync avec recursive: true supprime physiquement le fichier ou le répertoire entier
+        // Utilisation de rmSync avec recursive: true pour supprimer réellement le répertoire et son contenu
         fs.rmSync(fullPath, { recursive: true, force: true });
         console.log(`🗑️ [postgresClient] Suppression physique réussie : ${fullPath}`);
       } catch (err: any) {

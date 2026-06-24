@@ -28,7 +28,6 @@ export interface SearchResult {
   score: number;
 }
 
-// ─── INITIALISATION PHYSIQUE DES RÉPERTOIRES ────────────────────────────────
 const CHROMA_DATA_DIR = path.join(process.cwd(), '.data', 'chromadb');
 if (!fs.existsSync(CHROMA_DATA_DIR)) {
   fs.mkdirSync(CHROMA_DATA_DIR, { recursive: true });
@@ -46,7 +45,7 @@ async function getPipeline(): Promise<any> {
     _pipeline = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
     return _pipeline;
   } catch (e) {
-    console.warn("⚠️ [RAG_LOCAL] Pipeline embedding indisponible. Mode dégradé activé.");
+    console.warn("⚠️ [RAG_LOCAL] Pipeline embedding indisponible.");
     return null;
   }
 }
@@ -74,20 +73,17 @@ export function getLocalEmbedder(): LocalEmbeddingFunction {
 let _chromaClient: any = null;
 
 /**
- * Récupère le client ChromaDB. 
- * Supporte PersistentClient (v3+) ou ChromaClient standard de manière robuste.
+ * Récupère le client ChromaDB avec détection sécurisée du constructeur.
  */
 export async function getChromaClient(): Promise<any> {
   if (IS_CLOUD) return null;
   if (_chromaClient) return _chromaClient;
   try {
     const chroma = await import('chromadb');
-    
-    // Détection robuste du constructeur pour éviter les erreurs "is not a constructor"
+    // Détection robuste pour supporter PersistentClient ou ChromaClient avec chemin
     const ClientClass = (chroma as any).PersistentClient || (chroma as any).ChromaClient;
     
     if (ClientClass) {
-      // Configuration compatible avec les nouvelles versions de ChromaDB
       _chromaClient = new ClientClass({ 
         path: CHROMA_DATA_DIR,
         database: "default"
@@ -97,14 +93,11 @@ export async function getChromaClient(): Promise<any> {
     
     return _chromaClient;
   } catch (e: any) {
-    console.error("❌ [CHROMA_INIT] Erreur de liaison physique :", e.message);
+    console.error("❌ [CHROMA_INIT] Erreur :", e.message);
     return null;
   }
 }
 
-/**
- * Supprime une collection vectorielle.
- */
 export async function deleteCollection(name: string) {
   if (IS_CLOUD) return;
   try {

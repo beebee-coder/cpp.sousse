@@ -68,9 +68,6 @@ export default function BDDPage() {
     setMounted(true);
   }, []);
 
-  /**
-   * Fusionne l'état actuel de l'UI (dossiers ouverts) avec les nouvelles données du serveur.
-   */
   const mergeTreeState = useCallback((newNodes: FSNode[], oldNodes: FSNode[]): FSNode[] => {
     const openPaths = new Set<string>();
     const collectOpen = (nodes: FSNode[]) => {
@@ -112,7 +109,7 @@ export default function BDDPage() {
     try {
       const res = await apiClient.get<any>('/api/vector/collections');
       if (res && res.success) {
-        const chromaNodes = res.collections.map((c: any) => ({
+        const chromaNodes = (res.collections || []).map((c: any) => ({
           id: `chroma-${c.name}`,
           name: `${c.name.toUpperCase()} (${c.count || 0} DOCS)`,
           type: 'collection' as const,
@@ -138,11 +135,15 @@ export default function BDDPage() {
     if (node.type === 'file') {
       try {
         const res = await apiClient.get<any>(`/api/registry?path=${encodeURIComponent(node.id)}`);
-        setSelectedFile(node.id);
-        setFileContent(res.content);
-        setIsEditing(false);
-      } catch (e) {
-        toast({ title: "Échec de lecture fichier", variant: "destructive" });
+        if (res.success) {
+          setSelectedFile(node.id);
+          setFileContent(res.content);
+          setIsEditing(false);
+        } else {
+          throw new Error(res.error || "Fichier introuvable");
+        }
+      } catch (e: any) {
+        toast({ title: "Échec de lecture", description: e.message, variant: "destructive" });
       }
     }
   };
@@ -216,17 +217,12 @@ export default function BDDPage() {
     }
   };
 
-  /**
-   * Action de suppression pure et optimiste.
-   * Retire l'élément instantanément de l'interface avant confirmation serveur.
-   */
   const deleteItem = async (id: string) => {
     if (!confirm("Supprimer définitivement cet élément et tout son contenu physique ?")) return;
     
-    // 1. Sauvegarde pour rollback en cas d'erreur
     const oldTree = JSON.parse(JSON.stringify(tree));
     
-    // 2. Mise à jour optimiste IMMÉDIATE (Pure)
+    // Mise à jour optimiste IMMÉDIATE
     const removeFromTree = (nodes: FSNode[]): FSNode[] => {
       return nodes
         .filter(node => node.id !== id)
@@ -239,7 +235,6 @@ export default function BDDPage() {
     setTree(prev => removeFromTree(prev));
     if (selectedFile === id) setSelectedFile(null);
 
-    // 3. Appel API réel pour suppression physique
     try {
       const res = await apiClient.delete(`/api/registry?path=${encodeURIComponent(id)}`);
       if (res.success) {
@@ -249,7 +244,6 @@ export default function BDDPage() {
       }
     } catch (error: any) {
       toast({ title: "Échec de suppression", description: error.message, variant: "destructive" });
-      // Rollback de l'état UI en cas d'échec serveur
       setTree(oldTree);
     }
   };
