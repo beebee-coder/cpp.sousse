@@ -66,19 +66,39 @@ export default function BDDPage() {
   });
   const [renameValue, setRenameValue] = useState('');
 
+  // Fusionne l'état isOpen de l'ancien arbre vers le nouveau
+  const mergeTreeState = useCallback((newNodes: FSNode[], oldNodes: FSNode[]): FSNode[] => {
+    const openPaths = new Set<string>();
+    const collectOpen = (nodes: FSNode[]) => {
+      nodes.forEach(n => {
+        if (n.isOpen) openPaths.add(n.id);
+        if (n.children) collectOpen(n.children);
+      });
+    };
+    collectOpen(oldNodes);
+
+    const applyOpen = (nodes: FSNode[]): FSNode[] => nodes.map(n => ({
+      ...n,
+      isOpen: openPaths.has(n.id) || n.isOpen, // Garde ouvert si c'était ouvert
+      children: n.children ? applyOpen(n.children) : undefined
+    }));
+
+    return applyOpen(newNodes);
+  }, []);
+
   const refreshRegistry = useCallback(async () => {
     setIsSyncing(true);
     try {
       const res = await apiClient.get<any>('/api/registry');
-      if (res.success) {
-        setTree(res.tree);
+      if (res.success && Array.isArray(res.tree)) {
+        setTree(prev => mergeTreeState(res.tree, prev));
       }
     } catch (e) {
       toast({ title: "Erreur de lecture", variant: "destructive" });
     } finally {
       setIsSyncing(false);
     }
-  }, [toast]);
+  }, [toast, mergeTreeState]);
 
   const refreshChroma = useCallback(async () => {
     setIsSyncing(true);
@@ -127,6 +147,7 @@ export default function BDDPage() {
       });
       setIsEditing(false);
       toast({ title: "Fichier mis à jour" });
+      refreshRegistry();
     } catch (e) {
       toast({ title: "Erreur de sauvegarde", variant: "destructive" });
     }
@@ -145,7 +166,7 @@ export default function BDDPage() {
       });
       setNewModal({ ...newModal, isOpen: false });
       setNewName('');
-      refreshRegistry();
+      await refreshRegistry();
       toast({ title: newModal.type === 'file' ? "Fichier créé" : "Répertoire créé" });
     } catch (e) {
       toast({ title: "Erreur de création", variant: "destructive" });
@@ -168,7 +189,7 @@ export default function BDDPage() {
       if (res.success) {
         setRenameModal({ ...renameModal, isOpen: false });
         if (selectedFile === renameModal.path) setSelectedFile(null);
-        refreshRegistry();
+        await refreshRegistry();
         toast({ title: "Élément renommé" });
       }
     } catch (e) {
@@ -183,7 +204,7 @@ export default function BDDPage() {
       if (res.error) throw new Error(res.error);
       
       if (selectedFile === id) setSelectedFile(null);
-      refreshRegistry();
+      await refreshRegistry();
       toast({ title: "Élément supprimé physiquement" });
     } catch (e) {
       toast({ title: "Erreur de suppression", variant: "destructive" });
@@ -262,7 +283,6 @@ export default function BDDPage() {
         </header>
 
         <div className="flex-1 p-4 lg:p-6 overflow-hidden flex flex-col lg:flex-row gap-6">
-          {/* Sidebar Tree */}
           <Card className="w-full lg:w-80 flex flex-col bg-black/40 border-border overflow-hidden shrink-0">
             <div className="p-3 border-b border-border bg-card/50 flex items-center justify-between">
               <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Arborescence</span>
@@ -287,7 +307,6 @@ export default function BDDPage() {
             </div>
           </Card>
 
-          {/* Main Viewer/Editor */}
           <Card className="flex-1 bg-card/20 border-border flex flex-col overflow-hidden">
             {selectedFile ? (
               <>
