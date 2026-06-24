@@ -167,13 +167,12 @@ export default function BDDPage() {
       const res = await apiClient.delete<any>(`/api/registry?path=${encodeURIComponent(id)}`);
       if (res.success) {
         toast({ title: "Élément supprimé du registre" });
-        // On rafraîchit quand même pour être sûr de l'état final
         await refreshRegistry();
       } else {
         throw new Error(res.error || "Erreur serveur");
       }
     } catch (error: any) {
-      // ROLLBACK en cas d'échec (ex: permission disque sur Vercel)
+      // ROLLBACK en cas d'échec
       setTree(previousTree);
       toast({ 
         title: "Échec de suppression physique", 

@@ -135,7 +135,6 @@ export const postgresClient = {
 
   async deleteItem(relPath: string) {
     ensureRegistry();
-    // Protection contre la suppression de la racine
     const safePath = path.normalize(relPath).replace(/^(\.\.(\/|\\|$))+/, '');
     if (!safePath || safePath === '.' || safePath === '/') throw new Error("ACCES_INTERDIT_RACINE");
     
@@ -143,7 +142,7 @@ export const postgresClient = {
     
     if (fs.existsSync(fullPath)) {
       try {
-        // Suppression radicale récursive (fichiers et dossiers)
+        // Utilisation de fs.rmSync avec recursive et force pour une suppression radicale
         fs.rmSync(fullPath, { recursive: true, force: true });
         console.log(`✅ [POSTGRES_CLIENT] Suppression physique radicale : ${fullPath}`);
       } catch (e: any) {
@@ -151,7 +150,6 @@ export const postgresClient = {
         throw new Error(`ERREUR_SYSTEME_FICHIER : ${e.message}`);
       }
     } else {
-      console.warn(`⚠️ [POSTGRES_CLIENT] Tentative de suppression d'un élément inexistant : ${fullPath}`);
       throw new Error("ELEMENT_DEJA_ABSENT_DU_DISQUE");
     }
   },

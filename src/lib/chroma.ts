@@ -39,13 +39,9 @@ const IS_CLOUD = process.env.VERCEL === '1' || process.env.NODE_ENV === 'product
 
 /**
  * LocalEmbeddingFunction allégée.
- * @huggingface/transformers a été supprimé pour respecter la limite de 250MB de Vercel.
- * Le système utilise désormais le fallback sémantique par mots-clés en local.
  */
 export class LocalEmbeddingFunction {
   async generate(texts: string[]): Promise<number[][]> {
-    // Renvoie des vecteurs vides car la bibliothèque Transformers est absente
-    // Cela déclenchera la logique de repli (fallback) dans les recherches.
     return texts.map(() => new Array(384).fill(0));
   }
 }
@@ -82,7 +78,6 @@ export async function getChromaClient(): Promise<any> {
 
 /**
  * Recherche de secours par mots-clés dans le registre physique (Fallback).
- * Utilisé quand ChromaDB est inaccessible ou quand les embeddings sont désactivés.
  */
 export function fallbackSemanticSearch(query: string, nResults = 3, componentFilter?: string): SearchResult[] {
   if (!fs.existsSync(REGISTRY_ITEMS_DIR)) return [];
@@ -95,14 +90,14 @@ export function fallbackSemanticSearch(query: string, nResults = 3, componentFil
     for (const file of files) {
       const content = fs.readFileSync(path.join(REGISTRY_ITEMS_DIR, file), 'utf8');
       const data = JSON.parse(content);
-      const text = `${data.label} ${data.details} ${data.title}`.toLowerCase();
+      const text = `${data.label || ''} ${data.details || ''} ${data.title || ''}`.toLowerCase();
       
       if (text.includes(lowerQuery) || lowerQuery.split(' ').some(word => word.length > 3 && text.includes(word))) {
         if (componentFilter && data.metadata?.component !== componentFilter) continue;
 
         results.push({
           id: file,
-          document: `${data.label}\n${data.details}`,
+          document: `${data.label || ''}\n${data.details || ''}`,
           metadata: { ...data.metadata, title: data.title, source: file },
           distance: 0,
           score: 1
@@ -186,7 +181,6 @@ export async function semanticSearch(options: SearchOptions, embeddingFunction: 
       score: parseFloat((1 - (Number(distances[i]) || 0)).toFixed(4))
     }));
   } catch (e) {
-    // Si la recherche vectorielle échoue ou renvoie des scores nuls, on bascule sur le fallback
     return fallbackSemanticSearch(query, nResults);
   }
 }
