@@ -13,13 +13,24 @@ import {
   HardDrive,
   FileJson,
   ChevronRight,
-  ChevronDown
+  ChevronDown,
+  Plus,
+  Trash2,
+  Edit3,
+  Eye,
+  Save,
+  FolderPlus,
+  FilePlus,
+  X
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { apiClient } from '@/lib/api-client';
 import { useToast } from '@/hooks/use-toast';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 
 interface FSNode {
   id: string;
@@ -32,12 +43,38 @@ interface FSNode {
 
 export default function BDDPage() {
   const { toast } = useToast();
-  const [mode, setMode] = useState<'chroma' | 'web'>('chroma');
+  const [mode, setMode] = useState<'chroma' | 'web'>('web');
   const [tree, setTree] = useState<FSNode[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [isPurging, setIsPurging] = useState(false);
+  
+  // Editor states
+  const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  const [fileContent, setFileContent] = useState('');
+  const [isEditing, setIsEditing] = useState(false);
+  
+  // Modal states
+  const [newModal, setNewModal] = useState<{ isOpen: boolean; type: 'file' | 'folder'; parent: string | null }>({
+    isOpen: false,
+    type: 'file',
+    parent: null
+  });
+  const [newName, setNewName] = useState('');
 
-  const syncChromaState = useCallback(async (isAuto = false) => {
+  const refreshRegistry = useCallback(async () => {
+    setIsSyncing(true);
+    try {
+      const res = await apiClient.get<any>('/api/registry');
+      if (res.success) {
+        setTree(res.tree);
+      }
+    } catch (e) {
+      toast({ title: "Erreur de lecture", variant: "destructive" });
+    } finally {
+      setIsSyncing(false);
+    }
+  }, [toast]);
+
+  const refreshChroma = useCallback(async () => {
     setIsSyncing(true);
     try {
       const res = await apiClient.get<any>('/api/vector/collections');
@@ -48,117 +85,119 @@ export default function BDDPage() {
           type: 'collection' as const,
           count: c.count
         }));
-        
-        setTree([
-          { 
-            id: 'root', 
-            name: 'INDEX_PHYSIQUE_CHROMA', 
-            type: 'folder', 
-            isOpen: true, 
-            children: chromaNodes 
-          }
-        ]);
-        if (!isAuto) toast({ title: "Scan Chroma Réussi", description: `Liaison établie avec le moteur local.` });
+        setTree([{ id: 'root-chroma', name: 'INDEX_LOCAL_CHROMA', type: 'folder', isOpen: true, children: chromaNodes }]);
       }
     } catch (e) {
       setTree([{ id: 'error', name: 'MOTEUR_INDISPONIBLE', type: 'folder' }]);
     } finally {
       setIsSyncing(false);
     }
-  }, [toast]);
-
-  const syncWebState = useCallback(async () => {
-    setIsSyncing(true);
-    try {
-      const res = await apiClient.post<any>('/api/sync/download', {
-        projectId: 'project-001',
-        lastSync: new Date(0).toISOString()
-      });
-
-      if (res.items) {
-        const fileNodes = res.items.map((item: any) => ({
-          id: item.id,
-          name: `${item.id}.json`,
-          type: 'file' as const
-        }));
-
-        setTree([
-          { 
-            id: 'web-root', 
-            name: 'REGISTRE_ITEMS_PHYSIQUE', 
-            type: 'folder', 
-            isOpen: true, 
-            children: fileNodes 
-          }
-        ]);
-      }
-    } catch (e) {
-      toast({ title: "Erreur Registre", variant: "destructive" });
-    } finally {
-      setIsSyncing(false);
-    }
-  }, [toast]);
+  }, []);
 
   useEffect(() => {
-    if (mode === 'chroma') syncChromaState(true);
-    else syncWebState();
-  }, [mode, syncChromaState, syncWebState]);
+    if (mode === 'web') refreshRegistry();
+    else refreshChroma();
+  }, [mode, refreshRegistry, refreshChroma]);
 
-  const syncWebAndPurge = async () => {
-    setIsSyncing(true);
-    setIsPurging(true);
-    try {
-      const res = await apiClient.post<any>('/api/sync/download', {
-        projectId: 'project-001',
-        lastSync: new Date(0).toISOString()
-      });
-
-      if (res.items && res.items.length > 0) {
-        // Ingestion dans ChromaDB
-        await apiClient.post('/api/vector/ingest', {
-          items: res.items.map((i: any) => ({
-            question: i.label || "Sans Titre",
-            answer: i.details || "Sans Contenu"
-          })),
-          metadata: { collection: 'industrial_manuals', source: 'sync_physical_web' }
-        });
-
-        const ids = res.items.map((i: any) => i.id);
-        await apiClient.post('/api/sync/cleanup', { ids, projectId: 'project-001' });
-
-        toast({ title: "Cycle Terminé", description: `${ids.length} fichiers JSON vectorisés et purgés.` });
-        syncWebState();
-      } else {
-        toast({ title: "Tampon Vide", description: "Aucun fichier JSON détecté." });
+  const handleFileClick = async (node: FSNode) => {
+    if (node.type === 'file') {
+      try {
+        const res = await apiClient.get<any>(`/api/registry?path=${node.id}`);
+        setSelectedFile(node.id);
+        setFileContent(res.content);
+        setIsEditing(false);
+      } catch (e) {
+        toast({ title: "Échec de lecture", variant: "destructive" });
       }
+    }
+  };
+
+  const saveFileChanges = async () => {
+    if (!selectedFile) return;
+    try {
+      await apiClient.post('/api/registry', { 
+        path: selectedFile, 
+        type: 'file', 
+        content: fileContent 
+      }, { method: 'PUT' } as any);
+      setIsEditing(false);
+      toast({ title: "Fichier mis à jour" });
     } catch (e) {
-      toast({ title: "Échec Cycle", variant: "destructive" });
-    } finally {
-      setIsSyncing(false);
-      setIsPurging(false);
+      toast({ title: "Erreur de sauvegarde", variant: "destructive" });
+    }
+  };
+
+  const createNew = async () => {
+    if (!newName.trim()) return;
+    const path = newModal.parent ? `${newModal.parent}/${newName}` : newName;
+    const finalPath = newModal.type === 'file' && !path.endsWith('.json') ? `${path}.json` : path;
+    
+    try {
+      await apiClient.post('/api/registry', { 
+        path: finalPath, 
+        type: newModal.type,
+        content: newModal.type === 'file' ? '{}' : undefined
+      });
+      setNewModal({ ...newModal, isOpen: false });
+      setNewName('');
+      refreshRegistry();
+      toast({ title: "Élément créé" });
+    } catch (e) {
+      toast({ title: "Erreur de création", variant: "destructive" });
+    }
+  };
+
+  const deleteItem = async (id: string) => {
+    if (!confirm("Supprimer définitivement cet élément ?")) return;
+    try {
+      await fetch(`/api/registry?path=${id}`, { method: 'DELETE' });
+      if (selectedFile === id) setSelectedFile(null);
+      refreshRegistry();
+      toast({ title: "Élément supprimé" });
+    } catch (e) {
+      toast({ title: "Erreur de suppression", variant: "destructive" });
     }
   };
 
   const toggleFolder = (id: string) => {
-    const update = (nodes: FSNode[]): FSNode[] => nodes.map(n => n.id === id ? { ...n, isOpen: !n.isOpen } : (n.children ? { ...n, children: update(n.children) } : n));
+    const update = (nodes: FSNode[]): FSNode[] => nodes.map(n => 
+      n.id === id ? { ...n, isOpen: !n.isOpen } : (n.children ? { ...n, children: update(n.children) } : n)
+    );
     setTree(update(tree));
   };
 
   const renderTree = (nodes: FSNode[], depth = 0) => {
     return nodes.map(node => (
       <div key={node.id} className="select-none">
-        <div className="flex items-center gap-2 py-1 px-2 hover:bg-primary/5 cursor-pointer rounded-sm" style={{ paddingLeft: `${depth * 1 + 0.5}rem` }}>
-          {node.type === 'folder' ? (
-            <button onClick={() => toggleFolder(node.id)} className="p-0.5 text-muted-foreground">
-              {node.isOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-            </button>
-          ) : <div className="w-4.5" />}
-          
-          {node.type === 'folder' ? <Folder className="w-4 h-4 text-primary" /> : node.type === 'collection' ? <Database className="w-4 h-4 text-secondary" /> : <FileJson className="w-4 h-4 text-muted-foreground" />}
-          
-          <span className="text-[11px] font-code uppercase truncate py-0.5">
-            {node.name}
-          </span>
+        <div 
+          className={cn(
+            "flex items-center justify-between py-1 px-2 hover:bg-primary/5 rounded-sm group",
+            selectedFile === node.id && "bg-primary/10 border-l-2 border-primary"
+          )} 
+          style={{ paddingLeft: `${depth * 1 + 0.5}rem` }}
+        >
+          <div className="flex items-center gap-2 overflow-hidden flex-1" onClick={() => node.type === 'folder' ? toggleFolder(node.id) : handleFileClick(node)}>
+            {node.type === 'folder' ? (
+              <button className="p-0.5 text-muted-foreground">
+                {node.isOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+              </button>
+            ) : <div className="w-4.5" />}
+            
+            {node.type === 'folder' ? <Folder className="w-3.5 h-3.5 text-primary" /> : node.type === 'collection' ? <Database className="w-3.5 h-3.5 text-secondary" /> : <FileJson className="w-3.5 h-3.5 text-muted-foreground" />}
+            
+            <span className="text-[10px] font-code uppercase truncate py-0.5 cursor-pointer">
+              {node.name}
+            </span>
+          </div>
+
+          {mode === 'web' && (
+            <div className="hidden group-hover:flex items-center gap-1">
+              {node.type === 'folder' && (
+                <button onClick={() => setNewModal({ isOpen: true, type: 'file', parent: node.id })} className="p-1 hover:text-primary"><Plus className="w-3 h-3" /></button>
+              )}
+              <button onClick={(e) => { e.stopPropagation(); deleteItem(node.id); }} className="p-1 hover:text-destructive"><Trash2 className="w-3 h-3" /></button>
+            </div>
+          )}
         </div>
         {node.isOpen && node.children && (
           <div className="border-l border-border/50 ml-3.5">
@@ -178,76 +217,120 @@ export default function BDDPage() {
             <div className="lg:hidden w-10" />
             <div className="flex items-center gap-2">
               <HardDrive className="w-4 h-4 text-primary" />
-              <span className="font-headline font-bold text-xs uppercase tracking-widest text-primary">Explorateur BDD Physique</span>
+              <span className="font-headline font-bold text-xs uppercase tracking-widest text-primary">Gestionnaire FS Physique</span>
             </div>
           </div>
           <div className="flex bg-muted/30 p-1 rounded-sm border border-border">
-            <button onClick={() => setMode('chroma')} className={cn("px-3 py-1 text-[10px] font-code uppercase rounded-sm", mode === 'chroma' ? "bg-primary text-primary-foreground font-bold" : "text-muted-foreground")}>Index Local</button>
-            <button onClick={() => setMode('web')} className={cn("px-3 py-1 text-[10px] font-code uppercase rounded-sm", mode === 'web' ? "bg-secondary text-secondary-foreground font-bold" : "text-muted-foreground")}>Registre Web</button>
+            <button onClick={() => setMode('web')} className={cn("px-3 py-1 text-[10px] font-code uppercase rounded-sm", mode === 'web' ? "bg-primary text-primary-foreground font-bold" : "text-muted-foreground")}>Registre /registry</button>
+            <button onClick={() => setMode('chroma')} className={cn("px-3 py-1 text-[10px] font-code uppercase rounded-sm", mode === 'chroma' ? "bg-secondary text-secondary-foreground font-bold" : "text-muted-foreground")}>Moteur Chroma</button>
           </div>
         </header>
 
         <div className="flex-1 p-4 lg:p-6 overflow-hidden flex flex-col lg:flex-row gap-6">
-          <Card className="w-full lg:w-96 flex flex-col bg-black/40 border-border overflow-hidden shrink-0 shadow-2xl">
+          {/* Sidebar Tree */}
+          <Card className="w-full lg:w-80 flex flex-col bg-black/40 border-border overflow-hidden shrink-0">
             <div className="p-3 border-b border-border bg-card/50 flex items-center justify-between">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Structure sur Disque</span>
-              <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => mode === 'chroma' ? syncChromaState() : syncWebState()}>
-                <RefreshCw className={cn("w-3 h-3", isSyncing && "animate-spin")} />
-              </Button>
+              <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Arborescence</span>
+              <div className="flex items-center gap-1">
+                {mode === 'web' && (
+                  <>
+                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setNewModal({ isOpen: true, type: 'folder', parent: null })}>
+                      <FolderPlus className="w-3 h-3" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setNewModal({ isOpen: true, type: 'file', parent: null })}>
+                      <FilePlus className="w-3 h-3" />
+                    </Button>
+                  </>
+                )}
+                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => mode === 'web' ? refreshRegistry() : refreshChroma()}>
+                  <RefreshCw className={cn("w-3 h-3", isSyncing && "animate-spin")} />
+                </Button>
+              </div>
             </div>
             <div className="flex-1 overflow-auto terminal-scroll p-2">
               {renderTree(tree)}
             </div>
-            <div className="p-3 border-t border-border bg-black/20">
-              <p className="text-[9px] font-code text-muted-foreground uppercase truncate">
-                Chemin : {mode === 'chroma' ? '/data/chromadb' : '/registry/items/'}
-              </p>
-            </div>
           </Card>
 
-          <Card className="flex-1 bg-card/30 border-border p-8 flex flex-col items-center justify-center text-center relative overflow-hidden">
-            <div className="relative z-10 w-full max-w-lg">
-              {mode === 'chroma' ? (
-                <>
-                  <HardDrive className={cn("w-16 h-16 mx-auto mb-6", isSyncing ? "text-primary animate-spin" : "text-muted-foreground/30")} />
-                  <h3 className="font-headline font-bold text-xl uppercase tracking-widest mb-4 text-white">Moteur Vectoriel Local</h3>
-                  <p className="text-xs text-muted-foreground font-code mb-8 leading-relaxed">
-                    Les données indexées dans <span className="text-primary">/data/chromadb</span> sont persistantes et sémantiques.
-                  </p>
-                  <Button variant="outline" size="lg" onClick={() => syncChromaState()} disabled={isSyncing} className="w-full border-primary/30 hover:border-primary text-[11px] uppercase font-code tracking-widest">
-                    <RefreshCw className={cn("w-4 h-4 mr-3", isSyncing && "animate-spin")} /> Scanner l'index local
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <CloudLightning className={cn("w-16 h-16 mx-auto mb-6", isSyncing ? "text-secondary animate-pulse" : "text-muted-foreground/30")} />
-                  <h3 className="font-headline font-bold text-xl uppercase tracking-widest mb-4 text-white">Registre Physique Web</h3>
-                  <p className="text-xs text-muted-foreground font-code mb-8 leading-relaxed">
-                    Chaque fichier JSON dans <span className="text-secondary">/registry/items/</span> contient une Q/R complète.
-                  </p>
-                  
-                  <div className="space-y-4">
-                    <Card className="p-6 border-secondary/20 bg-secondary/5 text-left border-dashed">
-                      <div className="flex items-center gap-3 mb-3">
-                        <Zap className="w-4 h-4 text-secondary" />
-                        <p className="text-xs font-bold text-secondary uppercase">Ingestion Atomique</p>
-                      </div>
-                      <p className="text-[11px] font-code text-muted-foreground leading-relaxed">
-                        Vectorise les fichiers JSON locaux dans ChromaDB puis purge le dossier temporaire.
-                      </p>
-                    </Card>
-                    
-                    <Button onClick={syncWebAndPurge} disabled={isSyncing} className="w-full bg-secondary text-secondary-foreground h-12 text-xs font-code uppercase font-bold shadow-lg">
-                      {isPurging ? <ShieldAlert className="w-4 h-4 mr-3 animate-bounce" /> : <RefreshCw className="w-4 h-4 mr-3" />}
-                      {isPurging ? "Traitement Physique..." : "Ingérer & Purger Items JSON"}
-                    </Button>
+          {/* Main Viewer/Editor */}
+          <Card className="flex-1 bg-card/20 border-border flex flex-col overflow-hidden">
+            {selectedFile ? (
+              <>
+                <div className="p-3 border-b border-border bg-black/40 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <FileJson className="w-4 h-4 text-primary" />
+                    <span className="text-[11px] font-code uppercase text-white truncate max-w-[200px]">{selectedFile}</span>
                   </div>
-                </>
-              )}
-            </div>
+                  <div className="flex gap-2">
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      onClick={() => setIsEditing(!isEditing)}
+                      className={cn("h-7 text-[9px] uppercase", isEditing ? "text-primary" : "text-muted-foreground")}
+                    >
+                      {isEditing ? <Eye className="w-3 h-3 mr-2" /> : <Edit3 className="w-3 h-3 mr-2" />}
+                      {isEditing ? "Aperçu" : "Éditer"}
+                    </Button>
+                    {isEditing && (
+                      <Button variant="secondary" size="sm" onClick={saveFileChanges} className="h-7 text-[9px] uppercase font-bold">
+                        <Save className="w-3 h-3 mr-2" /> Sauver
+                      </Button>
+                    )}
+                  </div>
+                </div>
+                <div className="flex-1 overflow-hidden relative">
+                  {isEditing ? (
+                    <Textarea 
+                      value={fileContent} 
+                      onChange={(e) => setFileContent(e.target.value)}
+                      className="w-full h-full bg-black/80 font-code text-[11px] border-none focus-visible:ring-0 p-4 resize-none terminal-scroll"
+                    />
+                  ) : (
+                    <div className="w-full h-full bg-black/40 p-4 overflow-auto terminal-scroll">
+                      <pre className="font-code text-[10px] lg:text-[11px] text-primary/80 whitespace-pre-wrap">
+                        {fileContent}
+                      </pre>
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="flex-1 flex flex-col items-center justify-center opacity-30">
+                <Database className="w-16 h-16 mb-4" />
+                <p className="font-code text-xs uppercase tracking-widest text-center px-6">
+                  SÉLECTIONNEZ UN ACTIF PHYSIQUE<br/>POUR AUDIT OU MODIFICATION
+                </p>
+              </div>
+            )}
           </Card>
         </div>
       </main>
+
+      {/* New Item Modal */}
+      <Dialog open={newModal.isOpen} onOpenChange={(o) => !o && setNewModal({ ...newModal, isOpen: false })}>
+        <DialogContent className="bg-black border-primary/40">
+          <DialogHeader>
+            <DialogTitle className="text-xs uppercase font-headline text-primary flex items-center gap-2">
+              {newModal.type === 'file' ? <FilePlus className="w-4 h-4" /> : <FolderPlus className="w-4 h-4" />}
+              Nouveau {newModal.type === 'file' ? 'Fichier' : 'Dossier'}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <p className="text-[10px] font-code text-muted-foreground uppercase mb-2">Emplacement : registry/{newModal.parent || 'root'}</p>
+            <Input 
+              value={newName} 
+              onChange={(e) => setNewName(e.target.value)} 
+              placeholder={newModal.type === 'file' ? "Nom du fichier (ex: panne_moteur)" : "Nom du dossier"}
+              className="bg-muted font-code h-10 uppercase"
+              autoFocus
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setNewModal({ ...newModal, isOpen: false })} className="text-[10px] uppercase">Annuler</Button>
+            <Button onClick={createNew} className="bg-primary text-primary-foreground font-bold uppercase text-[10px]">Créer l'élément</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

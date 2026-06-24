@@ -3,110 +3,130 @@ import fs from 'fs';
 import path from 'path';
 
 /**
- * Infrastructure de liaison physique pour le Registre Cloud (simulé).
- * Stocke chaque document comme un fichier JSON individuel pour une visibilité maximale.
- * Les données sont "aplaties" à la racine pour faciliter l'audit humain.
+ * Infrastructure de liaison physique pour le Registre.
+ * Supporte désormais la gestion complète des fichiers et répertoires.
  */
 
-const REGISTRY_DIR = path.join(process.cwd(), 'registry');
-const ITEMS_DIR = path.join(REGISTRY_DIR, 'items');
+const REGISTRY_ROOT = path.join(process.cwd(), 'registry');
 
-// Assure l'existence des répertoires physiques
-if (!fs.existsSync(REGISTRY_DIR)) fs.mkdirSync(REGISTRY_DIR, { recursive: true });
-if (!fs.existsSync(ITEMS_DIR)) fs.mkdirSync(ITEMS_DIR, { recursive: true });
+// Assure l'existence du répertoire racine
+if (!fs.existsSync(REGISTRY_ROOT)) fs.mkdirSync(REGISTRY_ROOT, { recursive: true });
 
 export const postgresClient = {
   /**
-   * Récupère les données en scannant le dossier registry/items/.
+   * Récupère l'arborescence complète du répertoire registry/
    */
-  getCloudData: async (projectId: string, lastSyncDate?: Date): Promise<any[]> => {
-    try {
-      if (!fs.existsSync(ITEMS_DIR)) return [];
+  getRegistryTree: async (dir = REGISTRY_ROOT): Promise<any[]> => {
+    if (!fs.existsSync(dir)) return [];
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    
+    const tree = await Promise.all(entries.map(async (entry) => {
+      const fullPath = path.join(dir, entry.name);
+      const relativePath = path.relative(REGISTRY_ROOT, fullPath);
       
-      const files = fs.readdirSync(ITEMS_DIR);
-      const items: any[] = [];
-
-      for (const file of files) {
-        if (!file.endsWith('.json')) continue;
-        const raw = fs.readFileSync(path.join(ITEMS_DIR, file), 'utf8');
-        const data = JSON.parse(raw);
-        
-        if (data.projectId === projectId) {
-          if (lastSyncDate) {
-            if (new Date(data.createdAt).getTime() > lastSyncDate.getTime()) {
-              items.push(data);
-            }
-          } else {
-            items.push(data);
-          }
-        }
+      if (entry.isDirectory()) {
+        return {
+          id: relativePath,
+          name: entry.name,
+          type: 'folder',
+          children: await postgresClient.getRegistryTree(fullPath)
+        };
+      } else {
+        return {
+          id: relativePath,
+          name: entry.name,
+          type: 'file',
+          size: fs.statSync(fullPath).size
+        };
       }
-      return items;
-    } catch (e) {
-      console.error("❌ [NEON_FS] Erreur lecture dossier items :", e);
-      return [];
+    }));
+
+    return tree;
+  },
+
+  /**
+   * Lit le contenu d'un fichier spécifique
+   */
+  getFile: async (relPath: string) => {
+    const fullPath = path.join(REGISTRY_ROOT, relPath);
+    if (!fs.existsSync(fullPath)) throw new Error("FICHIER_INTROUVABLE");
+    return fs.readFileSync(fullPath, 'utf8');
+  },
+
+  /**
+   * Écrit ou met à jour un fichier
+   */
+  saveFile: async (relPath: string, content: string) => {
+    const fullPath = path.join(REGISTRY_ROOT, relPath);
+    const dir = path.dirname(fullPath);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(fullPath, content, 'utf8');
+  },
+
+  /**
+   * Crée un nouveau répertoire
+   */
+  createFolder: async (relPath: string) => {
+    const fullPath = path.join(REGISTRY_ROOT, relPath);
+    if (!fs.existsSync(fullPath)) {
+      fs.mkdirSync(fullPath, { recursive: true });
     }
   },
 
   /**
-   * Insère chaque item dans un fichier JSON physique distinct.
-   * Utilise le titre fourni par l'utilisateur pour nommer le fichier si disponible.
+   * Supprime un fichier ou un dossier (récursif)
+   */
+  deleteItem: async (relPath: string) => {
+    const fullPath = path.join(REGISTRY_ROOT, relPath);
+    if (fs.existsSync(fullPath)) {
+      fs.rmSync(fullPath, { recursive: true, force: true });
+    }
+  },
+
+  /**
+   * Méthode legacy pour compatibilité RAG automatique
    */
   upsertCloudData: async (items: any[]): Promise<void> => {
-    try {
-      items.forEach(newItem => {
-        // Extraction du contenu pour audit physique
-        let parsedContent: any = {};
-        if (typeof newItem.content === 'string') {
-          try {
-            parsedContent = JSON.parse(newItem.content);
-          } catch (e) {
-            parsedContent = { raw_text: newItem.content };
-          }
-        } else {
-          parsedContent = newItem.content || {};
-        }
+    const itemsDir = path.join(REGISTRY_ROOT, 'items');
+    if (!fs.existsSync(itemsDir)) fs.mkdirSync(itemsDir, { recursive: true });
 
-        // Utilisation du titre pour le nom du fichier (sanitisé)
-        const baseName = parsedContent.title || newItem.id;
-        const safeId = baseName.toLowerCase().replace(/[^a-zA-Z0-9-]/g, '_');
-        const filePath = path.join(ITEMS_DIR, `${safeId}.json`);
+    items.forEach(newItem => {
+      let parsedContent: any = {};
+      try {
+        parsedContent = typeof newItem.content === 'string' ? JSON.parse(newItem.content) : newItem.content;
+      } catch (e) {
+        parsedContent = { raw: newItem.content };
+      }
 
-        const dataToSave = {
-          id: newItem.id,
-          projectId: newItem.projectId,
-          type: newItem.type,
-          tags: newItem.tags,
-          createdAt: newItem.createdAt || new Date().toISOString(),
-          ...parsedContent 
-        };
+      const baseName = parsedContent.title || newItem.id;
+      const safeId = baseName.toLowerCase().replace(/[^a-zA-Z0-9-]/g, '_');
+      const filePath = path.join(itemsDir, `${safeId}.json`);
 
-        fs.writeFileSync(filePath, JSON.stringify(dataToSave, null, 2));
-      });
-      console.log(`✅ [NEON_FS] ${items.length} fichiers JSON enrichis créés dans registry/items/`);
-    } catch (e) {
-      console.error("❌ [NEON_FS] Erreur écriture fichiers items :", e);
-      throw new Error("REGISTRY_WRITE_FAILED");
-    }
+      const dataToSave = {
+        id: newItem.id,
+        projectId: newItem.projectId,
+        type: newItem.type,
+        createdAt: newItem.createdAt || new Date().toISOString(),
+        ...parsedContent 
+      };
+
+      fs.writeFileSync(filePath, JSON.stringify(dataToSave, null, 2));
+    });
   },
 
   /**
-   * Supprime physiquement les fichiers du disque.
+   * Méthode legacy pour suppression par IDs
    */
   deleteItems: async (projectId: string, ids: string[]): Promise<void> => {
-    try {
-      // Pour la purge, on doit trouver les fichiers par leur ID interne
-      const files = fs.readdirSync(ITEMS_DIR);
-      files.forEach(file => {
-        if (!file.endsWith('.json')) return;
-        const raw = fs.readFileSync(path.join(ITEMS_DIR, file), 'utf8');
-        const data = JSON.parse(raw);
-        if (ids.includes(data.id)) {
-          fs.unlinkSync(path.join(ITEMS_DIR, file));
-        }
-      });
-    } catch (e) {
-      console.error("❌ [NEON_FS] Erreur purge fichiers items :", e);
-    }
+    const itemsDir = path.join(REGISTRY_ROOT, 'items');
+    if (!fs.existsSync(itemsDir)) return;
+    const files = fs.readdirSync(itemsDir);
+    files.forEach(file => {
+      const raw = fs.readFileSync(path.join(itemsDir, file), 'utf8');
+      const data = JSON.parse(raw);
+      if (ids.includes(data.id)) {
+        fs.unlinkSync(path.join(itemsDir, file));
+      }
+    });
   }
 };

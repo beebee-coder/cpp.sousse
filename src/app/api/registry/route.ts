@@ -1,0 +1,51 @@
+
+import { createHybridRoute } from '@/lib/api-route-creator';
+import { postgresClient } from '@/lib/db/postgres-client';
+
+/**
+ * API de gestion physique du Registre (FS).
+ */
+export const GET = createHybridRoute<any, any>({
+  name: 'REGISTRY_EXPLORER',
+  webHandler: async (req) => {
+    const { searchParams } = new URL(req.url);
+    const path = searchParams.get('path');
+    
+    if (path) {
+      const content = await postgresClient.getFile(path);
+      return { success: true, content };
+    }
+    
+    const tree = await postgresClient.getRegistryTree();
+    return { success: true, tree };
+  }
+});
+
+export const POST = createHybridRoute<{ path: string; type: 'file' | 'folder'; content?: string }, any>({
+  name: 'REGISTRY_CREATE',
+  webHandler: async (req, body) => {
+    if (body.type === 'folder') {
+      await postgresClient.createFolder(body.path);
+    } else {
+      await postgresClient.saveFile(body.path, body.content || '{}');
+    }
+    return { success: true };
+  }
+});
+
+export const PUT = createHybridRoute<{ path: string; content: string }, any>({
+  name: 'REGISTRY_UPDATE',
+  webHandler: async (req, body) => {
+    await postgresClient.saveFile(body.path, body.content);
+    return { success: true };
+  }
+});
+
+export async function DELETE(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const path = searchParams.get('path');
+  if (!path) return new Response("Path required", { status: 400 });
+  
+  await postgresClient.deleteItem(path);
+  return new Response(JSON.stringify({ success: true }), { status: 200 });
+}
