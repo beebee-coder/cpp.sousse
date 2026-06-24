@@ -68,6 +68,9 @@ export default function BDDPage() {
     setMounted(true);
   }, []);
 
+  /**
+   * Fusionne l'état actuel de l'UI (dossiers ouverts) avec les nouvelles données du serveur.
+   */
   const mergeTreeState = useCallback((newNodes: FSNode[], oldNodes: FSNode[]): FSNode[] => {
     const openPaths = new Set<string>();
     const collectOpen = (nodes: FSNode[]) => {
@@ -178,13 +181,13 @@ export default function BDDPage() {
       if (res.success) {
         setNewModal({ ...newModal, isOpen: false });
         setNewName('');
-        toast({ title: newModal.type === 'file' ? "Fichier créé" : "Répertoire créé" });
+        toast({ title: "Création réussie" });
         await refreshRegistry();
       } else {
         throw new Error(res.error);
       }
     } catch (e: any) {
-      toast({ title: "Erreur de création physique", description: e.message, variant: "destructive" });
+      toast({ title: "Erreur", description: e.message, variant: "destructive" });
     }
   };
 
@@ -213,10 +216,13 @@ export default function BDDPage() {
     }
   };
 
+  /**
+   * Action de suppression optimiste pour un effet immédiat sans rechargement.
+   */
   const deleteItem = async (id: string) => {
     if (!confirm("Supprimer définitivement cet élément physique ?")) return;
     
-    // 1. Sauvegarde pour rollback potentiel
+    // 1. Sauvegarde pour rollback potentiel en cas d'erreur serveur
     const oldTree = [...tree];
     
     // 2. Mise à jour optimiste immédiate de l'UI
@@ -233,17 +239,17 @@ export default function BDDPage() {
     setTree(prev => removeFromTree([...prev]));
     if (selectedFile === id) setSelectedFile(null);
 
-    // 3. Suppression physique réelle
+    // 3. Suppression physique réelle sur le disque
     try {
       const res = await apiClient.delete(`/api/registry?path=${encodeURIComponent(id)}`);
       if (res.success) {
-        toast({ title: "Élément supprimé physiquement" });
+        toast({ title: "Élément supprimé" });
       } else {
         throw new Error(res.error || "Erreur inconnue");
       }
     } catch (error: any) {
       toast({ title: "Erreur de suppression", description: error.message, variant: "destructive" });
-      // Rollback UI en cas d'échec
+      // Rollback UI : On restaure l'arborescence si le serveur a échoué
       setTree(oldTree);
     }
   };
@@ -343,12 +349,8 @@ export default function BDDPage() {
               <div className="flex items-center gap-1">
                 {mode === 'web' && (
                   <>
-                    <Button title="Racine: Dossier" variant="ghost" size="icon" className="h-6 w-6" onClick={() => setNewModal({ isOpen: true, type: 'folder', parent: null })}>
-                      <FolderPlus className="w-3.5 h-3.5" />
-                    </Button>
-                    <Button title="Racine: Fichier" variant="ghost" size="icon" className="h-6 w-6" onClick={() => setNewModal({ isOpen: true, type: 'file', parent: null })}>
-                      <FilePlus className="w-3.5 h-3.5" />
-                    </Button>
+                    <button title="Racine: Dossier" onClick={() => setNewModal({ isOpen: true, type: 'folder', parent: null })} className="p-1 hover:text-primary transition-colors"><FolderPlus className="w-4 h-4" /></button>
+                    <button title="Racine: Fichier" onClick={() => setNewModal({ isOpen: true, type: 'file', parent: null })} className="p-1 hover:text-primary transition-colors"><FilePlus className="w-4 h-4" /></button>
                   </>
                 )}
                 <Button title="Rafraîchir" variant="ghost" size="icon" className="h-6 w-6" onClick={() => mode === 'web' ? refreshRegistry() : refreshChroma()}>

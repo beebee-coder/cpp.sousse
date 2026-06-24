@@ -127,10 +127,13 @@ export const postgresClient = {
    */
   deleteItem: async (relPath: string) => {
     ensureRegistry();
-    if (!relPath || relPath === '.' || relPath === '/' || relPath.includes('..')) {
+    // Sécurité : Empêcher la suppression en dehors de REGISTRY_ROOT
+    const normalizedPath = path.normalize(relPath).replace(/^(\.\.(\/|\\|$))+/, '');
+    if (!normalizedPath || normalizedPath === '.' || normalizedPath === '/') {
       throw new Error("SUPPRESSION_NON_AUTORISEE_SUR_RACINE");
     }
-    const fullPath = path.join(REGISTRY_ROOT, relPath);
+    
+    const fullPath = path.join(REGISTRY_ROOT, normalizedPath);
     if (fs.existsSync(fullPath)) {
       try {
         // fs.rmSync avec recursive: true supprime physiquement le fichier ou le répertoire entier

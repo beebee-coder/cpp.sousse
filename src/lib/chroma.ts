@@ -75,7 +75,7 @@ let _chromaClient: any = null;
 
 /**
  * Récupère le client ChromaDB. 
- * Supporte PersistentClient (v3+) ou ChromaClient standard.
+ * Supporte PersistentClient (v3+) ou ChromaClient standard de manière robuste.
  */
 export async function getChromaClient(): Promise<any> {
   if (IS_CLOUD) return null;
@@ -83,20 +83,18 @@ export async function getChromaClient(): Promise<any> {
   try {
     const chroma = await import('chromadb');
     
-    // Détection robuste du constructeur
-    if ((chroma as any).PersistentClient) {
-      _chromaClient = new (chroma as any).PersistentClient({ 
-        path: CHROMA_DATA_DIR 
-      });
-    } else {
-      _chromaClient = new (chroma as any).ChromaClient({ 
-        path: CHROMA_DATA_DIR 
-      } as any);
-    }
+    // Détection robuste du constructeur pour éviter les erreurs "is not a constructor"
+    const ClientClass = (chroma as any).PersistentClient || (chroma as any).ChromaClient;
     
-    if (_chromaClient) {
+    if (ClientClass) {
+      // Configuration compatible avec les nouvelles versions de ChromaDB
+      _chromaClient = new ClientClass({ 
+        path: CHROMA_DATA_DIR,
+        database: "default"
+      });
       console.log(`🧠 [CHROMA_INIT] Moteur ancré sur : ${CHROMA_DATA_DIR}`);
     }
+    
     return _chromaClient;
   } catch (e: any) {
     console.error("❌ [CHROMA_INIT] Erreur de liaison physique :", e.message);
