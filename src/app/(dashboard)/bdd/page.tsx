@@ -18,7 +18,8 @@ import {
   FolderPlus,
   FilePlus,
   Type,
-  Loader2
+  Loader2,
+  ImageIcon
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -28,6 +29,7 @@ import { cn } from '@/lib/utils';
 import { apiClient } from '@/lib/api-client';
 import { useToast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { useRouter } from 'next/navigation';
 
 interface FSNode {
   id: string;
@@ -40,6 +42,7 @@ interface FSNode {
 
 export default function BDDPage() {
   const { toast } = useToast();
+  const router = useRouter();
   const [mounted, setMounted] = useState(false);
   const [mode, setMode] = useState<'chroma' | 'web'>('web');
   const [tree, setTree] = useState<FSNode[]>([]);
@@ -73,7 +76,6 @@ export default function BDDPage() {
     try {
       const res = await apiClient.get<any>('/api/registry');
       if (res.success && Array.isArray(res.tree)) {
-        // Préserver l'état d'ouverture lors du refresh
         setTree(prev => {
           const applyOpen = (nodes: FSNode[]): FSNode[] => nodes.map(node => {
             const old = findInTree(prev, node.id);
@@ -148,7 +150,6 @@ export default function BDDPage() {
   const deleteItem = async (id: string) => {
     if (!confirm(`Supprimer physiquement "${id}" et tout son contenu ?`)) return;
     
-    // 1. MISE À JOUR OPTIMISTE (Visuel instantané)
     const previousTree = [...tree];
     const removeFromTree = (nodes: FSNode[]): FSNode[] => {
       return nodes
@@ -165,7 +166,6 @@ export default function BDDPage() {
     }
 
     try {
-      // 2. ACTION PHYSIQUE
       const res = await apiClient.delete<any>(`/api/registry?path=${encodeURIComponent(id)}`);
       if (res.success) {
         toast({ title: "Élément supprimé du disque" });
@@ -173,7 +173,6 @@ export default function BDDPage() {
         throw new Error(res.error || "Erreur serveur");
       }
     } catch (error: any) {
-      // 3. ROLLBACK EN CAS D'ÉCHEC
       setTree(previousTree);
       toast({ title: "Échec de suppression", description: error.message, variant: "destructive" });
     }
@@ -280,9 +279,19 @@ export default function BDDPage() {
             <HardDrive className="w-4 h-4 text-primary" />
             <span className="font-headline font-bold text-xs uppercase tracking-widest text-primary">Gestionnaire d'Actifs Physique</span>
           </div>
-          <div className="flex bg-muted/30 p-1 rounded-sm border border-border">
-            <button onClick={() => setMode('web')} className={cn("px-3 py-1 text-[10px] font-code uppercase rounded-sm", mode === 'web' ? "bg-primary text-primary-foreground font-bold" : "text-muted-foreground")}>Registre</button>
-            <button onClick={() => setMode('chroma')} className={cn("px-3 py-1 text-[10px] font-code uppercase rounded-sm", mode === 'chroma' ? "bg-secondary text-secondary-foreground font-bold" : "text-muted-foreground")}>Vecteurs</button>
+          <div className="flex items-center gap-4">
+            <Button 
+              size="sm" 
+              variant="secondary" 
+              onClick={() => router.push('/bank')}
+              className="h-8 text-[10px] uppercase font-bold"
+            >
+              <ImageIcon className="w-3.5 h-3.5 mr-2" /> Banque d'images
+            </Button>
+            <div className="flex bg-muted/30 p-1 rounded-sm border border-border">
+              <button onClick={() => setMode('web')} className={cn("px-3 py-1 text-[10px] font-code uppercase rounded-sm", mode === 'web' ? "bg-primary text-primary-foreground font-bold" : "text-muted-foreground")}>Registre</button>
+              <button onClick={() => setMode('chroma')} className={cn("px-3 py-1 text-[10px] font-code uppercase rounded-sm", mode === 'chroma' ? "bg-secondary text-secondary-foreground font-bold" : "text-muted-foreground")}>Vecteurs</button>
+            </div>
           </div>
         </header>
 
@@ -316,7 +325,14 @@ export default function BDDPage() {
                     <Textarea value={fileContent} onChange={(e) => setFileContent(e.target.value)} className="w-full h-full bg-black/80 font-code text-[11px] border-none focus-visible:ring-0 p-4 resize-none terminal-scroll" spellCheck={false} />
                   ) : (
                     <div className="w-full h-full bg-black/40 p-4 overflow-auto terminal-scroll">
-                      <pre className="font-code text-[10px] text-primary/80 whitespace-pre-wrap">{fileContent}</pre>
+                      {selectedFile.endsWith('.json') ? (
+                        <pre className="font-code text-[10px] text-primary/80 whitespace-pre-wrap">{fileContent}</pre>
+                      ) : (
+                        <div className="flex flex-col items-center justify-center h-full opacity-50">
+                          <ImageIcon className="w-16 h-16 mb-4" />
+                          <p className="font-code text-[10px] uppercase">Fichier binaire (Non éditable)</p>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect } from 'react';
@@ -16,7 +17,8 @@ import {
   Download,
   Menu,
   Cloud,
-  Loader2
+  Loader2,
+  Image as ImageIcon
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { usePlatform } from '@/components/PlatformProvider';
@@ -31,9 +33,9 @@ const navItems = [
   { icon: MessageSquare, label: 'Chat Neural', href: '/chat' },
   { icon: Database, label: 'Base RAG', href: '/dataset' },
   { icon: HardDrive, label: 'Explorateur BDD', href: '/bdd' },
+  { icon: ImageIcon, label: "Banque d'images", href: '/bank' },
   { icon: Download, label: 'Installateur Desktop', href: '/download' },
   { icon: Camera, label: 'Flux Vidéo', href: '#' },
-  { icon: Terminal, label: 'Console Audit', href: '#' },
 ];
 
 interface SidebarContentProps {

@@ -18,6 +18,10 @@ const ensureRegistry = () => {
     if (!fs.existsSync(itemsDir)) {
       fs.mkdirSync(itemsDir, { recursive: true });
     }
+    const bankDir = path.join(REGISTRY_ROOT, 'bank');
+    if (!fs.existsSync(bankDir)) {
+      fs.mkdirSync(bankDir, { recursive: true });
+    }
   } catch (e) {
     console.error("❌ [postgresClient] Erreur accès disque :", e);
   }
@@ -34,7 +38,7 @@ export const postgresClient = {
         const fullPath = path.join(dir, entry.name);
         const relativePath = path.relative(REGISTRY_ROOT, fullPath).replace(/\\/g, '/');
         
-        if (entry.name === '.DS_Store') return null;
+        if (entry.name === '.DS_Store' || entry.name.startsWith('.')) return null;
 
         if (entry.isDirectory()) {
           const children = await this.getRegistryTree(fullPath);
@@ -82,6 +86,18 @@ export const postgresClient = {
     fs.writeFileSync(fullPath, content, 'utf8');
   },
 
+  async saveAsset(relPath: string, base64Data: string) {
+    ensureRegistry();
+    const fullPath = path.join(REGISTRY_ROOT, relPath);
+    const dir = path.dirname(fullPath);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    
+    const base64Content = base64Data.split(';base64,').pop();
+    if (base64Content) {
+      fs.writeFileSync(fullPath, Buffer.from(base64Content, 'base64'));
+    }
+  },
+
   async createFolder(relPath: string) {
     ensureRegistry();
     const fullPath = path.join(REGISTRY_ROOT, relPath);
@@ -100,9 +116,6 @@ export const postgresClient = {
     }
   },
 
-  /**
-   * Suppression physique récursive (fichiers ou dossiers).
-   */
   async deleteItem(relPath: string) {
     ensureRegistry();
     const safePath = path.normalize(relPath).replace(/^(\.\.(\/|\\|$))+/, '');
@@ -110,9 +123,8 @@ export const postgresClient = {
     
     const fullPath = path.join(REGISTRY_ROOT, safePath);
     if (fs.existsSync(fullPath)) {
-      // rmSync avec recursive + force efface RÉELLEMENT le dossier et son contenu
       fs.rmSync(fullPath, { recursive: true, force: true });
-      console.log(`✅ [POSTGRES_CLIENT] Suppression radicale : ${fullPath}`);
+      console.log(`✅ [POSTGRES_CLIENT] Suppression physique : ${fullPath}`);
     }
   },
 
