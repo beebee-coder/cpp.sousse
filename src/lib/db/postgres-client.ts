@@ -11,19 +11,22 @@ import path from 'path';
 const REGISTRY_ROOT = path.join(process.cwd(), '.registry');
 
 // Assure l'existence du répertoire racine et du sous-dossier items
-if (!fs.existsSync(REGISTRY_ROOT)) {
-  fs.mkdirSync(REGISTRY_ROOT, { recursive: true });
-}
-const ITEMS_DIR = path.join(REGISTRY_ROOT, 'items');
-if (!fs.existsSync(ITEMS_DIR)) {
-  fs.mkdirSync(ITEMS_DIR, { recursive: true });
-}
+const ensureRegistry = () => {
+  if (!fs.existsSync(REGISTRY_ROOT)) {
+    fs.mkdirSync(REGISTRY_ROOT, { recursive: true });
+  }
+  const itemsDir = path.join(REGISTRY_ROOT, 'items');
+  if (!fs.existsSync(itemsDir)) {
+    fs.mkdirSync(itemsDir, { recursive: true });
+  }
+};
 
 export const postgresClient = {
   /**
    * Récupère l'arborescence complète du répertoire .registry/
    */
   getRegistryTree: async (dir = REGISTRY_ROOT): Promise<any[]> => {
+    ensureRegistry();
     if (!fs.existsSync(dir)) return [];
     
     try {
@@ -33,8 +36,8 @@ export const postgresClient = {
         const fullPath = path.join(dir, entry.name);
         const relativePath = path.relative(REGISTRY_ROOT, fullPath);
         
-        // Ignorer les fichiers système cachés
-        if (entry.name.startsWith('.')) return null;
+        // Ignorer les fichiers système cachés à l'exception du dossier racine lui-même
+        if (entry.name.startsWith('.') && entry.name !== '.registry') return null;
 
         if (entry.isDirectory()) {
           const children = await postgresClient.getRegistryTree(fullPath);
@@ -72,6 +75,7 @@ export const postgresClient = {
    * Lit le contenu d'un fichier spécifique
    */
   getFile: async (relPath: string) => {
+    ensureRegistry();
     const fullPath = path.join(REGISTRY_ROOT, relPath);
     if (!fs.existsSync(fullPath)) throw new Error("FICHIER_INTROUVABLE");
     return fs.readFileSync(fullPath, 'utf8');
@@ -81,6 +85,7 @@ export const postgresClient = {
    * Écrit ou met à jour un fichier
    */
   saveFile: async (relPath: string, content: string) => {
+    ensureRegistry();
     const fullPath = path.join(REGISTRY_ROOT, relPath);
     const dir = path.dirname(fullPath);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -91,6 +96,7 @@ export const postgresClient = {
    * Crée un nouveau répertoire (Récursif par défaut)
    */
   createFolder: async (relPath: string) => {
+    ensureRegistry();
     const fullPath = path.join(REGISTRY_ROOT, relPath);
     if (!fs.existsSync(fullPath)) {
       fs.mkdirSync(fullPath, { recursive: true });
@@ -101,6 +107,7 @@ export const postgresClient = {
    * Renomme un fichier ou un dossier
    */
   renameItem: async (oldPath: string, newName: string) => {
+    ensureRegistry();
     const oldFullPath = path.join(REGISTRY_ROOT, oldPath);
     const dir = path.dirname(oldFullPath);
     const newFullPath = path.join(dir, newName);
@@ -116,6 +123,7 @@ export const postgresClient = {
    * Supprime un fichier ou un dossier (récursif)
    */
   deleteItem: async (relPath: string) => {
+    ensureRegistry();
     const fullPath = path.join(REGISTRY_ROOT, relPath);
     if (fs.existsSync(fullPath)) {
       fs.rmSync(fullPath, { recursive: true, force: true });
@@ -126,7 +134,8 @@ export const postgresClient = {
    * Méthode d'upload de masse pour les captures RAG
    */
   upsertCloudData: async (items: any[]): Promise<void> => {
-    if (!fs.existsSync(ITEMS_DIR)) fs.mkdirSync(ITEMS_DIR, { recursive: true });
+    ensureRegistry();
+    const itemsDir = path.join(REGISTRY_ROOT, 'items');
 
     items.forEach(newItem => {
       let parsedContent: any = {};
@@ -138,7 +147,7 @@ export const postgresClient = {
 
       const baseName = parsedContent.title || newItem.id;
       const safeId = baseName.toLowerCase().replace(/[^a-zA-Z0-9-]/g, '_');
-      const filePath = path.join(ITEMS_DIR, `${safeId}.json`);
+      const filePath = path.join(itemsDir, `${safeId}.json`);
 
       // Aplatir la structure pour un accès physique direct
       const dataToSave = {
@@ -160,10 +169,12 @@ export const postgresClient = {
    * Méthode de suppression par IDs
    */
   deleteItems: async (projectId: string, ids: string[]): Promise<void> => {
-    if (!fs.existsSync(ITEMS_DIR)) return;
-    const files = fs.readdirSync(ITEMS_DIR);
+    ensureRegistry();
+    const itemsDir = path.join(REGISTRY_ROOT, 'items');
+    if (!fs.existsSync(itemsDir)) return;
+    const files = fs.readdirSync(itemsDir);
     files.forEach(file => {
-      const fullPath = path.join(ITEMS_DIR, file);
+      const fullPath = path.join(itemsDir, file);
       try {
         const raw = fs.readFileSync(fullPath, 'utf8');
         const data = JSON.parse(raw);

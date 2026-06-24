@@ -76,15 +76,16 @@ let _chromaClient: any = null;
 
 /**
  * Récupère le client ChromaDB. 
+ * Utilise PersistentClient pour éviter les avertissements de dépréciation.
  */
 export async function getChromaClient(): Promise<any> {
   if (IS_CLOUD) return null;
   if (_chromaClient) return _chromaClient;
   try {
-    const { ChromaClient } = await import('chromadb');
+    const { PersistentClient } = await import('chromadb');
     
-    _chromaClient = new ChromaClient({ 
-      path: `file://${CHROMA_DATA_DIR}` 
+    _chromaClient = new PersistentClient({ 
+      path: CHROMA_DATA_DIR 
     });
     
     console.log(`🧠 [CHROMA_INIT] Moteur ancré sur : ${CHROMA_DATA_DIR}`);
@@ -104,6 +105,18 @@ export async function listCollections() {
     return collections;
   } catch {
     return [];
+  }
+}
+
+export async function deleteCollection(name: string) {
+  if (IS_CLOUD) return;
+  try {
+    const client = await getChromaClient();
+    if (client) {
+      await client.deleteCollection({ name });
+    }
+  } catch (e: any) {
+    console.error(`❌ [CHROMA_DELETE] Erreur :`, e.message);
   }
 }
 

@@ -200,7 +200,11 @@ export default function BDDPage() {
       
       if (res.success) {
         setRenameModal({ ...renameModal, isOpen: false });
-        if (selectedFile === renameModal.path) setSelectedFile(null);
+        if (selectedFile === renameModal.path) {
+          const pathParts = renameModal.path.split('/');
+          pathParts[pathParts.length - 1] = finalRename;
+          setSelectedFile(pathParts.join('/'));
+        }
         toast({ title: "Actif renommé avec succès" });
         await refreshRegistry();
       }
