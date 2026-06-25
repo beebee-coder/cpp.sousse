@@ -72,6 +72,17 @@ export default function BDDPage() {
   }, []);
 
   const mergeTreeState = useCallback((oldTree: FSNode[], newNodes: FSNode[]): FSNode[] => {
+    const findNodeById = (nodes: FSNode[], id: string): FSNode | null => {
+      for (const node of nodes) {
+        if (node.id === id) return node;
+        if (node.children) {
+          const found = findNodeById(node.children, id);
+          if (found) return found;
+        }
+      }
+      return null;
+    };
+
     const applyOpen = (nodes: FSNode[]): FSNode[] => {
       return nodes.map(node => {
         const oldNode = findNodeById(oldTree, node.id);
@@ -85,17 +96,6 @@ export default function BDDPage() {
     };
     return applyOpen(newNodes);
   }, []);
-
-  const findNodeById = (nodes: FSNode[], id: string): FSNode | null => {
-    for (const node of nodes) {
-      if (node.id === id) return node;
-      if (node.children) {
-        const found = findNodeById(node.children, id);
-        if (found) return found;
-      }
-    }
-    return null;
-  };
 
   const refreshRegistry = useCallback(async (isInitial = false) => {
     setIsLoading(true);
@@ -138,6 +138,7 @@ export default function BDDPage() {
   }, [mode, mounted, refreshRegistry, refreshChroma]);
 
   const handleFileClick = async (node: FSNode) => {
+    if (node.id === selectedFile) return;
     if (node.type === 'file') {
       try {
         const res = await apiClient.get<any>(`/api/registry?path=${encodeURIComponent(node.id)}`);
@@ -168,19 +169,24 @@ export default function BDDPage() {
         }));
     };
     
+    // Mise à jour optimiste instantanée
     setTree(prev => removeFromTree(prev));
+    
+    // Si on supprime le fichier actuellement ouvert ou son parent
     if (selectedFile === id || (selectedFile && selectedFile.startsWith(id + '/'))) {
       setSelectedFile(null);
+      setFileContent('');
     }
 
     try {
       const res = await apiClient.delete<any>(`/api/registry?path=${encodeURIComponent(id)}`);
       if (res.success) {
-        toast({ title: "Élément supprimé du registre" });
+        toast({ title: "Élément supprimé du disque" });
       } else {
         throw new Error(res.error || "Erreur serveur");
       }
     } catch (error: any) {
+      // Rollback en cas d'échec
       setTree(previousTree);
       toast({ 
         title: "Échec de suppression physique", 

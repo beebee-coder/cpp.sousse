@@ -46,7 +46,6 @@ class ApiClient {
           body: data ? JSON.stringify(data) : undefined,
         });
         const json = await response.json();
-        // Crucial : Ne pas forcer success:true si le serveur renvoie false
         if (!response.ok) return { success: false, error: json.error || `HTTP_${response.status}` };
         return json;
       });
@@ -92,8 +91,7 @@ class ApiClient {
         if (!response.ok) return { success: false, error: json.error || "ECHEC_SUPPRESSION" };
         return json;
       });
-      // Si result.success est explicitement false, on le préserve
-      return { ...result, timestamp, success: result.success === false ? false : (result.success ?? true) } as ApiResponse<T>;
+      return { ...result, timestamp, success: result.success !== false } as ApiResponse<T>;
     } catch (error: any) {
       return { error: error.message, offline: true, timestamp, success: false } as any;
     }

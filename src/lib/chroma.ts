@@ -30,17 +30,13 @@ export interface SearchResult {
 
 const CHROMA_DATA_DIR = path.join(process.cwd(), '.data', 'chromadb');
 if (!fs.existsSync(CHROMA_DATA_DIR)) {
-  fs.mkdirSync(CHROMA_DATA_DIR, { recursive: true });
+  try { fs.mkdirSync(CHROMA_DATA_DIR, { recursive: true }); } catch (e) {}
 }
 
 const REGISTRY_ITEMS_DIR = path.join(process.cwd(), '.registry', 'items');
 
 const IS_CLOUD = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
 
-/**
- * LocalEmbeddingFunction allégée.
- * En l'absence de Transformers.js, renvoie des vecteurs neutres.
- */
 export class LocalEmbeddingFunction {
   async generate(texts: string[]): Promise<number[][]> {
     return texts.map(() => new Array(384).fill(0));
@@ -61,27 +57,19 @@ export async function getChromaClient(): Promise<any> {
   
   try {
     const chroma = await import('chromadb');
-    // Détection robuste du constructeur selon la version de la lib
     const ChromaClientClass = (chroma as any).ChromaClient || (chroma as any).default?.ChromaClient;
     
     if (ChromaClientClass) {
       _chromaClient = new ChromaClientClass({
         path: CHROMA_DATA_DIR
       });
-      console.log(`🧠 [CHROMA_INIT] Moteur ancré sur : ${CHROMA_DATA_DIR}`);
     }
-    
     return _chromaClient;
   } catch (e: any) {
-    console.error("❌ [CHROMA_INIT] Erreur de liaison physique :", e.message);
     return null;
   }
 }
 
-/**
- * Recherche de secours par mots-clés dans le registre physique (Fallback).
- * Indispensable pour le mode Cloud ou si Chroma est instable.
- */
 export function fallbackSemanticSearch(query: string, nResults = 3, componentFilter?: string): SearchResult[] {
   if (!fs.existsSync(REGISTRY_ITEMS_DIR)) return [];
   
@@ -95,7 +83,6 @@ export function fallbackSemanticSearch(query: string, nResults = 3, componentFil
       const data = JSON.parse(content);
       const text = `${data.label || ''} ${data.details || ''} ${data.title || ''}`.toLowerCase();
       
-      // Simple keyword matching for fallback
       if (text.includes(lowerQuery) || lowerQuery.split(' ').some(word => word.length > 3 && text.includes(word))) {
         if (componentFilter && data.metadata?.component !== componentFilter) continue;
 
@@ -109,7 +96,6 @@ export function fallbackSemanticSearch(query: string, nResults = 3, componentFil
       }
       if (results.length >= nResults * 2) break;
     }
-
     return results.slice(0, nResults);
   } catch (e) {
     return [];
@@ -185,7 +171,6 @@ export async function semanticSearch(options: SearchOptions, embeddingFunction: 
       score: parseFloat((1 - (Number(distances[i]) || 0)).toFixed(4))
     }));
   } catch (e) {
-    // Fallback automatique si ChromaDB échoue
     return fallbackSemanticSearch(query, nResults);
   }
 }

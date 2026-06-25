@@ -74,7 +74,7 @@ export const DELETE = createHybridRoute<any, any>({
     }
     
     try {
-      console.log(`📡 [API_REGISTRY] Demande de suppression : ${targetPath}`);
+      console.log(`📡 [API_REGISTRY] Demande de suppression physique : ${targetPath}`);
       await postgresClient.deleteItem(targetPath);
       return { success: true, message: "ELEMENT_SUPPRIME" };
     } catch (error: any) {

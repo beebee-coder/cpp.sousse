@@ -73,7 +73,8 @@ export const postgresClient = {
 
   async getFile(relPath: string) {
     ensureRegistry();
-    const fullPath = path.join(REGISTRY_ROOT, relPath);
+    const cleanRelPath = relPath.startsWith('/') ? relPath.substring(1) : relPath;
+    const fullPath = path.join(REGISTRY_ROOT, cleanRelPath);
     if (!fs.existsSync(fullPath)) throw new Error("FICHIER_INTROUVABLE");
     
     const ext = path.extname(fullPath).toLowerCase();
@@ -97,7 +98,8 @@ export const postgresClient = {
 
   async saveFile(relPath: string, content: string) {
     ensureRegistry();
-    const fullPath = path.join(REGISTRY_ROOT, relPath);
+    const cleanRelPath = relPath.startsWith('/') ? relPath.substring(1) : relPath;
+    const fullPath = path.join(REGISTRY_ROOT, cleanRelPath);
     const dir = path.dirname(fullPath);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(fullPath, content, 'utf8');
@@ -105,7 +107,8 @@ export const postgresClient = {
 
   async saveAsset(relPath: string, base64Data: string) {
     ensureRegistry();
-    const fullPath = path.join(REGISTRY_ROOT, relPath);
+    const cleanRelPath = relPath.startsWith('/') ? relPath.substring(1) : relPath;
+    const fullPath = path.join(REGISTRY_ROOT, cleanRelPath);
     const dir = path.dirname(fullPath);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     
@@ -117,13 +120,15 @@ export const postgresClient = {
 
   async createFolder(relPath: string) {
     ensureRegistry();
-    const fullPath = path.join(REGISTRY_ROOT, relPath);
+    const cleanRelPath = relPath.startsWith('/') ? relPath.substring(1) : relPath;
+    const fullPath = path.join(REGISTRY_ROOT, cleanRelPath);
     if (!fs.existsSync(fullPath)) fs.mkdirSync(fullPath, { recursive: true });
   },
 
   async renameItem(oldPath: string, newName: string) {
     ensureRegistry();
-    const oldFullPath = path.join(REGISTRY_ROOT, oldPath);
+    const cleanOldPath = oldPath.startsWith('/') ? oldPath.substring(1) : oldPath;
+    const oldFullPath = path.join(REGISTRY_ROOT, cleanOldPath);
     const dir = path.dirname(oldFullPath);
     const newFullPath = path.join(dir, newName);
     if (fs.existsSync(oldFullPath)) {
@@ -136,21 +141,25 @@ export const postgresClient = {
   async deleteItem(relPath: string) {
     ensureRegistry();
     // Normalize path and prevent directory traversal
-    const safePath = path.normalize(relPath).replace(/^(\.\.(\/|\\|$))+/, '');
+    const cleanRelPath = relPath.startsWith('/') ? relPath.substring(1) : relPath;
+    const safePath = path.normalize(cleanRelPath).replace(/^(\.\.(\/|\\|$))+/, '');
+    
     if (!safePath || safePath === '.' || safePath === '/') throw new Error("ACCES_INTERDIT_RACINE");
     
     const fullPath = path.join(REGISTRY_ROOT, safePath);
+    console.log(`📡 [POSTGRES_CLIENT] Tentative de suppression physique : ${fullPath}`);
     
     if (fs.existsSync(fullPath)) {
       try {
         // Radical recursive deletion
         fs.rmSync(fullPath, { recursive: true, force: true });
-        console.log(`✅ [POSTGRES_CLIENT] Suppression physique radicale : ${fullPath}`);
+        console.log(`✅ [POSTGRES_CLIENT] Suppression réussie : ${fullPath}`);
       } catch (e: any) {
         console.error(`❌ [POSTGRES_CLIENT] Échec suppression système : ${e.message}`);
         throw new Error(`ERREUR_SYSTEME_FICHIER : ${e.message}`);
       }
     } else {
+      console.warn(`⚠️ [POSTGRES_CLIENT] Élément non trouvé sur le disque : ${fullPath}`);
       throw new Error("ELEMENT_DEJA_ABSENT_DU_DISQUE");
     }
   },
