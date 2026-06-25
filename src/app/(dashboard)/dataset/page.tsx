@@ -8,6 +8,7 @@ import {
   UploadCloud, 
   Layers,
   Mic,
+  MicOff,
   Loader2,
   Trash2,
   Camera,
@@ -17,7 +18,9 @@ import {
   Volume2,
   Activity,
   CheckCircle2,
-  ShieldCheck
+  ShieldCheck,
+  Zap,
+  Power
 } from 'lucide-react';
 
 import { Card } from '@/components/ui/card';
@@ -45,6 +48,9 @@ export default function DatasetPage() {
   const [mounted, setMounted] = useState(false);
   const [mode, setMode] = useState<'qa' | 'procedure'>('qa');
   const [qaItems, setQaItems] = useState<QAItem[]>([]);
+  
+  // Voice Mode Master State
+  const [isVoiceModeActive, setIsVoiceModeActive] = useState(false);
   
   // Form states
   const [qaTitle, setQaTitle] = useState('');
@@ -75,6 +81,7 @@ export default function DatasetPage() {
       if (refined.answer) setAnswer(refined.answer);
       
       toast({ title: "Optimisation Neurale Terminée" });
+      if (isVoiceModeActive) voice.speak("Optimisation terminée. Données prêtes pour enregistrement.");
     } catch (e) {
       toast({ title: "Échec du raffinement", variant: "destructive" });
     } finally {
@@ -83,21 +90,40 @@ export default function DatasetPage() {
   };
 
   const handleVoiceResult = useCallback((text: string) => {
-    if (activeVoiceField === 'qaTitle') setQaTitle(prev => prev + " " + text);
-    if (activeVoiceField === 'question') setQuestion(prev => prev + " " + text);
-    if (activeVoiceField === 'answer') setAnswer(prev => prev + " " + text);
+    if (activeVoiceField === 'qaTitle') setQaTitle(prev => (prev + " " + text).trim());
+    if (activeVoiceField === 'question') setQuestion(prev => (prev + " " + text).trim());
+    if (activeVoiceField === 'answer') setAnswer(prev => (prev + " " + text).trim());
   }, [activeVoiceField]);
 
   const voice = useVoice({ onResult: handleVoiceResult });
 
-  const toggleVoice = (field: string) => {
-    if (voice.isListening && activeVoiceField === field) {
-      voice.stopListening();
-      setActiveVoiceField(null);
-    } else {
-      setActiveVoiceField(field);
+  // Intelligent Guided Interaction on Focus
+  const handleFieldFocus = (field: string, prompt: string) => {
+    if (!isVoiceModeActive) return;
+    
+    // Stop current listening to refresh for the new field
+    voice.stopListening();
+    setActiveVoiceField(field);
+    
+    // Speak guidance
+    voice.speak(prompt);
+    
+    // Start listening after a small delay to avoid capturing the prompt
+    setTimeout(() => {
       voice.startListening();
-      voice.speak(`Dictée active pour le champ ${field}.`);
+    }, 1000);
+  };
+
+  const toggleGlobalVoice = () => {
+    const newState = !isVoiceModeActive;
+    setIsVoiceModeActive(newState);
+    if (newState) {
+      voice.speak("Assistant vocal activé. Sélectionnez un champ pour commencer la dictée.");
+      toast({ title: "Mode IV Activé", description: "L'IA vous guidera lors du remplissage." });
+    } else {
+      voice.stopListening();
+      voice.speak("Assistant vocal désactivé.");
+      setActiveVoiceField(null);
     }
   };
 
@@ -117,6 +143,11 @@ export default function DatasetPage() {
     setQaItems(prev => [newItem, ...prev]);
     setQuestion(''); setAnswer(''); setQaTitle('');
     toast({ title: "Entrée ajoutée au registre local" });
+    
+    if (isVoiceModeActive) {
+      voice.speak("Entrée enregistrée dans le registre provisoire.");
+      setActiveVoiceField(null);
+    }
   };
 
   const handleFinalSync = async () => {
@@ -140,6 +171,7 @@ export default function DatasetPage() {
       await apiClient.post('/api/sync/upload', { userId: 'admin', projectId: 'project-001', items });
       toast({ title: "Synchronisation physique réussie", description: `${items.length} documents indexés.` });
       setQaItems([]);
+      if (isVoiceModeActive) voice.speak("Synchronisation physique terminée avec succès.");
     } catch (e) {
       toast({ title: "Échec de synchronisation", variant: "destructive" });
     } finally {
@@ -160,12 +192,19 @@ export default function DatasetPage() {
             <span className="font-headline font-bold text-xs uppercase tracking-widest text-primary">Station de Dictée RAG</span>
           </div>
           <div className="flex items-center gap-4">
-            {voice.isListening && (
-              <div className="flex items-center gap-2 px-3 py-1 bg-red-500/10 border border-red-500/30 rounded-full animate-pulse">
-                <Activity className="w-3 h-3 text-red-500" />
-                <span className="text-[8px] font-bold text-red-500 uppercase">Signal Vocal Actif</span>
-              </div>
-            )}
+            <Button 
+              variant={isVoiceModeActive ? "default" : "outline"}
+              size="sm"
+              onClick={toggleGlobalVoice}
+              className={cn(
+                "h-9 text-[10px] uppercase font-bold transition-all gap-2",
+                isVoiceModeActive ? "bg-primary text-primary-foreground shadow-[0_0_15px_rgba(50,181,212,0.4)] animate-pulse" : "border-primary/20 text-muted-foreground"
+              )}
+            >
+              <Power className="w-3.5 h-3.5" />
+              {isVoiceModeActive ? "Assistant Vocal Actif" : "Activer Assistant Vocal"}
+            </Button>
+            
             <div className="flex bg-muted/30 p-1 rounded-sm border border-border">
               <button onClick={() => setMode('qa')} className={cn("px-3 py-1 text-[9px] uppercase rounded-sm", mode === 'qa' ? "bg-primary text-primary-foreground font-bold" : "text-muted-foreground")}>Dictée FAQ</button>
               <button onClick={() => setMode('procedure')} className={cn("px-3 py-1 text-[9px] uppercase rounded-sm", mode === 'procedure' ? "bg-secondary text-secondary-foreground font-bold" : "text-muted-foreground")}>Dictée Procédure</button>
@@ -175,10 +214,22 @@ export default function DatasetPage() {
 
         <div className="p-4 lg:p-8 max-w-5xl mx-auto w-full space-y-8">
           {/* Main Input Card */}
-          <Card className="p-6 border-border bg-card/50 space-y-6 shadow-2xl relative overflow-hidden">
+          <Card className={cn(
+            "p-6 border-border bg-card/50 space-y-6 shadow-2xl relative overflow-hidden transition-all duration-500",
+            isVoiceModeActive && "border-primary/40 ring-1 ring-primary/10"
+          )}>
             <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none">
               <Mic className="w-32 h-32" />
             </div>
+
+            {isVoiceModeActive && voice.isListening && (
+              <div className="flex items-center gap-2 px-3 py-2 bg-primary/10 border border-primary/30 rounded-sm animate-in fade-in slide-in-from-top-2">
+                <Activity className="w-4 h-4 text-primary animate-pulse" />
+                <span className="text-[10px] font-bold text-primary uppercase tracking-tighter">
+                  Écoute active : {activeVoiceField === 'qaTitle' ? 'IDENTIFIANT' : activeVoiceField === 'question' ? 'SYMPTÔME' : 'ACTION'}
+                </span>
+              </div>
+            )}
 
             <form onSubmit={handleAddItem} className="space-y-6 relative z-10">
               <div className="grid grid-cols-1 gap-6">
@@ -189,14 +240,18 @@ export default function DatasetPage() {
                     <Input 
                       value={qaTitle} 
                       onChange={e => setQaTitle(e.target.value)}
+                      onFocus={() => handleFieldFocus('qaTitle', "Veuillez dicter l'identifiant de référence.")}
                       placeholder="EX: PANNE_HYDRAULIQUE_H01"
-                      className={cn("bg-black/40 font-code uppercase h-12 border-primary/20", activeVoiceField === 'qaTitle' && "ring-2 ring-primary")}
+                      className={cn(
+                        "bg-black/40 font-code uppercase h-12 transition-all",
+                        activeVoiceField === 'qaTitle' ? "border-primary ring-2 ring-primary/20" : "border-primary/20"
+                      )}
                     />
                     <Button 
                       type="button" 
                       variant={activeVoiceField === 'qaTitle' ? 'default' : 'outline'}
                       size="icon"
-                      onClick={() => toggleVoice('qaTitle')}
+                      onClick={() => { setActiveVoiceField('qaTitle'); voice.startListening(); }}
                       className="h-12 w-12 shrink-0"
                     >
                       <Mic className={cn("w-5 h-5", voice.isListening && activeVoiceField === 'qaTitle' && "animate-bounce")} />
@@ -209,13 +264,17 @@ export default function DatasetPage() {
                   <div className="space-y-2">
                     <label className="text-[10px] font-bold uppercase text-muted-foreground mb-2 block tracking-widest flex items-center justify-between">
                       Description du Symptôme
-                      <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('question')} className="h-6 w-6"><Mic className="w-3 h-3" /></Button>
+                      <Mic className={cn("w-3.5 h-3.5", voice.isListening && activeVoiceField === 'question' ? "text-primary animate-pulse" : "opacity-30")} />
                     </label>
                     <Textarea 
                       value={question}
                       onChange={e => setQuestion(e.target.value)}
+                      onFocus={() => handleFieldFocus('question', "Veuillez décrire le symptôme ou l'anomalie constatée.")}
                       placeholder="Décrivez l'anomalie constatée..."
-                      className={cn("h-40 bg-black/40 font-code text-xs border-border/50 resize-none", activeVoiceField === 'question' && "ring-2 ring-primary")}
+                      className={cn(
+                        "h-40 bg-black/40 font-code text-xs resize-none transition-all",
+                        activeVoiceField === 'question' ? "border-primary ring-2 ring-primary/20" : "border-border/50"
+                      )}
                     />
                   </div>
 
@@ -223,13 +282,17 @@ export default function DatasetPage() {
                   <div className="space-y-2">
                     <label className="text-[10px] font-bold uppercase text-muted-foreground mb-2 block tracking-widest flex items-center justify-between">
                       Action Corrective
-                      <Button type="button" variant="ghost" size="icon" onClick={() => toggleVoice('answer')} className="h-6 w-6"><Mic className="w-3 h-3" /></Button>
+                      <Mic className={cn("w-3.5 h-3.5", voice.isListening && activeVoiceField === 'answer' ? "text-primary animate-pulse" : "opacity-30")} />
                     </label>
                     <Textarea 
                       value={answer}
                       onChange={e => setAnswer(e.target.value)}
+                      onFocus={() => handleFieldFocus('answer', "Veuillez dicter l'action corrective appliquée.")}
                       placeholder="Décrivez la solution appliquée..."
-                      className={cn("h-40 bg-black/40 font-code text-xs border-border/50 resize-none", activeVoiceField === 'answer' && "ring-2 ring-primary")}
+                      className={cn(
+                        "h-40 bg-black/40 font-code text-xs resize-none transition-all",
+                        activeVoiceField === 'answer' ? "border-primary ring-2 ring-primary/20" : "border-border/50"
+                      )}
                     />
                   </div>
                 </div>
@@ -249,7 +312,8 @@ export default function DatasetPage() {
                 </Button>
                 <Button 
                   type="submit" 
-                  className="flex-[2] h-12 bg-primary text-primary-foreground font-bold uppercase text-xs shadow-lg hover:scale-[1.01] transition-transform"
+                  disabled={!question || !answer}
+                  className="flex-[2] h-12 bg-primary text-primary-foreground font-bold uppercase text-xs shadow-lg hover:scale-[1.01] transition-transform disabled:opacity-50"
                 >
                   Ajouter au Registre Physique
                 </Button>

@@ -1,0 +1,14 @@
+{
+  "id": "qa-1782392770805",
+  "projectId": "project-001",
+  "type": "document",
+  "content": "{\"label\":\" utilisateur\",\"details\":\" chef de bloc\",\"title\":\"identification\",\"source\":\"intelligent_voice_input\"}",
+  "tags": [
+    "qa",
+    "neural_processed"
+  ],
+  "createdAt": "2026-06-25T13:06:20.173Z",
+  "label": " utilisateur",
+  "details": " chef de bloc",
+  "title": "identification"
+}

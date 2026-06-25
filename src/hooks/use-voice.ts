@@ -87,13 +87,17 @@ export function useVoice(options: VoiceOptions = {}) {
     };
 
     recognition.onerror = (event: any) => {
+      // Ignore some common minor errors
+      if (event.error === 'no-speech') return;
       setState(prev => ({ ...prev, error: event.error, isListening: false }));
     };
 
     recognitionRef.current = recognition;
 
     return () => {
-      if (recognitionRef.current) recognitionRef.current.stop();
+      if (recognitionRef.current) {
+        try { recognitionRef.current.stop(); } catch(e) {}
+      }
       stopVolumeAnalysis();
     };
   }, []);
@@ -125,30 +129,49 @@ export function useVoice(options: VoiceOptions = {}) {
 
   const stopVolumeAnalysis = () => {
     if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
-    if (audioContextRef.current) audioContextRef.current.close();
+    if (audioContextRef.current) {
+      try { audioContextRef.current.close(); } catch(e) {}
+    }
     audioContextRef.current = null;
     analyserRef.current = null;
   };
 
   const startListening = useCallback(() => {
     if (recognitionRef.current) {
-      try { recognitionRef.current.start(); } catch (e) {}
+      try { 
+        recognitionRef.current.start(); 
+      } catch (e) {
+        // Recognition already started or error
+      }
     }
   }, []);
 
   const stopListening = useCallback(() => {
     isManuallyStopped.current = true;
-    if (recognitionRef.current) recognitionRef.current.stop();
+    if (recognitionRef.current) {
+      try { recognitionRef.current.stop(); } catch(e) {}
+    }
   }, []);
 
   const speak = useCallback((text: string) => {
     if (typeof window === 'undefined' || !window.speechSynthesis) return;
+    
+    // Stop listening while speaking to avoid feedback loop
+    const wasListening = state.isListening;
+    if (wasListening) stopListening();
+
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = 'fr-FR';
-    utterance.rate = 1.1; // Voix industrielle plus dynamique
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+
+    utterance.onend = () => {
+      // Re-enable listening if it was active (optional, usually handled by caller)
+    };
+
     window.speechSynthesis.speak(utterance);
-  }, []);
+  }, [state.isListening, stopListening]);
 
   return { ...state, startListening, stopListening, speak };
 }
