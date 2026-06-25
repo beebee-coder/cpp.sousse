@@ -1,22 +1,30 @@
 
 "use client";
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { 
   Database, 
+  Plus, 
   UploadCloud, 
   Layers,
   Mic,
+  MicOff,
+  Sparkles,
   Loader2,
+  AlertTriangle,
   Trash2,
-  Wand2,
-  Activity,
-  ShieldCheck,
-  Power,
-  RotateCcw,
-  FileText,
-  HelpCircle,
-  Volume2
+  ChevronDown,
+  Info,
+  ShieldAlert,
+  Image as ImageIcon,
+  Video as VideoIcon,
+  Bell,
+  Camera,
+  StopCircle,
+  CheckCircle2,
+  X,
+  Volume2,
+  Undo2
 } from 'lucide-react';
 
 import { Card } from '@/components/ui/card';
@@ -28,171 +36,232 @@ import { apiClient } from '@/lib/api-client';
 import { DashboardSidebar } from '@/components/dashboard/Sidebar';
 import { useVoice } from '@/hooks/use-voice';
 import { cn } from '@/lib/utils';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+
+interface ProcedureStep {
+  id: string;
+  title: string;
+  duration: string;
+  description: string;
+  conditions: string;
+  alarms: string;
+  images: string;
+  video: string;
+}
 
 interface QAItem {
   id: string;
   type: 'qa' | 'procedure';
-  title: string;
   label: string;
   details: string;
-  isRefined?: boolean;
 }
 
 export default function DatasetPage() {
   const { toast } = useToast();
+  
   const [mounted, setMounted] = useState(false);
   const [mode, setMode] = useState<'qa' | 'procedure'>('qa');
   const [qaItems, setQaItems] = useState<QAItem[]>([]);
-  
-  const [isVoiceModeActive, setIsVoiceModeActive] = useState(false);
-  const [activeVoiceField, setActiveVoiceField] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
-  const [isRefining, setIsRefining] = useState(false);
-
-  // Buffers pour la gestion phrase par phrase
-  const [buffers, setBuffers] = useState<{ [key: string]: string[] }>({
-    qaTitle: [],
-    question: [],
-    answer: []
-  });
-
-  const [qaTitle, setQaTitle] = useState('');
+  const [isAssistantActive, setIsAssistantActive] = useState(false);
+  
+  // Buffers de phrases pour la correction intelligente
+  const [phraseBuffers, setPhraseBuffers] = useState<Record<string, string[]>>({});
+  
+  // Form States (QA)
   const [question, setQuestion] = useState('');
   const [answer, setAnswer] = useState('');
+  
+  // Form States (Procedure)
+  const [procTitle, setProcTitle] = useState('');
+  const [procSteps, setProcSteps] = useState<ProcedureStep[]>([
+    { id: '1', title: '', duration: '', description: '', conditions: '', alarms: '', images: '', video: '' }
+  ]);
 
-  useEffect(() => { setMounted(true); }, []);
+  // Media States
+  const [mediaModal, setMediaModal] = useState<{ isOpen: boolean, type: 'image' | 'video', stepIndex: number | null }>({
+    isOpen: false,
+    type: 'image',
+    stepIndex: null
+  });
+  const [isCapturing, setIsCapturing] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  
+  const [activeUIField, setActiveUIField] = useState<{ type: string, index?: number } | null>(null);
+  const activeVoiceFieldRef = useRef<{ type: string, index?: number } | null>(null);
 
-  // Synchronisation des champs avec les buffers de phrases
   useEffect(() => {
-    setQaTitle(buffers.qaTitle.join(' '));
-    setQuestion(buffers.question.join('. ') + (buffers.question.length > 0 ? '.' : ''));
-    setAnswer(buffers.answer.join('. ') + (buffers.answer.length > 0 ? '.' : ''));
-  }, [buffers]);
+    activeVoiceFieldRef.current = activeUIField;
+  }, [activeUIField]);
+
+  // Helper pour obtenir la clé unique du champ (ex: "stepTitle-0")
+  const getFieldKey = (type: string, index?: number) => index !== undefined ? `${type}-${index}` : type;
+
+  // Mise à jour de l'état textuel à partir des buffers de phrases
+  const updateTextFromBuffer = useCallback((key: string, phrases: string[]) => {
+    const fullText = phrases.join(' ');
+    if (key === 'question') setQuestion(fullText);
+    else if (key === 'answer') setAnswer(fullText);
+    else if (key === 'procTitle') setProcTitle(fullText);
+    else if (key.includes('-')) {
+      const [type, idxStr] = key.split('-');
+      const index = parseInt(idxStr);
+      setProcSteps(prev => {
+        const next = [...prev];
+        if (!next[index]) return prev;
+        const s = { ...next[index] };
+        if (type === 'stepTitle') s.title = fullText;
+        else if (type === 'stepDuration') s.duration = fullText;
+        else if (type === 'stepDescription') s.description = fullText;
+        else if (type === 'stepConditions') s.conditions = fullText;
+        else if (type === 'stepAlarms') s.alarms = fullText;
+        next[index] = s;
+        return next;
+      });
+    }
+  }, []);
 
   const handleVoiceResult = useCallback((text: string) => {
-    if (!activeVoiceField) return;
+    const target = activeVoiceFieldRef.current;
+    if (!target) return;
 
+    const key = getFieldKey(target.type, target.index);
     const lowerText = text.toLowerCase().trim();
 
-    // LOGIQUE DE CORRECTION "NON" (Dernière phrase uniquement)
-    if (lowerText === 'non' || lowerText === 'non.') {
-      setBuffers(prev => {
-        const currentBuffer = prev[activeVoiceField];
-        if (currentBuffer.length === 0) return prev;
-        
-        const newBuffer = [...currentBuffer];
-        newBuffer.pop(); // Supprimer uniquement la dernière phrase
-        
-        voice.speak("Dernière phrase annulée.");
-        return { ...prev, [activeVoiceField]: newBuffer };
+    // Logique de correction intelligente "Non"
+    if (lowerText === 'non') {
+      setPhraseBuffers(prev => {
+        const current = prev[key] || [];
+        if (current.length === 0) return prev;
+        const next = current.slice(0, -1);
+        updateTextFromBuffer(key, next);
+        voice.speak("Dernière phrase annulée. Vous pouvez reprendre.");
+        return { ...prev, [key]: next };
       });
       return;
     }
 
-    // Ajout de la phrase au buffer si elle n'est pas un doublon immédiat (stabilité STT)
-    setBuffers(prev => {
-      const currentBuffer = prev[activeVoiceField];
-      if (currentBuffer[currentBuffer.length - 1] === text) return prev;
-      return {
-        ...prev,
-        [activeVoiceField]: [...currentBuffer, text]
-      };
+    // Ajout d'une nouvelle phrase validée
+    setPhraseBuffers(prev => {
+      const current = prev[key] || [];
+      const next = [...current, text];
+      updateTextFromBuffer(key, next);
+      return { ...prev, [key]: next };
     });
-  }, [activeVoiceField]);
+  }, [updateTextFromBuffer]);
 
-  const voice = useVoice({ onResult: handleVoiceResult });
+  const voice = useVoice({
+    onResult: handleVoiceResult,
+    autoRestart: true,
+    lang: 'fr-FR'
+  });
 
-  // Déclenché lors du clic sur un champ quand l'assistant est actif
-  const handleFieldFocus = (field: string, prompt: string) => {
-    if (!isVoiceModeActive) return;
-    voice.stopListening();
-    setActiveVoiceField(field);
-    voice.speak(prompt);
-    // On attend la fin de l'instruction vocale avant d'ouvrir le micro
-    setTimeout(() => { 
-      if (isVoiceModeActive) voice.startListening(); 
-    }, 1500);
-  };
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
-  const toggleGlobalVoice = () => {
-    const newState = !isVoiceModeActive;
-    setIsVoiceModeActive(newState);
-    if (newState) {
-      voice.speak("Assistant vocal de dictée actif. Sélectionnez un champ pour commencer.");
-      toast({ 
-        title: "Assistant Vocal Actif", 
-        description: "Dites 'NON' à tout moment pour corriger la dernière phrase." 
-      });
-    } else {
+  const toggleAssistant = () => {
+    if (isAssistantActive) {
       voice.stopListening();
-      voice.speak("Assistant désactivé.");
-      setActiveVoiceField(null);
+      setIsAssistantActive(false);
+      setActiveUIField(null);
+      voice.speak("Assistant vocal désactivé.");
+    } else {
+      setIsAssistantActive(true);
+      voice.speak("Assistant vocal activé. Je vous guiderai à chaque champ. Dites Non pour corriger la dernière phrase.");
     }
   };
 
-  const handleRefine = async () => {
-    if (!question.trim() && !answer.trim()) return;
-    setIsRefining(true);
-    try {
-      const res = await apiClient.post<any>('/api/chat', {
-        message: `Reformule ce signalement industriel de manière technique, professionnelle et concise. 
-        Type : ${mode.toUpperCase()}
-        Symptôme ou Situation : ${question}
-        Action ou Procédure : ${answer}
-        Réponds STRICTEMENT au format JSON : {"question": "...", "answer": "..."}`,
-        history: []
-      });
-      
-      if (res && res.text) {
-        try {
-          const refined = JSON.parse(res.text);
-          setBuffers(prev => ({
-            ...prev,
-            question: refined.question ? [refined.question] : prev.question,
-            answer: refined.answer ? [refined.answer] : prev.answer
-          }));
-          toast({ title: "Raffinement Neural Terminé", description: "Le texte a été optimisé par l'IA." });
-        } catch (e) {
-          throw new Error("L'IA a renvoyé un format illisible.");
-        }
-      }
-    } catch (e: any) {
-      toast({ title: "Échec du raffinement", description: e.message, variant: "destructive" });
-    } finally {
-      setIsRefining(false);
-    }
+  const handleFieldFocus = (type: string, index?: number) => {
+    if (!isAssistantActive) return;
+    
+    setActiveUIField({ type, index });
+    
+    // Déterminer l'instruction TTS
+    let instruction = "";
+    if (type === 'question') instruction = "Veuillez dicter le symptôme ou la question.";
+    else if (type === 'answer') instruction = "Dictez la résolution technique.";
+    else if (type === 'procTitle') instruction = "Donnez un titre à cette procédure.";
+    else if (type === 'stepTitle') instruction = `Action pour l'étape ${index! + 1}.`;
+    else if (type === 'stepDescription') instruction = "Ajoutez des détails sur l'opération.";
+    else if (type === 'stepConditions') instruction = "Quelles sont les conditions de sécurité ?";
+    else if (type === 'stepAlarms') instruction = "Y a-t-il des points de vigilance ou des alarmes ?";
+
+    voice.speak(instruction);
+    // Le micro s'active via le hook useVoice car il est déjà en mode autoRestart/continuous
   };
 
   const handleAddItem = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!question.trim() || !answer.trim()) return;
-    
-    const newItem: QAItem = {
-      id: `rag-${Date.now()}`,
-      type: mode,
-      title: qaTitle.trim() || `${mode.toUpperCase()}_${new Date().toLocaleTimeString().replace(/:/g, '')}`,
-      label: question,
-      details: answer,
-      isRefined: true
-    };
-    
-    setQaItems(prev => [newItem, ...prev]);
-    // Reset complet des buffers
-    setBuffers({ qaTitle: [], question: [], answer: [] });
-    toast({ title: "Fiche ajoutée au registre local" });
-    
-    if (isVoiceModeActive) {
-      voice.speak("Enregistré avec succès. Prêt pour l'entrée suivante.");
-      setActiveVoiceField(null);
-      voice.stopListening();
+    if (mode === 'qa') {
+      if (!question.trim() || !answer.trim()) return;
+      setQaItems(prev => [{ id: Date.now().toString(), type: 'qa', label: question, details: answer }, ...prev]);
+      setQuestion(''); setAnswer(''); setPhraseBuffers({});
+    } else {
+      if (!procTitle.trim()) return;
+      const details = procSteps.map((s, i) => 
+        `[Étape ${i + 1}] ${s.title} (${s.duration})\nSEC: ${s.conditions}\nALERTE: ${s.alarms}\nDÉTAILS: ${s.description}`
+      ).join('\n\n');
+      setQaItems(prev => [{ id: Date.now().toString(), type: 'procedure', label: procTitle, details }, ...prev]);
+      setProcTitle('');
+      setProcSteps([{ id: Date.now().toString(), title: '', duration: '', description: '', conditions: '', alarms: '', images: '', video: '' }]);
+      setPhraseBuffers({});
+    }
+    toast({ title: "Donnée enregistrée localement." });
+    if (isAssistantActive) voice.speak("Donnée ajoutée au registre provisoire.");
+  };
+
+  const handleFinalSubmit = async () => {
+    if (qaItems.length === 0) return;
+    setIsUploading(true);
+    try {
+      const items = qaItems.map(item => ({
+        id: `audit-${item.id}`,
+        projectId: 'project-001',
+        type: 'document' as const,
+        content: JSON.stringify({ label: item.label, details: item.details, title: item.label, type: item.type }),
+        tags: [item.type, 'intelligent_voice_input'],
+        createdAt: new Date()
+      }));
+      await apiClient.post('/api/sync/upload', { userId: 'admin', projectId: 'project-001', items });
+      toast({ title: "Synchronisation Cloud Terminée" });
+      setQaItems([]);
+      if (isAssistantActive) voice.speak("Synchronisation terminée. Le registre a été mis à jour.");
+    } catch (e) {
+      toast({ title: "Échec Synchronisation", variant: "destructive" });
+    } finally {
+      setIsUploading(false);
     }
   };
+
+  // Logic Caméra (Réutilisée de la version stable)
+  useEffect(() => {
+    if (!mediaModal.isOpen) return;
+    const startStream = async () => {
+      try {
+        const s = await navigator.mediaDevices.getUserMedia({ video: true, audio: mediaModal.type === 'video' });
+        streamRef.current = s;
+        if (videoRef.current) videoRef.current.srcObject = s;
+      } catch (err) {
+        toast({ title: "Erreur Caméra", variant: "destructive" });
+        setMediaModal(prev => ({ ...prev, isOpen: false }));
+      }
+    };
+    startStream();
+    return () => streamRef.current?.getTracks().forEach(t => t.stop());
+  }, [mediaModal.isOpen, mediaModal.type, toast]);
 
   if (!mounted) return null;
 
   return (
     <div className="flex flex-col lg:flex-row h-screen bg-background overflow-hidden">
       <DashboardSidebar />
+
       <main className="flex-1 flex flex-col min-w-0 h-full overflow-y-auto terminal-scroll">
         <header className="h-16 border-b border-border bg-card/30 flex items-center justify-between px-6 shrink-0">
           <div className="flex items-center gap-4">
@@ -200,248 +269,206 @@ export default function DatasetPage() {
             <Database className="w-4 h-4 text-primary" />
             <span className="font-headline font-bold text-xs uppercase tracking-widest text-primary">Station de Dictée RAG</span>
           </div>
+
           <div className="flex items-center gap-4">
             <Button 
-              variant={isVoiceModeActive ? "default" : "outline"}
-              size="sm"
-              onClick={toggleGlobalVoice}
+              variant="outline" 
+              size="sm" 
+              onClick={toggleAssistant}
               className={cn(
-                "h-9 text-[10px] uppercase font-bold transition-all gap-2",
-                isVoiceModeActive ? "bg-primary text-primary-foreground shadow-[0_0_20px_rgba(50,181,212,0.4)] animate-pulse" : "border-primary/20 text-muted-foreground"
+                "h-9 text-[9px] font-code uppercase transition-all", 
+                isAssistantActive ? "bg-primary/20 border-primary text-primary animate-pulse shadow-[0_0_15px_rgba(50,181,212,0.3)]" : "text-muted-foreground"
               )}
             >
-              <Power className="w-3.5 h-3.5" />
-              {isVoiceModeActive ? "Assistant Actif" : "Activer Assistant Vocal"}
+              {isAssistantActive ? <Sparkles className="w-3.5 h-3.5 mr-2" /> : <Mic className="w-3.5 h-3.5 mr-2" />}
+              Assistant Vocal {isAssistantActive ? "ACTIF" : "OFF"}
             </Button>
-            
             <div className="flex bg-muted/30 p-1 rounded-sm border border-border">
-              <button 
-                onClick={() => setMode('qa')} 
-                className={cn(
-                  "px-4 py-1 text-[9px] uppercase rounded-sm flex items-center gap-2 transition-all", 
-                  mode === 'qa' ? "bg-primary text-primary-foreground font-bold shadow-lg" : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <HelpCircle className="w-3 h-3" /> FAQ
-              </button>
-              <button 
-                onClick={() => setMode('procedure')} 
-                className={cn(
-                  "px-4 py-1 text-[9px] uppercase rounded-sm flex items-center gap-2 transition-all", 
-                  mode === 'procedure' ? "bg-secondary text-secondary-foreground font-bold shadow-lg" : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <FileText className="w-3 h-3" /> Procédure
-              </button>
+              <button onClick={() => setMode('qa')} className={cn("px-3 py-1 text-[9px] uppercase rounded-sm", mode === 'qa' ? "bg-primary text-primary-foreground font-bold" : "text-muted-foreground")}>FAQ</button>
+              <button onClick={() => setMode('procedure')} className={cn("px-3 py-1 text-[9px] uppercase rounded-sm", mode === 'procedure' ? "bg-secondary text-secondary-foreground font-bold" : "text-muted-foreground")}>Procédure</button>
             </div>
           </div>
         </header>
 
         <div className="p-4 lg:p-8 max-w-5xl mx-auto w-full space-y-8">
-          <Card className={cn(
-            "p-6 border-border bg-card/50 space-y-6 shadow-2xl relative transition-all duration-500",
-            isVoiceModeActive && "border-primary/40 ring-1 ring-primary/5 bg-primary/[0.02]"
-          )}>
-            {/* Barre de Status Vocal */}
-            {isVoiceModeActive && (
-              <div className="flex items-center justify-between px-4 py-2 bg-black/40 border border-primary/20 rounded-sm animate-in fade-in slide-in-from-top-2">
-                <div className="flex items-center gap-4">
-                  <div className="flex items-center gap-2">
-                    <Activity className={cn("w-4 h-4 text-primary", voice.isListening && "animate-pulse")} />
-                    <span className="text-[10px] font-bold text-primary uppercase tracking-tighter">
-                      {voice.isListening ? `ÉCOUTE EN COURS : ${activeVoiceField === 'qaTitle' ? 'TITRE' : activeVoiceField === 'question' ? 'DESCRIPTION' : 'RÉPONSE'}` : "EN ATTENTE DE SÉLECTION"}
-                    </span>
-                  </div>
-                  {/* Visualiseur de volume */}
-                  {voice.isListening && (
-                    <div className="flex items-center gap-0.5 h-3">
-                      {[1,2,3,4,5,6,7,8].map(i => (
-                        <div 
-                          key={i} 
-                          className="w-0.5 bg-primary transition-all duration-75" 
-                          style={{ height: `${Math.max(20, voice.volume * 100 * (1 - Math.abs(i-4)/4))}%` }}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <Volume2 className="w-3 h-3 text-primary/40" />
-                  <span className="text-[8px] font-code text-primary/60 uppercase">Dites "NON" pour corriger</span>
-                </div>
+          {/* Signal Visualizer */}
+          {isAssistantActive && (
+            <div className="flex items-center gap-4 p-3 bg-black/40 border border-primary/20 rounded-sm">
+               <Volume2 className="w-4 h-4 text-primary" />
+               <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden flex items-center">
+                  <div 
+                    className="h-full bg-primary transition-all duration-75 shadow-[0_0_10px_rgba(50,181,212,0.5)]" 
+                    style={{ width: `${Math.min(voice.volume * 100, 100)}%` }} 
+                  />
+               </div>
+               <span className="text-[9px] font-code text-primary uppercase">Signal Entrant</span>
+            </div>
+          )}
+
+          <Card className="p-6 border-border bg-card/50 space-y-6 rounded-sm shadow-2xl relative overflow-hidden">
+            {/* Overlay d'écoute active */}
+            {isAssistantActive && voice.isListening && (
+              <div className="absolute top-2 right-2 flex items-center gap-2 px-2 py-1 bg-red-600/20 border border-red-600/50 rounded-sm">
+                 <div className="w-1.5 h-1.5 bg-red-600 rounded-full animate-ping" />
+                 <span className="text-[8px] font-bold text-red-600 uppercase">Écoute active</span>
               </div>
             )}
 
             <form onSubmit={handleAddItem} className="space-y-6">
-              <div className="space-y-6">
-                {/* Champ Titre / ID */}
-                <div>
-                  <label className={cn("text-[10px] font-bold uppercase mb-2 block tracking-widest transition-colors", mode === 'procedure' ? "text-secondary" : "text-primary")}>
-                    Identifiant de l'entrée (Unique)
-                  </label>
-                  <div className="flex gap-2">
+              {mode === 'qa' ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="relative group">
+                    <p className="text-[10px] font-bold text-primary mb-2 uppercase tracking-widest">Symptôme / Question</p>
+                    <Textarea 
+                      value={question} 
+                      onChange={(e) => setQuestion(e.target.value)} 
+                      onFocus={() => handleFieldFocus('question')}
+                      placeholder="EX: ÉCHAUFFEMENT POMPE P-101..." 
+                      className={cn(
+                        "h-32 bg-background font-code text-xs uppercase transition-all", 
+                        activeUIField?.type === 'question' && "ring-2 ring-primary border-primary shadow-[0_0_20px_rgba(50,181,212,0.15)]"
+                      )}
+                    />
+                    <div className="absolute bottom-2 right-2 flex gap-1">
+                      {phraseBuffers['question']?.length > 0 && <Button type="button" variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground"><Undo2 className="w-3 h-3"/></Button>}
+                      <Mic className={cn("w-4 h-4", activeUIField?.type === 'question' ? "text-primary animate-bounce" : "text-muted-foreground/30")} />
+                    </div>
+                  </div>
+                  <div className="relative">
+                    <p className="text-[10px] font-bold text-secondary mb-2 uppercase tracking-widest">Résolution / Réponse</p>
+                    <Textarea 
+                      value={answer} 
+                      onChange={(e) => setAnswer(e.target.value)} 
+                      onFocus={() => handleFieldFocus('answer')}
+                      placeholder="EX: VÉRIFIER LUBRIFICATION PALIER 2..." 
+                      className={cn(
+                        "h-32 bg-background font-code text-xs uppercase transition-all", 
+                        activeUIField?.type === 'answer' && "ring-2 ring-secondary border-secondary shadow-[0_0_20px_rgba(46,184,146,0.15)]"
+                      )}
+                    />
+                    <div className="absolute bottom-2 right-2">
+                       <Mic className={cn("w-4 h-4", activeUIField?.type === 'answer' ? "text-secondary animate-bounce" : "text-muted-foreground/30")} />
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  <div className="relative">
+                    <p className="text-[10px] font-bold text-primary mb-2 uppercase tracking-widest">Titre de la procédure industrielle</p>
                     <Input 
-                      value={qaTitle} 
-                      onChange={e => setQaTitle(e.target.value)}
-                      onFocus={() => handleFieldFocus('qaTitle', "Veuillez donner un nom court à cette fiche.")}
-                      placeholder="EX: PANNE_POMPE_H02"
-                      className={cn(
-                        "bg-black/40 font-code uppercase h-12 transition-all",
-                        activeVoiceField === 'qaTitle' ? "border-primary ring-2 ring-primary/10" : "border-border/50"
-                      )}
+                      value={procTitle} 
+                      onChange={(e) => setProcTitle(e.target.value)} 
+                      onFocus={() => handleFieldFocus('procTitle')}
+                      placeholder="MAINTENANCE CURATIVE UNITÉ A-4..." 
+                      className={cn("bg-background uppercase h-12 text-sm font-bold", activeUIField?.type === 'procTitle' && "ring-2 ring-primary")} 
                     />
-                    <Button type="button" variant="outline" size="icon" onClick={() => setBuffers(b => ({ ...b, qaTitle: [] }))} className="h-12 w-12 border-border/50 hover:text-primary">
-                      <RotateCcw className="w-4 h-4" />
-                    </Button>
                   </div>
+
+                  <div className="space-y-4">
+                    {procSteps.map((step, index) => (
+                      <Card key={step.id} className="p-4 border-border bg-black/30 space-y-4 group">
+                        <div className="flex justify-between items-center border-b border-border/50 pb-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-bold text-secondary uppercase">Étape {index + 1}</span>
+                            <Button type="button" variant="ghost" size="icon" onClick={() => setProcSteps(prev => prev.filter(s => s.id !== step.id))} className="h-6 w-6 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity" disabled={procSteps.length <= 1}>
+                              <Trash2 className="w-3 h-3" />
+                            </Button>
+                          </div>
+                          <Input 
+                            placeholder="DURÉE" 
+                            value={step.duration} 
+                            onFocus={() => handleFieldFocus('stepDuration', index)}
+                            onChange={(e) => { const n = [...procSteps]; n[index].duration = e.target.value; setProcSteps(n); }} 
+                            className="h-7 w-24 text-[9px] uppercase"
+                          />
+                        </div>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <Input 
+                            placeholder="ACTION..." 
+                            value={step.title} 
+                            onFocus={() => handleFieldFocus('stepTitle', index)}
+                            onChange={(e) => { const n = [...procSteps]; n[index].title = e.target.value; setProcSteps(n); }} 
+                            className={cn("h-8 text-[10px] uppercase", activeUIField?.type === 'stepTitle' && activeUIField?.index === index && "ring-1 ring-secondary")}
+                          />
+                          <Input 
+                            placeholder="DÉTAILS OPÉRATIONNELS..." 
+                            value={step.description} 
+                            onFocus={() => handleFieldFocus('stepDescription', index)}
+                            onChange={(e) => { const n = [...procSteps]; n[index].description = e.target.value; setProcSteps(n); }} 
+                            className={cn("h-8 text-[10px] uppercase", activeUIField?.type === 'stepDescription' && activeUIField?.index === index && "ring-1 ring-secondary")}
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1.5"><ShieldAlert className="w-3 h-3 text-primary" /><p className="text-[8px] font-bold uppercase text-primary">Conditions</p></div>
+                            <Input 
+                              placeholder="ÉQUIPEMENTS / SÉCURITÉ..." 
+                              value={step.conditions} 
+                              onFocus={() => handleFieldFocus('stepConditions', index)}
+                              onChange={(e) => { const n = [...procSteps]; n[index].conditions = e.target.value; setProcSteps(n); }} 
+                              className="h-8 text-[9px] uppercase"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1.5"><Bell className="w-3 h-3 text-destructive" /><p className="text-[8px] font-bold uppercase text-destructive">Vigilance</p></div>
+                            <Input 
+                              placeholder="ALARMES / DANGERS..." 
+                              value={step.alarms} 
+                              onFocus={() => handleFieldFocus('stepAlarms', index)}
+                              onChange={(e) => { const n = [...procSteps]; n[index].alarms = e.target.value; setProcSteps(n); }} 
+                              className="h-8 text-[9px] uppercase"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="flex gap-2 pt-2">
+                           <Button type="button" variant="secondary" size="sm" onClick={() => setMediaModal({ isOpen: true, type: 'image', stepIndex: index })} className="h-7 text-[8px] uppercase font-bold flex-1">
+                             <Camera className="w-3 h-3 mr-2" /> Capture Image
+                           </Button>
+                           <Button type="button" variant="outline" size="sm" onClick={() => setMediaModal({ isOpen: true, type: 'video', stepIndex: index })} className="h-7 text-[8px] uppercase font-bold flex-1">
+                             <VideoIcon className="w-3 h-3 mr-2" /> Séquence Vidéo
+                           </Button>
+                        </div>
+                      </Card>
+                    ))}
+                  </div>
+
+                  <Button type="button" variant="ghost" onClick={() => setProcSteps([...procSteps, { id: Date.now().toString(), title: '', duration: '', description: '', conditions: '', alarms: '', images: '', video: '' }])} className="w-full border border-dashed border-border h-10 text-[9px] uppercase hover:bg-secondary/10 hover:border-secondary/50 text-muted-foreground hover:text-secondary transition-all">
+                    <Plus className="w-3.5 h-3.5 mr-2" /> Ajouter une étape de procédure
+                  </Button>
                 </div>
+              )}
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* Colonne GAUCHE : Symptôme / Description */}
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-bold uppercase text-muted-foreground mb-2 block tracking-widest flex items-center justify-between">
-                      {mode === 'qa' ? 'Question / Symptôme' : 'Description de la Situation'}
-                      <Mic className={cn("w-3.5 h-3.5 transition-all", voice.isListening && activeVoiceField === 'question' ? "text-primary animate-pulse scale-125" : "opacity-30")} />
-                    </label>
-                    <Textarea 
-                      value={question}
-                      readOnly
-                      onFocus={() => handleFieldFocus('question', mode === 'qa' ? "Décrivez la question ou le symptôme." : "Décrivez la situation initiale.")}
-                      placeholder={isVoiceModeActive ? "Cliquez ici pour dicter..." : "Saisissez ou activez la voix..."}
-                      className={cn(
-                        "h-48 bg-black/40 font-code text-xs resize-none transition-all leading-relaxed",
-                        activeVoiceField === 'question' ? "border-primary ring-2 ring-primary/10 bg-primary/[0.01]" : "border-border/50"
-                      )}
-                    />
-                    <div className="flex justify-between items-center text-[9px] font-code">
-                       <span className={cn("uppercase", buffers.question.length > 0 ? "text-primary font-bold" : "text-muted-foreground")}>
-                         {buffers.question.length} PHRASES VALIDÉES
-                       </span>
-                       <button type="button" onClick={() => setBuffers(b => ({ ...b, question: [] }))} className="uppercase font-bold text-muted-foreground hover:text-destructive transition-colors">Effacer</button>
-                    </div>
-                  </div>
-
-                  {/* Colonne DROITE : Réponse / Procédure */}
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-bold uppercase text-muted-foreground mb-2 block tracking-widest flex items-center justify-between">
-                      {mode === 'qa' ? 'Réponse Technique' : 'Procédure Corrective'}
-                      <Mic className={cn("w-3.5 h-3.5 transition-all", voice.isListening && activeVoiceField === 'answer' ? "text-secondary animate-pulse scale-125" : "opacity-30")} />
-                    </label>
-                    <Textarea 
-                      value={answer}
-                      readOnly
-                      onFocus={() => handleFieldFocus('answer', mode === 'qa' ? "Dictez la réponse technique." : "Dictez les étapes de la procédure corrective.")}
-                      placeholder={isVoiceModeActive ? "Cliquez ici pour dicter..." : "Saisissez ou activez la voix..."}
-                      className={cn(
-                        "h-48 bg-black/40 font-code text-xs resize-none transition-all leading-relaxed",
-                        activeVoiceField === 'answer' ? "border-secondary ring-2 ring-secondary/10 bg-secondary/[0.01]" : "border-border/50"
-                      )}
-                    />
-                    <div className="flex justify-between items-center text-[9px] font-code">
-                       <span className={cn("uppercase", buffers.answer.length > 0 ? "text-secondary font-bold" : "text-muted-foreground")}>
-                         {buffers.answer.length} PHRASES VALIDÉES
-                       </span>
-                       <button type="button" onClick={() => setBuffers(b => ({ ...b, answer: [] }))} className="uppercase font-bold text-muted-foreground hover:text-destructive transition-colors">Effacer</button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Actions de validation */}
-              <div className="flex flex-col sm:flex-row gap-4 pt-4 border-t border-border/30">
-                <Button 
-                  type="button" 
-                  onClick={handleRefine} 
-                  disabled={isRefining || (!question && !answer)}
-                  variant="outline"
-                  className="flex-1 h-12 border-primary/40 text-primary hover:bg-primary/5 font-bold uppercase text-xs"
-                >
-                  {isRefining ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Wand2 className="w-4 h-4 mr-2" />}
-                  Raffinement Neural Groq
-                </Button>
-                <Button 
-                  type="submit" 
-                  disabled={!question || !answer}
-                  className={cn(
-                    "flex-[2] h-12 font-bold uppercase text-xs shadow-lg transition-all active:scale-95",
-                    mode === 'procedure' ? "bg-secondary text-secondary-foreground hover:bg-secondary/90" : "bg-primary text-primary-foreground hover:bg-primary/90"
-                  )}
-                >
-                  Valider dans le Registre Physique
-                </Button>
-              </div>
+              <Button type="submit" className={cn("w-full font-headline font-bold uppercase text-xs h-12 shadow-xl transition-all active:scale-95", mode === 'qa' ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground")}>
+                Enregistrer dans la file d'audit
+              </Button>
             </form>
           </Card>
 
-          {/* Registre Provisoire (Listing des fiches ajoutées) */}
+          {/* Registre Provisoire */}
           {qaItems.length > 0 && (
             <div className="space-y-4 pb-12">
-              <div className="flex justify-between items-center border-b border-border/50 pb-2">
-                <div className="flex items-center gap-3">
-                  <Layers className="w-4 h-4 text-muted-foreground" />
-                  <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">Registre Provisoire ({qaItems.length})</h3>
-                </div>
-                <Button 
-                  onClick={async () => {
-                    setIsUploading(true);
-                    try {
-                      const items = qaItems.map(it => ({
-                        id: it.id,
-                        projectId: 'project-001',
-                        type: 'document',
-                        content: JSON.stringify({ 
-                          label: it.label, 
-                          details: it.details, 
-                          title: it.title, 
-                          source: 'intelligent_voice_input',
-                          mode: it.type 
-                        }),
-                        tags: [it.type, 'neural_processed'],
-                        createdAt: new Date().toISOString()
-                      }));
-                      await apiClient.post('/api/sync/upload', { userId: 'admin', projectId: 'project-001', items });
-                      toast({ title: "Synchronisation physique réussie", description: "Les données sont sur le disque." });
-                      setQaItems([]);
-                    } catch (e) { 
-                      toast({ title: "Erreur de Synchronisation", variant: "destructive" }); 
-                    } finally { 
-                      setIsUploading(false); 
-                    }
-                  }} 
-                  disabled={isUploading}
-                  className="bg-primary text-primary-foreground font-bold uppercase text-[10px] h-9 shadow-xl"
-                >
-                  {isUploading ? <Loader2 className="w-3 h-3 animate-spin mr-2" /> : <UploadCloud className="w-3 h-3 mr-2" />}
-                  Uplink Physique Global
+              <div className="flex justify-between items-center px-2">
+                <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground flex items-center gap-2">
+                  <Layers className="w-3.5 h-3.5 text-secondary" /> 
+                  Registre Provisoire ({qaItems.length})
+                </h3>
+                <Button onClick={handleFinalSubmit} disabled={isUploading} size="sm" className="bg-secondary text-secondary-foreground text-[9px] uppercase font-bold shadow-lg">
+                  {isUploading ? <Loader2 className="w-3 h-3 mr-2 animate-spin" /> : <UploadCloud className="w-3 h-3 mr-2" />} Synchroniser Cloud
                 </Button>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {qaItems.map(item => (
-                  <Card key={item.id} className={cn(
-                    "p-4 border-border bg-card/20 relative group hover:border-primary/40 transition-all border-l-4",
-                    item.type === 'procedure' ? "border-l-secondary" : "border-l-primary"
-                  )}>
-                    <button 
-                      onClick={() => setQaItems(prev => prev.filter(i => i.id !== item.id))}
-                      className="absolute top-2 right-2 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                    <div className="flex items-center gap-2 mb-3">
-                      <ShieldCheck className={cn("w-3.5 h-3.5", item.type === 'procedure' ? "text-secondary" : "text-primary")} />
-                      <span className="text-[10px] font-bold uppercase truncate pr-6">{item.title}</span>
-                      <span className={cn(
-                        "text-[7px] px-1.5 py-0.5 border rounded-sm uppercase font-bold",
-                        item.type === 'procedure' ? "border-secondary/30 text-secondary" : "border-primary/30 text-primary"
-                      )}>
-                        {item.type}
-                      </span>
+                  <Card key={item.id} className={cn("p-4 border bg-card/20 relative group transition-all hover:bg-card/40", item.type === 'qa' ? "border-primary/20" : "border-secondary/20")}>
+                    <Button variant="ghost" size="icon" onClick={() => setQaItems(prev => prev.filter(i => i.id !== item.id))} className="absolute top-2 right-2 h-6 w-6 opacity-0 group-hover:opacity-100 text-destructive"><Trash2 className="w-3 h-3" /></Button>
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className={cn("w-1.5 h-1.5 rounded-full shadow-[0_0_5px_currentColor]", item.type === 'qa' ? "text-primary bg-primary" : "text-secondary bg-secondary")} />
+                      <p className={cn("text-[10px] font-bold uppercase pr-8 truncate", item.type === 'qa' ? "text-primary" : "text-secondary")}>{item.label}</p>
                     </div>
-                    <div className="space-y-2">
-                      <p className="text-[9px] font-code text-white bg-black/40 p-2 rounded-sm italic border border-white/5">"{item.label}"</p>
-                      <p className="text-[9px] font-code text-muted-foreground px-2 border-l border-border/50 leading-relaxed">{item.details}</p>
-                    </div>
+                    <p className="text-[9px] font-code text-muted-foreground line-clamp-3 italic bg-black/20 p-2 rounded-sm whitespace-pre-wrap">{item.details}</p>
                   </Card>
                 ))}
               </div>
@@ -449,6 +476,45 @@ export default function DatasetPage() {
           )}
         </div>
       </main>
+
+      {/* MODAL MULTIMÉDIA */}
+      <Dialog 
+        open={mediaModal.isOpen} 
+        onOpenChange={(open) => {
+          if (!open) { setMediaModal(prev => ({ ...prev, isOpen: false })); setIsCapturing(false); }
+        }}
+      >
+        <DialogContent className="sm:max-w-2xl bg-black border-primary/30 shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-xs uppercase font-headline tracking-widest text-primary flex items-center gap-2">
+              {mediaModal.type === 'image' ? <Camera className="w-4 h-4" /> : <VideoIcon className="w-4 h-4" />}
+              Capture de Preuve Industrielle
+            </DialogTitle>
+            <DialogDescription className="sr-only">Station de capture multimédia</DialogDescription>
+          </DialogHeader>
+          <div className="relative aspect-video bg-muted/10 rounded-sm overflow-hidden border border-border">
+            <video ref={videoRef} autoPlay playsInline muted={mediaModal.type === 'image'} className="w-full h-full object-cover" />
+            <div className="absolute inset-0 pointer-events-none border-[15px] border-black/20" />
+            {isCapturing && (
+              <div className="absolute top-4 right-4 bg-red-600 text-white px-2 py-1 rounded-sm text-[10px] font-code animate-pulse flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" /> REC | {recordingTime}s
+              </div>
+            )}
+          </div>
+          <div className="flex justify-center gap-4 mt-4">
+             {mediaModal.type === 'image' ? (
+               <Button onClick={() => { toast({ title: "Image capturée" }); setMediaModal(prev => ({ ...prev, isOpen: false })); }} className="bg-primary text-primary-foreground font-bold uppercase text-[10px] px-8"><Camera className="w-4 h-4 mr-2" /> Capturer</Button>
+             ) : (
+               !isCapturing ? (
+                 <Button onClick={() => { setIsCapturing(true); setRecordingTime(0); const i = setInterval(() => setRecordingTime(t => t + 1), 1000); (mediaRecorderRef.current as any)._interval = i; }} className="bg-red-600 text-white font-bold uppercase text-[10px] px-8"><VideoIcon className="w-4 h-4 mr-2" /> Démarrer</Button>
+               ) : (
+                 <Button onClick={() => { setIsCapturing(false); clearInterval((mediaRecorderRef.current as any)._interval); setMediaModal(prev => ({ ...prev, isOpen: false })); }} className="bg-white text-black font-bold uppercase text-[10px] px-8"><StopCircle className="w-4 h-4 mr-2" /> Arrêter</Button>
+               )
+             )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
+
