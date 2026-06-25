@@ -8,36 +8,64 @@ const execPromise = promisify(exec);
 
 /**
  * API Route pour piloter le pipeline industriel.
+ * Version : Audité pour la remontée d'erreurs critiques.
  */
 export const POST = createHybridRoute<{ mode: string }, any>({
   name: 'PIPELINE',
   webHandler: async (req, body) => {
     const { mode } = body;
 
-    if (process.env.VERCEL) {
-      return new Response(JSON.stringify({ 
+    // Protection Cloud
+    if (process.env.VERCEL || process.env.NODE_ENV === 'production') {
+      return { 
         success: false, 
-        message: 'Liaison script désactivée sur Vercel Cloud.',
-        logs: 'ERREUR : Environnement CLOUD détecté.'
-      }), { status: 403, headers: { 'Content-Type': 'application/json' } });
+        message: 'Liaison script désactivée en environnement de production.',
+        logs: 'ERREUR : Environnement RESTREINT détecté.'
+      };
     }
 
+    // Protection Token (sauf pour desktop qui peut être local pur)
     if (!process.env.GITHUB_TOKEN && (mode === 'web' || mode === 'pull')) {
-      return new Response(JSON.stringify({ 
+      return { 
         success: false, 
-        message: 'GITHUB_TOKEN manquant.',
+        message: 'GITHUB_TOKEN manquant pour la synchronisation du registre.',
         logs: 'ERREUR_LIAISON_REGISTRE'
-      }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+      };
     }
 
-    await execPromise('chmod +x sync.sh');
-    
-    let command = `./sync.sh ${mode || 'web'}`;
-    if (mode === 'desktop') {
-      command = existsSync(join(process.cwd(), 'forge-desktop.sh')) ? 'sh forge-desktop.sh' : './sync.sh desktop';
-    }
+    try {
+      await execPromise('chmod +x sync.sh');
+      if (existsSync(join(process.cwd(), 'forge-desktop.sh'))) {
+        await execPromise('chmod +x forge-desktop.sh');
+      }
+      
+      let command = `./sync.sh ${mode || 'web'}`;
+      if (mode === 'desktop') {
+        command = existsSync(join(process.cwd(), 'forge-desktop.sh')) ? './forge-desktop.sh' : './sync.sh desktop';
+      }
 
-    const { stdout, stderr } = await execPromise(command);
-    return { success: true, logs: stdout, errors: stderr };
+      console.log(`🚀 [PIPELINE] Exécution : ${command}`);
+      
+      const { stdout, stderr } = await execPromise(command, {
+        env: { ...process.env, TAURI_ENV: 'true' }
+      });
+
+      return { 
+        success: true, 
+        message: 'Opération réussie.',
+        logs: stdout, 
+        errors: stderr 
+      };
+    } catch (error: any) {
+      console.error(`❌ [PIPELINE] Échec de la commande :`, error.message);
+      
+      // On renvoie les logs partiels pour le diagnostic
+      return { 
+        success: false, 
+        message: `Échec de la phase ${mode.toUpperCase()}`,
+        logs: error.stdout || '',
+        errors: error.stderr || error.message
+      };
+    }
   }
 });

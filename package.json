@@ -1,9 +1,10 @@
+
 {
   "name": "visionode",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --port 9002",
     "build": "next build",
     "build:tauri": "cross-env TAURI_ENV=true next build",
     "start": "next start",

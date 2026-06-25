@@ -1,4 +1,3 @@
-
 "use client";
 
 import { DashboardSidebar } from '@/components/dashboard/Sidebar';
@@ -52,19 +51,22 @@ export default function PipelinePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ mode })
       });
+      
       const result = await res.json();
       
-      setLogs(prev => `${prev}\n${result.logs || ''}\n${result.errors || ''}`);
+      // Affichage combiné des logs et erreurs
+      if (result.logs) setLogs(prev => `${prev}\n${result.logs}`);
+      if (result.errors) setLogs(prev => `${prev}\n⚠️ ERREURS/LOGS_SYSTEME :\n${result.errors}`);
       
       if (result.success) {
         setLogs(prev => `${prev}\n✅ [${new Date().toLocaleTimeString()}] OPÉRATION_TERMINÉE`);
         setStepStatus('success');
       } else {
-        setLogs(prev => `${prev}\n❌ [${new Date().toLocaleTimeString()}] ÉCHEC : ${result.message || 'Inconnu'}`);
+        setLogs(prev => `${prev}\n❌ [${new Date().toLocaleTimeString()}] ÉCHEC : ${result.message || result.error || 'Erreur inconnue'}`);
         setStepStatus('error');
       }
     } catch (err: any) {
-      setLogs(prev => `${prev}\n❌ [${new Date().toLocaleTimeString()}] ERREUR_CRITIQUE : ${err.message}`);
+      setLogs(prev => `${prev}\n❌ [${new Date().toLocaleTimeString()}] ERREUR_CRITIQUE_LIAISON : ${err.message}`);
       setStepStatus('error');
     }
   };
@@ -121,7 +123,6 @@ export default function PipelinePage() {
             
             {/* Visual Pipeline Flow */}
             <div className="relative py-8 lg:py-12 px-4">
-              {/* Line - Centered on the icon size (w-10/12) */}
               <div className="absolute top-[52px] lg:top-[60px] left-8 right-8 h-0.5 bg-border z-0" />
               
               <div className="relative z-10 flex justify-between items-start gap-4">
@@ -210,7 +211,8 @@ export default function PipelinePage() {
                       {logs || '> Système en veille. Prêt pour pilotage.'}
                       {status === 'uplink' && '\n📡 TRANSMISSION_SOURCE_EN_COURS...'}
                       {status === 'downlink' && '\n📡 RÉCUPÉRATION_MODIFICATIONS_EN_COURS...'}
-                      {status === 'forge' && '\n🏗️ COMPILATION_NATIVE_EN_COURS...'}
+                      {status === 'forge' && '\n🏗️ COMPILATION_NATIVE_EN_COURS (Cela peut prendre plusieurs minutes)...'}
+                      {status === 'error' && '\n❌ INTERRUPTION_FLUX : Consultez les messages ci-dessus pour le diagnostic.'}
                     </pre>
                   </ScrollArea>
                   <div className="flex gap-2 pt-4 border-t border-border/30 shrink-0">

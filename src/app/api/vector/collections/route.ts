@@ -1,3 +1,4 @@
+
 export const dynamic = 'force-dynamic';
 
 import { createHybridRoute } from '@/lib/api-route-creator';
@@ -13,6 +14,7 @@ export const GET = createHybridRoute<any, any>({
 
     if (isCloud) {
       try {
+        // Import statique via le client déjà configuré pour éviter les erreurs de chunks Webpack
         const { getWeaviateClient } = await import('@/lib/weaviate-client');
         const client = await getWeaviateClient();
         const schema = await client.collections.listAll();
@@ -38,10 +40,11 @@ export const GET = createHybridRoute<any, any>({
     try {
       const collections = await listCollections();
       
-      // Enrichir avec le nombre de documents si possible
+      // Enrichir avec le nombre de documents
       const enrichedCollections = await Promise.all(collections.map(async (c: any) => {
         try {
           const client = await getChromaClient();
+          if (!client) return { ...c, count: 0 };
           const collection = await client.getCollection({ name: c.name });
           const count = await collection.count();
           return { ...c, count };
