@@ -1,27 +1,21 @@
 
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { 
   Database, 
-  Plus, 
   UploadCloud, 
   Layers,
   Mic,
-  MicOff,
   Loader2,
   Trash2,
-  Camera,
-  Video as VideoIcon,
-  FileText,
   Wand2,
-  Volume2,
   Activity,
-  CheckCircle2,
   ShieldCheck,
-  Zap,
   Power,
-  RotateCcw
+  RotateCcw,
+  FileText,
+  HelpCircle
 } from 'lucide-react';
 
 import { Card } from '@/components/ui/card';
@@ -49,71 +43,37 @@ export default function DatasetPage() {
   const [mode, setMode] = useState<'qa' | 'procedure'>('qa');
   const [qaItems, setQaItems] = useState<QAItem[]>([]);
   
-  // Voice Mode Master State
   const [isVoiceModeActive, setIsVoiceModeActive] = useState(false);
-  
-  // Buffers pour la gestion phrase par phrase (Historique pour correction)
+  const [activeVoiceField, setActiveVoiceField] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [isRefining, setIsRefining] = useState(false);
+
+  // Buffers pour la gestion phrase par phrase
   const [buffers, setBuffers] = useState<{ [key: string]: string[] }>({
     qaTitle: [],
     question: [],
     answer: []
   });
 
-  // Form states (calculés à partir des buffers)
   const [qaTitle, setQaTitle] = useState('');
   const [question, setQuestion] = useState('');
   const [answer, setAnswer] = useState('');
-  
-  const [isUploading, setIsUploading] = useState(false);
-  const [isRefining, setIsRefining] = useState(false);
-  const [activeVoiceField, setActiveVoiceField] = useState<string | null>(null);
 
   useEffect(() => { setMounted(true); }, []);
 
-  // Synchroniser les strings du formulaire avec les buffers
+  // Synchronisation des champs avec les buffers de phrases
   useEffect(() => {
     setQaTitle(buffers.qaTitle.join(' '));
     setQuestion(buffers.question.join('. ') + (buffers.question.length > 0 ? '.' : ''));
     setAnswer(buffers.answer.join('. ') + (buffers.answer.length > 0 ? '.' : ''));
   }, [buffers]);
 
-  // Neural Refinement
-  const handleRefine = async () => {
-    if (!question.trim() && !answer.trim()) return;
-    setIsRefining(true);
-    try {
-      const res = await apiClient.post<any>('/api/chat', {
-        message: `Reformule ce signalement industriel de manière technique et concise. 
-        Symptôme: ${question}
-        Action: ${answer}
-        Réponds strictement au format JSON : {"question": "...", "answer": "..."}`,
-        history: []
-      });
-      
-      const refined = JSON.parse(res.text);
-      if (refined.question || refined.answer) {
-        setBuffers(prev => ({
-          ...prev,
-          question: refined.question ? [refined.question] : prev.question,
-          answer: refined.answer ? [refined.answer] : prev.answer
-        }));
-      }
-      
-      toast({ title: "Optimisation Neurale Terminée" });
-      if (isVoiceModeActive) voice.speak("Optimisation terminée. Données prêtes pour enregistrement.");
-    } catch (e) {
-      toast({ title: "Échec du raffinement", variant: "destructive" });
-    } finally {
-      setIsRefining(false);
-    }
-  };
-
   const handleVoiceResult = useCallback((text: string) => {
     if (!activeVoiceField) return;
 
     const lowerText = text.toLowerCase().trim();
 
-    // LOGIQUE DE CORRECTION : Si l'utilisateur dit "non" seul
+    // LOGIQUE DE CORRECTION "NON"
     if (lowerText === 'non' || lowerText === 'non.') {
       setBuffers(prev => {
         const currentBuffer = prev[activeVoiceField];
@@ -122,20 +82,16 @@ export default function DatasetPage() {
         const newBuffer = [...currentBuffer];
         newBuffer.pop(); // Supprimer la dernière phrase
         
-        voice.speak("Dernière phrase annulée. Reprenez.");
-        toast({ title: "Correction Vocale", description: "Dernière phrase supprimée." });
-        
+        voice.speak("Dernière phrase annulée.");
         return { ...prev, [activeVoiceField]: newBuffer };
       });
       return;
     }
 
-    // Sinon, on ajoute la phrase au buffer
+    // Ajout de la phrase au buffer si elle n'est pas un doublon immédiat
     setBuffers(prev => {
       const currentBuffer = prev[activeVoiceField];
-      // Éviter les doublons immédiats si le moteur STT bégaye
       if (currentBuffer[currentBuffer.length - 1] === text) return prev;
-      
       return {
         ...prev,
         [activeVoiceField]: [...currentBuffer, text]
@@ -157,12 +113,45 @@ export default function DatasetPage() {
     const newState = !isVoiceModeActive;
     setIsVoiceModeActive(newState);
     if (newState) {
-      voice.speak("Assistant vocal activé. Dites non pour corriger la dernière phrase.");
-      toast({ title: "Mode IV Activé", description: "Dites 'NON' pour effacer la dernière phrase." });
+      voice.speak("Assistant vocal actif. Choisissez un champ.");
+      toast({ title: "Assistant Vocal Actif", description: "Dites 'NON' pour corriger la dernière phrase." });
     } else {
       voice.stopListening();
-      voice.speak("Assistant vocal désactivé.");
+      voice.speak("Assistant désactivé.");
       setActiveVoiceField(null);
+    }
+  };
+
+  const handleRefine = async () => {
+    if (!question.trim() && !answer.trim()) return;
+    setIsRefining(true);
+    try {
+      const res = await apiClient.post<any>('/api/chat', {
+        message: `Reformule ce signalement industriel de manière technique et concise. 
+        Type: ${mode.toUpperCase()}
+        Symptôme/Question: ${question}
+        Action/Réponse: ${answer}
+        Réponds STRICTEMENT au format JSON : {"question": "...", "answer": "..."}`,
+        history: []
+      });
+      
+      if (res && res.text) {
+        try {
+          const refined = JSON.parse(res.text);
+          setBuffers(prev => ({
+            ...prev,
+            question: refined.question ? [refined.question] : prev.question,
+            answer: refined.answer ? [refined.answer] : prev.answer
+          }));
+          toast({ title: "Optimisation Neurale Terminée" });
+        } catch (parseError) {
+          throw new Error("Format de réponse IA invalide.");
+        }
+      }
+    } catch (e: any) {
+      toast({ title: "Échec du raffinement", description: e.message, variant: "destructive" });
+    } finally {
+      setIsRefining(false);
     }
   };
 
@@ -171,9 +160,9 @@ export default function DatasetPage() {
     if (!question.trim() || !answer.trim()) return;
     
     const newItem: QAItem = {
-      id: `qa-${Date.now()}`,
-      type: mode, // Correction : utilise le mode actuel (qa ou procedure)
-      title: qaTitle.trim() || `RAG_${Date.now()}`,
+      id: `rag-${Date.now()}`,
+      type: mode,
+      title: qaTitle.trim() || `${mode.toUpperCase()}_${Date.now()}`,
       label: question,
       details: answer,
       isRefined: true
@@ -184,13 +173,9 @@ export default function DatasetPage() {
     toast({ title: "Entrée ajoutée au registre local" });
     
     if (isVoiceModeActive) {
-      voice.speak("Entrée enregistrée. Registre prêt.");
+      voice.speak("Enregistré. Prêt pour la suite.");
       setActiveVoiceField(null);
     }
-  };
-
-  const clearCurrentField = (field: string) => {
-    setBuffers(prev => ({ ...prev, [field]: [] }));
   };
 
   if (!mounted) return null;
@@ -216,108 +201,102 @@ export default function DatasetPage() {
               )}
             >
               <Power className="w-3.5 h-3.5" />
-              {isVoiceModeActive ? "Assistant Vocal Actif" : "Activer Assistant Vocal"}
+              {isVoiceModeActive ? "Assistant Actif" : "Activer Voix"}
             </Button>
             
             <div className="flex bg-muted/30 p-1 rounded-sm border border-border">
-              <button onClick={() => setMode('qa')} className={cn("px-3 py-1 text-[9px] uppercase rounded-sm", mode === 'qa' ? "bg-primary text-primary-foreground font-bold" : "text-muted-foreground")}>FAQ</button>
-              <button onClick={() => setMode('procedure')} className={cn("px-3 py-1 text-[9px] uppercase rounded-sm", mode === 'procedure' ? "bg-secondary text-secondary-foreground font-bold" : "text-muted-foreground")}>Procédure</button>
+              <button 
+                onClick={() => setMode('qa')} 
+                className={cn("px-4 py-1 text-[9px] uppercase rounded-sm flex items-center gap-2", mode === 'qa' ? "bg-primary text-primary-foreground font-bold shadow-lg" : "text-muted-foreground")}
+              >
+                <HelpCircle className="w-3 h-3" /> FAQ
+              </button>
+              <button 
+                onClick={() => setMode('procedure')} 
+                className={cn("px-4 py-1 text-[9px] uppercase rounded-sm flex items-center gap-2", mode === 'procedure' ? "bg-secondary text-secondary-foreground font-bold shadow-lg" : "text-muted-foreground")}
+              >
+                <FileText className="w-3 h-3" /> Procédure
+              </button>
             </div>
           </div>
         </header>
 
         <div className="p-4 lg:p-8 max-w-5xl mx-auto w-full space-y-8">
           <Card className={cn(
-            "p-6 border-border bg-card/50 space-y-6 shadow-2xl relative overflow-hidden transition-all duration-500",
+            "p-6 border-border bg-card/50 space-y-6 shadow-2xl relative transition-all duration-500",
             isVoiceModeActive && "border-primary/40 ring-1 ring-primary/10"
           )}>
-            <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none">
-              <Mic className="w-32 h-32" />
-            </div>
-
             {isVoiceModeActive && voice.isListening && (
               <div className="flex items-center justify-between px-3 py-2 bg-primary/10 border border-primary/30 rounded-sm animate-in fade-in slide-in-from-top-2">
                 <div className="flex items-center gap-2">
                   <Activity className="w-4 h-4 text-primary animate-pulse" />
                   <span className="text-[10px] font-bold text-primary uppercase tracking-tighter">
-                    ÉCOUTE : {activeVoiceField === 'qaTitle' ? 'ID' : activeVoiceField === 'question' ? 'SYMPTÔME' : 'ACTION'}
+                    ÉCOUTE : {activeVoiceField === 'qaTitle' ? 'ID' : activeVoiceField === 'question' ? 'DESCRIPTION' : 'RÉPONSE'}
                   </span>
                 </div>
-                <span className="text-[8px] font-code text-primary/60 uppercase">Dites "NON" pour corriger</span>
+                <span className="text-[8px] font-code text-primary/60 uppercase animate-pulse">Dites "NON" pour corriger la phrase</span>
               </div>
             )}
 
-            <form onSubmit={handleAddItem} className="space-y-6 relative z-10">
-              <div className="grid grid-cols-1 gap-6">
-                <div className="relative">
-                  <label className="text-[10px] font-bold uppercase text-primary mb-2 block tracking-widest">Identifiant de Référence</label>
+            <form onSubmit={handleAddItem} className="space-y-6">
+              <div className="space-y-6">
+                <div>
+                  <label className="text-[10px] font-bold uppercase text-primary mb-2 block tracking-widest">Identifiant de l'entrée</label>
                   <div className="flex gap-2">
                     <Input 
                       value={qaTitle} 
                       onChange={e => setQaTitle(e.target.value)}
-                      onFocus={() => handleFieldFocus('qaTitle', "Veuillez dicter l'identifiant.")}
-                      placeholder="EX: PANNE_HYDRAULIQUE_H01"
+                      onFocus={() => handleFieldFocus('qaTitle', "Veuillez donner un titre à l'entrée.")}
+                      placeholder="EX: PANNE_POMPE_H02"
                       className={cn(
-                        "bg-black/40 font-code uppercase h-12 transition-all",
+                        "bg-black/40 font-code uppercase h-12",
                         activeVoiceField === 'qaTitle' ? "border-primary ring-2 ring-primary/20" : "border-primary/20"
                       )}
                     />
-                    <Button 
-                      type="button" 
-                      variant="outline"
-                      size="icon"
-                      onClick={() => clearCurrentField('qaTitle')}
-                      className="h-12 w-12 border-border/50 hover:text-destructive"
-                    >
-                      <RotateCcw className="w-4 h-4" />
-                    </Button>
+                    <Button type="button" variant="outline" size="icon" onClick={() => setBuffers(b => ({ ...b, qaTitle: [] }))} className="h-12 w-12 border-border/50"><RotateCcw className="w-4 h-4" /></Button>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <label className="text-[10px] font-bold uppercase text-muted-foreground mb-2 block tracking-widest flex items-center justify-between">
-                      Description du Symptôme ({mode === 'qa' ? 'FAQ' : 'PROCÉDURE'})
-                      <div className="flex gap-2">
-                        {buffers.question.length > 0 && <span className="text-[8px] bg-primary/20 px-1.5 py-0.5 rounded text-primary">{buffers.question.length} phrases</span>}
-                        <Mic className={cn("w-3.5 h-3.5", voice.isListening && activeVoiceField === 'question' ? "text-primary animate-pulse" : "opacity-30")} />
-                      </div>
+                      {mode === 'qa' ? 'Question / Symptôme' : 'Description de la Situation'}
+                      <Mic className={cn("w-3.5 h-3.5", voice.isListening && activeVoiceField === 'question' ? "text-primary animate-pulse" : "opacity-30")} />
                     </label>
                     <Textarea 
                       value={question}
                       readOnly
-                      onFocus={() => handleFieldFocus('question', "Décrivez le symptôme.")}
-                      placeholder="Dictée phrase par phrase..."
+                      onFocus={() => handleFieldFocus('question', "Décrivez le symptôme ou la situation.")}
+                      placeholder="Dictée vocale active..."
                       className={cn(
-                        "h-48 bg-black/40 font-code text-xs resize-none transition-all cursor-default",
+                        "h-48 bg-black/40 font-code text-xs resize-none transition-all",
                         activeVoiceField === 'question' ? "border-primary ring-2 ring-primary/20" : "border-border/50"
                       )}
                     />
-                    <div className="flex justify-end">
-                       <button type="button" onClick={() => clearCurrentField('question')} className="text-[9px] uppercase font-bold text-muted-foreground hover:text-primary">Réinitialiser le champ</button>
+                    <div className="flex justify-between items-center text-[9px]">
+                       <span className="text-muted-foreground uppercase">{buffers.question.length} PHRASES</span>
+                       <button type="button" onClick={() => setBuffers(b => ({ ...b, question: [] }))} className="uppercase font-bold text-muted-foreground hover:text-primary">Effacer</button>
                     </div>
                   </div>
 
                   <div className="space-y-2">
                     <label className="text-[10px] font-bold uppercase text-muted-foreground mb-2 block tracking-widest flex items-center justify-between">
-                      Action Corrective Appliquée
-                      <div className="flex gap-2">
-                        {buffers.answer.length > 0 && <span className="text-[8px] bg-secondary/20 px-1.5 py-0.5 rounded text-secondary">{buffers.answer.length} phrases</span>}
-                        <Mic className={cn("w-3.5 h-3.5", voice.isListening && activeVoiceField === 'answer' ? "text-primary animate-pulse" : "opacity-30")} />
-                      </div>
+                      {mode === 'qa' ? 'Réponse Technique' : 'Procédure Corrective'}
+                      <Mic className={cn("w-3.5 h-3.5", voice.isListening && activeVoiceField === 'answer' ? "text-primary animate-pulse" : "opacity-30")} />
                     </label>
                     <Textarea 
                       value={answer}
                       readOnly
-                      onFocus={() => handleFieldFocus('answer', "Dictez l'action appliquée.")}
-                      placeholder="Dictée phrase par phrase..."
+                      onFocus={() => handleFieldFocus('answer', "Dictez la réponse ou l'action corrective.")}
+                      placeholder="Dictée vocale active..."
                       className={cn(
-                        "h-48 bg-black/40 font-code text-xs resize-none transition-all cursor-default",
+                        "h-48 bg-black/40 font-code text-xs resize-none transition-all",
                         activeVoiceField === 'answer' ? "border-primary ring-2 ring-primary/20" : "border-border/50"
                       )}
                     />
-                    <div className="flex justify-end">
-                       <button type="button" onClick={() => clearCurrentField('answer')} className="text-[9px] uppercase font-bold text-muted-foreground hover:text-secondary">Réinitialiser le champ</button>
+                    <div className="flex justify-between items-center text-[9px]">
+                       <span className="text-muted-foreground uppercase">{buffers.answer.length} PHRASES</span>
+                       <button type="button" onClick={() => setBuffers(b => ({ ...b, answer: [] }))} className="uppercase font-bold text-muted-foreground hover:text-secondary">Effacer</button>
                     </div>
                   </div>
                 </div>
@@ -332,14 +311,14 @@ export default function DatasetPage() {
                   className="flex-1 h-12 border-primary/40 text-primary hover:bg-primary/5 font-bold uppercase text-xs"
                 >
                   {isRefining ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Wand2 className="w-4 h-4 mr-2" />}
-                  Raffinement Neural IA
+                  Raffinement Neural
                 </Button>
                 <Button 
                   type="submit" 
                   disabled={!question || !answer}
-                  className="flex-[2] h-12 bg-primary text-primary-foreground font-bold uppercase text-xs shadow-lg hover:scale-[1.01] transition-transform disabled:opacity-50"
+                  className="flex-[2] h-12 bg-primary text-primary-foreground font-bold uppercase text-xs shadow-lg transition-all active:scale-95 disabled:opacity-50"
                 >
-                  Ajouter au Registre Physique
+                  Valider dans le Registre
                 </Button>
               </div>
             </form>
@@ -360,7 +339,7 @@ export default function DatasetPage() {
                         id: it.id,
                         projectId: 'project-001',
                         type: 'document',
-                        content: JSON.stringify({ label: it.label, details: it.details, title: it.title, source: 'iv_phrase_input' }),
+                        content: JSON.stringify({ label: it.label, details: it.details, title: it.title, source: 'intelligent_voice_input' }),
                         tags: [it.type, 'neural_processed'],
                         createdAt: new Date().toISOString()
                       }));
@@ -380,7 +359,10 @@ export default function DatasetPage() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {qaItems.map(item => (
-                  <Card key={item.id} className="p-4 border-border bg-card/20 relative group hover:border-primary/40 transition-all border-l-4 border-l-primary/50">
+                  <Card key={item.id} className={cn(
+                    "p-4 border-border bg-card/20 relative group hover:border-primary/40 transition-all border-l-4",
+                    item.type === 'procedure' ? "border-l-secondary/50" : "border-l-primary/50"
+                  )}>
                     <button 
                       onClick={() => setQaItems(prev => prev.filter(i => i.id !== item.id))}
                       className="absolute top-2 right-2 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
@@ -388,9 +370,9 @@ export default function DatasetPage() {
                       <Trash2 className="w-4 h-4" />
                     </button>
                     <div className="flex items-center gap-2 mb-3">
-                      <ShieldCheck className="w-3.5 h-3.5 text-primary" />
-                      <span className="text-[10px] font-bold text-primary uppercase truncate pr-6">{item.title}</span>
-                      <span className="text-[8px] px-1.5 py-0.5 bg-background border border-border rounded-sm text-muted-foreground uppercase">{item.type}</span>
+                      <ShieldCheck className={cn("w-3.5 h-3.5", item.type === 'procedure' ? "text-secondary" : "text-primary")} />
+                      <span className="text-[10px] font-bold uppercase truncate pr-6">{item.title}</span>
+                      <span className="text-[7px] px-1.5 py-0.5 bg-background border border-border rounded-sm text-muted-foreground uppercase">{item.type}</span>
                     </div>
                     <div className="space-y-2">
                       <p className="text-[9px] font-code text-white bg-black/40 p-2 rounded-sm italic">"{item.label}"</p>
@@ -406,3 +388,4 @@ export default function DatasetPage() {
     </div>
   );
 }
+
