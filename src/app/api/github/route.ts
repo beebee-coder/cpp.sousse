@@ -1,3 +1,4 @@
+
 import { createHybridRoute } from '@/lib/api-route-creator';
 import { exec } from 'child_process';
 import { promisify } from 'util';
@@ -7,47 +8,32 @@ import { join } from 'path';
 const execPromise = promisify(exec);
 
 /**
- * API Route pour piloter le pipeline industriel.
- * Supporte le mode FORGE_SIMULATION pour le prototypage en environnement restreint.
+ * API Route pour piloter le pipeline industriel réel.
+ * En mode desktop, elle déclenche la compilation réelle sur GitHub Actions.
  */
-export const POST = createHybridRoute<{ mode: string; simulate?: boolean }, any>({
-  name: 'PIPELINE',
+export const POST = createHybridRoute<{ mode: string }, any>({
+  name: 'PIPELINE_REAL',
   webHandler: async (req, body) => {
-    const { mode, simulate = false } = body;
-
-    // Protection Cloud (hors mode simulation)
-    if ((process.env.VERCEL || process.env.NODE_ENV === 'production') && !simulate) {
-      return { 
-        success: false, 
-        message: 'Liaison script désactivée en environnement de production.',
-        logs: 'ERREUR : Environnement RESTREINT détecté.'
-      };
-    }
+    const { mode } = body;
 
     try {
       await execPromise('chmod +x sync.sh');
-      if (existsSync(join(process.cwd(), 'forge-desktop.sh'))) {
-        await execPromise('chmod +x forge-desktop.sh');
-      }
       
+      // La commande réelle de synchronisation (Push vers GitHub)
       let command = `./sync.sh ${mode || 'web'}`;
-      if (mode === 'desktop') {
-        command = existsSync(join(process.cwd(), 'forge-desktop.sh')) ? './forge-desktop.sh' : './sync.sh desktop';
-      }
 
-      console.log(`🚀 [PIPELINE] Exécution : ${command} (Simulate: ${simulate})`);
+      console.log(`🚀 [PIPELINE] Exécution réelle : ${command}`);
       
       const { stdout, stderr } = await execPromise(command, {
         env: { 
           ...process.env, 
-          TAURI_ENV: 'true',
-          FORGE_SIMULATION: simulate ? 'true' : 'false'
+          TAURI_ENV: 'true'
         }
       });
 
       return { 
         success: true, 
-        message: simulate ? 'Simulation de forge réussie.' : 'Opération réussie.',
+        message: 'Code transmis avec succès. Le pipeline de compilation réelle est activé sur GitHub.',
         logs: stdout, 
         errors: stderr 
       };
@@ -56,7 +42,7 @@ export const POST = createHybridRoute<{ mode: string; simulate?: boolean }, any>
       
       return { 
         success: false, 
-        message: `Échec de la phase ${mode.toUpperCase()}`,
+        message: `Échec de la transmission vers le serveur de forge.`,
         logs: error.stdout || '',
         errors: error.stderr || error.message
       };

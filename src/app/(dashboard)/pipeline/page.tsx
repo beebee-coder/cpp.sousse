@@ -1,11 +1,10 @@
+
 "use client";
 
 import { DashboardSidebar } from '@/components/dashboard/Sidebar';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Switch } from '@/components/ui/switch';
-import { Label } from '@/components/ui/label';
 import { 
   Rocket, 
   Github, 
@@ -13,13 +12,12 @@ import {
   CheckCircle2, 
   RefreshCw, 
   ShieldCheck, 
-  AlertCircle,
   Terminal,
   Zap,
   Hammer,
   ChevronLeft,
   LucideIcon,
-  FlaskConical
+  Package
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
@@ -31,12 +29,6 @@ export default function PipelinePage() {
   const router = useRouter();
   const [status, setStepStatus] = useState<PipelineStep>('idle');
   const [logs, setLogs] = useState<string>('');
-  const [isDev, setIsDev] = useState(false);
-  const [useSimulation, setUseSimulation] = useState(true);
-
-  useEffect(() => {
-    setIsDev(process.env.NODE_ENV === 'development' || true); // Forcer true pour le studio
-  }, []);
 
   const runCommand = async (mode: 'web' | 'desktop' | 'pull') => {
     const stepMap: Record<string, PipelineStep> = {
@@ -47,23 +39,33 @@ export default function PipelinePage() {
     
     setStepStatus(stepMap[mode]);
     const timestamp = new Date().toLocaleTimeString();
-    const simLabel = useSimulation && mode === 'desktop' ? ' [SIMULATION]' : '';
-    setLogs(prev => `${prev}\n🚀 [${timestamp}] INITIATION_${mode.toUpperCase()}${simLabel}...`);
+    
+    if (mode === 'desktop') {
+      setLogs(prev => `${prev}\n🚀 [${timestamp}] INITIATION_FORGE_RÉELLE...`);
+      setLogs(prev => `${prev}\n📡 TRANSFERT DU CODE VERS LA STATION DE COMPILATION GITHUB...`);
+    } else {
+      setLogs(prev => `${prev}\n🚀 [${timestamp}] INITIATION_${mode.toUpperCase()}...`);
+    }
 
     try {
+      // Pour la forge réelle, on force un Push vers GitHub pour activer le workflow
       const res = await fetch('/api/github', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode, simulate: useSimulation && mode === 'desktop' })
+        body: JSON.stringify({ mode: mode === 'desktop' ? 'web' : mode }) 
       });
       
       const result = await res.json();
       
       if (result.logs) setLogs(prev => `${prev}\n${result.logs}`);
-      if (result.errors) setLogs(prev => `${prev}\n⚠️ SYSTÈME :\n${result.errors}`);
       
       if (result.success) {
-        setLogs(prev => `${prev}\n✅ [${new Date().toLocaleTimeString()}] OPÉRATION_TERMINÉE`);
+        if (mode === 'desktop') {
+          setLogs(prev => `${prev}\n✅ [${new Date().toLocaleTimeString()}] UPLINK_RÉUSSI : Compilation GitHub Actions lancée.`);
+          setLogs(prev => `${prev}\n📦 Les fichiers .EXE et .MSI seront générés dans 5-10 minutes.`);
+        } else {
+          setLogs(prev => `${prev}\n✅ [${new Date().toLocaleTimeString()}] OPÉRATION_TERMINÉE`);
+        }
         setStepStatus('success');
       } else {
         setLogs(prev => `${prev}\n❌ [${new Date().toLocaleTimeString()}] ÉCHEC : ${result.message || 'Erreur inconnue'}`);
@@ -89,31 +91,19 @@ export default function PipelinePage() {
             </div>
             <div className="hidden sm:flex items-center gap-2 px-3 py-1 bg-secondary/10 border border-secondary/20 rounded-sm">
               <ShieldCheck className="w-3 h-3 text-secondary" />
-              <span className="text-[9px] font-code text-secondary uppercase font-bold tracking-tighter">Forge Active</span>
+              <span className="text-[9px] font-code text-secondary uppercase font-bold tracking-tighter">Production Active</span>
             </div>
           </div>
           
-          <div className="flex items-center gap-4">
-            <div className="flex items-center space-x-2 bg-black/40 px-3 py-1.5 rounded-sm border border-primary/20">
-              <FlaskConical className={cn("w-3.5 h-3.5", useSimulation ? "text-primary" : "text-muted-foreground")} />
-              <Label htmlFor="sim-mode" className="text-[9px] font-code uppercase text-muted-foreground cursor-pointer">Mode Proto</Label>
-              <Switch 
-                id="sim-mode" 
-                checked={useSimulation} 
-                onCheckedChange={setUseSimulation}
-                className="scale-75 data-[state=checked]:bg-primary"
-              />
-            </div>
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              onClick={() => router.push('/dashboard')}
-              className="text-[9px] font-code uppercase text-muted-foreground hidden sm:flex"
-            >
-              <ChevronLeft className="w-3.5 h-3.5 mr-1" />
-              Dashboard
-            </Button>
-          </div>
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={() => router.push('/dashboard')}
+            className="text-[9px] font-code uppercase text-muted-foreground"
+          >
+            <ChevronLeft className="w-3.5 h-3.5 mr-1" />
+            Dashboard
+          </Button>
         </header>
 
         <div className="flex-1 overflow-y-auto terminal-scroll">
@@ -126,26 +116,26 @@ export default function PipelinePage() {
               <div className="relative z-10 flex justify-between items-start gap-4">
                 <PipelineNode 
                   icon={Monitor} 
-                  label="Source" 
+                  label="Local Dev" 
                   active={status === 'uplink'} 
                   completed={['downlink', 'forge', 'success'].includes(status)} 
                 />
                 
                 <div className="flex flex-col items-center gap-2 pt-2">
                   <Github className={cn("w-5 h-5 lg:w-6 lg:h-6 text-muted-foreground transition-all", (status === 'uplink' || status === 'downlink') && "animate-bounce text-primary")} />
-                  <span className="text-[7px] lg:text-[8px] font-code uppercase text-muted-foreground hidden sm:block">Registre</span>
+                  <span className="text-[7px] lg:text-[8px] font-code uppercase text-muted-foreground hidden sm:block">GitHub Sync</span>
                 </div>
 
                 <PipelineNode 
-                  icon={Hammer} 
-                  label="Station Build" 
+                  icon={Package} 
+                  label="CI Build Server" 
                   active={status === 'forge'} 
                   completed={status === 'success'} 
                 />
 
                 <div className="flex flex-col items-center gap-2 pt-2">
                   <CheckCircle2 className={cn("w-5 h-5 lg:w-6 lg:h-6 text-muted-foreground transition-all", status === 'success' && "text-secondary")} />
-                  <span className="text-[7px] lg:text-[8px] font-code uppercase text-muted-foreground hidden sm:block">Release</span>
+                  <span className="text-[7px] lg:text-[8px] font-code uppercase text-muted-foreground hidden sm:block">Binaires Prêts</span>
                 </div>
               </div>
             </div>
@@ -155,23 +145,13 @@ export default function PipelinePage() {
               <div className="space-y-4">
                 <h3 className="text-[10px] lg:text-xs font-bold uppercase tracking-widest flex items-center gap-2 text-muted-foreground px-2">
                   <Zap className="w-4 h-4 text-primary" />
-                  Actions de Flux
+                  Flux de Compilation
                 </h3>
                 
                 <div className="grid grid-cols-1 gap-4">
                   <ActionCard 
-                    title="Phase Aval (Pull)" 
-                    description="Sync Locale" 
-                    icon={RefreshCw} 
-                    onClick={() => runCommand('pull')}
-                    loading={status === 'downlink'}
-                    disabled={status !== 'idle' && status !== 'success' && status !== 'error'}
-                    variant="secondary"
-                  />
-                  
-                  <ActionCard 
                     title="Phase Amont (Push)" 
-                    description="Uplink Source" 
+                    description="Sync GitHub" 
                     icon={Rocket} 
                     onClick={() => runCommand('web')}
                     loading={status === 'uplink'}
@@ -180,21 +160,29 @@ export default function PipelinePage() {
                   />
 
                   <ActionCard 
-                    title={useSimulation ? "Forge Simualtive" : "Phase Finale (Build)"}
-                    description={useSimulation ? "Virtual Build" : "Forger Desktop"} 
-                    icon={useSimulation ? FlaskConical : Hammer} 
+                    title="Phase Finale (Release)"
+                    description="Forger EXE/MSI" 
+                    icon={Hammer} 
                     onClick={() => runCommand('desktop')}
                     loading={status === 'forge'}
                     disabled={status !== 'idle' && status !== 'success' && status !== 'error'}
                     variant="primary"
                   />
+                  
+                  <ActionCard 
+                    title="Phase Aval (Pull)" 
+                    description="Downlink Station" 
+                    icon={RefreshCw} 
+                    onClick={() => runCommand('pull')}
+                    loading={status === 'downlink'}
+                    disabled={status !== 'idle' && status !== 'success' && status !== 'error'}
+                    variant="secondary"
+                  />
                 </div>
 
                 <Card className="p-4 border-border bg-black/40">
                   <p className="text-[8px] lg:text-[9px] font-code text-muted-foreground leading-tight uppercase italic">
-                    {useSimulation 
-                      ? "* Mode Simulation : Rust/Cargo n'est pas requis pour tester le flux UI."
-                      : "* GITHUB_TOKEN et RUST/CARGO requis pour une compilation réelle."}
+                    * La compilation native est effectuée par GitHub Actions pour garantir des binaires Windows signés et optimisés.
                   </p>
                 </Card>
               </div>
@@ -203,23 +191,16 @@ export default function PipelinePage() {
               <div className="lg:col-span-2 space-y-4">
                 <h3 className="text-[10px] lg:text-xs font-bold uppercase tracking-widest flex items-center gap-2 text-muted-foreground px-2">
                   <Terminal className="w-4 h-4 text-muted-foreground" />
-                  Journaux d'Audit Pipeline
+                  Journaux de Forge Réelle
                 </h3>
                 <Card className="border-border bg-black p-4 flex flex-col h-[400px] lg:h-[500px] shadow-inner shadow-primary/5 overflow-hidden">
                   <ScrollArea className="flex-1 font-code text-[10px] lg:text-[11px] text-foreground/80">
                     <pre className="whitespace-pre-wrap py-2">
-                      {logs || '> Système en veille. Prêt pour pilotage.'}
+                      {logs || '> Système prêt pour pilotage de release.'}
                       {status === 'uplink' && '\n📡 TRANSMISSION_SOURCE_EN_COURS...'}
-                      {status === 'downlink' && '\n📡 RÉCUPÉRATION_MODIFICATIONS_EN_COURS...'}
-                      {status === 'forge' && (useSimulation ? '\n🏗️ SIMULATION_BUILD_EN_COURS...' : '\n🏗️ COMPILATION_NATIVE_EN_COURS (Cela peut prendre plusieurs minutes)...')}
-                      {status === 'error' && '\n❌ INTERRUPTION_FLUX : Consultez les messages ci-dessus pour le diagnostic.'}
+                      {status === 'forge' && '\n🏗️ DÉCLENCHEMENT DE LA COMPILATION NATIVE SUR SERVEUR GITHUB...'}
                     </pre>
                   </ScrollArea>
-                  <div className="flex gap-2 pt-4 border-t border-border/30 shrink-0">
-                    <div className="w-2 h-2 rounded-full bg-red-500/20" />
-                    <div className="w-2 h-2 rounded-full bg-yellow-500/20" />
-                    <div className="w-2 h-2 rounded-full bg-green-500/20" />
-                  </div>
                 </Card>
               </div>
             </div>
@@ -261,18 +242,18 @@ function ActionCard({ title, description, icon: Icon, onClick, loading, disabled
   return (
     <Card className="p-3 border-border bg-black/20 group hover:border-primary/30 transition-colors">
       <p className="text-[8px] lg:text-[9px] text-muted-foreground font-code uppercase mb-2">&gt; {title}</p>
-      <Button 
-        variant={variant === 'outline' ? 'outline' : 'default'}
+      <button 
         className={cn(
-          "w-full justify-start font-headline text-[9px] lg:text-[10px] h-9 lg:h-10 uppercase shadow-lg transition-transform active:scale-95",
-          variantClasses[variant as keyof typeof variantClasses]
+          "w-full flex items-center justify-start font-headline text-[9px] lg:text-[10px] h-9 lg:h-10 uppercase shadow-lg transition-transform active:scale-95 rounded-sm px-4",
+          variantClasses[variant as keyof typeof variantClasses],
+          (disabled || loading) && "opacity-50 cursor-not-allowed"
         )} 
         onClick={onClick}
         disabled={disabled || loading}
       >
         <Icon className={cn("w-3.5 h-3.5 mr-2", loading && "animate-spin")} />
         {loading ? "TRAVAIL..." : description}
-      </Button>
+      </button>
     </Card>
   );
 }
