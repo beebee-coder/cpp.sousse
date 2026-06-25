@@ -4,6 +4,8 @@ import { DashboardSidebar } from '@/components/dashboard/Sidebar';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 import { 
   Rocket, 
   Github, 
@@ -16,7 +18,8 @@ import {
   Zap,
   Hammer,
   ChevronLeft,
-  LucideIcon
+  LucideIcon,
+  FlaskConical
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
@@ -29,9 +32,10 @@ export default function PipelinePage() {
   const [status, setStepStatus] = useState<PipelineStep>('idle');
   const [logs, setLogs] = useState<string>('');
   const [isDev, setIsDev] = useState(false);
+  const [useSimulation, setUseSimulation] = useState(true);
 
   useEffect(() => {
-    setIsDev(process.env.NODE_ENV === 'development');
+    setIsDev(process.env.NODE_ENV === 'development' || true); // Forcer true pour le studio
   }, []);
 
   const runCommand = async (mode: 'web' | 'desktop' | 'pull') => {
@@ -43,50 +47,33 @@ export default function PipelinePage() {
     
     setStepStatus(stepMap[mode]);
     const timestamp = new Date().toLocaleTimeString();
-    setLogs(prev => `${prev}\n🚀 [${timestamp}] INITIATION_${mode.toUpperCase()}...`);
+    const simLabel = useSimulation && mode === 'desktop' ? ' [SIMULATION]' : '';
+    setLogs(prev => `${prev}\n🚀 [${timestamp}] INITIATION_${mode.toUpperCase()}${simLabel}...`);
 
     try {
       const res = await fetch('/api/github', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode })
+        body: JSON.stringify({ mode, simulate: useSimulation && mode === 'desktop' })
       });
       
       const result = await res.json();
       
-      // Affichage combiné des logs et erreurs
       if (result.logs) setLogs(prev => `${prev}\n${result.logs}`);
-      if (result.errors) setLogs(prev => `${prev}\n⚠️ ERREURS/LOGS_SYSTEME :\n${result.errors}`);
+      if (result.errors) setLogs(prev => `${prev}\n⚠️ SYSTÈME :\n${result.errors}`);
       
       if (result.success) {
         setLogs(prev => `${prev}\n✅ [${new Date().toLocaleTimeString()}] OPÉRATION_TERMINÉE`);
         setStepStatus('success');
       } else {
-        setLogs(prev => `${prev}\n❌ [${new Date().toLocaleTimeString()}] ÉCHEC : ${result.message || result.error || 'Erreur inconnue'}`);
+        setLogs(prev => `${prev}\n❌ [${new Date().toLocaleTimeString()}] ÉCHEC : ${result.message || 'Erreur inconnue'}`);
         setStepStatus('error');
       }
     } catch (err: any) {
-      setLogs(prev => `${prev}\n❌ [${new Date().toLocaleTimeString()}] ERREUR_CRITIQUE_LIAISON : ${err.message}`);
+      setLogs(prev => `${prev}\n❌ [${new Date().toLocaleTimeString()}] ERREUR_LIAISON : ${err.message}`);
       setStepStatus('error');
     }
   };
-
-  if (!isDev) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-background p-6">
-        <Card className="max-w-md w-full p-8 border-destructive/30 bg-destructive/5 text-center">
-          <AlertCircle className="w-12 h-12 text-destructive mx-auto mb-4" />
-          <h2 className="text-xl font-headline font-bold text-destructive uppercase tracking-widest">Zone Restreinte</h2>
-          <p className="text-xs text-muted-foreground font-code mt-4 leading-relaxed">
-            Le pilotage du pipeline industriel est une fonctionnalité exclusive à l'environnement de développement local (Forge).
-          </p>
-          <Button variant="outline" className="mt-6 h-8 text-[10px] uppercase font-code" onClick={() => router.push('/dashboard')}>
-            Retour au Dashboard
-          </Button>
-        </Card>
-      </div>
-    );
-  }
 
   return (
     <div className="flex flex-col lg:flex-row h-screen bg-background overflow-hidden">
@@ -100,25 +87,36 @@ export default function PipelinePage() {
               <Rocket className="w-4 h-4 text-primary animate-pulse" />
               <span className="font-headline font-bold text-xs lg:text-sm uppercase tracking-widest text-primary">Pilotage Industriel</span>
             </div>
-            <div className="hidden sm:block h-4 w-px bg-border mx-2" />
             <div className="hidden sm:flex items-center gap-2 px-3 py-1 bg-secondary/10 border border-secondary/20 rounded-sm">
               <ShieldCheck className="w-3 h-3 text-secondary" />
               <span className="text-[9px] font-code text-secondary uppercase font-bold tracking-tighter">Forge Active</span>
             </div>
           </div>
           
-          <Button 
-            variant="ghost" 
-            size="sm" 
-            onClick={() => router.push('/dashboard')}
-            className="text-[9px] font-code uppercase text-muted-foreground hidden sm:flex"
-          >
-            <ChevronLeft className="w-3.5 h-3.5 mr-1" />
-            Dashboard
-          </Button>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center space-x-2 bg-black/40 px-3 py-1.5 rounded-sm border border-primary/20">
+              <FlaskConical className={cn("w-3.5 h-3.5", useSimulation ? "text-primary" : "text-muted-foreground")} />
+              <Label htmlFor="sim-mode" className="text-[9px] font-code uppercase text-muted-foreground cursor-pointer">Mode Proto</Label>
+              <Switch 
+                id="sim-mode" 
+                checked={useSimulation} 
+                onCheckedChange={setUseSimulation}
+                className="scale-75 data-[state=checked]:bg-primary"
+              />
+            </div>
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              onClick={() => router.push('/dashboard')}
+              className="text-[9px] font-code uppercase text-muted-foreground hidden sm:flex"
+            >
+              <ChevronLeft className="w-3.5 h-3.5 mr-1" />
+              Dashboard
+            </Button>
+          </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto terminal-scroll">
           <div className="p-4 lg:p-8 flex flex-col gap-6 lg:gap-8 max-w-[1400px] mx-auto w-full">
             
             {/* Visual Pipeline Flow */}
@@ -182,9 +180,9 @@ export default function PipelinePage() {
                   />
 
                   <ActionCard 
-                    title="Phase Finale (Build)" 
-                    description="Forger Desktop" 
-                    icon={Hammer} 
+                    title={useSimulation ? "Forge Simualtive" : "Phase Finale (Build)"}
+                    description={useSimulation ? "Virtual Build" : "Forger Desktop"} 
+                    icon={useSimulation ? FlaskConical : Hammer} 
                     onClick={() => runCommand('desktop')}
                     loading={status === 'forge'}
                     disabled={status !== 'idle' && status !== 'success' && status !== 'error'}
@@ -194,7 +192,9 @@ export default function PipelinePage() {
 
                 <Card className="p-4 border-border bg-black/40">
                   <p className="text-[8px] lg:text-[9px] font-code text-muted-foreground leading-tight uppercase italic">
-                    * GITHUB_TOKEN requis en local pour piloter le registre distant.
+                    {useSimulation 
+                      ? "* Mode Simulation : Rust/Cargo n'est pas requis pour tester le flux UI."
+                      : "* GITHUB_TOKEN et RUST/CARGO requis pour une compilation réelle."}
                   </p>
                 </Card>
               </div>
@@ -206,12 +206,12 @@ export default function PipelinePage() {
                   Journaux d'Audit Pipeline
                 </h3>
                 <Card className="border-border bg-black p-4 flex flex-col h-[400px] lg:h-[500px] shadow-inner shadow-primary/5 overflow-hidden">
-                  <ScrollArea className="flex-1 font-code text-[10px] lg:text-[11px] text-foreground/80 terminal-scroll">
+                  <ScrollArea className="flex-1 font-code text-[10px] lg:text-[11px] text-foreground/80">
                     <pre className="whitespace-pre-wrap py-2">
                       {logs || '> Système en veille. Prêt pour pilotage.'}
                       {status === 'uplink' && '\n📡 TRANSMISSION_SOURCE_EN_COURS...'}
                       {status === 'downlink' && '\n📡 RÉCUPÉRATION_MODIFICATIONS_EN_COURS...'}
-                      {status === 'forge' && '\n🏗️ COMPILATION_NATIVE_EN_COURS (Cela peut prendre plusieurs minutes)...'}
+                      {status === 'forge' && (useSimulation ? '\n🏗️ SIMULATION_BUILD_EN_COURS...' : '\n🏗️ COMPILATION_NATIVE_EN_COURS (Cela peut prendre plusieurs minutes)...')}
                       {status === 'error' && '\n❌ INTERRUPTION_FLUX : Consultez les messages ci-dessus pour le diagnostic.'}
                     </pre>
                   </ScrollArea>
