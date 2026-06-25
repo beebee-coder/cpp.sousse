@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect } from 'react';
@@ -13,11 +14,13 @@ import {
   Terminal,
   Info,
   ShieldAlert,
-  FileArchive
+  FileArchive,
+  Loader2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 
 type OS = 'windows' | 'macos' | 'linux' | 'unknown';
@@ -25,6 +28,8 @@ type OS = 'windows' | 'macos' | 'linux' | 'unknown';
 export function DownloadApp() {
   const [os, setOs] = useState<OS>('unknown');
   const [mounted, setMounted] = useState(false);
+  const [isDownloading, setIsDownloading] = useState<string | null>(null);
+  const { toast } = useToast();
 
   useEffect(() => {
     setMounted(true);
@@ -34,17 +39,31 @@ export function DownloadApp() {
     else if (platform.includes('linux')) setOs('linux');
   }, []);
 
-  const handleDownload = (targetOs: OS) => {
-    // Si c'est windows, on tente le lien direct pour éviter les problèmes de redirection API
-    if (targetOs === 'windows') {
-      const link = document.createElement('a');
-      link.href = '/installers/VisioNode_Setup_x64.exe';
-      link.download = 'VisioNode_Setup_x64.exe';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } else {
-      window.location.href = `/api/download?platform=${targetOs}`;
+  const handleDownload = async (targetOs: string) => {
+    setIsDownloading(targetOs);
+    try {
+      // On passe toujours par l'API pour vérifier la disponibilité du fichier
+      const response = await fetch(`/api/download?platform=${targetOs}`, { method: 'GET', redirect: 'manual' });
+      
+      if (response.status === 404) {
+        const errorData = await response.json();
+        toast({
+          variant: "destructive",
+          title: "Fichier non disponible",
+          description: errorData.message || "L'installateur n'a pas encore été généré.",
+        });
+      } else {
+        // Si tout va bien (302 ou 200), on déclenche le téléchargement réel
+        window.location.href = `/api/download?platform=${targetOs}`;
+      }
+    } catch (e) {
+      toast({
+        variant: "destructive",
+        title: "Erreur de liaison",
+        description: "Impossible de joindre le centre de distribution.",
+      });
+    } finally {
+      setIsDownloading(null);
     }
   };
 
@@ -72,6 +91,7 @@ export function DownloadApp() {
           icon={Monitor} 
           recommended={os === 'windows'}
           onDownload={() => handleDownload('windows')}
+          loading={isDownloading === 'windows'}
           version="v1.0.2 (Local Build)"
           ext=".EXE"
         />
@@ -80,6 +100,7 @@ export function DownloadApp() {
           icon={Laptop} 
           recommended={os === 'macos'}
           onDownload={() => handleDownload('macos')}
+          loading={isDownloading === 'macos'}
           version="v1.0.0 (Proxy)"
           ext=".DMG"
         />
@@ -89,6 +110,7 @@ export function DownloadApp() {
             icon={Terminal} 
             recommended={os === 'linux'}
             onDownload={() => handleDownload('linux')}
+            loading={isDownloading === 'linux'}
             version="v0.9.8 (Proxy)"
             ext=".AppImage"
           />
@@ -101,9 +123,9 @@ export function DownloadApp() {
         <div className="flex-1">
           <h4 className="text-[10px] font-bold uppercase tracking-widest text-primary">Registre Interne</h4>
           <p className="text-[9px] font-code text-muted-foreground leading-tight uppercase">
-            &gt; Fichier détecté : VisioNode_Setup_x64.exe<br/>
+            &gt; Cible principale : VisioNode_Setup_x64.exe<br/>
             &gt; Emplacement : /public/installers/<br/>
-            &gt; État : Prêt pour distribution directe.
+            &gt; Note : Nécessite une compilation native préalable via le menu 'Pilotage Pipeline'.
           </p>
         </div>
       </Card>
@@ -141,7 +163,7 @@ export function DownloadApp() {
   );
 }
 
-function DownloadCard({ title, icon: Icon, recommended, onDownload, version, ext }: any) {
+function DownloadCard({ title, icon: Icon, recommended, onDownload, loading, version, ext }: any) {
   return (
     <Card className={cn(
       "p-6 flex flex-col items-center text-center gap-4 transition-all hover:scale-[1.02] shadow-xl",
@@ -158,13 +180,14 @@ function DownloadCard({ title, icon: Icon, recommended, onDownload, version, ext
         <p className="text-[10px] font-code text-muted-foreground mt-1">{version}</p>
       </div>
       <Button 
+        disabled={loading}
         className={cn(
           "w-full font-headline font-bold uppercase text-xs h-10 shadow-lg",
           recommended ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-muted/80"
         )}
         onClick={onDownload}
       >
-        <Download className="w-4 h-4 mr-2" />
+        {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
         Télécharger {ext}
       </Button>
       {recommended && (

@@ -172,7 +172,7 @@ export default function DatasetPage() {
     
     const newItem: QAItem = {
       id: `qa-${Date.now()}`,
-      type: 'qa',
+      type: mode, // Correction : utilise le mode actuel (qa ou procedure)
       title: qaTitle.trim() || `RAG_${Date.now()}`,
       label: question,
       details: answer,
@@ -277,7 +277,7 @@ export default function DatasetPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <label className="text-[10px] font-bold uppercase text-muted-foreground mb-2 block tracking-widest flex items-center justify-between">
-                      Description du Symptôme
+                      Description du Symptôme ({mode === 'qa' ? 'FAQ' : 'PROCÉDURE'})
                       <div className="flex gap-2">
                         {buffers.question.length > 0 && <span className="text-[8px] bg-primary/20 px-1.5 py-0.5 rounded text-primary">{buffers.question.length} phrases</span>}
                         <Mic className={cn("w-3.5 h-3.5", voice.isListening && activeVoiceField === 'question' ? "text-primary animate-pulse" : "opacity-30")} />
@@ -300,7 +300,7 @@ export default function DatasetPage() {
 
                   <div className="space-y-2">
                     <label className="text-[10px] font-bold uppercase text-muted-foreground mb-2 block tracking-widest flex items-center justify-between">
-                      Action Corrective
+                      Action Corrective Appliquée
                       <div className="flex gap-2">
                         {buffers.answer.length > 0 && <span className="text-[8px] bg-secondary/20 px-1.5 py-0.5 rounded text-secondary">{buffers.answer.length} phrases</span>}
                         <Mic className={cn("w-3.5 h-3.5", voice.isListening && activeVoiceField === 'answer' ? "text-primary animate-pulse" : "opacity-30")} />
@@ -390,6 +390,7 @@ export default function DatasetPage() {
                     <div className="flex items-center gap-2 mb-3">
                       <ShieldCheck className="w-3.5 h-3.5 text-primary" />
                       <span className="text-[10px] font-bold text-primary uppercase truncate pr-6">{item.title}</span>
+                      <span className="text-[8px] px-1.5 py-0.5 bg-background border border-border rounded-sm text-muted-foreground uppercase">{item.type}</span>
                     </div>
                     <div className="space-y-2">
                       <p className="text-[9px] font-code text-white bg-black/40 p-2 rounded-sm italic">"{item.label}"</p>
