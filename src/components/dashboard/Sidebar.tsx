@@ -18,7 +18,8 @@ import {
   Menu,
   Cloud,
   Loader2,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Video
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { usePlatform } from '@/components/PlatformProvider';
@@ -34,8 +35,8 @@ const navItems = [
   { icon: Database, label: 'Base RAG', href: '/dataset' },
   { icon: HardDrive, label: 'Explorateur BDD', href: '/bdd' },
   { icon: ImageIcon, label: "Banque d'images", href: '/bank' },
+  { icon: Video, label: 'Flux Vidéo', href: '/conference' },
   { icon: Download, label: 'Installateur Desktop', href: '/download' },
-  { icon: Camera, label: 'Flux Vidéo', href: '#' },
 ];
 
 interface SidebarContentProps {
