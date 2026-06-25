@@ -16,9 +16,8 @@ import {
   ArrowLeft
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
+import { useRouter } from 'next/navigation';
 
 export default function ConferencePage() {
   const router = useRouter();
