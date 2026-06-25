@@ -35,10 +35,14 @@ export function useVoice(options: VoiceOptions = {}) {
   const animationFrameRef = useRef<number | null>(null);
   const isManuallyStopped = useRef(false);
   
-  const optionsRef = useRef(options);
+  // Utilisation de Refs pour les callbacks afin d'éviter les dépendances circulaires
+  const onResultRef = useRef(options.onResult);
+  const onEndRef = useRef(options.onEnd);
+  
   useEffect(() => {
-    optionsRef.current = options;
-  }, [options]);
+    onResultRef.current = options.onResult;
+    onEndRef.current = options.onEnd;
+  }, [options.onResult, options.onEnd]);
 
   // Initialisation STT
   useEffect(() => {
@@ -51,59 +55,60 @@ export function useVoice(options: VoiceOptions = {}) {
       return;
     }
 
-    const recognition = new SpeechRecognition();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = optionsRef.current.lang || 'fr-FR';
+    if (!recognitionRef.current) {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = options.lang || 'fr-FR';
 
-    recognition.onstart = () => {
-      setState(prev => ({ ...prev, isListening: true, error: null }));
-      isManuallyStopped.current = false;
-      startVolumeAnalysis();
-    };
+      recognition.onstart = () => {
+        setState(prev => ({ ...prev, isListening: true, error: null }));
+        isManuallyStopped.current = false;
+        startVolumeAnalysis();
+      };
 
-    recognition.onresult = (event: any) => {
-      let finalTranscript = '';
-      for (let i = event.resultIndex; i < event.results.length; ++i) {
-        if (event.results[i].isFinal) {
-          finalTranscript += event.results[i][0].transcript;
+      recognition.onresult = (event: any) => {
+        let finalTranscript = '';
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            finalTranscript += event.results[i][0].transcript;
+          }
         }
-      }
-      
-      if (finalTranscript && optionsRef.current.onResult) {
-        optionsRef.current.onResult(finalTranscript.trim());
-      }
-    };
+        
+        if (finalTranscript && onResultRef.current) {
+          onResultRef.current(finalTranscript.trim());
+        }
+      };
 
-    recognition.onend = () => {
-      setState(prev => ({ ...prev, isListening: false, volume: 0 }));
-      stopVolumeAnalysis();
-      
-      if (optionsRef.current.autoRestart && !isManuallyStopped.current) {
-        try { recognition.start(); } catch (e) {}
-      }
-      
-      if (optionsRef.current.onEnd) optionsRef.current.onEnd();
-    };
+      recognition.onend = () => {
+        setState(prev => ({ ...prev, isListening: false, volume: 0 }));
+        stopVolumeAnalysis();
+        
+        if (options.autoRestart && !isManuallyStopped.current) {
+          try { recognition.start(); } catch (e) {}
+        }
+        
+        if (onEndRef.current) onEndRef.current();
+      };
 
-    recognition.onerror = (event: any) => {
-      // Ignore some common minor errors
-      if (event.error === 'no-speech') return;
-      setState(prev => ({ ...prev, error: event.error, isListening: false }));
-    };
+      recognition.onerror = (event: any) => {
+        const errorMsg = typeof event.error === 'string' ? event.error : "ERREUR_RECONNAISSANCE_INCONNUE";
+        if (errorMsg === 'no-speech') return;
+        setState(prev => ({ ...prev, error: errorMsg, isListening: false }));
+      };
 
-    recognitionRef.current = recognition;
+      recognitionRef.current = recognition;
+    }
 
     return () => {
-      if (recognitionRef.current) {
-        try { recognitionRef.current.stop(); } catch(e) {}
-      }
       stopVolumeAnalysis();
     };
-  }, []);
+  }, [options.lang, options.autoRestart]);
 
   const startVolumeAnalysis = async () => {
     try {
+      if (audioContextRef.current) return;
+
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       audioContextRef.current = new AudioContext();
       const source = audioContextRef.current.createMediaStreamSource(stream);
@@ -120,11 +125,13 @@ export function useVoice(options: VoiceOptions = {}) {
         let sum = 0;
         for (let i = 0; i < bufferLength; i++) sum += dataArray[i];
         const average = sum / bufferLength;
-        setState(prev => ({ ...prev, volume: average / 128 })); // Normalisé 0-1
+        setState(prev => ({ ...prev, volume: average / 128 }));
         animationFrameRef.current = requestAnimationFrame(updateVolume);
       };
       updateVolume();
-    } catch (e) {}
+    } catch (e) {
+      console.warn("Signal audio indisponible pour visualisation.");
+    }
   };
 
   const stopVolumeAnalysis = () => {
@@ -140,38 +147,27 @@ export function useVoice(options: VoiceOptions = {}) {
     if (recognitionRef.current) {
       try { 
         recognitionRef.current.start(); 
-      } catch (e) {
-        // Recognition already started or error
-      }
+      } catch (e) {}
     }
   }, []);
 
   const stopListening = useCallback(() => {
     isManuallyStopped.current = true;
     if (recognitionRef.current) {
-      try { recognitionRef.current.stop(); } catch(e) {}
+      try { recognitionRef.current.stop(); } catch (e) {}
     }
   }, []);
 
   const speak = useCallback((text: string) => {
     if (typeof window === 'undefined' || !window.speechSynthesis) return;
     
-    // Stop listening while speaking to avoid feedback loop
-    const wasListening = state.isListening;
-    if (wasListening) stopListening();
-
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'fr-FR';
+    utterance.lang = options.lang || 'fr-FR';
     utterance.rate = 1.0;
     utterance.pitch = 1.0;
-
-    utterance.onend = () => {
-      // Re-enable listening if it was active (optional, usually handled by caller)
-    };
-
     window.speechSynthesis.speak(utterance);
-  }, [state.isListening, stopListening]);
+  }, [options.lang]);
 
   return { ...state, startListening, stopListening, speak };
 }
