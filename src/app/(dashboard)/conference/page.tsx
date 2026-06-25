@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect } from 'react';
@@ -26,7 +25,7 @@ export default function ConferencePage() {
   const [mounted, setMounted] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
-  const [activeUsers, setActiveUsers] = useState(4);
+  const [activeUsers] = useState(4);
 
   useEffect(() => {
     setMounted(true);
@@ -89,7 +88,7 @@ export default function ConferencePage() {
             </Button>
 
             <Button 
-              variant={isVideoOff ? "destructive" : "primary"} 
+              variant={isVideoOff ? "destructive" : "default"} 
               size="icon"
               onClick={() => setIsVideoOff(!isVideoOff)}
               className={cn(
@@ -113,12 +112,14 @@ export default function ConferencePage() {
             <div className="text-right">
               <p className="text-[10px] font-bold text-primary uppercase tracking-widest">Qualité de Liaison</p>
               <div className="flex gap-0.5 mt-1">
-                {[1,2,3,4,5].map(i => <div key={i} className="w-3 h-1 bg-primary rounded-full shadow-[0_0_5px_rgba(50,181,212,0.5)]" />)}
+                {[1, 2, 3, 4, 5].map((i) => (
+                  <div key={i} className="w-3 h-1 bg-primary rounded-full shadow-[0_0_5px_rgba(50,181,212,0.5)]" />
+                ))}
               </div>
             </div>
             <Activity className="w-5 h-5 text-primary animate-pulse" />
           </div>
-        </header>
+        </footer>
 
         {/* Overlay Alerte Industrielle */}
         <div className="absolute bottom-24 left-8 pointer-events-none opacity-40">
