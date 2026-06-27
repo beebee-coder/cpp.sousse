@@ -90,7 +90,7 @@ export function startFileSystemWatcher(rootDir: string, options?: { includeExten
               await col.upsert({ ids: [doc.id], documents: [doc.content], metadatas: [doc.metadata] });
             }
           }
-        } catch (inner) {
+        } catch (inner: any) {
           console.warn('[watcher] Fallback upsert failed:', inner?.message || inner);
         }
       }

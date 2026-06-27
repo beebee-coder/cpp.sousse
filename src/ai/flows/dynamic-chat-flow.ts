@@ -1,12 +1,13 @@
+
 /**
- * @fileOverview Flux de chat exclusif Groq pour VisioNode avec intégration RAG multi-collection.
+ * @fileOverview Flux de chat Groq optimisé avec Orchestration de Contexte Holistique.
  */
 
 import Groq from 'groq-sdk';
 import { 
-  searchAcrossCollections, 
-  fallbackSemanticSearch 
-} from '@/lib/chroma';
+  searchAcrossCollections,
+  getSystemContextSummary
+} from '../../lib/chroma';
 
 type ChatMessage = {
   role: 'user' | 'model';
@@ -24,47 +25,51 @@ type ChatOutput = {
 };
 
 export async function dynamicChat(input: ChatInput): Promise<ChatOutput> {
-  const timestamp = new Date().toLocaleTimeString();
-  
   if (!process.env.GROQ_API_KEY) {
     throw new Error("ERREUR_LIAISON_GROQ : Clé API non configurée.");
   }
 
+  // 🧠 RÉCUPÉRATION DU CONTEXTE SYSTÈME
+  const systemState = await getSystemContextSummary();
+  
+  // 🔍 RÉCUPÉRATION RAG HYBRIDE (Vecteurs + Registre Physique)
   let retrievedContext = "";
-  let ragProvider = "MOTEUR_DEGRADE";
+  let ragMetadata = "MODE_BASIQUE";
 
   try {
-    const results = await searchAcrossCollections(input.message, 3);
-    
+    const results = await searchAcrossCollections(input.message, 4);
     if (results.length > 0) {
       retrievedContext = results.map(r => {
-        const title = r.metadata?.title || r.metadata?.source || 'Manuel';
-        const collection = r.metadata?._collection || 'industrial_manuals';
-        return `[MANUEL: ${title}] [Collection: ${collection}] : ${r.document}`;
+        const title = r.metadata?.title || 'DOCUMENT_TECHNIQUE';
+        const origin = r.metadata?.origin || 'UNSET';
+        return `[SOURCE: ${title}] [ORIGINE: ${origin}] : ${r.document}`;
       }).join('\n\n');
-      ragProvider = "CHROMADB_MULTI_COLLECTION";
+      ragMetadata = `RAG_FUSIONNE (${results.length} DOCS)`;
     }
   } catch (e: any) {
-    const results = fallbackSemanticSearch(input.message, 3);
-    if (results.length > 0) {
-      retrievedContext = results.map(r => 
-        `[MANUEL: ${r.metadata?.title || 'Manuel'}] : ${r.document}`
-      ).join('\n\n');
-      ragProvider = "REPLI_MEMOIRE_LOCAL";
-    }
+    ragMetadata = "ÉCHEC_RECUPERATION_RAG";
   }
 
   try {
     const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
     
-    let systemContent = `Vous êtes VisioNode Core, l'assistant IA de la plateforme de contrôle industriel CCP.
-RÈGLES :
-1. TON : Professionnel, expert.
-2. CONTEXTE : Utilisez les manuels si cités.
-3. NOM : Mentionnez le nom de l'utilisateur.`;
+    // 🎭 PROMPT SYSTÈME ORCHESTRATEUR
+    let systemContent = `Vous êtes VisioNode Core, l'intelligence orchestratrice de la plateforme industrielle CCP.
+VOTRE ÉTAT ACTUEL :
+- Mode : ${systemState.mode}
+- Base RAG : ${systemState.ragDocuments} procédures indexées.
+- Banque Images : ${systemState.bankAssets} actifs stockés.
+
+RÈGLES D'INTERACTION :
+1. ANALYSE : Si l'utilisateur mentionne un symptôme, cherchez la procédure dans le contexte RAG fourni ci-dessous.
+2. EXPERTISE : Utilisez un ton technique, précis et proactif.
+3. ORIENTATION : N'hésitez pas à suggérer de consulter la "Banque d'images" ou le "Flux Vidéo" si une inspection visuelle semble nécessaire.
+4. ABSENCE DE DONNÉES : Si le RAG est vide ou non pertinent, proposez à l'utilisateur de dicter une nouvelle procédure dans la "Base RAG" pour enrichir le système.`;
 
     if (retrievedContext) {
-      systemContent += `\n\nContexte technique RAG (${ragProvider}) :\n${retrievedContext}`;
+      systemContent += `\n\n--- CONTEXTE TECHNIQUE RÉCUPÉRÉ (RAG) ---\n${retrievedContext}\n--- FIN DU CONTEXTE ---`;
+    } else {
+      systemContent += `\n\n(Avertissement : Aucune documentation technique spécifique n'a été trouvée dans la base RAG pour cette requête.)`;
     }
 
     const messages: any[] = [
@@ -79,17 +84,20 @@ RÈGLES :
     const completion = await groq.chat.completions.create({
       messages,
       model: 'llama-3.3-70b-versatile',
-      temperature: 0.4,
+      temperature: 0.3, // Température basse pour une précision technique accrue
       max_tokens: 1024,
     });
 
     const text = completion.choices[0]?.message?.content;
     if (text) {
-      return { text, provider: `GROQ/LLAMA-3.3 + RAG (${ragProvider})` };
+      return { 
+        text, 
+        provider: `Groq/Llama-3.3 + Orchestrateur (${ragMetadata})` 
+      };
     }
   } catch (err: any) {
     throw new Error(`ERREUR_LIAISON_GROQ : ${err.message}`);
   }
 
-  throw new Error("ERREUR_FLUX : Réponse vide.");
+  throw new Error("ERREUR_FLUX : Réponse IA vide.");
 }

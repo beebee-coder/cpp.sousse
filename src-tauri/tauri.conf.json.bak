@@ -1,0 +1,58 @@
+{
+  "productName": "VisioNode",
+  "version": "1.0.0",
+  "identifier": "com.visionode.precision.engine",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:9002",
+    "beforeBuildCommand": "npm run build:tauri",
+    "frontendDist": "../out"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "VisioNode Control Center",
+        "width": 1280,
+        "height": 800,
+        "resizable": true,
+        "fullscreen": false,
+        "minWidth": 1024,
+        "minHeight": 600,
+        "center": true,
+        "decorations": true,
+        "transparent": false,
+        "alwaysOnTop": false,
+        "visible": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["msi", "nsis"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "publisher": "CCP Industrial Vision",
+    "category": "DeveloperTool",
+    "shortDescription": "VisioNode Control Center - Industrial Vision Platform",
+    "longDescription": "Plateforme de contrôle par vision industrielle hybride avec audit de flux intelligent.",
+    "copyright": "© CCP Industrial Vision - Tous droits réservés",
+    "resources": ["../.env"],
+    "windows": {
+      "certificateThumbprint": null,
+      "digestAlgorithm": "sha256",
+      "timestampUrl": "",
+      "webviewInstallMode": {
+        "type": "embedBootstrapper",
+        "silent": false
+      }
+    }
+  }
+}

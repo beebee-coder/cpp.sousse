@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect } from 'react';
@@ -16,7 +17,9 @@ import {
   Download,
   Menu,
   Cloud,
-  Loader2
+  Loader2,
+  Image as ImageIcon,
+  Video
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { usePlatform } from '@/components/PlatformProvider';
@@ -26,14 +29,14 @@ import Link from 'next/link';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 
-const navItems = [
+const allNavItems = [
   { icon: LayoutDashboard, label: 'Tableau de Bord', href: '/dashboard' },
   { icon: MessageSquare, label: 'Chat Neural', href: '/chat' },
   { icon: Database, label: 'Base RAG', href: '/dataset' },
   { icon: HardDrive, label: 'Explorateur BDD', href: '/bdd' },
+  { icon: ImageIcon, label: "Banque d'images", href: '/bank' },
+  { icon: Video, label: 'Flux Vidéo', href: '/conference' },
   { icon: Download, label: 'Installateur Desktop', href: '/download' },
-  { icon: Camera, label: 'Flux Vidéo', href: '#' },
-  { icon: Terminal, label: 'Console Audit', href: '#' },
 ];
 
 interface SidebarContentProps {
@@ -45,10 +48,31 @@ interface SidebarContentProps {
 
 function SidebarContent({ pathname, isDesktop, isReady, onNavigate }: SidebarContentProps) {
   const [mounted, setMounted] = useState(false);
+  const [role, setRole] = useState<string | undefined>(undefined);
   const isDev = process.env.NODE_ENV === 'development';
+
+  const navItems = allNavItems.filter((item) => {
+    if (role === 'admin') {
+      return true;
+    }
+
+    if (role === 'chef-de-bloc' || role === 'chef-de-quart') {
+      return !['/bdd', '/pipeline'].includes(item.href);
+    }
+
+    return ['/chat', '/dataset'].includes(item.href);
+  });
 
   useEffect(() => {
     setMounted(true);
+
+    const loadSession = async () => {
+      const response = await fetch('/api/auth/me');
+      const data = await response.json();
+      setRole((data.session?.user as any)?.role as string | undefined);
+    };
+
+    void loadSession();
   }, []);
 
   return (

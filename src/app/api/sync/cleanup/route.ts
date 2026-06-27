@@ -1,8 +1,9 @@
+
 import { createHybridRoute } from '@/lib/api-route-creator';
+import { postgresClient } from '@/lib/db/postgres-client';
 
 /**
- * API Route pour purger les assets provisoires une fois synchronisés localement.
- * Essentiel pour maintenir le poids de la BDD Web au minimum.
+ * API Route pour purger les fichiers JSON une fois synchronisés localement.
  */
 export const POST = createHybridRoute<{ ids: string[]; projectId: string }, any>({
   name: 'SYNC_CLEANUP',
@@ -13,17 +14,11 @@ export const POST = createHybridRoute<{ ids: string[]; projectId: string }, any>
       return { success: false, error: 'INVALID_IDS' };
     }
 
-    // Simulation de suppression dans le stockage cloud (Postgres/Neon)
-    const storageKey = `visionode_cloud_mock_db_${projectId}`;
-    if (typeof window !== 'undefined') {
-      const raw = localStorage.getItem(storageKey);
-      if (raw) {
-        let currentData = JSON.parse(raw);
-        const filtered = currentData.filter((item: any) => !ids.includes(item.id));
-        localStorage.setItem(storageKey, JSON.stringify(filtered));
-      }
+    try {
+      await postgresClient.deleteItems(projectId, ids);
+      return { success: true, purgedCount: ids.length };
+    } catch (e: any) {
+      return { success: false, error: e.message };
     }
-
-    return { success: true, purgedCount: ids.length };
   }
 });

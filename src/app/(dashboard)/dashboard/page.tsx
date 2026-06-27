@@ -16,11 +16,20 @@ export default function DashboardPage() {
   const [time, setTime] = useState<string>('');
   const [mounted, setMounted] = useState(false);
   const [health, setHealth] = useState<{ healthy: boolean, issues: string[] } | null>(null);
+  const [role, setRole] = useState<string | undefined>(undefined);
   const { platform, capabilities, isDesktop } = usePlatform();
 
   useEffect(() => {
     setMounted(true);
     setHealth(performHealthCheck());
+
+    const loadSession = async () => {
+      const response = await fetch('/api/auth/me');
+      const data = await response.json();
+      setRole((data.session?.user as any)?.role as string | undefined);
+    };
+
+    void loadSession();
     
     const updateTime = () => setTime(new Date().toLocaleTimeString());
     updateTime();
@@ -55,8 +64,15 @@ export default function DashboardPage() {
               <Bell className="w-5 h-5" />
               <span className="absolute top-1 right-1 w-2 h-2 bg-destructive rounded-full border-2 border-background" />
             </button>
-            <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center border border-border overflow-hidden shrink-0">
-              <User className="w-5 h-5 text-muted-foreground" />
+            <div className="flex items-center gap-2">
+              <div className="text-right hidden sm:block">
+                <p className="text-[10px] uppercase tracking-widest text-muted-foreground">{role || 'utilisateur'}</p>
+                <p className="text-xs font-medium">Session active</p>
+              </div>
+              <button onClick={async () => { await fetch('/api/auth/signout', { method: 'POST' }); window.location.href = '/auth/signin'; }} className="rounded-md border border-border px-2 py-1 text-xs">Déconnexion</button>
+              <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center border border-border overflow-hidden shrink-0">
+                <User className="w-5 h-5 text-muted-foreground" />
+              </div>
             </div>
           </div>
         </header>
@@ -150,3 +166,5 @@ export default function DashboardPage() {
     </div>
   );
 }
+
+

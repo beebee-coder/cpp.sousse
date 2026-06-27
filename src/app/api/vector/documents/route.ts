@@ -1,6 +1,4 @@
 
-export const dynamic = 'force-dynamic';
-
 import { createHybridRoute } from '@/lib/api-route-creator';
 import { addDocuments, upsertDocuments } from '@/lib/chroma';
 

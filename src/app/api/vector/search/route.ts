@@ -1,7 +1,5 @@
 
 import { createHybridRoute } from '@/lib/api-route-creator';
-import { semanticSearch } from '@/lib/chroma';
-import { getWeaviateClient } from '@/lib/weaviate-client';
 
 /**
  * API Route de recherche sémantique hybride.
@@ -21,6 +19,7 @@ export const POST = createHybridRoute<{ collection: string; query: string; nResu
     if (isCloud) {
       try {
         console.log(`📡 [${timestamp}] [WEAVIATE_CLOUD] Recherche sémantique...`);
+        const { getWeaviateClient } = await import('@/lib/weaviate-client');
         const client = await getWeaviateClient();
         const className = collection.charAt(0).toUpperCase() + collection.slice(1);
         
@@ -49,8 +48,9 @@ export const POST = createHybridRoute<{ collection: string; query: string; nResu
 
     // 🧠 MODE LOCAL : ChromaDB (uniquement en local/desktop)
     try {
+      const chromaModule = await import('@/lib/chroma');
       console.log(`🧠 [${timestamp}] [CHROMA_LOCAL] Recherche sémantique...`);
-      const results = await semanticSearch({
+      const results = await chromaModule.semanticSearch({
         collectionName: collection || 'industrial_manuals',
         query,
         nResults,

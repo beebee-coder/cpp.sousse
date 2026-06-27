@@ -4,202 +4,403 @@ import { useState, useEffect, useCallback } from 'react';
 import { DashboardSidebar } from '@/components/dashboard/Sidebar';
 import { 
   Folder, 
-  File, 
-  ChevronRight, 
-  ChevronDown, 
   Database, 
   RefreshCw,
-  Server,
-  CloudLightning,
-  ShieldAlert,
-  Zap,
-  ArrowRight
+  HardDrive,
+  FileJson,
+  ChevronRight,
+  ChevronDown,
+  Trash2,
+  Edit3,
+  Eye,
+  Save,
+  FolderPlus,
+  FilePlus,
+  Type,
+  Loader2,
+  ImageIcon
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { apiClient } from '@/lib/api-client';
 import { useToast } from '@/hooks/use-toast';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { useRouter } from 'next/navigation';
 
+// ✅ CONFIGURATION HYBRIDE : S'adapte à Tauri et au Web
+
+// ✅ En mode desktop (Tauri) : rendu statique compatible avec 'export'
+// ✅ En mode web : rendu dynamique
+
+// Interface pour les nœuds du système de fichiers
 interface FSNode {
   id: string;
   name: string;
-  type: 'file' | 'folder';
+  type: 'file' | 'folder' | 'collection';
+  count?: number;
   children?: FSNode[];
   isOpen?: boolean;
 }
 
 export default function BDDPage() {
   const { toast } = useToast();
-  const [mode, setMode] = useState<'chroma' | 'web'>('chroma');
+  const router = useRouter();
+  const [mounted, setMounted] = useState(false);
+  const [mode, setMode] = useState<'chroma' | 'web'>('web');
   const [tree, setTree] = useState<FSNode[]>([]);
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [isPurging, setIsPurging] = useState(false);
-  const [activeProvider, setActiveProvider] = useState<string>('DÉTECTION...');
+  const [isLoading, setIsLoading] = useState(false);
+  
+  const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  const [fileContent, setFileContent] = useState('');
+  const [isEditing, setIsEditing] = useState(false);
+  
+  const [newModal, setNewModal] = useState<{ isOpen: boolean; type: 'file' | 'folder'; parent: string | null }>({
+    isOpen: false,
+    type: 'file',
+    parent: null
+  });
+  const [newName, setNewName] = useState('');
 
-  // 1. Sync Physique (ChromaDB)
-  const syncChromaState = useCallback(async (isAuto = false) => {
-    setIsSyncing(true);
+  const [renameModal, setRenameModal] = useState<{ isOpen: boolean; path: string; oldName: string; type: 'file' | 'folder' }>({
+    isOpen: false,
+    path: '',
+    oldName: '',
+    type: 'file'
+  });
+  const [renameValue, setRenameValue] = useState('');
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const mergeTreeState = useCallback((oldTree: FSNode[], newNodes: FSNode[]): FSNode[] => {
+    const findNodeById = (nodes: FSNode[], id: string): FSNode | null => {
+      for (const node of nodes) {
+        if (node.id === id) return node;
+        if (node.children) {
+          const found = findNodeById(node.children, id);
+          if (found) return found;
+        }
+      }
+      return null;
+    };
+
+    const applyOpen = (nodes: FSNode[]): FSNode[] => {
+      return nodes.map(node => {
+        const oldNode = findNodeById(oldTree, node.id);
+        const isOpen = oldNode?.isOpen ?? node.isOpen;
+        return {
+          ...node,
+          isOpen,
+          children: node.children ? applyOpen(node.children) : undefined
+        };
+      });
+    };
+    return applyOpen(newNodes);
+  }, []);
+
+  const refreshRegistry = useCallback(async (isInitial = false) => {
+    setIsLoading(true);
+    try {
+      const res = await apiClient.get<any>('/api/registry');
+      if (res.success && Array.isArray(res.tree)) {
+        setTree(prev => mergeTreeState(prev, res.tree));
+      }
+    } catch (e) {
+      if (!isInitial) toast({ title: "Erreur réseau", variant: "destructive" });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [toast, mergeTreeState]);
+
+  const refreshChroma = useCallback(async () => {
+    setIsLoading(true);
     try {
       const res = await apiClient.get<any>('/api/vector/collections');
       if (res && res.success) {
-        setActiveProvider(res.provider || 'CHROMA');
-        const chromaNodes = res.collections.map((c: any) => ({
+        const chromaNodes = (res.collections || []).map((c: any) => ({
           id: `chroma-${c.name}`,
-          name: c.name,
-          type: 'folder' as const,
-          children: []
+          name: `${c.name.toUpperCase()} (${c.count || 0})`,
+          type: 'collection' as const
         }));
-        setTree([{ id: 'root', name: 'COLLECTIONS_LOCALES', type: 'folder', isOpen: true, children: chromaNodes }]);
-        if (!isAuto) toast({ title: "Nœud Détecté", description: `Moteur ${res.provider} synchronisé.` });
-      } else {
-        throw new Error();
+        setTree([{ id: 'root-chroma', name: 'INDEX_CHROMA', type: 'folder', isOpen: true, children: chromaNodes }]);
       }
     } catch (e) {
-      setActiveProvider('HORS_LIGNE');
+      setTree([]);
     } finally {
-      setIsSyncing(false);
+      setIsLoading(false);
     }
-  }, [toast]);
+  }, []);
 
-  // 2. Sync Web + Ingestion Chroma + Purge Immédiate
-  const syncWebAndPurge = async () => {
-    setIsSyncing(true);
-    setIsPurging(true);
-    const timestamp = new Date().toLocaleTimeString();
-    
-    try {
-      console.log(`📡 [${timestamp}] [SYNC_START] Descente du tampon Web...`);
-      
-      const res = await apiClient.post<any>('/api/sync/download', {
-        userId: 'admin',
-        projectId: 'project-001',
-        lastSync: new Date(0).toISOString()
-      });
+  useEffect(() => {
+    if (mounted) {
+      if (mode === 'web') refreshRegistry(true);
+      else refreshChroma();
+    }
+  }, [mode, mounted, refreshRegistry, refreshChroma]);
 
-      if (res.items && res.items.length > 0) {
-        // A. Ingestion dans ChromaDB (Texte & Metadata)
-        const textDocs = res.items.filter((i: any) => i.type === 'document');
-        if (textDocs.length > 0) {
-          await apiClient.post('/api/vector/ingest', {
-            items: textDocs.map((i: any) => {
-              const data = JSON.parse(i.content);
-              return { question: data.label, answer: data.details };
-            }),
-            metadata: { collection: 'industrial_manuals', source: 'sync_web' }
-          });
+  const handleFileClick = async (node: FSNode) => {
+    if (node.id === selectedFile) return;
+    if (node.type === 'file') {
+      try {
+        const res = await apiClient.get<any>(`/api/registry?path=${encodeURIComponent(node.id)}`);
+        if (res.success) {
+          setSelectedFile(node.id);
+          setFileContent(res.content);
+          setIsEditing(false);
+        } else {
+          throw new Error(res.error);
         }
-
-        // B. Purge Immédiate de Neon
-        const ids = res.items.map((i: any) => i.id);
-        await apiClient.post('/api/sync/cleanup', { ids, projectId: 'project-001' });
-
-        toast({ title: "Cycle Terminé", description: `${ids.length} assets transférés vers Chroma et purgés du Cloud.` });
-      } else {
-        toast({ title: "Tampon Vide", description: "Aucun asset JSON/Média en attente." });
+      } catch (e: any) {
+        toast({ title: "Fichier indisponible", description: "Il a peut-être été supprimé.", variant: "destructive" });
+        await refreshRegistry();
       }
-      
-      setTree([{ id: 'root', name: 'WEB_BUFFER_VIDE', type: 'folder', isOpen: true, children: [] }]);
-    } catch (e) {
-      toast({ title: "Échec Cycle", description: "Rupture de liaison pendant la purge.", variant: "destructive" });
-    } finally {
-      setIsSyncing(false);
-      setIsPurging(false);
     }
   };
 
-  useEffect(() => {
-    if (mode === 'chroma') syncChromaState(true);
-    else setTree([{ id: 'root', name: 'WEB_BUFFER', type: 'folder', isOpen: true, children: [] }]);
-  }, [mode, syncChromaState]);
+  const deleteItem = async (id: string) => {
+    if (!confirm(`Supprimer physiquement "${id}" et tout son contenu ?`)) return;
+    
+    const previousTree = [...tree];
+    const removeFromTree = (nodes: FSNode[]): FSNode[] => {
+      return nodes
+        .filter(node => node.id !== id)
+        .map(node => ({
+          ...node,
+          children: node.children ? removeFromTree(node.children) : undefined
+        }));
+    };
+    
+    // Mise à jour optimiste instantanée
+    setTree(prev => removeFromTree(prev));
+    
+    // Si on supprime le fichier actuellement ouvert ou son parent
+    if (selectedFile === id || (selectedFile && selectedFile.startsWith(id + '/'))) {
+      setSelectedFile(null);
+      setFileContent('');
+    }
+
+    try {
+      const res = await apiClient.delete<any>(`/api/registry?path=${encodeURIComponent(id)}`);
+      if (res.success) {
+        toast({ title: "Élément supprimé du disque" });
+      } else {
+        throw new Error(res.error || "Erreur serveur");
+      }
+    } catch (error: any) {
+      // Rollback en cas d'échec
+      setTree(previousTree);
+      toast({ 
+        title: "Échec de suppression physique", 
+        description: error.message, 
+        variant: "destructive" 
+      });
+    }
+  };
+
+  const saveFileChanges = async () => {
+    if (!selectedFile) return;
+    try {
+      const res = await apiClient.put('/api/registry', { path: selectedFile, content: fileContent });
+      if (res.success) {
+        setIsEditing(false);
+        toast({ title: "Modification sauvegardée" });
+        await refreshRegistry();
+      }
+    } catch (e: any) {
+      toast({ title: "Erreur sauvegarde", variant: "destructive" });
+    }
+  };
+
+  const createNew = async () => {
+    if (!newName.trim()) return;
+    const path = newModal.parent ? `${newModal.parent}/${newName}` : newName;
+    const finalPath = newModal.type === 'file' && !path.endsWith('.json') ? `${path}.json` : path;
+    try {
+      const res = await apiClient.post('/api/registry', { path: finalPath, type: newModal.type, content: '{}' });
+      if (res.success) {
+        setNewModal({ ...newModal, isOpen: false });
+        setNewName('');
+        toast({ title: "Création réussie" });
+        await refreshRegistry();
+      }
+    } catch (e: any) {
+      toast({ title: "Erreur", description: e.message, variant: "destructive" });
+    }
+  };
+
+  const handleRename = async () => {
+    if (!renameValue.trim()) return;
+    try {
+      const res = await apiClient.patch('/api/registry', { path: renameModal.path, newName: renameValue });
+      if (res.success) {
+        setRenameModal({ ...renameModal, isOpen: false });
+        toast({ title: "Renommé avec succès" });
+        await refreshRegistry();
+      }
+    } catch (e: any) {
+      toast({ title: "Erreur lors du renommage", variant: "destructive" });
+    }
+  };
 
   const toggleFolder = (id: string) => {
-    const update = (nodes: FSNode[]): FSNode[] => nodes.map(n => n.id === id ? { ...n, isOpen: !n.isOpen } : (n.children ? { ...n, children: update(n.children) } : n));
-    setTree(update(tree));
+    setTree(prev => {
+      const update = (nodes: FSNode[]): FSNode[] => nodes.map(n => 
+        n.id === id ? { ...n, isOpen: !n.isOpen } : (n.children ? { ...n, children: update(n.children) } : n)
+      );
+      return update(prev);
+    });
   };
 
   const renderTree = (nodes: FSNode[], depth = 0) => {
+    if (!nodes || nodes.length === 0) return null;
     return nodes.map(node => (
       <div key={node.id} className="select-none">
-        <div className="flex items-center gap-2 py-1 px-2 hover:bg-primary/5 cursor-pointer rounded-sm" style={{ paddingLeft: `${depth * 1 + 0.5}rem` }}>
-          {node.type === 'folder' ? (
-            <button onClick={() => toggleFolder(node.id)} className="p-0.5 text-muted-foreground">
-              {node.isOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-            </button>
-          ) : <div className="w-4.5" />}
-          {node.type === 'folder' ? <Folder className="w-4 h-4 text-primary" /> : <File className="w-4 h-4 text-secondary" />}
-          <span className="text-[11px] font-code uppercase truncate py-0.5">{node.name}</span>
+        <div 
+          className={cn(
+            "flex items-center justify-between py-1 px-2 hover:bg-primary/5 rounded-sm group cursor-pointer",
+            selectedFile === node.id && "bg-primary/10 border-l-2 border-primary"
+          )} 
+          style={{ paddingLeft: `${depth * 1 + 0.5}rem` }}
+          onClick={() => node.type === 'folder' ? toggleFolder(node.id) : handleFileClick(node)}
+        >
+          <div className="flex items-center gap-2 overflow-hidden flex-1">
+            {node.type === 'folder' ? (
+              <div className="p-0.5 text-muted-foreground shrink-0">
+                {node.isOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+              </div>
+            ) : <div className="w-4 shrink-0" />}
+            {node.type === 'folder' ? <Folder className="w-3.5 h-3.5 text-primary" /> : <FileJson className="w-3.5 h-3.5 text-muted-foreground" />}
+            <span className="text-[10px] font-code uppercase truncate">{node.name}</span>
+          </div>
+          {mode === 'web' && (
+            <div className="hidden group-hover:flex items-center gap-0.5 ml-2">
+              {node.type === 'folder' && <button onClick={(e) => { e.stopPropagation(); setNewModal({ isOpen: true, type: 'file', parent: node.id }); }} title="Nouveau fichier"><FilePlus className="w-3 h-3 hover:text-primary" /></button>}
+              <button onClick={(e) => { e.stopPropagation(); setRenameModal({ isOpen: true, path: node.id, oldName: node.name, type: node.type as any }); setRenameValue(node.name); }} title="Renommer"><Type className="w-3 h-3 hover:text-secondary" /></button>
+              <button onClick={(e) => { e.stopPropagation(); deleteItem(node.id); }} title="Supprimer radicalement"><Trash2 className="w-3 h-3 hover:text-destructive" /></button>
+            </div>
+          )}
         </div>
-        {node.isOpen && node.children && <div className="border-l border-border/50 ml-3.5">{renderTree(node.children, depth + 1)}</div>}
+        {node.isOpen && node.children && (
+          <div className="border-l border-border/50 ml-3.5">{renderTree(node.children, depth + 1)}</div>
+        )}
       </div>
     ));
   };
+
+  if (!mounted) return null;
 
   return (
     <div className="flex flex-col lg:flex-row h-screen bg-background overflow-hidden">
       <DashboardSidebar />
       <main className="flex-1 flex flex-col min-w-0 h-full">
         <header className="h-16 border-b border-border bg-card/30 flex items-center justify-between px-6 shrink-0">
-          <div className="flex items-center gap-4">
-            <div className="lg:hidden w-10" />
-            <div className="flex items-center gap-2">
-              <Database className="w-4 h-4 text-primary" />
-              <span className="font-headline font-bold text-xs uppercase tracking-widest text-primary">BDD Hybride</span>
-            </div>
+          <div className="flex items-center gap-2">
+            <HardDrive className="w-4 h-4 text-primary" />
+            <span className="font-headline font-bold text-xs uppercase tracking-widest text-primary">Gestionnaire d'Actifs Physique</span>
           </div>
-          <div className="flex bg-muted/30 p-1 rounded-sm border border-border">
-            <button onClick={() => setMode('chroma')} className={cn("px-3 py-1 text-[10px] font-code uppercase rounded-sm", mode === 'chroma' ? "bg-primary text-primary-foreground" : "text-muted-foreground")}>Vecteur</button>
-            <button onClick={() => setMode('web')} className={cn("px-3 py-1 text-[10px] font-code uppercase rounded-sm", mode === 'web' ? "bg-secondary text-secondary-foreground" : "text-muted-foreground")}>Web</button>
+          <div className="flex items-center gap-4">
+            <Button 
+              size="sm" 
+              variant="secondary" 
+              onClick={() => router.push('/bank')}
+              className="h-8 text-[10px] uppercase font-bold"
+            >
+              <ImageIcon className="w-3.5 h-3.5 mr-2" /> Banque d'images
+            </Button>
+            <div className="flex bg-muted/30 p-1 rounded-sm border border-border">
+              <button onClick={() => setMode('web')} className={cn("px-3 py-1 text-[10px] font-code uppercase rounded-sm", mode === 'web' ? "bg-primary text-primary-foreground font-bold" : "text-muted-foreground")}>Registre</button>
+              <button onClick={() => setMode('chroma')} className={cn("px-3 py-1 text-[10px] font-code uppercase rounded-sm", mode === 'chroma' ? "bg-secondary text-secondary-foreground font-bold" : "text-muted-foreground")}>Vecteurs</button>
+            </div>
           </div>
         </header>
 
         <div className="flex-1 p-4 lg:p-6 overflow-hidden flex flex-col lg:flex-row gap-6">
           <Card className="w-full lg:w-80 flex flex-col bg-black/40 border-border overflow-hidden shrink-0">
             <div className="p-3 border-b border-border bg-card/50 flex items-center justify-between">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Explorateur</span>
-              <Badge variant="outline" className="text-[8px] uppercase">{mode === 'web' ? 'Tampon Cloud' : 'Index Local'}</Badge>
+              <span className="text-[10px] font-bold uppercase text-muted-foreground">Arborescence</span>
+              <div className="flex gap-1">
+                {mode === 'web' && <button onClick={() => setNewModal({ isOpen: true, type: 'folder', parent: null })}><FolderPlus className="w-4 h-4 hover:text-primary" /></button>}
+                <button onClick={() => mode === 'web' ? refreshRegistry() : refreshChroma()}><RefreshCw className={cn("w-3.5 h-3.5", isLoading && "animate-spin")} /></button>
+              </div>
             </div>
-            <div className="flex-1 overflow-auto terminal-scroll p-2">{renderTree(tree)}</div>
+            <div className="flex-1 overflow-auto p-2 terminal-scroll">{renderTree(tree)}</div>
           </Card>
 
-          <Card className="flex-1 bg-card/30 border-border p-8 flex flex-col items-center justify-center text-center">
-            {mode === 'chroma' ? (
+          <Card className="flex-1 bg-card/20 border-border flex flex-col overflow-hidden">
+            {selectedFile ? (
               <>
-                <Server className={cn("w-12 h-12 mb-4", isSyncing ? "text-primary animate-spin" : "text-muted-foreground/20")} />
-                <h3 className="font-headline font-bold text-lg uppercase tracking-widest mb-2">Moteur de Recherche Local</h3>
-                <p className="text-xs text-muted-foreground font-code max-w-sm mb-8">Liaison directe avec ChromaDB. Les données sont indexées sémantiquement après synchronisation.</p>
-                <div className="p-4 border border-border bg-black/20 rounded-sm w-full max-w-sm">
-                  <p className="text-[10px] font-bold text-primary uppercase mb-1">Nœud Actif</p>
-                  <p className="text-xs font-code text-muted-foreground truncate">{activeProvider}</p>
+                <div className="p-3 border-b border-border bg-black/40 flex items-center justify-between">
+                  <span className="text-[11px] font-code uppercase text-white truncate max-w-[300px]">{selectedFile}</span>
+                  <div className="flex gap-2">
+                    {selectedFile.endsWith('.json') && (
+                      <Button variant="ghost" size="sm" onClick={() => setIsEditing(!isEditing)} className="h-7 text-[9px] uppercase">
+                        {isEditing ? <Eye className="w-3 h-3 mr-2" /> : <Edit3 className="w-3 h-3 mr-2" />}
+                        {isEditing ? "Aperçu" : "Éditer"}
+                      </Button>
+                    )}
+                    {isEditing && <Button variant="secondary" size="sm" onClick={saveFileChanges} className="h-7 text-[9px] uppercase font-bold"><Save className="w-3 h-3 mr-2" /> Sauver</Button>}
+                  </div>
                 </div>
-                <Button variant="outline" size="sm" onClick={() => syncChromaState()} disabled={isSyncing} className="mt-6 text-[10px] uppercase font-code">
-                  <RefreshCw className={cn("w-3 h-3 mr-2", isSyncing && "animate-spin")} /> Rafraîchir
-                </Button>
+                <div className="flex-1 overflow-hidden relative">
+                  {isEditing ? (
+                    <Textarea value={fileContent} onChange={(e) => setFileContent(e.target.value)} className="w-full h-full bg-black/80 font-code text-[11px] border-none focus-visible:ring-0 p-4 resize-none terminal-scroll" spellCheck={false} />
+                  ) : (
+                    <div className="w-full h-full bg-black/40 p-4 overflow-auto terminal-scroll flex items-center justify-center">
+                      {selectedFile.endsWith('.json') ? (
+                        <pre className="font-code text-[10px] text-primary/80 whitespace-pre-wrap w-full h-full">{fileContent}</pre>
+                      ) : fileContent.startsWith('data:image') ? (
+                        <div className="relative group max-w-full max-h-full">
+                           <img src={fileContent} className="max-w-full max-h-[70vh] rounded-sm shadow-2xl border border-primary/20 object-contain" />
+                           <div className="absolute inset-0 bg-primary/5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none border border-primary/40" />
+                        </div>
+                      ) : fileContent.startsWith('data:video') ? (
+                        <video src={fileContent} controls className="max-w-full max-h-[70vh] rounded-sm shadow-2xl border border-primary/20" />
+                      ) : (
+                        <div className="flex flex-col items-center justify-center opacity-50">
+                          <ImageIcon className="w-16 h-16 mb-4" />
+                          <p className="font-code text-[10px] uppercase text-center px-4">Prévisualisation non disponible pour ce type de fichier</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </>
             ) : (
-              <>
-                <CloudLightning className={cn("w-12 h-12 mb-4", isSyncing ? "text-secondary animate-pulse" : "text-muted-foreground/20")} />
-                <h3 className="font-headline font-bold text-lg uppercase tracking-widest mb-2">Cycle de Purge Cloud</h3>
-                <p className="text-xs text-muted-foreground font-code max-w-sm mb-8">Les JSON et Médias capturés sur le terrain transitent ici avant d'être sécurisés en local.</p>
-                <div className="flex flex-col gap-4 w-full max-w-sm">
-                  <Card className="p-4 border-secondary/20 bg-secondary/5 text-left">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Zap className="w-3.5 h-3.5 text-secondary" />
-                      <p className="text-[10px] font-bold text-secondary uppercase">Action Atomique</p>
-                    </div>
-                    <p className="text-[10px] font-code text-muted-foreground">Transfert des fichiers JSON vers ChromaDB + Nettoyage total de Neon Postgres.</p>
-                  </Card>
-                  <Button onClick={syncWebAndPurge} disabled={isSyncing} className="bg-secondary text-secondary-foreground h-10 text-[10px] font-code uppercase font-bold">
-                    {isPurging ? <ShieldAlert className="w-3.5 h-3.5 mr-2 animate-bounce" /> : <RefreshCw className="w-3.5 h-3.5 mr-2" />}
-                    {isPurging ? "Purge en cours..." : "Sync & Purge Neon"}
-                  </Button>
-                </div>
-              </>
+              <div className="flex-1 flex flex-col items-center justify-center opacity-30">
+                <HardDrive className="w-16 h-16 mb-4 text-primary animate-pulse" />
+                <p className="font-code text-xs uppercase tracking-widest text-center px-6">Sélectionnez un actif physique</p>
+              </div>
             )}
           </Card>
         </div>
       </main>
+
+      <Dialog open={newModal.isOpen} onOpenChange={(o) => !o && setNewModal({ ...newModal, isOpen: false })}>
+        <DialogContent className="bg-black border-primary/40">
+          <DialogHeader><DialogTitle className="text-xs uppercase font-headline text-primary">Nouveau {newModal.type === 'file' ? 'Fichier' : 'Répertoire'}</DialogTitle></DialogHeader>
+          <div className="py-4 space-y-3">
+            <p className="text-[10px] font-code text-muted-foreground uppercase">Cible : {newModal.parent || 'racine'}</p>
+            <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Nom..." className="bg-muted font-code uppercase text-xs" autoFocus onKeyDown={(e) => e.key === 'Enter' && createNew()} />
+          </div>
+          <DialogFooter><Button onClick={createNew} className="bg-primary text-primary-foreground font-bold uppercase text-[10px]">Créer</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={renameModal.isOpen} onOpenChange={(o) => !o && setRenameModal({ ...renameModal, isOpen: false })}>
+        <DialogContent className="bg-black border-secondary/40">
+          <DialogHeader><DialogTitle className="text-xs uppercase font-headline text-secondary">Renommer l'actif</DialogTitle></DialogHeader>
+          <div className="py-4 space-y-3">
+            <p className="text-[10px] font-code text-muted-foreground uppercase">Ancien : {renameModal.oldName}</p>
+            <Input value={renameValue} onChange={(e) => setRenameValue(e.target.value)} placeholder="Nouveau nom..." className="bg-muted font-code uppercase text-xs" autoFocus onKeyDown={(e) => e.key === 'Enter' && handleRename()} />
+          </div>
+          <DialogFooter><Button onClick={handleRename} className="bg-secondary text-secondary-foreground font-bold uppercase text-[10px]">Appliquer</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
+

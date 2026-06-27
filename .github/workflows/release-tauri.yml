@@ -34,19 +34,19 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Install Rust
+      - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Build Next.js Static
+      - name: Build Next.js Static Engine
         run: npm run build:tauri
 
-      - name: Build Tauri Action
+      - name: Build Tauri Real Binary
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: v${{ github.run_number }}
           releaseName: "VisioNode Release v${{ github.run_number }}"
-          releaseBody: "Automated Forge from VisioNode Control Center. Build ID: ${{ github.run_id }}"
+          releaseBody: "Automated Forge from VisioNode Control Center. Build ID: ${{ github.run_id }}. Real MSI/EXE bundles included."
           releaseDraft: false
           prerelease: false

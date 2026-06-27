@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect } from 'react';
@@ -40,19 +41,20 @@ export function VisionTerminal() {
       const analysis = await apiClient.post<VisionAssistantDescriptionOutput>('/api/vision/description', {
         photoDataUri: currentImage
       });
-      if (analysis.error) throw new Error(analysis.error);
+      if (analysis.error) throw new Error(String(analysis.error));
       setResult(analysis);
       
       const retrieved = await apiClient.post<VisualDocumentRetrievalOutput>('/api/vision/retrieval', {
         imageDataUri: currentImage
       });
-      if (retrieved.error) throw new Error(retrieved.error);
+      if (retrieved.error) throw new Error(String(retrieved.error));
       setDocs(retrieved);
 
       console.log(`✅ [${timestamp}] [CLIENT_SUCCESS] Analyse et RAG terminés avec succès.`);
     } catch (err: any) {
-      console.error(`❌ [${timestamp}] [CLIENT_ERROR] Liaison interrompue.`);
-      setError(err.message || "Échec de liaison pendant l'analyse.");
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`❌ [${timestamp}] [CLIENT_ERROR] Liaison interrompue : ${msg}`);
+      setError(msg || "Échec de liaison pendant l'analyse.");
     } finally {
       setIsAnalyzing(false);
     }
@@ -80,7 +82,7 @@ export function VisionTerminal() {
       {/* Flux Vidéo Principal */}
       <Card className="lg:col-span-2 bg-black border-primary/20 relative overflow-hidden group min-h-[300px] sm:min-h-[400px] lg:min-h-0 shrink-0">
         <div className="absolute top-4 left-4 lg:left-4 z-10 flex gap-2">
-          <div className="lg:hidden w-10" /> {/* Spacer pour mobile menu */}
+          <div className="lg:hidden w-10" /> 
           <StatusBadge status="online" label="CAM_01" />
           <StatusBadge status={isAnalyzing ? "busy" : "online"} label={isAnalyzing ? "BUSY" : "READY"} />
         </div>
@@ -94,6 +96,7 @@ export function VisionTerminal() {
               className={cn("object-cover transition-opacity duration-500", isAnalyzing ? "opacity-40" : "opacity-80")}
               priority
               data-ai-hint="industrial machine"
+              onError={() => setError("ERREUR_CHARGEMENT_FLUX")}
             />
           ) : (
             <div className="w-full h-full flex flex-col items-center justify-center bg-muted/10">
@@ -108,7 +111,7 @@ export function VisionTerminal() {
           <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] z-2 bg-[length:100%_4px,3px_100%] opacity-30" />
           
           {/* Detected Objects Overlay */}
-          {result?.objects.slice(0, 3).map((obj, i) => (
+          {result?.objects && result.objects.slice(0, 3).map((obj, i) => (
             <div 
               key={obj + i} 
               className="absolute border border-primary/50 bg-primary/10 text-primary text-[8px] sm:text-[10px] p-1 font-code animate-in fade-in zoom-in duration-300 backdrop-blur-[2px]"
@@ -199,7 +202,7 @@ export function VisionTerminal() {
                 <p className="text-primary font-bold uppercase text-[8px] sm:text-[9px]">{docs.componentDescription}</p>
               </div>
               <div className="space-y-1.5">
-                {docs.relevantDocuments.map((doc, i) => (
+                {docs.relevantDocuments && docs.relevantDocuments.map((doc, i) => (
                   <div key={doc.title + i} className="p-2 border border-border bg-background/40 hover:border-primary/50 transition-colors cursor-pointer group rounded-sm">
                     <span className="text-primary font-bold uppercase text-[8px] sm:text-[9px] block truncate">{doc.title}</span>
                     <p className="text-[8px] sm:text-[9px] text-muted-foreground leading-tight italic line-clamp-2">{doc.summary}</p>

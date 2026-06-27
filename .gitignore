@@ -89,6 +89,10 @@ temp/
 # ChromaDB (données vectorielles locales)
 data/chromadb/
 
+# Données locales hybrides / registre physique
+.registry/
+.data/
+
 # HuggingFace Transformers - cache des modèles locaux
 .cache/
 

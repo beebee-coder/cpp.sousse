@@ -1,8 +1,6 @@
 
-export const dynamic = 'force-dynamic';
-
 import { createHybridRoute } from '@/lib/api-route-creator';
-import { listCollections, deleteCollection, getOrCreateCollection } from '@/lib/chroma';
+import { listCollections, deleteCollection, getOrCreateCollection, getChromaClient } from '@/lib/chroma';
 
 /**
  * Route hybride pour lister les collections (ou classes Cloud).
@@ -14,6 +12,7 @@ export const GET = createHybridRoute<any, any>({
 
     if (isCloud) {
       try {
+        // Import statique via le client déjà configuré pour éviter les erreurs de chunks Webpack
         const { getWeaviateClient } = await import('@/lib/weaviate-client');
         const client = await getWeaviateClient();
         const schema = await client.collections.listAll();
@@ -35,10 +34,29 @@ export const GET = createHybridRoute<any, any>({
       }
     }
 
-    // Mode Local : ChromaDB
+    // Mode Local : ChromaDB Physique
     try {
       const collections = await listCollections();
-      return { success: true, count: collections.length, collections, provider: 'CHROMA_LOCAL' };
+      
+      // Enrichir avec le nombre de documents
+      const enrichedCollections = await Promise.all(collections.map(async (c: any) => {
+        try {
+          const client = await getChromaClient();
+          if (!client) return { ...c, count: 0 };
+          const collection = await client.getCollection({ name: c.name });
+          const count = await collection.count();
+          return { ...c, count };
+        } catch {
+          return { ...c, count: 0 };
+        }
+      }));
+
+      return { 
+        success: true, 
+        count: collections.length, 
+        collections: enrichedCollections, 
+        provider: 'CHROMA_PERSISTENT_LOCAL' 
+      };
     } catch (e: any) {
       return { success: false, error: 'LOCAL_DB_UNREACHABLE', details: e.message, collections: [] };
     }

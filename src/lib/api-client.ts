@@ -1,6 +1,7 @@
+
 /**
  * @fileOverview Client API centralisé pour VisioNode.
- * Supporte les appels hybrides avec audit iconographié et gestion de timeout.
+ * Version : Audité pour la gestion fidèle des succès/échecs.
  */
 
 import { executeHybridRequest } from './api-hybrid';
@@ -10,6 +11,7 @@ export type ApiResponse<T> = T & {
   offline?: boolean;
   provider?: string;
   timestamp?: string;
+  success?: boolean;
 };
 
 class ApiClient {
@@ -21,17 +23,11 @@ class ApiClient {
     return ApiClient.instance;
   }
 
-  /**
-   * Exécute un fetch avec un timeout intégré pour éviter de bloquer l'UI industrielle.
-   */
   private async fetchWithTimeout(url: string, options: RequestInit, timeout = 15000): Promise<Response> {
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), timeout);
     try {
-      const response = await fetch(url, {
-        ...options,
-        signal: controller.signal
-      });
+      const response = await fetch(url, { ...options, signal: controller.signal });
       clearTimeout(id);
       return response;
     } catch (e) {
@@ -40,37 +36,64 @@ class ApiClient {
     }
   }
 
+  private async requestWithBody<T>(endpoint: string, method: string, data: any): Promise<ApiResponse<T>> {
+    const timestamp = new Date().toLocaleTimeString();
+    try {
+      const result = await executeHybridRequest<any, any>(endpoint, data, async () => {
+        const response = await this.fetchWithTimeout(endpoint, {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          body: data ? JSON.stringify(data) : undefined,
+        });
+        const json = await response.json();
+        if (!response.ok) return { success: false, error: json.error || `HTTP_${response.status}` };
+        return json;
+      });
+      return { ...result, timestamp, success: result.success ?? true } as ApiResponse<T>;
+    } catch (error: any) {
+      return { error: error.message, offline: true, timestamp, success: false } as any;
+    }
+  }
+
   async get<T>(endpoint: string): Promise<ApiResponse<T>> {
     const timestamp = new Date().toLocaleTimeString();
     try {
       const result = await executeHybridRequest<any, any>(endpoint, null, async () => {
         const response = await this.fetchWithTimeout(endpoint, { method: 'GET' });
-        if (!response.ok) throw new Error(`ERREUR_HTTP_${response.status}`);
-        return await response.json();
+        const json = await response.json();
+        if (!response.ok) return { success: false, error: json.error };
+        return json;
       });
-      return { ...result, timestamp };
+      return { ...result, timestamp, success: result.success ?? true } as ApiResponse<T>;
     } catch (error: any) {
-      const msg = error.name === 'AbortError' ? 'TIMEOUT_LIAISON' : error.message;
-      return { error: msg, offline: true, timestamp } as any;
+      return { error: error.message, offline: true, timestamp, success: false } as any;
     }
   }
 
   async post<T>(endpoint: string, data: any): Promise<ApiResponse<T>> {
+    return this.requestWithBody<T>(endpoint, 'POST', data);
+  }
+
+  async put<T>(endpoint: string, data: any): Promise<ApiResponse<T>> {
+    return this.requestWithBody<T>(endpoint, 'PUT', data);
+  }
+
+  async patch<T>(endpoint: string, data: any): Promise<ApiResponse<T>> {
+    return this.requestWithBody<T>(endpoint, 'PATCH', data);
+  }
+
+  async delete<T>(endpoint: string): Promise<ApiResponse<T>> {
     const timestamp = new Date().toLocaleTimeString();
     try {
-      const result = await executeHybridRequest<any, any>(endpoint, data, async () => {
-        const response = await this.fetchWithTimeout(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(data),
-        });
-        if (!response.ok) throw new Error(`ERREUR_HTTP_${response.status}`);
-        return await response.json();
+      const result = await executeHybridRequest<any, any>(endpoint, null, async () => {
+        const response = await this.fetchWithTimeout(endpoint, { method: 'DELETE' });
+        const json = await response.json();
+        if (!response.ok) return { success: false, error: json.error || "ECHEC_SUPPRESSION" };
+        return json;
       });
-      return { ...result, timestamp };
+      return { ...result, timestamp, success: result.success !== false } as ApiResponse<T>;
     } catch (error: any) {
-      const msg = error.name === 'AbortError' ? 'TIMEOUT_LIAISON' : error.message;
-      return { error: msg, offline: true, timestamp } as any;
+      return { error: error.message, offline: true, timestamp, success: false } as any;
     }
   }
 }

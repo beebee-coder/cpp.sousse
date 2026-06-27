@@ -46,6 +46,9 @@
     "copyright": "© CCP Industrial Vision - Tous droits réservés",
     "resources": ["../.env"],
     "windows": {
+      "nsis": {
+        "installMode": "perMachine"
+      },
       "certificateThumbprint": null,
       "digestAlgorithm": "sha256",
       "timestampUrl": "",
@@ -53,6 +56,11 @@
         "type": "embedBootstrapper",
         "silent": false
       }
+    }
+  },
+  "plugins": {
+    "deep-link": {
+      "schemes": ["visionode"]
     }
   }
 }

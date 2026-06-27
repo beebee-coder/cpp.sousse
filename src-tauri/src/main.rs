@@ -109,6 +109,7 @@ async fn chat_with_ia(
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_deep_link::init())
         .invoke_handler(tauri::generate_handler![chat_with_ia])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,15 +1,22 @@
-
 import type { NextConfig } from 'next';
 
 const isDesktop = process.env.TAURI_ENV === 'true';
 
 /** @type {import('next').NextConfig} */
 const nextConfig: NextConfig = {
-  // Modules natifs et lourds à exclure strictement du bundle d'exécution Serverless
-  // Cette liste garantit que le déploiement sur Vercel reste sous les 250 Mo.
+  // En mode Desktop (Tauri), on a besoin de fichiers statiques (export)
+  // En mode Web, on laisse Next.js gérer le rendu dynamique par défaut
+  distDir: isDesktop ? 'out' : '.next',
+
+  output: isDesktop ? 'export' : undefined,
+  
+  env: {
+    TAURI_ENV: process.env.TAURI_ENV ?? 'false',
+  },
+
+  // Modules natifs et lourds à exclure strictement du bundle d'exécution
   serverExternalPackages: [
     'onnxruntime-node', 
-    '@huggingface/transformers', 
     'chromadb', 
     'groq-sdk',
     'weaviate-client',
@@ -19,15 +26,11 @@ const nextConfig: NextConfig = {
     'bufferutil',
     'utf-8-validate'
   ],
-
-  // Mode export pour Tauri (Statique), standard pour Vercel (Dynamique)
-  output: isDesktop ? 'export' : undefined,
   
-  // Ignore les API routes (.ts) en mode Desktop car Tauri ne supporte pas le serveur Next.js
-  ...(isDesktop && { pageExtensions: ['tsx', 'jsx', 'js'] }),
+  // Ignorer les fichiers .ts (les API routes comme route.ts) en mode Desktop pour permettre l'export statique
+  pageExtensions: isDesktop ? ['tsx', 'jsx', 'js'] : ['tsx', 'ts', 'jsx', 'js'],
   
   images: {
-    // Désactivation de l'optimisation pour éviter les timeouts serveur sur les placeholders
     unoptimized: true,
     remotePatterns: [
       { protocol: 'https', hostname: 'picsum.photos' },
@@ -38,13 +41,20 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
-  
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
 
-  // Désactivation des sourcemaps en production pour économiser de l'espace disque
+  turbopack: {},
+
   productionBrowserSourceMaps: false,
+  
+  webpack: (config, { isServer }) => {
+    if (isServer) {
+      config.externals.push({
+        'onnxruntime-node': 'commonjs onnxruntime-node',
+        'chromadb': 'commonjs chromadb'
+      });
+    }
+    return config;
+  },
 };
 
 export default nextConfig;
