@@ -117,3 +117,4 @@ logs/
 .DS_Store
 *.pem
 *.lock
+/src/generated/prisma

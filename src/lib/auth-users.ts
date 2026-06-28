@@ -19,8 +19,8 @@ import {
   listPendingUsers as listPendingUsersStore,
 } from '@/lib/auth-store';
 
-export async function authenticateUser(firstName: string, lastName: string, password: string, role?: string) {
-  return authenticateUserStore(firstName, lastName, password, role);
+export async function authenticateUser(email: string, password: string) {
+  return authenticateUserStore(email, password);
 }
 
 export async function addPendingUser(firstName: string, lastName: string, password: string, role: string) {

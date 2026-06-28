@@ -1,20 +1,88 @@
-import { createHybridRoute } from '@/lib/api-route-creator';
-import { postgresClient } from '@/lib/db/postgres-client';
+import { NextRequest, NextResponse } from 'next/server';
+import { prisma } from '@/lib/db/prisma-client';
 
 /**
  * Route de download pour la synchronisation multi-environnement (Delta Sync).
+ * Retourne les KnowledgeItems de TOUS les utilisateurs approuvés depuis la dernière sync.
+ * Utilisé par le mode Desktop (Tauri) pour enrichir la BDD ChromaDB locale.
  */
-export const POST = createHybridRoute<{ userId: string; projectId: string; lastSync: string }, any>({
-  name: 'SYNC_DOWNLOAD',
-  webHandler: async (req, body) => {
-    const { projectId, lastSync } = body;
-    const lastSyncDate = lastSync ? new Date(lastSync) : undefined;
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { lastSync, scope = 'all' } = body as {
+      userId?: string;
+      projectId?: string;
+      lastSync?: string;
+      scope?: 'self' | 'all';
+    };
 
-    try {
-      const items = await postgresClient.getCloudData(projectId, lastSyncDate);
-      return { success: true, items };
-    } catch (e: any) {
-      throw new Error(`DB_QUERY_FAILED: ${e.message}`);
+    const lastSyncDate = lastSync ? new Date(lastSync) : new Date(0);
+
+    // Récupérer les KnowledgeItems créés/mis à jour depuis la dernière sync
+    const where: any = {
+      createdAt: { gt: lastSyncDate },
+      isPublic: true,
+    };
+
+    // scope='self' : uniquement l'utilisateur courant (inutilisé pour l'instant mais prévu)
+    // scope='all' (défaut) : tous les items publics de tous les utilisateurs approuvés
+    if (scope === 'all') {
+      where.user = { approved: true };
     }
+
+    const knowledgeItems = await prisma.knowledgeItem.findMany({
+      where,
+      orderBy: { createdAt: 'asc' },
+      select: {
+        id: true,
+        userId: true,
+        type: true,
+        title: true,
+        question: true,
+        answer: true,
+        steps: true,
+        tags: true,
+        category: true,
+        difficulty: true,
+        isPublic: true,
+        syncedLocal: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    // Transformer en format CloudData compatible avec le sync-engine existant
+    const items = knowledgeItems.map((ki) => ({
+      id: ki.id,
+      projectId: 'global',
+      type: 'document' as const,
+      content: JSON.stringify({
+        knowledgeId: ki.id,
+        type: ki.type,
+        title: ki.title,
+        question: ki.question,
+        answer: ki.answer,
+        steps: ki.steps,
+        tags: ki.tags,
+        category: ki.category,
+        difficulty: ki.difficulty,
+      }),
+      tags: ki.tags,
+      createdAt: ki.createdAt,
+      // Métadonnées étendues pour la désérialisation locale
+      _knowledgeType: ki.type,
+      _title: ki.title,
+    }));
+
+    return NextResponse.json({
+      success: true,
+      items,
+      syncedAt: new Date().toISOString(),
+      count: items.length,
+    });
+  } catch (err: any) {
+    console.error('[SYNC/DOWNLOAD]', err.message);
+    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
-});
+}
+

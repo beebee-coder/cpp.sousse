@@ -31,6 +31,7 @@ import { Button } from '@/components/ui/button';
 
 const allNavItems = [
   { icon: LayoutDashboard, label: 'Tableau de Bord', href: '/dashboard' },
+  { icon: ShieldCheck, label: 'Console Admin', href: '/admin' },
   { icon: MessageSquare, label: 'Chat Neural', href: '/chat' },
   { icon: Database, label: 'Base RAG', href: '/dataset' },
   { icon: HardDrive, label: 'Explorateur BDD', href: '/bdd' },
@@ -57,7 +58,7 @@ function SidebarContent({ pathname, isDesktop, isReady, onNavigate }: SidebarCon
     }
 
     if (role === 'chef-de-bloc' || role === 'chef-de-quart') {
-      return !['/bdd', '/pipeline'].includes(item.href);
+      return !['/bdd', '/pipeline', '/admin'].includes(item.href);
     }
 
     return ['/chat', '/dataset'].includes(item.href);

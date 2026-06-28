@@ -68,70 +68,88 @@ export const syncEngine = {
 
   /**
    * Phase 2 : Download Cloud (Neon) -> Local (ChromaDB + SQLite)
+   * Enrichit la BDD locale avec les KnowledgeItems de TOUS les utilisateurs approuvés.
    */
   async downloadPhase(userId: string, projectId: string): Promise<number> {
     const state = await this.getSyncState(userId);
-    const res = await apiClient.post<{ items: CloudData[] }>('/api/sync/download', {
-      userId,
-      projectId,
-      lastSync: state.lastSync.toISOString()
-    });
+    
+    let items: any[] = [];
+    try {
+      const res = await apiClient.post<{ items: any[]; count: number }>('/api/sync/download', {
+        userId,
+        projectId,
+        lastSync: state.lastSync.toISOString(),
+        scope: 'all', // Enrichissement cross-users
+      });
+      items = res.items ?? [];
+    } catch (e: any) {
+      console.error('⚠️ [SYNC_DOWN] Erreur appel API :', e.message);
+      return 0;
+    }
 
-    if (!res.items || res.items.length === 0) return 0;
+    if (items.length === 0) {
+      console.log('✅ [SYNC_DOWN] Aucun nouvel item à synchroniser.');
+      return 0;
+    }
 
-    const idsToPurge: string[] = [];
     let indexedCount = 0;
 
-    for (const item of res.items) {
-      // 📥 TRAITEMENT DES ASSETS (IMAGES/VIDÉOS)
-      if (item.type === 'provisional_asset') {
-        console.log(`📥 [SYNC_ASSET] Transfert vers stockage local : ${item.id}`);
-        // Ici on simule l'écriture sur le FS local (EXE)
-        idsToPurge.push(item.id);
-      }
+    for (const item of items) {
+      try {
+        // 🧠 DÉSÉRIALISATION DU CONTENU KNOWLEDGE
+        const parsed = typeof item.content === 'string' ? JSON.parse(item.content) : item.content;
+        const knowledgeType: string = parsed.type ?? 'qa';
+        const title: string = parsed.title ?? 'Sans titre';
 
-      // 🧠 INDEXATION VECTORIELLE (METADATA / DOCS)
-      if (item.type === 'metadata' || item.type === 'document') {
-        try {
-          const parsed = JSON.parse(item.content);
-          
-          // Mise à jour du moteur de recherche local (ChromaDB)
-          await chromaClient.upsertPoints('industrial_manuals', [{
-            id: item.id,
-            values: [], // Sera généré par l'embedder local
-            metadata: {
-              cloudId: item.id,
-              type: item.type,
-              tags: item.tags,
-              timestamp: new Date(item.createdAt).getTime(),
-              syncStatus: 'synced'
-            }
-          }]);
-
-          // Persistance dans le registre de métadonnées local
-          await sqliteClient.upsert({
-            id: item.id,
-            vectorId: item.id,
-            key: item.tags[0] || 'sync_import',
-            value: item.content,
-            syncStatus: 'synced'
-          });
-          
-          indexedCount++;
-        } catch (e) {
-          console.error(`❌ [SYNC_INDEX] Échec item ${item.id}:`, e);
+        // Construire le texte sémantique selon le type
+        let semanticText = '';
+        if (knowledgeType === 'qa') {
+          semanticText = `${title}\nQuestion: ${parsed.question ?? ''}\nRéponse: ${parsed.answer ?? ''}`;
+        } else if (knowledgeType === 'procedure') {
+          const steps = Array.isArray(parsed.steps)
+            ? parsed.steps.map((s: any, i: number) => `Étape ${i + 1}: ${s.instruction ?? s}`).join('\n')
+            : '';
+          semanticText = `${title}\n${steps}`;
         }
+
+        // 📦 INDEXATION VECTORIELLE LOCALE (ChromaDB)
+        await chromaClient.upsertPoints('knowledge_items', [{
+          id: item.id,
+          values: [], // L'embedder local génère les vecteurs
+          metadata: {
+            cloudId: item.id,
+            knowledgeId: parsed.knowledgeId ?? item.id,
+            type: knowledgeType,
+            title,
+            tags: item.tags ?? [],
+            category: parsed.category ?? '',
+            difficulty: parsed.difficulty ?? 'medium',
+            origin: 'SYNC_WEB_TO_LOCAL',
+            timestamp: new Date(item.createdAt).getTime(),
+            syncStatus: 'synced',
+          } as any
+        }]);
+
+        // 💾 PERSISTANCE LOCALE (SQLite / localStorage)
+        await sqliteClient.upsert({
+          id: item.id,
+          vectorId: item.id,
+          key: title,
+          value: semanticText,
+          syncStatus: 'synced',
+        });
+
+        indexedCount++;
+        console.log(`📥 [SYNC_DOWN] Indexé : "${title}" (${knowledgeType})`);
+      } catch (e: any) {
+        console.error(`❌ [SYNC_INDEX] Échec item ${item.id}:`, e.message);
       }
     }
 
-    // 🧹 PURGE AUTOMATIQUE DU CLOUD (Libération d'espace Neon)
-    if (idsToPurge.length > 0) {
-      await apiClient.post('/api/sync/cleanup', { ids: idsToPurge, projectId });
-      console.log(`🧹 [SYNC_CLEANUP] ${idsToPurge.length} assets purgés du registre cloud.`);
-    }
-
+    console.log(`✅ [SYNC_DOWN] ${indexedCount}/${items.length} KnowledgeItems injectés dans ChromaDB local.`);
     return indexedCount;
   },
+
 
   async syncAll(userId: string, projectId: string) {
     const state = await this.getSyncState(userId);

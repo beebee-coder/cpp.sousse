@@ -1,6 +1,8 @@
 
 /**
  * @fileOverview Flux de chat Groq optimisé avec Orchestration de Contexte Holistique.
+ * Mode Cloud  : Weaviate Cloud (recherche sémantique) + Groq
+ * Mode Local  : ChromaDB local + Registre physique + Groq
  */
 
 import Groq from 'groq-sdk';
@@ -8,6 +10,8 @@ import {
   searchAcrossCollections,
   getSystemContextSummary
 } from '../../lib/chroma';
+
+const IS_CLOUD = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
 
 type ChatMessage = {
   role: 'user' | 'model';
@@ -24,6 +28,47 @@ type ChatOutput = {
   provider: string;
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Récupère le contexte RAG selon le mode d'exécution
+// ─────────────────────────────────────────────────────────────────────────────
+async function retrieveRAGContext(message: string): Promise<{ context: string; metadata: string }> {
+  // 🌐 MODE CLOUD : Weaviate Cloud
+  if (IS_CLOUD) {
+    try {
+      const { searchKnowledge } = await import('../../lib/weaviate/weaviate-knowledge');
+      const results = await searchKnowledge(message, { nResults: 5, publicOnly: false });
+
+      if (results.length > 0) {
+        const context = results.map(r => {
+          const typeLabel = r.type === 'qa' ? 'Q/R' : 'PROCÉDURE';
+          return `[${typeLabel}] [${r.title}] : ${r.content}`;
+        }).join('\n\n');
+        return { context, metadata: `RAG_WEAVIATE_CLOUD (${results.length} DOCS)` };
+      }
+      return { context: '', metadata: 'WEAVIATE_VIDE' };
+    } catch (err: any) {
+      console.warn('[CHAT_FLOW] Weaviate indisponible, fallback registre :', err.message);
+    }
+  }
+
+  // 💻 MODE LOCAL : ChromaDB + Registre physique
+  try {
+    const results = await searchAcrossCollections(message, 4);
+    if (results.length > 0) {
+      const context = results.map(r => {
+        const title = r.metadata?.title || 'DOCUMENT_TECHNIQUE';
+        const origin = r.metadata?.origin || 'UNSET';
+        return `[SOURCE: ${title}] [ORIGINE: ${origin}] : ${r.document}`;
+      }).join('\n\n');
+      return { context, metadata: `RAG_FUSIONNE_LOCAL (${results.length} DOCS)` };
+    }
+  } catch (err: any) {
+    console.warn('[CHAT_FLOW] ChromaDB indisponible :', err.message);
+  }
+
+  return { context: '', metadata: 'ÉCHEC_RECUPERATION_RAG' };
+}
+
 export async function dynamicChat(input: ChatInput): Promise<ChatOutput> {
   if (!process.env.GROQ_API_KEY) {
     throw new Error("ERREUR_LIAISON_GROQ : Clé API non configurée.");
@@ -32,23 +77,8 @@ export async function dynamicChat(input: ChatInput): Promise<ChatOutput> {
   // 🧠 RÉCUPÉRATION DU CONTEXTE SYSTÈME
   const systemState = await getSystemContextSummary();
   
-  // 🔍 RÉCUPÉRATION RAG HYBRIDE (Vecteurs + Registre Physique)
-  let retrievedContext = "";
-  let ragMetadata = "MODE_BASIQUE";
-
-  try {
-    const results = await searchAcrossCollections(input.message, 4);
-    if (results.length > 0) {
-      retrievedContext = results.map(r => {
-        const title = r.metadata?.title || 'DOCUMENT_TECHNIQUE';
-        const origin = r.metadata?.origin || 'UNSET';
-        return `[SOURCE: ${title}] [ORIGINE: ${origin}] : ${r.document}`;
-      }).join('\n\n');
-      ragMetadata = `RAG_FUSIONNE (${results.length} DOCS)`;
-    }
-  } catch (e: any) {
-    ragMetadata = "ÉCHEC_RECUPERATION_RAG";
-  }
+  // 🔍 RÉCUPÉRATION RAG HYBRIDE (Weaviate Cloud OU ChromaDB Local)
+  const { context: retrievedContext, metadata: ragMetadata } = await retrieveRAGContext(input.message);
 
   try {
     const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
@@ -56,7 +86,7 @@ export async function dynamicChat(input: ChatInput): Promise<ChatOutput> {
     // 🎭 PROMPT SYSTÈME ORCHESTRATEUR
     let systemContent = `Vous êtes VisioNode Core, l'intelligence orchestratrice de la plateforme industrielle CCP.
 VOTRE ÉTAT ACTUEL :
-- Mode : ${systemState.mode}
+- Mode : ${systemState.mode} ${IS_CLOUD ? '| CLOUD WEAVIATE ACTIF' : '| CHROMADB LOCAL ACTIF'}
 - Base RAG : ${systemState.ragDocuments} procédures indexées.
 - Banque Images : ${systemState.bankAssets} actifs stockés.
 
@@ -84,7 +114,7 @@ RÈGLES D'INTERACTION :
     const completion = await groq.chat.completions.create({
       messages,
       model: 'llama-3.3-70b-versatile',
-      temperature: 0.3, // Température basse pour une précision technique accrue
+      temperature: 0.3,
       max_tokens: 1024,
     });
 

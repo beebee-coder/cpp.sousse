@@ -4,15 +4,11 @@ import { Suspense, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 
-type UserRole = 'admin' | 'chef-de-bloc' | 'chef-de-quart' | 'user';
-
 function SignInForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState<UserRole>('user');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -26,7 +22,7 @@ function SignInForm() {
     const response = await fetch('/api/auth/signin', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ firstName, lastName, password, role }),
+      body: JSON.stringify({ email, password }),
     });
 
     setLoading(false);
@@ -50,38 +46,24 @@ function SignInForm() {
     <div className="min-h-screen bg-background flex items-center justify-center p-6">
       <div className="w-full max-w-md rounded-xl border border-border bg-card p-8 shadow-xl">
         <h1 className="text-2xl font-bold mb-2">Connexion VisioNode</h1>
-        <p className="text-sm text-muted-foreground mb-6">Utilisez votre prénom, nom et mot de passe.</p>
+        <p className="text-sm text-muted-foreground mb-6">Entrez votre email et mot de passe.</p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <input
-            value={firstName}
-            onChange={(e) => setFirstName(e.target.value)}
-            placeholder="Prénom"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Email"
+            autoComplete="email"
             className="w-full rounded-md border border-border bg-background px-3 py-2"
             required
           />
           <input
-            value={lastName}
-            onChange={(e) => setLastName(e.target.value)}
-            placeholder="Nom"
-            className="w-full rounded-md border border-border bg-background px-3 py-2"
-            required
-          />
-          <select
-            value={role}
-            onChange={(e) => setRole(e.target.value as UserRole)}
-            className="w-full rounded-md border border-border bg-background px-3 py-2"
-          >
-            <option value="user">Utilisateur</option>
-            <option value="chef-de-bloc">Chef de bloc</option>
-            <option value="chef-de-quart">Chef de quart</option>
-            <option value="admin">Admin</option>
-          </select>
-          <input
+            type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="Mot de passe"
-            type="password"
+            autoComplete="current-password"
             className="w-full rounded-md border border-border bg-background px-3 py-2"
             required
           />
@@ -100,7 +82,7 @@ function SignInForm() {
         <div className="mt-6 text-sm text-muted-foreground">
           <p>Pas encore de compte ?</p>
           <Link href="/auth/register" className="mt-2 inline-flex text-primary underline-offset-4 hover:underline">
-            Demander un accès à l’administrateur
+            Demander un accès à l&apos;administrateur
           </Link>
         </div>
       </div>

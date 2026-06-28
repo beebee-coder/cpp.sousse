@@ -17,6 +17,8 @@
   "dependencies": {
     "@genkit-ai/google-genai": "^1.0.0",
     "@hookform/resolvers": "^4.1.3",
+    "@neondatabase/serverless": "^1.1.0",
+    "@prisma/adapter-neon": "^7.8.0",
     "@radix-ui/react-accordion": "^1.2.3",
     "@radix-ui/react-alert-dialog": "^1.1.6",
     "@radix-ui/react-avatar": "^1.1.3",
@@ -40,6 +42,7 @@
     "@radix-ui/react-tooltip": "^1.1.8",
     "@tauri-apps/api": "^2.2.0",
     "@tauri-apps/plugin-deep-link": "^2.4.9",
+    "bcryptjs": "^3.0.3",
     "chokidar": "^3.5.3",
     "chromadb": "^1.9.4",
     "class-variance-authority": "^0.7.1",
@@ -50,12 +53,14 @@
     "genkit": "^1.0.0",
     "glob": "^13.0.6",
     "groq-sdk": "^1.2.1",
+    "jose": "^6.2.3",
     "lru-cache": "^6.0.0",
     "lucide-react": "^0.475.0",
     "next": "^16.2.9",
     "next-auth": "^4.24.14",
     "onnxruntime-node": "^1.20.1",
     "openid-client": "^5.7.1",
+    "pg": "^8.22.0",
     "react": "19.0.0",
     "react-day-picker": "^9.11.3",
     "react-dom": "19.0.0",
@@ -65,19 +70,27 @@
     "tailwindcss-animate": "^1.0.7",
     "uuid": "^14.0.1",
     "weaviate-client": "^3.13.1",
+    "ws": "^8.21.0",
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@prisma/client": "^7.8.0",
     "@tauri-apps/cli": "^2.11.2",
+    "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20.19.43",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@types/ws": "^8.18.1",
     "cross-env": "^10.1.0",
     "postcss": "^8",
+    "prisma": "^7.8.0",
     "rimraf": "^6.0.1",
     "tailwindcss": "^3.4.1",
     "ts-node": "^10.9.1",
     "typescript": "^5",
     "vitest": "^4.1.9"
+  },
+  "prisma": {
+    "seed": "ts-node --compiler-options {\"module\":\"CommonJS\"} prisma/seed.ts"
   }
 }
