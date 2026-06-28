@@ -11,6 +11,7 @@ import { usePlatform } from '@/components/PlatformProvider';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { performHealthCheck } from '@/lib/platform';
+import { ExternalLink, Loader2 } from 'lucide-react';
 
 export default function DashboardPage() {
   const [time, setTime] = useState<string>('');
@@ -20,7 +21,25 @@ export default function DashboardPage() {
   const [userId, setUserId] = useState<string | undefined>(undefined);
   const [pendingCount, setPendingCount] = useState(0);
   const [knowledgeCount, setKnowledgeCount] = useState(0);
+  const [isOpeningDesktop, setIsOpeningDesktop] = useState(false);
   const { platform, capabilities, isDesktop } = usePlatform();
+
+  const handleOpenDesktop = async () => {
+    try {
+      setIsOpeningDesktop(true);
+      const res = await fetch('/api/auth/magic-link');
+      const data = await res.json();
+      if (data.success && data.url) {
+        window.location.href = data.url;
+      } else {
+        console.error('Erreur magic link:', data.error);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setTimeout(() => setIsOpeningDesktop(false), 2000);
+    }
+  };
 
   useEffect(() => {
     setMounted(true);
@@ -177,6 +196,17 @@ export default function DashboardPage() {
               >
                 Déconnexion
               </button>
+              {mounted && !isDesktop && (
+                <button
+                  onClick={handleOpenDesktop}
+                  disabled={isOpeningDesktop}
+                  className="rounded-md bg-secondary/10 text-secondary border border-secondary/20 hover:bg-secondary/20 transition-colors px-2 py-1 text-xs flex items-center gap-1 font-bold"
+                  title="Lancer l'application locale (Desktop) en conservant votre session"
+                >
+                  {isOpeningDesktop ? <Loader2 className="w-3 h-3 animate-spin" /> : <ExternalLink className="w-3 h-3" />}
+                  <span>Ouvrir Desktop</span>
+                </button>
+              )}
               <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center border border-border overflow-hidden shrink-0">
                 <User className="w-5 h-5 text-muted-foreground" />
               </div>
