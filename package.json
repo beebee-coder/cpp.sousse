@@ -11,7 +11,8 @@
                     "lint":  "next lint",
                     "typecheck":  "tsc --noEmit",
                     "clean":  "rimraf out .next src-tauri/target",
-                    "desktop:build":  "npm run build:tauri \u0026\u0026 npx tauri build \u0026\u0026 npm run copy-installers",
+                    "tauri": "npx tauri",
+                    "desktop:build": "npm run clean && npm run build:tauri && npx tauri build && npm run copy-installers",
                     "watcher":  "ts-node ./src/lib/start-watcher.ts",
                     "postinstall":  "prisma generate"
                 },
