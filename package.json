@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "clean": "rimraf out .next src-tauri/target",
     "desktop:build": "npm run build:tauri && npx tauri build && npm run copy-installers",
-    "watcher": "ts-node ./src/lib/start-watcher.ts"
+    "watcher": "ts-node ./src/lib/start-watcher.ts",
+    "postinstall": "prisma generate"
   },
   "dependencies": {
     "@genkit-ai/google-genai": "^1.0.0",
