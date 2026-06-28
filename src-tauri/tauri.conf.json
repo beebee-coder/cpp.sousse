@@ -44,7 +44,7 @@
     "shortDescription": "VisioNode Control Center - Industrial Vision Platform",
     "longDescription": "Plateforme de contrôle par vision industrielle hybride avec audit de flux intelligent.",
     "copyright": "© CCP Industrial Vision - Tous droits réservés",
-    "resources": ["../.env"],
+
     "windows": {
       "nsis": {
         "installMode": "perMachine"
