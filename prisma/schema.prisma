@@ -1,15 +1,51 @@
-// Modèle de données Prisma pour VisioNode
-datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
-}
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
 
 generator client {
   provider = "prisma-client-js"
 }
 
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Modèle utilisateur
 model User {
   id        String   @id @default(uuid())
+  firstName String
+  lastName  String
+  password  String
   email     String   @unique
-  // ... (champs existants gérés par prisma/apply-schema.ts)
+  role      String   @default("user")
+  approved  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  knowledgeItems KnowledgeItem[]
+}
+
+// Modèle de connaissances et procédures
+model KnowledgeItem {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type        String
+  title       String
+  question    String?
+  answer      String?
+  steps       Json?
+  tags        String[]
+  category    String?
+  difficulty  String   @default("medium")
+  isPublic    Boolean  @default(true)
+  syncedLocal Boolean  @default(false)
+  vectorId    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+  @@index([type])
+  @@index([syncedLocal])
+  @@index([createdAt])
 }
