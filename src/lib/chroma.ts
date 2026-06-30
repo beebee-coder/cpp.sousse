@@ -93,6 +93,7 @@ export async function getChromaClient(): Promise<any> {
 
 /**
  * Recherche textuelle robuste dans le registre physique.
+ * Version améliorée pour les noms propres et les recherches multicritères.
  */
 export function fallbackSemanticSearch(query: string, nResults = 3, componentFilter?: string): SearchResult[] {
   if (!fs.existsSync(REGISTRY_ITEMS_DIR)) return [];
@@ -101,27 +102,37 @@ export function fallbackSemanticSearch(query: string, nResults = 3, componentFil
     const files = fs.readdirSync(REGISTRY_ITEMS_DIR).filter(f => f.endsWith('.json'));
     const results: SearchResult[] = [];
     const lowerQuery = query.toLowerCase();
+    const queryWords = lowerQuery.split(/\s+/).filter(w => w.length > 2);
 
     for (const file of files) {
       const content = fs.readFileSync(path.join(REGISTRY_ITEMS_DIR, file), 'utf8');
       const data = JSON.parse(content);
-      const text = `${data.label || ''} ${data.details || ''} ${data.title || ''}`.toLowerCase();
+      const searchableText = `${data.label || ''} ${data.details || ''} ${data.title || ''} ${data.content || ''}`.toLowerCase();
       
-      // Recherche par mots-clés (Fallback sémantique léger)
-      if (text.includes(lowerQuery) || lowerQuery.split(' ').some(word => word.length > 3 && text.includes(word))) {
+      // Calcul de score de pertinence simple
+      let matchScore = 0;
+      if (searchableText.includes(lowerQuery)) matchScore += 10;
+      
+      queryWords.forEach(word => {
+        if (searchableText.includes(word)) matchScore += 2;
+      });
+
+      if (matchScore > 0) {
         if (componentFilter && data.metadata?.component !== componentFilter) continue;
 
         results.push({
           id: file,
-          document: `${data.label || ''}\n${data.details || ''}`,
+          document: `${data.label || data.title || ''}\n${data.details || data.content || ''}`,
           metadata: { ...data.metadata, title: data.title, source: file, origin: 'PHY_REGISTRY' },
           distance: 0,
-          score: 1 // Score maximal pour match exact par mots-clés
+          score: Math.min(matchScore / 10, 1)
         });
       }
-      if (results.length >= nResults * 3) break;
     }
-    return results.slice(0, nResults).sort((a, b) => b.score - a.score);
+    
+    return results
+      .sort((a, b) => b.score - a.score)
+      .slice(0, nResults);
   } catch (e) {
     return [];
   }
@@ -203,7 +214,7 @@ export async function searchAcrossCollections(query: string, nResultsPerCollecti
   const mergedResults: SearchResult[] = [];
 
   // 1. Recherche Physique (Registre) - Toujours active car ultra-rapide
-  const physical = fallbackSemanticSearch(query, nResultsPerCollection);
+  const physical = fallbackSemanticSearch(query, nResultsPerCollection * 2);
   mergedResults.push(...physical);
 
   // 2. Recherche Vectorielle (Si disponible)
@@ -221,9 +232,12 @@ export async function searchAcrossCollections(query: string, nResultsPerCollecti
     } catch (e) {}
   }
 
-  // 3. Déduplication et Tri par score
-  const unique = Array.from(new Map(mergedResults.map(r => [r.document.substring(0, 100), r])).values());
-  return unique.sort((a, b) => b.score - a.score).slice(0, nResultsPerCollection * 2);
+  // 3. Déduplication par contenu (pour éviter les doublons texte identiques)
+  const unique = Array.from(new Map(mergedResults.map(r => [r.document.toLowerCase().trim(), r])).values());
+  
+  return unique
+    .sort((a, b) => b.score - a.score)
+    .slice(0, nResultsPerCollection * 2);
 }
 
 export async function seedIndustrialManuals() {

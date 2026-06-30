@@ -31,12 +31,19 @@ type ChatOutput = {
 // ─────────────────────────────────────────────────────────────────────────────
 // Récupère le contexte RAG selon le mode d'exécution
 // ─────────────────────────────────────────────────────────────────────────────
-async function retrieveRAGContext(message: string): Promise<{ context: string; metadata: string }> {
+async function retrieveRAGContext(message: string, history: ChatMessage[]): Promise<{ context: string; metadata: string }> {
+  // 🧠 ENRICHISSEMENT DE LA REQUÊTE : Si le message est court ou contient des pronoms, on ajoute le sujet précédent
+  let searchQuery = message;
+  if (history.length > 0 && (message.length < 20 || /il|lui|elle|eux|ce|c'est|son|sa/.test(message.toLowerCase()))) {
+    const lastUserMsg = [...history].reverse().find(m => m.role === 'user');
+    if (lastUserMsg) searchQuery = `${lastUserMsg.content} ${message}`;
+  }
+
   // 🌐 MODE CLOUD : Weaviate Cloud
   if (IS_CLOUD) {
     try {
       const { searchKnowledge } = await import('../../lib/weaviate/weaviate-knowledge');
-      const results = await searchKnowledge(message, { nResults: 5, publicOnly: false });
+      const results = await searchKnowledge(searchQuery, { nResults: 5, publicOnly: false });
 
       if (results.length > 0) {
         const context = results.map(r => {
@@ -53,7 +60,7 @@ async function retrieveRAGContext(message: string): Promise<{ context: string; m
 
   // 💻 MODE LOCAL : ChromaDB + Registre physique
   try {
-    const results = await searchAcrossCollections(message, 4);
+    const results = await searchAcrossCollections(searchQuery, 4);
     if (results.length > 0) {
       const context = results.map(r => {
         const title = r.metadata?.title || 'DOCUMENT_TECHNIQUE';
@@ -70,6 +77,10 @@ async function retrieveRAGContext(message: string): Promise<{ context: string; m
 }
 
 export async function dynamicChat(input: ChatInput): Promise<ChatOutput> {
+  if (!input.message.trim()) {
+    throw new Error("Message vide");
+  }
+
   if (!process.env.GROQ_API_KEY) {
     throw new Error("ERREUR_LIAISON_GROQ : Clé API non configurée.");
   }
@@ -77,28 +88,28 @@ export async function dynamicChat(input: ChatInput): Promise<ChatOutput> {
   // 🧠 RÉCUPÉRATION DU CONTEXTE SYSTÈME
   const systemState = await getSystemContextSummary();
   
-  // 🔍 RÉCUPÉRATION RAG HYBRIDE (Weaviate Cloud OU ChromaDB Local)
-  const { context: retrievedContext, metadata: ragMetadata } = await retrieveRAGContext(input.message);
+  // 🔍 RÉCUPÉRATION RAG HYBRIDE AVEC CONTEXTE
+  const { context: retrievedContext, metadata: ragMetadata } = await retrieveRAGContext(input.message, input.history);
 
   try {
     const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
     
-    // 🎭 PROMPT SYSTÈME ORCHESTRATEUR - Optimisé pour la concision
+    // 🎭 PROMPT SYSTÈME ORCHESTRATEUR - Optimisé pour la concision et l'identité
     let systemContent = `Vous êtes VisioNode Core, l'intelligence orchestratrice de la plateforme industrielle CCP.
 
 CONSIGNES DE CONVIVIALITÉ ET EFFICACITÉ :
-1. CONCISION ABSOLUE : Soyez bref et percutant. Ne dépassez pas 2 à 3 phrases pour les réponses courantes.
-2. DIRECT : Répondez directement à la question sans répéter l'énoncé.
-3. TON : Technique, précis, proactif et courtois. Pas de blabla inutile ou de spéculations.
-4. IDENTITÉ : "User admin" est le compte administrateur système. Si un nom (ex: Ahmed) apparaît dans le RAG, traitez-le comme l'auteur ou le sujet de la fiche technique sans faire de longs commentaires.
+1. CONCISION ABSOLUE : Répondez en 1 ou 2 phrases maximum.
+2. DIRECT : Allez droit au but. Pas de salutations répétitives.
+3. IDENTITÉ : Le nom propre apparaissant dans le RAG (ex: Ahmed) est l'identité réelle du compte "User admin" ou du créateur de la fiche. Liez-les systématiquement.
+4. TON : Technique et précis.
 
 VOTRE ÉTAT ACTUEL :
-- Mode : ${systemState.mode} ${IS_CLOUD ? '| CLOUD WEAVIATE ACTIF' : '| CHROMADB LOCAL ACTIF'}
+- Mode : ${systemState.mode}
 - Base RAG : ${systemState.ragDocuments} procédures indexées.
 
 RÈGLES D'INTERACTION :
-- ANALYSE : Utilisez le contexte RAG fourni ci-dessous en priorité.
-- ABSENCE DE DONNÉES : Si non trouvé, dites simplement : "Information non disponible dans la base technique actuelle."`;
+- Si l'information est dans le contexte RAG ci-dessous, utilisez-la.
+- Sinon, dites simplement : "Information non disponible dans la base technique actuelle."`;
 
     if (retrievedContext) {
       systemContent += `\n\n--- CONTEXTE TECHNIQUE RÉCUPÉRÉ (RAG) ---\n${retrievedContext}\n--- FIN DU CONTEXTE ---`;
@@ -116,14 +127,14 @@ RÈGLES D'INTERACTION :
     const completion = await groq.chat.completions.create({
       messages,
       model: 'llama-3.3-70b-versatile',
-      temperature: 0.2, // Température baissée pour plus de précision/moins de créativité
-      max_tokens: 512,  // Réduit pour forcer la concision
+      temperature: 0.1,
+      max_tokens: 256,
     });
 
     const text = completion.choices[0]?.message?.content;
     if (text) {
       return { 
-        text, 
+        text: text.trim(), 
         provider: `Groq/Llama-3.3 + Orchestrateur (${ragMetadata})` 
       };
     }
