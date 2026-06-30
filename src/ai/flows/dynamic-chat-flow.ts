@@ -1,6 +1,6 @@
 /**
- * @fileOverview Flux de chat VisioNode Core V5.1.
- * Optimisé pour l'identification forcée et l'affichage des actifs multimédias.
+ * @fileOverview Flux de chat VisioNode Core V5.2.
+ * Optimisé pour la citation systématique des sources et l'affichage multimédia.
  */
 
 import Groq from 'groq-sdk';
@@ -83,8 +83,9 @@ export async function dynamicChat(input: ChatInput): Promise<ChatOutput> {
 
   const context = ragResults.map(r => {
     const source = r.metadata?.origin || 'BASE';
+    const path = r.metadata?.relPath || 'inconnu';
     const type = r.metadata?.isMedia ? '[MÉDIA_DISPONIBLE]' : '[DOCUMENT_TEXTE]';
-    return `${type} [SOURCE: ${source}] : ${r.document}`;
+    return `${type} [SOURCE: ${source}] [FICHIER: ${path}] : ${r.document}`;
   }).join('\n\n');
 
   try {
@@ -94,8 +95,8 @@ export async function dynamicChat(input: ChatInput): Promise<ChatOutput> {
 
 CONSIGNES STRICTES :
 1. CONCISION : 2 phrases maximum.
-2. MULTIMÉDIA : Vous avez accès à la banque d'images. Si un document [MÉDIA_DISPONIBLE] est présent dans le contexte, vous devez confirmer que vous l'affichez à l'utilisateur. Ne dites JAMAIS que vous n'avez pas accès aux photos si un média est listé ci-dessous.
-3. SOURCES : Citez toujours le fichier source du registre physique.
+2. CITATION SOURCE : Vous devez obligatoirement citer le nom du fichier source trouvé dans le contexte (ex: "D'après items/ahmed.json..." ou "Selon bank/photo.jpg...").
+3. MULTIMÉDIA : Si un document [MÉDIA_DISPONIBLE] est présent, confirmez que vous l'affichez. Ne dites JAMAIS que vous n'avez pas accès aux photos si un média est listé.
 
 ÉTAT SYSTÈME :
 - Mode : ${systemState.mode}
@@ -120,7 +121,7 @@ CONSIGNES STRICTES :
     if (text) {
       return { 
         text: text.trim(), 
-        provider: `Groq LPU + Pro-Search V5`,
+        provider: `Groq LPU + Pro-Search V5.2`,
         media: detectedMedia
       };
     }
