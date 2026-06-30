@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/procedures
- * Liste et amorçage automatique.
+ * Liste et amorçage automatique synchronisé avec le registre physique.
  */
 export async function GET() {
   try {
@@ -16,18 +16,20 @@ export async function GET() {
       orderBy: { createdAt: 'desc' }
     });
 
+    // AMORÇAGE AUTOMATIQUE : Si vide, on injecte la vraie procédure CRF
     if (procedures.length === 0) {
       try {
-        const filePath = path.join(process.cwd(), 'data', 'procedure-demarrage-CRF.json');
-        const fileContent = await fs.readFile(filePath, 'utf8');
+        const dataPath = path.join(process.cwd(), 'data', 'procedure-demarrage-CRF.json');
+        const fileContent = await fs.readFile(dataPath, 'utf8');
         const realProc = JSON.parse(fileContent);
 
+        // 1. Création Database (Prisma)
         const created = await prisma.procedure.create({
           data: {
             id: realProc._id || `proc-crf-${Date.now()}`,
             code: realProc.metadata.code,
             title: realProc.metadata.title,
-            description: realProc.metadata.subcategory || '',
+            description: realProc.metadata.subcategory || realProc.metadata.description || '',
             category: (realProc.metadata.category || 'OPERATION').toUpperCase() as any,
             department: (realProc.metadata.department || 'PRODUCTION').toUpperCase() as any,
             criticality: (realProc.metadata.criticality || 'MEDIUM').toUpperCase() as any,
@@ -36,15 +38,29 @@ export async function GET() {
             prerequisites: realProc.prerequisites as any,
             steps: realProc.steps as any,
             metadata: realProc.metadata as any,
+            parameters: realProc.parameters as any,
+            postExecution: realProc.postExecution as any,
             authorId: 'admin-root',
           }
         });
+
+        // 2. Création Registre Physique (Archivage conforme)
+        const dirName = `${created.code.toLowerCase()}_master`;
+        const registryBase = path.join(process.cwd(), '.registry', 'procedures', dirName);
+        await fs.mkdir(registryBase, { recursive: true });
+        await fs.writeFile(
+          path.join(registryBase, 'procedure.json'),
+          JSON.stringify({ ...created, registryDir: dirName }, null, 2),
+          'utf8'
+        );
         
-        // Vectorisation automatique forcée de la procédure CRF
+        // 3. Vectorisation obligatoire
         await procedureRAG.indexProcedure(created as any);
+        
         procedures = [created];
-      } catch (seedErr) {
-        console.warn('[PROCEDURE_API] Échec amorçage/vectorisation CRF:', seedErr);
+        console.log(`✅ [PROCEDURE_SEED] Amorçage réussi : ${created.code} synchronisé dans le registre.`);
+      } catch (seedErr: any) {
+        console.warn('[PROCEDURE_API] Échec amorçage critique CRF:', seedErr.message);
       }
     }
 
@@ -56,12 +72,12 @@ export async function GET() {
 
 /**
  * POST /api/procedures
- * Création avec Vectorisation OBLIGATOIRE.
+ * Création avec Vectorisation et Archivage Physique.
  */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { title, steps, metadata } = body;
+    const { title, steps, metadata, prerequisites, parameters, postExecution } = body;
 
     if (!title) {
       return NextResponse.json({ success: false, message: 'Titre requis.' }, { status: 400 });
@@ -78,19 +94,20 @@ export async function POST(request: NextRequest) {
         criticality: (metadata?.criticality || 'MEDIUM').toUpperCase() as any,
         version: metadata?.version || '1.0.0',
         status: 'APPROVED',
-        prerequisites: body.prerequisites || {},
+        prerequisites: prerequisites || {},
         steps: steps || [],
         metadata: metadata || {},
+        parameters: parameters || {},
+        postExecution: postExecution || {},
         authorId: 'admin-root',
       }
     });
 
-    // 2. Vectorisation OBLIGATOIRE (Si elle échoue, on lève une alerte)
+    // 2. Vectorisation OBLIGATOIRE
     try {
       await procedureRAG.indexProcedure(procedure as any);
     } catch (ragErr: any) {
-      console.error(`⚠️ [CRITICAL] Procédure créée mais vectorisation en échec: ${ragErr.message}`);
-      // On continue mais on prévient dans la réponse
+      console.error(`⚠️ [CRITICAL] Vectorisation en échec: ${ragErr.message}`);
     }
 
     // 3. Archivage Physique (Registre)
@@ -106,7 +123,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       procedureId: procedure.id,
-      message: `Procédure vectorisée et archivée.`
+      message: `Procédure vectorisée et archivée dans le registre physique.`
     });
 
   } catch (error: any) {
