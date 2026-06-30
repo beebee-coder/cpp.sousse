@@ -23,7 +23,8 @@ import {
   CheckCircle2,
   X,
   Volume2,
-  Undo2
+  Undo2,
+  Type
 } from 'lucide-react';
 
 import { Card } from '@/components/ui/card';
@@ -187,8 +188,8 @@ export default function DatasetPage() {
     let instruction = "";
     if (type === 'question') instruction = "Dites le symptôme.";
     else if (type === 'answer') instruction = "Dites la résolution.";
-    else if (type === 'procTitle') instruction = "Titre de la procédure ?";
-    else if (type === 'stepTitle') instruction = `Action étape ${index! + 1}.`;
+    else if (type === 'procTitle') instruction = "Quel est le titre de la procédure ?";
+    else if (type === 'stepTitle') instruction = `Action pour l'étape ${index! + 1}.`;
     else if (type === 'stepDescription') instruction = "Détails de l'opération ?";
 
     if (instruction) voice.speak(instruction);
@@ -224,10 +225,11 @@ export default function DatasetPage() {
         });
 
         if (res.ok) {
-          toast({ title: "Procédure sauvegardée" });
+          toast({ title: "Procédure sauvegardée dans le registre" });
           setProcTitle('');
           setProcSteps([{ id: Date.now().toString(), title: '', duration: '', description: '', conditions: '', alarms: '' }]);
           setStepMediaData({});
+          setPhraseBuffers({});
         }
       } catch (err) {
         toast({ title: "Échec sauvegarde", variant: "destructive" });
@@ -369,15 +371,25 @@ export default function DatasetPage() {
                 </div>
               ) : (
                 <div className="space-y-6">
+                  {/* --- CHAMP TITRE DE LA PROCÉDURE --- */}
                   <div className="relative">
-                    <p className="text-[10px] font-bold text-primary mb-2 uppercase tracking-widest">Titre de la procédure industrielle</p>
+                    <div className="flex items-center gap-2 mb-2">
+                      <Type className="w-3.5 h-3.5 text-primary" />
+                      <p className="text-[10px] font-bold text-primary uppercase tracking-widest">Titre de la procédure industrielle</p>
+                    </div>
                     <Input 
                       value={procTitle} 
                       onChange={(e) => { setProcTitle(e.target.value); setPhraseBuffers(prev => ({...prev, procTitle: [e.target.value]})); }} 
                       onFocus={() => handleFieldFocus('procTitle')}
                       placeholder="MAINTENANCE CURATIVE UNITÉ A-4..." 
-                      className={cn("bg-background uppercase h-12 text-sm font-bold", activeUIField?.type === 'procTitle' && "ring-2 ring-primary")} 
+                      className={cn(
+                        "bg-background uppercase h-12 text-sm font-bold transition-all border-primary/20", 
+                        activeUIField?.type === 'procTitle' && "ring-2 ring-primary border-primary shadow-[0_0_15px_rgba(50,181,212,0.2)]"
+                      )} 
                     />
+                    <div className="absolute top-10 right-4">
+                      <Mic className={cn("w-4 h-4", activeUIField?.type === 'procTitle' ? "text-primary animate-bounce" : "text-muted-foreground/20")} />
+                    </div>
                   </div>
 
                   <div className="space-y-4">
