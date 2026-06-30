@@ -36,15 +36,16 @@ export default function ChatPage() {
   const { messages, sendMessage, clearChat, isLoading, currentProvider } = useChat();
   const [input, setInput] = useState('');
   const [autoSpeak, setAutoSpeak] = useState(false);
+  const [isRedirecting, setIsRedirecting] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const autoSendTimerRef = useRef<NodeJS.Timeout | null>(null);
   
   const handleSend = useCallback((text: string) => {
-    if (text.trim() && !isLoading) {
+    if (text.trim() && !isLoading && !isRedirecting) {
       sendMessage(text);
       setInput('');
     }
-  }, [isLoading, sendMessage]);
+  }, [isLoading, sendMessage, isRedirecting]);
 
   const handleManualSubmit = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -55,13 +56,13 @@ export default function ChatPage() {
   const handleVoiceResult = useCallback((text: string) => {
     setInput(text);
     if (autoSendTimerRef.current) clearTimeout(autoSendTimerRef.current);
-    if (text.trim() && !isLoading) {
+    if (text.trim() && !isLoading && !isRedirecting) {
       autoSendTimerRef.current = setTimeout(() => {
         handleSend(text);
         autoSendTimerRef.current = null;
       }, 3000);
     }
-  }, [isLoading, handleSend]);
+  }, [isLoading, handleSend, isRedirecting]);
 
   const voice = useVoice({
     onResult: handleVoiceResult,
@@ -69,14 +70,18 @@ export default function ChatPage() {
     lang: 'fr-FR'
   });
 
-  // ✅ AUTO-NAVIGATION : Redirige vers la procédure dès qu'elle est détectée
+  // ✅ AUTO-NAVIGATION AMÉLIORÉE : Redirige vers la procédure dès qu'elle est confirmée
   useEffect(() => {
     if (messages.length > 0 && !isLoading) {
       const lastMsg = messages[messages.length - 1];
       if (lastMsg.role === 'model' && lastMsg.procedureId) {
+        setIsRedirecting(true);
+        console.log(`🚀 [CHAT_NAV] Détection d'une procédure active : ${lastMsg.procedureId}. Initialisation du transfert.`);
+        
         const timer = setTimeout(() => {
           router.push(`/procedures/${lastMsg.procedureId}/execute`);
-        }, 2000); // Délai de 2s pour laisser l'utilisateur lire la confirmation
+        }, 1500); 
+        
         return () => clearTimeout(timer);
       }
     }
@@ -201,7 +206,7 @@ export default function ChatPage() {
                   variant="ghost" 
                   size="icon" 
                   onClick={toggleMic} 
-                  disabled={!voice.isSupported || isLoading} 
+                  disabled={!voice.isSupported || isLoading || isRedirecting} 
                   className={cn(
                     "h-9 w-9 sm:h-10 sm:w-10 transition-all", 
                     voice.isListening ? "bg-red-500/20 text-red-500 border border-red-500/50" : "text-primary hover:bg-primary/10"
@@ -215,11 +220,11 @@ export default function ChatPage() {
                     if (autoSendTimerRef.current) clearTimeout(autoSendTimerRef.current);
                     setInput(e.target.value);
                   }} 
-                  placeholder={voice.isListening ? "JE VOUS ÉCOUTE..." : (isLoading ? "RÉFLEXION..." : "COMMANDE SYSTÈME OU VOCALE...")} 
+                  placeholder={isRedirecting ? "TRANSFERT EN COURS..." : (voice.isListening ? "JE VOUS ÉCOUTE..." : (isLoading ? "RÉFLEXION..." : "COMMANDE SYSTÈME OU VOCALE..."))} 
                   className="flex-1 bg-transparent border-none focus-visible:ring-0 font-code uppercase text-xs sm:text-sm h-9 sm:h-10" 
-                  disabled={isLoading} 
+                  disabled={isLoading || isRedirecting} 
                 />
-                <Button type="submit" size="icon" disabled={isLoading || !input.trim()} className="bg-primary text-primary-foreground hover:bg-primary/90 h-9 w-9 sm:h-10 sm:w-10">
+                <Button type="submit" size="icon" disabled={isLoading || !input.trim() || isRedirecting} className="bg-primary text-primary-foreground hover:bg-primary/90 h-9 w-9 sm:h-10 sm:w-10">
                   {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                 </Button>
               </form>

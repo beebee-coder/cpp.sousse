@@ -1,6 +1,6 @@
 /**
- * @fileOverview Moteur de recherche professionnel VisioNode Pro-Search V5.1.
- * Version : Gestion Hybride Chroma/Weaviate et Vectorisation Automatique.
+ * @fileOverview Moteur de recherche professionnel VisioNode Pro-Search V5.2.
+ * Version : Détection d'ID de procédure améliorée pour le transfert automatique.
  */
 
 import path from 'path';
@@ -81,10 +81,20 @@ export function fallbackSemanticSearch(query: string, nResults = 5, componentFil
         queryTokens.forEach(token => { if (searchSpace.includes(token)) score += 10; });
 
         if (score > 5) {
+          // Extraire l'ID de procédure si présent dans les données
+          const procedureId = data.procedureId || data.knowledgeId || (file.startsWith('proc-') ? file.replace('.json', '') : undefined);
+          
           results.push({
             id: file,
             document: `${data.label || data.title || ''}\n${data.details || data.content || ''}`,
-            metadata: { ...data.metadata, title: data.title, origin: 'PHY_REGISTRY', relPath: `items/${file}` },
+            metadata: { 
+              ...data.metadata, 
+              title: data.title, 
+              origin: 'PHY_REGISTRY', 
+              relPath: `items/${file}`,
+              procedureId: procedureId,
+              type: data.type || (procedureId ? 'procedure' : 'text')
+            },
             distance: 0,
             score: Math.min(score / 100, 0.95)
           });

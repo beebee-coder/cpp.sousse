@@ -1,6 +1,6 @@
 /**
- * @fileOverview Flux de chat VisioNode Core V5.4.
- * Passage automatique vers les procédures dynamiques sans bouton.
+ * @fileOverview Flux de chat VisioNode Core V5.5.
+ * Passage automatique vers les procédures dynamiques avec détection d'ID robuste.
  */
 
 import Groq from 'groq-sdk';
@@ -17,6 +17,7 @@ type ChatMessage = {
     url: string;
     type: 'image' | 'video';
   };
+  procedureId?: string;
 };
 
 type ChatInput = {
@@ -68,9 +69,11 @@ export async function dynamicChat(input: ChatInput): Promise<ChatOutput> {
   let detectedProcedureId: string | undefined = undefined;
   
   if (ragResults.length > 0) {
-    // Chercher une procédure en priorité
-    const procDoc = ragResults.find(r => r.metadata?.procedureId);
-    if (procDoc) detectedProcedureId = procDoc.metadata?.procedureId;
+    // Chercher une procédure en priorité (détection robuste via metadata ou ID)
+    const procDoc = ragResults.find(r => r.metadata?.procedureId || r.metadata?.knowledgeId || r.id.startsWith('proc-'));
+    if (procDoc) {
+      detectedProcedureId = procDoc.metadata?.procedureId || procDoc.metadata?.knowledgeId || procDoc.id.replace('.json', '');
+    }
 
     // Chercher un média
     const mediaDoc = ragResults.find(r => r.metadata?.isMedia === true);
@@ -90,7 +93,8 @@ export async function dynamicChat(input: ChatInput): Promise<ChatOutput> {
   const context = ragResults.map(r => {
     const source = r.metadata?.origin || 'BASE';
     const path = r.metadata?.relPath || 'inconnu';
-    const type = r.metadata?.procedureId ? '[PROCÉDURE_GUIDÉ]' : (r.metadata?.isMedia ? '[MÉDIA_DISPONIBLE]' : '[DOCUMENT_TEXTE]');
+    const isProc = r.metadata?.procedureId || r.metadata?.knowledgeId || r.id.startsWith('proc-');
+    const type = isProc ? '[PROCÉDURE_GUIDÉ]' : (r.metadata?.isMedia ? '[MÉDIA_DISPONIBLE]' : '[DOCUMENT_TEXTE]');
     return `${type} [SOURCE: ${source}] [FICHIER: ${path}] : ${r.document}`;
   }).join('\n\n');
 
@@ -103,7 +107,7 @@ CONSIGNES STRICTES :
 1. CONCISION : 2 phrases maximum.
 2. DISCRÉTION DES SOURCES : Ne mentionnez JAMAIS les noms techniques des fichiers, les extensions ou les répertoires.
 3. MULTIMÉDIA : Si un document [MÉDIA_DISPONIBLE] est présent, confirmez son affichage.
-4. TRANSITION PROCÉDURE : Si vous identifiez une [PROCÉDURE_GUIDÉ] pertinente dans le contexte, confirmez que vous initialisez immédiatement le transfert vers le cockpit interactif.
+4. TRANSITION PROCÉDURE : Si vous identifiez une [PROCÉDURE_GUIDÉ] pertinente dans le contexte, confirmez que vous initialisez immédiatement le transfert vers le cockpit interactif. Utilisez des termes comme "J'initialise le transfert" ou "Je lance la procédure".
 
 ÉTAT SYSTÈME :
 - Mode : ${systemState.mode}
@@ -128,7 +132,7 @@ CONSIGNES STRICTES :
     if (text) {
       return { 
         text: text.trim(), 
-        provider: `Groq LPU + Pro-Search V5.4`,
+        provider: `Groq LPU + Pro-Search V5.5`,
         media: detectedMedia,
         procedureId: detectedProcedureId
       };
