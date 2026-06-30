@@ -1,26 +1,6 @@
 /**
  * @fileOverview Moteur de recherche professionnel VisioNode Pro-Search.
- * Intègre 20 fonctionnalités avancées : 
- * 1. Recherche Hybride (Vectorielle + Lexicale)
- * 2. Pondération Multi-champs (Title Boosting)
- * 3. Tokenisation Avancée
- * 4. Filtrage de Stop-words
- * 5. Recherche Floue (Fuzzy-ish partial match)
- * 6. Normalisation de Score (Relevance Ranking)
- * 7. Gestion de la Densité de mots
- * 8. Priorisation des Tags
- * 9. Support des Prénoms/Noms propres
- * 10. Recherche par Phrases exactes
- * 11. Fallback Robuste
- * 12. Déduplication Sémantique
- * 13. Audit de Provenance (Metadata Trace)
- * 14. Support Multi-langues (Normalisation NFD)
- * 15. Filtrage par Composant
- * 16. Tri par Récence vs Pertinence
- * 17. Limitation de Bruit (Thresholding)
- * 18. Sommaire de Contexte (System Awareness)
- * 19. Cache de Requête
- * 20. Analyse de Proximité
+ * Version 4.0 : Intègre l'indexation sémantique des noms de fichiers.
  */
 
 import path from 'path';
@@ -85,13 +65,14 @@ function tokenize(text: string): string[] {
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '') // Supprime accents
-    .replace(/[^a-z0-9\s]/g, ' ') // Garde alphanum
+    .replace(/[^a-z0-9\s]/g, ' ') // Garde alphanum (remplace les underscores/tirets par espaces)
     .split(/\s+/)
     .filter(word => word.length > 2); // 4. STOP-WORDS (simple)
 }
 
 /**
  * 2. PONDÉRATION (BOOSTING) & 6. RELEVANCE RANKING
+ * V4.0 : Inclut l'analyse du nom du fichier
  */
 export function fallbackSemanticSearch(query: string, nResults = 5, componentFilter?: string): SearchResult[] {
   if (!fs.existsSync(REGISTRY_ITEMS_DIR)) return [];
@@ -107,6 +88,9 @@ export function fallbackSemanticSearch(query: string, nResults = 5, componentFil
       const content = fs.readFileSync(path.join(REGISTRY_ITEMS_DIR, file), 'utf8');
       const data = JSON.parse(content);
       
+      const fileName = file.replace('.json', '');
+      const fileTokens = tokenize(fileName);
+      
       const title = String(data.title || data.label || '').toLowerCase();
       const body = String(data.details || data.content || '').toLowerCase();
       const tags = Array.isArray(data.tags) ? data.tags.join(' ').toLowerCase() : '';
@@ -115,14 +99,20 @@ export function fallbackSemanticSearch(query: string, nResults = 5, componentFil
 
       // 10. RECHERCHE PAR PHRASE EXACTE (Boost massif)
       if (title.includes(query.toLowerCase())) score += 50;
+      if (fileName.includes(query.toLowerCase())) score += 60; // Boost nom de fichier exact
       if (body.includes(query.toLowerCase())) score += 20;
 
       // 7. DENSITÉ & 2. BOOSTING PAR CHAMP
       queryTokens.forEach(token => {
+        // Match Nom de Fichier (Poids 15) - NOUVEAU
+        if (fileName.includes(token)) score += 15;
+        
         // Match Titre (Poids 10)
         if (title.includes(token)) score += 10;
+        
         // Match Tags (Poids 5)
         if (tags.includes(token)) score += 5;
+        
         // Match Corps (Poids 2)
         if (body.includes(token)) score += 2;
       });
@@ -138,7 +128,7 @@ export function fallbackSemanticSearch(query: string, nResults = 5, componentFil
           metadata: { 
             ...data.metadata, 
             title: data.title, 
-            source: file, 
+            source_file: file, 
             origin: 'PHY_REGISTRY',
             relevance_score: score 
           },
@@ -238,7 +228,7 @@ export async function semanticSearch(options: SearchOptions): Promise<SearchResu
 export async function searchAcrossCollections(query: string, nResultsPerCollection = 3): Promise<SearchResult[]> {
   const mergedResults: SearchResult[] = [];
 
-  // Phase lexicale
+  // Phase lexicale (Recherche physique incluant les noms de fichiers)
   const physical = fallbackSemanticSearch(query, nResultsPerCollection * 2);
   mergedResults.push(...physical);
 

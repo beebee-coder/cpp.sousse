@@ -1,4 +1,3 @@
-
 import fs from 'fs';
 import path from 'path';
 
@@ -171,15 +170,26 @@ export const postgresClient = {
 
     items.forEach(newItem => {
       const parsed = typeof newItem.content === 'string' ? JSON.parse(newItem.content) : newItem.content;
-      const baseName = parsed.title || newItem.id;
-      const safeId = baseName.toLowerCase().replace(/[^a-zA-Z0-9-]/g, '_');
+      
+      // On utilise le titre pour créer un nom de fichier hautement descriptif pour le moteur de recherche
+      const baseName = parsed.title || parsed.label || newItem.id;
+      const safeId = baseName
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '');
+        
       const filePath = path.join(itemsDir, `${safeId}.json`);
+      
       fs.writeFileSync(filePath, JSON.stringify({
         ...newItem,
         label: parsed.label || "",
         details: parsed.details || "",
         title: parsed.title || baseName
       }, null, 2));
+      
+      console.log(`💾 [POSTGRES_CLIENT] Fichier descriptif créé : ${safeId}.json`);
     });
   },
 

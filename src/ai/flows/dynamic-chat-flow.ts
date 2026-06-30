@@ -1,6 +1,6 @@
 /**
  * @fileOverview Flux de chat VisioNode Core avec expansion de requête contextuelle.
- * Version 3.0 : Intègre le "Query Rewriting" professionnel pour le RAG.
+ * Version 4.0 : Intègre le "Source Awareness" basé sur les noms de fichiers.
  */
 
 import Groq from 'groq-sdk';
@@ -47,7 +47,7 @@ async function expandQueryWithContext(message: string, history: ChatMessage[]): 
           },
           { role: 'user', content: `Historique:\n${recentHistory}\n\nQuestion à reformuler: ${message}` }
         ],
-        model: 'llama-3.1-8b-instant', // Modèle rapide pour l'expansion
+        model: 'llama-3.1-8b-instant', 
         temperature: 0.1,
         max_tokens: 50
       });
@@ -78,7 +78,7 @@ async function retrieveRAGContext(message: string, history: ChatMessage[]): Prom
       if (results.length > 0) {
         const context = results.map(r => {
           const typeLabel = r.type === 'qa' ? 'Q/R' : 'PROCÉDURE';
-          return `[${typeLabel}] [${r.title}] : ${r.content}`;
+          return `[${typeLabel}] [TITRE: ${r.title}] : ${r.content}`;
         }).join('\n\n');
         return { context, metadata: `WEAVIATE_CLOUD (${results.length} DOCS)` };
       }
@@ -87,17 +87,17 @@ async function retrieveRAGContext(message: string, history: ChatMessage[]): Prom
     }
   }
 
-  // 💻 MODE LOCAL : ChromaDB + Registre Physique Professionnel
+  // 💻 MODE LOCAL : ChromaDB + Registre Physique Professionnel (V4.0 Source Awareness)
   try {
     const results = await searchAcrossCollections(expandedQuery, 4);
     if (results.length > 0) {
       const context = results.map(r => {
         const title = r.metadata?.title || 'DOCUMENT_TECHNIQUE';
-        const origin = r.metadata?.origin || 'UNSET';
+        const fileName = r.metadata?.source_file || 'ID_INCONNU';
         const score = Math.round((r.score || 0) * 100);
-        return `[SOURCE: ${title}] [SCORE: ${score}%] [ORIGINE: ${origin}] : ${r.document}`;
+        return `[FICHIER: ${fileName}] [TITRE: ${title}] [PERTINENCE: ${score}%] : ${r.document}`;
       }).join('\n\n');
-      return { context, metadata: `RAG_PRO_SEARCH (${results.length} DOCS)` };
+      return { context, metadata: `PRO-SEARCH_V4 (${results.length} DOCS)` };
     }
   } catch (err: any) {
     console.warn('[CHAT_FLOW] Local search failure :', err.message);
@@ -121,8 +121,8 @@ export async function dynamicChat(input: ChatInput): Promise<ChatOutput> {
 
 CONSIGNES :
 1. CONCISION : Répondez en 1 ou 2 phrases. 
-2. EXACTITUDE : Si l'info est dans le RAG, utilisez-la. Sinon, dites "Non répertorié".
-3. IDENTITÉ : Identifiez les personnes (ex: Ahmed) mentionnées dans les sources.
+2. EXACTITUDE : Si l'info est dans le RAG, utilisez-la. Mentionnez le nom du fichier si pertinent (ex: "Selon ahmed_abbes.json...").
+3. IDENTITÉ : Identifiez les personnes et leur rôle via les sources.
 
 ÉTAT SYSTÈME :
 - Mode : ${systemState.mode}
