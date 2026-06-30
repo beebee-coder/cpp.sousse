@@ -1,4 +1,3 @@
-
 import type { NextConfig } from 'next';
 
 const isDesktop = process.env.TAURI_ENV === 'true';
@@ -9,7 +8,6 @@ const nextConfig: NextConfig = {
   output: isDesktop ? 'export' : undefined,
   
   // Modules natifs et lourds à exclure strictement du bundle d'exécution pour éviter les erreurs de compilation.
-  // serverExternalPackages remplace avantageusement les externals Webpack manuels dans Next.js 14/15.
   serverExternalPackages: [
     'onnxruntime-node', 
     'chromadb', 
@@ -19,7 +17,9 @@ const nextConfig: NextConfig = {
     'canvas',
     'jsdom',
     'bufferutil',
-    'utf-8-validate'
+    'utf-8-validate',
+    'prisma',
+    '@prisma/client'
   ],
   
   images: {
@@ -39,9 +39,6 @@ const nextConfig: NextConfig = {
   },
 
   productionBrowserSourceMaps: false,
-  
-  // Suppression du bloc webpack: (config) => { ... } car il faisait double emploi 
-  // avec serverExternalPackages, ce qui provoquait des instabilités au démarrage.
 };
 
 export default nextConfig;

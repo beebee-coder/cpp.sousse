@@ -1,16 +1,14 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model User {
-  id         String          @id @default(cuid())
+  id         String          @id @default(uuid())
   firstName  String
   lastName   String
   password   String
@@ -20,32 +18,28 @@ model User {
   createdAt  DateTime        @default(now())
   updatedAt  DateTime        @updatedAt
   lastSyncAt DateTime?
-
-  knowledge KnowledgeItem[]
+  items      KnowledgeItem[]
 
   @@map("users")
 }
 
-/// Stockage unifié des connaissances : paires Q/R et procédures multi-étapes.
-/// Utilisé par le RAG IA (Groq + Weaviate) et synchronisé vers ChromaDB local.
 model KnowledgeItem {
-  id          String   @id @default(cuid())
+  id          String   @id @default(uuid())
   userId      String
-  type        String   // "qa" | "procedure"
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type        String
   title       String
-  question    String?  // Pour type = "qa"
-  answer      String?  // Pour type = "qa"
-  steps       Json?    // Pour type = "procedure" : [{order, instruction, mediaUrl?}]
-  tags        String[] // Mots-clés pour la recherche
+  question    String?
+  answer      String?
+  steps       Json?
+  tags        String[]
   category    String?
-  difficulty  String   @default("medium") // "easy" | "medium" | "hard"
+  difficulty  String   @default("medium")
   isPublic    Boolean  @default(true)
-  syncedLocal Boolean  @default(false) // true = déjà injecté dans ChromaDB local
-  vectorId    String?  // ID dans Weaviate Cloud (pour déduplication)
+  syncedLocal Boolean  @default(false)
+  vectorId    String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([type])

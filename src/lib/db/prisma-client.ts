@@ -1,9 +1,8 @@
-
 import { PrismaClient } from '@prisma/client';
 
 /**
- * @fileOverview Initialisation ultra-robuste du client Prisma.
- * Gère les environnements où la DATABASE_URL peut être absente ou instable.
+ * @fileOverview Initialisation centralisée du client Prisma.
+ * Gère le singleton en développement pour éviter l'épuisement des connexions.
  */
 
 const globalForPrisma = global as unknown as { prisma: PrismaClient };
@@ -16,7 +15,7 @@ const createPrismaClient = () => {
   }
 
   return new PrismaClient({
-    log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
+    log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
     datasources: {
       db: {
         url: dbUrl,
