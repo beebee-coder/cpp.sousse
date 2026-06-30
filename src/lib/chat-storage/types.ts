@@ -7,6 +7,11 @@ export type ChatMessage = {
   content: string;
   provider?: string;
   timestamp: number;
+  media?: {
+    url: string;
+    type: 'image' | 'video';
+  };
+  procedureId?: string;
 };
 
 export interface ChatStorage {

@@ -1,6 +1,6 @@
 /**
- * @fileOverview Flux de chat VisioNode Core V5.2.
- * Optimisé pour la concision et la discrétion des sources techniques.
+ * @fileOverview Flux de chat VisioNode Core V5.3.
+ * Optimisé pour la navigation directe vers les procédures dynamiques.
  */
 
 import Groq from 'groq-sdk';
@@ -9,8 +9,6 @@ import {
   getSystemContextSummary
 } from '../../lib/chroma';
 import { postgresClient } from '../../lib/db/postgres-client';
-
-const IS_CLOUD = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
 
 type ChatMessage = {
   role: 'user' | 'model';
@@ -33,6 +31,7 @@ type ChatOutput = {
     url: string;
     type: 'image' | 'video';
   };
+  procedureId?: string;
 };
 
 async function expandQueryWithContext(message: string, history: ChatMessage[]): Promise<string> {
@@ -60,13 +59,20 @@ export async function dynamicChat(input: ChatInput): Promise<ChatOutput> {
   const systemState = await getSystemContextSummary();
   const expandedQuery = await expandQueryWithContext(input.message, input.history);
   
-  // Récupération RAG (Limite étendue pour capturer textes + images)
-  const ragResults = await searchAcrossCollections(expandedQuery, 8);
+  // Récupération RAG (Limite étendue pour capturer textes + images + procédures)
+  const ragResults = await searchAcrossCollections(expandedQuery, 10);
   
   // Extraction d'un média potentiel si pertinent
   let detectedMedia: { url: string; type: 'image' | 'video' } | undefined = undefined;
+  // Extraction d'un ID de procédure pour le guide dynamique
+  let detectedProcedureId: string | undefined = undefined;
   
   if (ragResults.length > 0) {
+    // Chercher une procédure en priorité
+    const procDoc = ragResults.find(r => r.metadata?.procedureId);
+    if (procDoc) detectedProcedureId = procDoc.metadata?.procedureId;
+
+    // Chercher un média
     const mediaDoc = ragResults.find(r => r.metadata?.isMedia === true);
     if (mediaDoc && mediaDoc.metadata?.relPath) {
       try {
@@ -84,7 +90,7 @@ export async function dynamicChat(input: ChatInput): Promise<ChatOutput> {
   const context = ragResults.map(r => {
     const source = r.metadata?.origin || 'BASE';
     const path = r.metadata?.relPath || 'inconnu';
-    const type = r.metadata?.isMedia ? '[MÉDIA_DISPONIBLE]' : '[DOCUMENT_TEXTE]';
+    const type = r.metadata?.procedureId ? '[PROCÉDURE_GUIDÉ]' : (r.metadata?.isMedia ? '[MÉDIA_DISPONIBLE]' : '[DOCUMENT_TEXTE]');
     return `${type} [SOURCE: ${source}] [FICHIER: ${path}] : ${r.document}`;
   }).join('\n\n');
 
@@ -95,8 +101,9 @@ export async function dynamicChat(input: ChatInput): Promise<ChatOutput> {
 
 CONSIGNES STRICTES :
 1. CONCISION : 2 phrases maximum.
-2. DISCRÉTION DES SOURCES : Ne mentionnez JAMAIS les noms techniques des fichiers, les extensions (.json, .jpg, .png) ou les répertoires du registre (ex: items/, bank/) dans votre réponse textuelle. Répondez naturellement comme un expert qui possède le savoir.
-3. MULTIMÉDIA : Si un document [MÉDIA_DISPONIBLE] est présent, confirmez simplement son affichage (ex: "Voici la photo demandée"). Ne dites JAMAIS que vous n'avez pas accès aux photos si un média est listé dans le contexte récupéré.
+2. DISCRÉTION DES SOURCES : Ne mentionnez JAMAIS les noms techniques des fichiers, les extensions ou les répertoires.
+3. MULTIMÉDIA : Si un document [MÉDIA_DISPONIBLE] est présent, confirmez son affichage.
+4. TRANSITION PROCÉDURE : Si vous identifiez une [PROCÉDURE_GUIDÉ] pertinente dans le contexte, invitez explicitement l'utilisateur à lancer l'exécution interactive via le bouton qui apparaîtra.
 
 ÉTAT SYSTÈME :
 - Mode : ${systemState.mode}
@@ -122,7 +129,8 @@ CONSIGNES STRICTES :
       return { 
         text: text.trim(), 
         provider: `Groq LPU + Pro-Search V5.2`,
-        media: detectedMedia
+        media: detectedMedia,
+        procedureId: detectedProcedureId
       };
     }
   } catch (err: any) {

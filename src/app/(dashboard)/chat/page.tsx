@@ -17,7 +17,8 @@ import {
   Volume2,
   VolumeX,
   ImageIcon,
-  Timer
+  Timer,
+  PlayCircle
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,15 +28,16 @@ import { Badge } from '@/components/ui/badge';
 import { useChat } from '@/hooks/use-chat';
 import { useVoice } from '@/hooks/use-voice';
 import { cn } from '@/lib/utils';
+import { useRouter } from 'next/navigation';
 
 export default function ChatPage() {
+  const router = useRouter();
   const { messages, sendMessage, clearChat, isLoading, currentProvider } = useChat();
   const [input, setInput] = useState('');
   const [autoSpeak, setAutoSpeak] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const autoSendTimerRef = useRef<NodeJS.Timeout | null>(null);
   
-  // Stabiliser le callback d'envoi pour éviter les boucles
   const handleSend = useCallback((text: string) => {
     if (text.trim() && !isLoading) {
       sendMessage(text);
@@ -51,10 +53,7 @@ export default function ChatPage() {
 
   const handleVoiceResult = useCallback((text: string) => {
     setInput(text);
-    
-    // Détection de fin de phrase : 3s de silence
     if (autoSendTimerRef.current) clearTimeout(autoSendTimerRef.current);
-    
     if (text.trim() && !isLoading) {
       autoSendTimerRef.current = setTimeout(() => {
         handleSend(text);
@@ -69,14 +68,12 @@ export default function ChatPage() {
     lang: 'fr-FR'
   });
 
-  // Gestion du scroll auto
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages]);
 
-  // Gestion de la synthèse vocale découplée pour éviter les lags
   useEffect(() => {
     if (autoSpeak && messages.length > 0 && !isLoading) {
       const lastMsg = messages[messages.length - 1];
@@ -93,11 +90,6 @@ export default function ChatPage() {
     } else {
       voice.startListening();
     }
-  };
-
-  const handleClear = () => {
-    if (autoSendTimerRef.current) clearTimeout(autoSendTimerRef.current);
-    clearChat();
   };
 
   return (
@@ -117,7 +109,7 @@ export default function ChatPage() {
               {autoSpeak ? <Volume2 className="w-3.5 h-3.5 mr-2" /> : <VolumeX className="w-3.5 h-3.5 mr-2" />}
               <span className="hidden sm:inline">{autoSpeak ? "Audio ON" : "Audio OFF"}</span>
             </Button>
-            <Button variant="ghost" size="sm" onClick={handleClear} className="h-8 text-[9px] uppercase text-muted-foreground hover:text-destructive">
+            <Button variant="ghost" size="sm" onClick={clearChat} className="h-8 text-[9px] uppercase text-muted-foreground hover:text-destructive">
               <Trash2 className="w-3 h-3 sm:mr-2" />
               <span className="hidden sm:inline">Reset</span>
             </Button>
@@ -143,6 +135,24 @@ export default function ChatPage() {
                       <div className={cn("p-3 sm:p-4 rounded-sm font-code text-[11px] sm:text-sm leading-relaxed border shadow-sm relative group", m.role === 'user' ? "bg-primary/5 border-primary/20" : "bg-card/80 border-border")}>
                         {m.content}
                         
+                        {m.procedureId && (
+                          <div className="mt-4 p-4 border border-secondary/30 bg-secondary/5 rounded-sm flex flex-col gap-3 animate-in zoom-in-95 duration-500">
+                             <div className="flex items-center gap-2">
+                               <PlayCircle className="w-5 h-5 text-secondary animate-pulse" />
+                               <span className="text-[10px] font-bold text-secondary uppercase tracking-widest">Procédure Interactive Détectée</span>
+                             </div>
+                             <p className="text-[10px] font-code text-muted-foreground uppercase leading-tight">
+                               Le moteur de vision a identifié la séquence complète dans le registre. Cliquez ci-dessous pour lancer le cockpit.
+                             </p>
+                             <Button 
+                              onClick={() => router.push(`/procedures/${m.procedureId}/execute`)}
+                              className="bg-secondary text-secondary-foreground font-bold uppercase text-[10px] h-10 shadow-xl"
+                             >
+                               Lancer l'Exécution Réelle
+                             </Button>
+                          </div>
+                        )}
+
                         {m.media && (
                           <div className="mt-4 border border-primary/20 rounded-sm overflow-hidden bg-black/40 shadow-xl max-w-sm">
                             <div className="p-1 border-b border-primary/10 bg-primary/5 flex items-center gap-2">
@@ -172,37 +182,6 @@ export default function ChatPage() {
                 <div ref={scrollRef} />
               </div>
             </ScrollArea>
-
-            <div className="px-4 flex flex-col gap-1 shrink-0">
-               {voice.isListening && (
-                 <div className="flex items-center justify-between mb-1">
-                    <div className="flex items-center gap-2">
-                      <div className="w-1.5 h-1.5 bg-red-500 rounded-full animate-ping" />
-                      <span className="text-[8px] font-code text-red-500 uppercase font-bold">Écoute Active</span>
-                    </div>
-                    {input.trim() && (
-                      <div className="flex items-center gap-1.5">
-                         <Timer className="w-2.5 h-2.5 text-primary animate-pulse" />
-                         <span className="text-[8px] font-code text-primary uppercase">Envoi auto (silence détecté)...</span>
-                      </div>
-                    )}
-                 </div>
-               )}
-               {voice.isListening && (
-                 <div className="h-1 flex gap-0.5">
-                   {[...Array(30)].map((_, i) => (
-                     <div 
-                       key={i} 
-                       className="flex-1 bg-primary transition-all duration-75 rounded-full" 
-                       style={{ 
-                         height: `${Math.random() * voice.volume * 100}%`, 
-                         opacity: 0.3 + (voice.volume * 0.7) 
-                       }}
-                     />
-                   ))}
-                 </div>
-               )}
-            </div>
 
             <Card className="p-1.5 sm:p-2 border-primary/30 bg-black/60 shadow-2xl shrink-0">
               <form onSubmit={handleManualSubmit} className="flex gap-2">
@@ -246,7 +225,7 @@ export default function ChatPage() {
               <p className="text-[8px] font-code text-muted-foreground leading-tight uppercase">
                 &gt; Indexation : Items + Bank<br/>
                 &gt; Mode : Mains Libres<br/>
-                &gt; Statut : Opérationnel
+                &gt; Transition Directe : Actif
               </p>
             </Card>
             <ConnectionStatus service="GROQ" label="Moteur LPU" />
