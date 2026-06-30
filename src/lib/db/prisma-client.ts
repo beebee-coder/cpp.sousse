@@ -3,14 +3,25 @@ import { PrismaClient } from '@prisma/client';
 
 /**
  * @fileOverview Initialisation ultra-robuste du client Prisma.
- * Évite les crashs au démarrage si la base de données est instable.
+ * Gère les environnements où la DATABASE_URL peut être absente ou instable.
  */
 
 const globalForPrisma = global as unknown as { prisma: PrismaClient };
 
 const createPrismaClient = () => {
+  const dbUrl = process.env.DATABASE_URL;
+  
+  if (!dbUrl) {
+    console.warn('⚠️ [PRISMA] DATABASE_URL est absente. Les fonctionnalités DB seront désactivées.');
+  }
+
   return new PrismaClient({
     log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
+    datasources: {
+      db: {
+        url: dbUrl,
+      },
+    },
   });
 };
 

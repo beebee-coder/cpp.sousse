@@ -7,10 +7,12 @@ import { authAudit } from '@/lib/auth-audit';
 export const dynamic = 'force-dynamic';
 
 /**
- * Route d'authentification résiliente.
- * Retourne TOUJOURS du JSON pour éviter les erreurs de parsing côté client.
+ * Route d'authentification blindée.
+ * Garantit une réponse JSON même en cas de crash critique de la base de données.
  */
 export async function POST(request: NextRequest) {
+  const timestamp = new Date().toISOString();
+  
   try {
     const body = await request.json().catch(() => ({}));
     const email = String(body?.email ?? '').trim();
@@ -25,8 +27,11 @@ export async function POST(request: NextRequest) {
 
     authAudit.info('SIGNIN_ATTEMPT', { email });
 
-    // Appel au magasin d'authentification
-    const result = await authenticateUser(email, password);
+    // Tentative d'authentification via le magasin (Prisma/Neon)
+    const result = await authenticateUser(email, password).catch(err => {
+      console.error(`[AUTH_STORE_CRASH] ${timestamp}`, err);
+      return { success: false, error: 'DB_ERROR' as const };
+    });
 
     if (result.success && result.user) {
       try {
@@ -48,11 +53,11 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Gestion des erreurs métier
+    // Traduction des erreurs métier
     const errorMap: Record<string, { msg: string, status: number }> = {
       'NOT_APPROVED': { msg: 'Compte en attente d\'approbation administrateur.', status: 403 },
-      'DB_ERROR': { msg: 'La base de données est injoignable (Neon).', status: 503 },
-      'INVALID_CREDENTIALS': { msg: 'Identifiants incorrects.', status: 401 }
+      'DB_ERROR': { msg: 'La base de données Neon est actuellement injoignable.', status: 503 },
+      'INVALID_CREDENTIALS': { msg: 'Identifiants incorrects ou compte inconnu.', status: 401 }
     };
 
     const errorDetail = errorMap[result.error || 'INVALID_CREDENTIALS'];
@@ -63,13 +68,11 @@ export async function POST(request: NextRequest) {
     }, { status: errorDetail.status });
 
   } catch (err: any) {
-    console.error('[SIGNIN_CRITICAL_PANIC]', err);
-    authAudit.error('SIGNIN_CRITICAL_EXCEPTION', { error: err.message });
+    console.error(`[SIGNIN_FATAL_ERROR] ${timestamp}`, err);
     
-    // On garantit une réponse JSON même en cas de panique totale
     return new Response(JSON.stringify({ 
       success: false, 
-      message: 'Erreur critique interne du service d\'authentification.' 
+      message: 'Panique critique du service d\'authentification. Vérifiez la configuration Neon.' 
     }), { 
       status: 500,
       headers: { 'Content-Type': 'application/json' }
