@@ -1,6 +1,6 @@
 /**
  * @fileOverview Flux de chat VisioNode Core V5.2.
- * Optimisé pour la citation systématique des sources et l'affichage multimédia.
+ * Optimisé pour la concision et la discrétion des sources techniques.
  */
 
 import Groq from 'groq-sdk';
@@ -95,8 +95,8 @@ export async function dynamicChat(input: ChatInput): Promise<ChatOutput> {
 
 CONSIGNES STRICTES :
 1. CONCISION : 2 phrases maximum.
-2. CITATION SOURCE : Vous devez obligatoirement citer le nom du fichier source trouvé dans le contexte (ex: "D'après items/ahmed.json..." ou "Selon bank/photo.jpg...").
-3. MULTIMÉDIA : Si un document [MÉDIA_DISPONIBLE] est présent, confirmez que vous l'affichez. Ne dites JAMAIS que vous n'avez pas accès aux photos si un média est listé.
+2. DISCRÉTION DES SOURCES : Ne mentionnez JAMAIS les noms techniques des fichiers, les extensions (.json, .jpg, .png) ou les répertoires du registre (ex: items/, bank/) dans votre réponse textuelle. Répondez naturellement comme un expert qui possède le savoir.
+3. MULTIMÉDIA : Si un document [MÉDIA_DISPONIBLE] est présent, confirmez simplement son affichage (ex: "Voici la photo demandée"). Ne dites JAMAIS que vous n'avez pas accès aux photos si un média est listé dans le contexte récupéré.
 
 ÉTAT SYSTÈME :
 - Mode : ${systemState.mode}
