@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from 'react';
@@ -45,8 +44,8 @@ interface ProcedureStep {
   description: string;
   conditions: string;
   alarms: string;
-  images: string;
-  video: string;
+  imageRef?: string;
+  videoRef?: string;
 }
 
 interface QAItem {
@@ -75,7 +74,7 @@ export default function DatasetPage() {
   // Form States (Procedure)
   const [procTitle, setProcTitle] = useState('');
   const [procSteps, setProcSteps] = useState<ProcedureStep[]>([
-    { id: '1', title: '', duration: '', description: '', conditions: '', alarms: '', images: '', video: '' }
+    { id: '1', title: '', duration: '', description: '', conditions: '', alarms: '' }
   ]);
 
   // Media States
@@ -168,49 +167,7 @@ export default function DatasetPage() {
     setMounted(true);
   }, []);
 
-  // Gestion robuste du flux caméra
-  useEffect(() => {
-    const startStream = async () => {
-      if (!mediaModal.isOpen) return;
-      if (typeof window === 'undefined' || typeof navigator === 'undefined') return;
-      if (!navigator.mediaDevices?.getUserMedia) {
-        toast({ title: "Erreur Caméra", description: "L'accès caméra n'est pas disponible sur ce navigateur.", variant: "destructive" });
-        setMediaModal(prev => ({ ...prev, isOpen: false }));
-        return;
-      }
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-          video: true, 
-          audio: mediaModal.type === 'video' 
-        });
-        streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-        }
-      } catch (err) {
-        console.error("Erreur caméra:", err);
-        toast({ title: "Erreur Caméra", description: "Vérifiez les permissions.", variant: "destructive" });
-        setMediaModal(prev => ({ ...prev, isOpen: false }));
-      }
-    };
-
-    const stopStream = () => {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop());
-        streamRef.current = null;
-      }
-    };
-
-    if (mediaModal.isOpen) {
-      startStream();
-    } else {
-      stopStream();
-    }
-
-    return () => stopStream();
-  }, [mediaModal.isOpen, mediaModal.type, toast]);
-
-  // -- 2. LOGIQUE MÉTIER --
+  // -- LOGIQUE MÉTIER --
 
   const toggleAssistant = () => {
     if (isAssistantActive) {
@@ -249,16 +206,21 @@ export default function DatasetPage() {
   const handleAddItem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (mode === 'qa') {
-      if (!question.trim() || !answer.trim()) return;
+      if (!question.trim() || !answer.trim()) {
+        toast({ title: "Champs requis", description: "Veuillez remplir la question et la réponse.", variant: "destructive" });
+        return;
+      }
       setQaItems(prev => [{ id: Date.now().toString(), type: 'qa', label: question, details: answer }, ...prev]);
       setQuestion(''); setAnswer(''); setPhraseBuffers({});
       toast({ title: "Donnée enregistrée localement." });
       if (isAssistantActive) voice.speak("Donnée ajoutée au registre provisoire.");
     } else {
-      if (!procTitle.trim()) return;
+      if (!procTitle.trim()) {
+        toast({ title: "Titre requis", description: "Veuillez donner un titre à la procédure.", variant: "destructive" });
+        return;
+      }
       setIsUploading(true);
       try {
-        // Construire les étapes avec les médias capturés
         const stepsWithMedia = procSteps.map((s, i) => ({
           ...s,
           imageData: stepMediaData[i]?.imageData ?? null,
@@ -274,23 +236,34 @@ export default function DatasetPage() {
             createdAt: new Date().toISOString(),
           }),
         });
+
+        const contentType = response.headers.get('content-type');
+        if (!response.ok || !contentType || !contentType.includes('application/json')) {
+           const errorText = await response.text();
+           throw new Error(errorText || `Erreur HTTP ${response.status}`);
+        }
+
         const result = await response.json();
 
         if (result.success) {
           toast({ 
             title: `Procédure sauvegardée`, 
-            description: `Répertoire : ${result.dirName} (${result.mediaCount} média${result.mediaCount > 1 ? 's' : ''})` 
+            description: `Registre mis à jour avec ${result.mediaCount} média(s).` 
           });
           setProcTitle('');
-          setProcSteps([{ id: Date.now().toString(), title: '', duration: '', description: '', conditions: '', alarms: '', images: '', video: '' }]);
+          setProcSteps([{ id: Date.now().toString(), title: '', duration: '', description: '', conditions: '', alarms: '' }]);
           setPhraseBuffers({});
           setStepMediaData({});
           if (isAssistantActive) voice.speak("Procédure enregistrée avec succès.");
         } else {
-          toast({ title: "Erreur", description: result.message, variant: "destructive" });
+          throw new Error(result.message || "Erreur lors de la sauvegarde.");
         }
-      } catch (err) {
-        toast({ title: "Erreur réseau", description: "Impossible de sauvegarder la procédure.", variant: "destructive" });
+      } catch (err: any) {
+        toast({ 
+          title: "Échec de l'enregistrement", 
+          description: err.message.includes('large') ? "Le contenu est trop lourd (vidéos trop longues)." : err.message, 
+          variant: "destructive" 
+        });
       } finally {
         setIsUploading(false);
       }
@@ -320,22 +293,22 @@ export default function DatasetPage() {
     }
   };
 
-  // Logic Caméra (Réutilisée de la version stable)
+  // Gestion du flux caméra
   useEffect(() => {
     if (!mediaModal.isOpen) return;
     const startStream = async () => {
       if (typeof window === 'undefined' || typeof navigator === 'undefined') return;
       if (!navigator.mediaDevices?.getUserMedia) {
-        toast({ title: "Erreur Caméra", description: "L'accès caméra n'est pas disponible sur ce navigateur.", variant: "destructive" });
+        toast({ title: "Erreur Caméra", description: "L'accès caméra n'est pas disponible.", variant: "destructive" });
         setMediaModal(prev => ({ ...prev, isOpen: false }));
         return;
       }
       try {
-        const s = await navigator.mediaDevices.getUserMedia({ video: true, audio: mediaModal.type === 'video' });
+        const s = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 360 }, audio: mediaModal.type === 'video' });
         streamRef.current = s;
         if (videoRef.current) videoRef.current.srcObject = s;
       } catch (err) {
-        toast({ title: "Erreur Caméra", variant: "destructive" });
+        toast({ title: "Erreur Caméra", description: "Vérifiez les permissions de votre navigateur.", variant: "destructive" });
         setMediaModal(prev => ({ ...prev, isOpen: false }));
       }
     };
@@ -378,7 +351,6 @@ export default function DatasetPage() {
         </header>
 
         <div className="p-4 lg:p-8 max-w-5xl mx-auto w-full space-y-8">
-          {/* Signal Visualizer */}
           {isAssistantActive && (
             <div className="flex items-center gap-4 p-3 bg-black/40 border border-primary/20 rounded-sm">
                <Volume2 className="w-4 h-4 text-primary" />
@@ -393,7 +365,6 @@ export default function DatasetPage() {
           )}
 
           <Card className="p-6 border-border bg-card/50 space-y-6 rounded-sm shadow-2xl relative overflow-hidden">
-            {/* Overlay d'écoute active */}
             {isAssistantActive && voice.isListening && (
               <div className="absolute top-2 right-2 flex items-center gap-2 px-2 py-1 bg-red-600/20 border border-red-600/50 rounded-sm">
                  <div className="w-1.5 h-1.5 bg-red-600 rounded-full animate-ping" />
@@ -524,20 +495,28 @@ export default function DatasetPage() {
                     ))}
                   </div>
 
-                  <Button type="button" variant="ghost" onClick={() => setProcSteps([...procSteps, { id: Date.now().toString(), title: '', duration: '', description: '', conditions: '', alarms: '', images: '', video: '' }])} className="w-full border border-dashed border-border h-10 text-[9px] uppercase hover:bg-secondary/10 hover:border-secondary/50 text-muted-foreground hover:text-secondary transition-all">
+                  <Button type="button" variant="ghost" onClick={() => setProcSteps([...procSteps, { id: Date.now().toString(), title: '', duration: '', description: '', conditions: '', alarms: '' }])} className="w-full border border-dashed border-border h-10 text-[9px] uppercase hover:bg-secondary/10 hover:border-secondary/50 text-muted-foreground hover:text-secondary transition-all">
                     <Plus className="w-3.5 h-3.5 mr-2" /> Ajouter une étape de procédure
                   </Button>
                 </div>
               )}
 
-              <Button type="submit" className={cn("w-full font-headline font-bold uppercase text-xs h-12 shadow-xl transition-all active:scale-95", mode === 'qa' ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground")}>
-                Enregistrer dans la file d'audit
+              <Button 
+                type="submit" 
+                disabled={isUploading}
+                className={cn(
+                  "w-full font-headline font-bold uppercase text-xs h-12 shadow-xl transition-all active:scale-95", 
+                  mode === 'qa' ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground"
+                )}
+              >
+                {isUploading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                {mode === 'qa' ? "Enregistrer dans la file d'audit" : "Sauvegarder la Procédure dans le Registre"}
               </Button>
             </form>
           </Card>
 
-          {/* Registre Provisoire */}
-          {qaItems.length > 0 && (
+          {/* Registre Provisoire (Uniquement pour FAQ) */}
+          {mode === 'qa' && qaItems.length > 0 && (
             <div className="space-y-4 pb-12">
               <div className="flex justify-between items-center px-2">
                 <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground flex items-center gap-2">
@@ -566,7 +545,6 @@ export default function DatasetPage() {
         </div>
       </main>
 
-      {/* MODAL MULTIMÉDIA */}
       <Dialog 
         open={mediaModal.isOpen} 
         onOpenChange={(open) => {
@@ -592,17 +570,16 @@ export default function DatasetPage() {
           <div className="flex justify-center gap-4 mt-4">
              {mediaModal.type === 'image' ? (
                <Button onClick={() => { 
-                 // Capture snapshot depuis la vidéo avec un canvas
                  if (videoRef.current && mediaModal.stepIndex !== null) {
                    const canvas = document.createElement('canvas');
                    canvas.width = videoRef.current.videoWidth || 640;
-                   canvas.height = videoRef.current.videoHeight || 480;
+                   canvas.height = videoRef.current.videoHeight || 360;
                    const ctx = canvas.getContext('2d');
                    if (ctx) {
                      ctx.drawImage(videoRef.current, 0, 0);
-                     const imageData = canvas.toDataURL('image/jpeg', 0.85);
+                     const imageData = canvas.toDataURL('image/jpeg', 0.8);
                      setStepMediaData(prev => ({ ...prev, [mediaModal.stepIndex!]: { ...prev[mediaModal.stepIndex!], imageData } }));
-                     toast({ title: `Image capturée`, description: `Étape ${mediaModal.stepIndex! + 1}` });
+                     toast({ title: `Image capturée` });
                    }
                  }
                  setMediaModal(prev => ({ ...prev, isOpen: false })); 
@@ -622,7 +599,7 @@ export default function DatasetPage() {
                        reader.onloadend = () => {
                          if (mediaModal.stepIndex !== null && typeof reader.result === 'string') {
                            setStepMediaData(prev => ({ ...prev, [mediaModal.stepIndex!]: { ...prev[mediaModal.stepIndex!], videoData: reader.result as string } }));
-                           toast({ title: `Vidéo enregistrée`, description: `Étape ${mediaModal.stepIndex! + 1}` });
+                           toast({ title: `Vidéo enregistrée` });
                          }
                        };
                        reader.readAsDataURL(blob);
@@ -652,5 +629,3 @@ export default function DatasetPage() {
     </div>
   );
 }
-
-
