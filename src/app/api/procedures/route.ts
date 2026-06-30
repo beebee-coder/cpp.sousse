@@ -8,13 +8,45 @@ export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/procedures
- * Liste toutes les procédures depuis la base de données Prisma.
+ * Liste toutes les procédures. 
+ * Si aucune n'existe, amorce le système avec la procédure CRF réelle.
  */
 export async function GET() {
   try {
-    const procedures = await prisma.procedure.findMany({
+    let procedures = await prisma.procedure.findMany({
       orderBy: { createdAt: 'desc' }
     });
+
+    // Amorçage automatique avec la procédure réelle si vide
+    if (procedures.length === 0) {
+      try {
+        const filePath = path.join(process.cwd(), 'data', 'procedure-demarrage-CRF.json');
+        const fileContent = await fs.readFile(filePath, 'utf8');
+        const realProc = JSON.parse(fileContent);
+
+        const created = await prisma.procedure.create({
+          data: {
+            id: realProc._id || `proc-crf-${Date.now()}`,
+            code: realProc.metadata.code,
+            title: realProc.metadata.title,
+            description: realProc.metadata.subcategory || '',
+            category: realProc.metadata.category.toUpperCase() as any,
+            department: realProc.metadata.department.toUpperCase() as any,
+            criticality: realProc.metadata.criticality.toUpperCase() as any,
+            version: realProc.metadata.version,
+            status: 'APPROVED',
+            prerequisites: realProc.prerequisites as any,
+            steps: realProc.steps as any,
+            metadata: realProc.metadata as any,
+            authorId: 'admin-root',
+          }
+        });
+        procedures = [created];
+      } catch (seedErr) {
+        console.warn('[PROCEDURE_API] Échec de l\'amorçage CRF:', seedErr);
+      }
+    }
+
     return NextResponse.json({ success: true, procedures });
   } catch (error: any) {
     console.error('[PROCEDURE_API] GET Error:', error.message);
@@ -24,8 +56,7 @@ export async function GET() {
 
 /**
  * POST /api/procedures
- * Sauvegarde d'une procédure industrielle complète.
- * Enregistre dans Prisma (DB) + FS (Registre) + Indexation RAG.
+ * Sauvegarde d'une procédure industrielle réelle.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -36,7 +67,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, message: 'Titre de procédure requis.' }, { status: 400 });
     }
 
-    // 1. Sauvegarde dans Prisma
     const procedure = await prisma.procedure.create({
       data: {
         code: metadata?.code || `PROC-${Date.now().toString().slice(-6)}`,
@@ -50,11 +80,10 @@ export async function POST(request: NextRequest) {
         prerequisites: body.prerequisites || {},
         steps: steps || [],
         metadata: metadata || {},
-        authorId: 'admin-root', // Par défaut pour le POC
+        authorId: 'admin-root',
       }
     });
 
-    // 2. Sauvegarde Physique dans .registry pour la banque de fichiers
     const slug = procedure.code.toLowerCase();
     const dirName = `${slug}_${Date.now()}`;
     const registryBase = path.join(process.cwd(), '.registry', 'procedures', dirName);
@@ -65,17 +94,14 @@ export async function POST(request: NextRequest) {
       'utf8'
     );
 
-    // 3. Indexation RAG (Asynchrone)
     procedureRAG.indexProcedure(procedure as any).catch(err => {
       console.warn('[RAG_INDEX_SKIP] Erreur indexation procédure:', err.message);
     });
 
-    console.log(`[PROCEDURE_API] ✅ Procédure ${procedure.code} créée et indexée.`);
-
     return NextResponse.json({
       success: true,
       procedureId: procedure.id,
-      message: `Procédure "${title}" enregistrée et prête.`
+      message: `Procédure "${title}" enregistrée.`
     });
 
   } catch (error: any) {
