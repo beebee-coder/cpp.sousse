@@ -11,42 +11,235 @@ datasource db {
 }
 
 model User {
-  id             String          @id @default(cuid())
-  firstName      String
-  lastName       String
-  password       String
-  email          String          @unique
-  role           String          @default("user")
-  approved       Boolean         @default(false)
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  lastSyncAt     DateTime?
-  knowledgeItems KnowledgeItem[]
+    id              String           @id @default(cuid())
+    firstName       String
+    lastName        String
+    password        String
+    email           String           @unique
+    role            String           @default("user")
+    approved        Boolean          @default(false)
+    createdAt       DateTime         @default(now())
+    updatedAt       DateTime         @updatedAt
+    lastSyncAt      DateTime?
+    knowledgeItems  KnowledgeItem[]
+    
+    // Relations pour le système de procédures
+    procedures      Procedure[]
+    executions      ProcedureExecution[]
 
-  @@map("users")
+    @@map("users")
 }
 
 model KnowledgeItem {
-  id          String   @id @default(cuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type        String
-  title       String
-  question    String?
-  answer      String?
-  steps       Json?
-  tags        String[]
-  category    String?
-  difficulty  String   @default("medium")
-  isPublic    Boolean  @default(true)
-  syncedLocal Boolean  @default(false)
-  vectorId    String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+    id          String   @id @default(cuid())
+    userId      String
+    user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+    type        String
+    title       String
+    question    String?
+    answer      String?
+    steps       Json?
+    tags        String[]
+    category    String?
+    difficulty  String   @default("medium")
+    isPublic    Boolean  @default(true)
+    syncedLocal Boolean  @default(false)
+    vectorId    String?
+    createdAt   DateTime @default(now())
+    updatedAt   DateTime @updatedAt
 
-  @@index([userId])
-  @@index([type])
-  @@index([syncedLocal])
-  @@index([createdAt])
-  @@map("knowledge_items")
+    @@index([userId])
+    @@index([type])
+    @@index([syncedLocal])
+    @@index([createdAt])
+    @@map("knowledge_items")
+}
+
+// --- MODÈLES DE PROCÉDURES INDUSTRIELLES ---
+
+model Procedure {
+  id              String           @id @default(cuid())
+  code            String           @unique
+  title           String
+  description     String?
+  category        ProcedureCategory
+  subcategory     String?
+  department      Department
+  criticality     Criticality
+  version         String           @default("1.0.0")
+  status          ProcedureStatus  @default(DRAFT)
+  
+  // Données structurées (basées sur procedure-demarrage-CRF.json)
+  prerequisites   Json             // Structure { description: string, items: [...] }
+  steps           Json             // Tableau d'objets Step
+  parameters      Json?            // Variables configurables
+  postExecution   Json?            // Checks après exécution
+  
+  // Métadonnées
+  metadata        Json             // Métadonnées complètes
+  authorId        String
+  author          User             @relation(fields: [authorId], references: [id])
+  approvers       Json?            // Liste des approbateurs { id, name, role, date }
+  
+  // Audit
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  lastExecutedAt  DateTime?
+  executionCount  Int              @default(0)
+  avgDuration     Int?             // Temps moyen en secondes
+  successRate     Float?           // Taux de succès
+  
+  // Relations
+  executions      ProcedureExecution[]
+  alarms          ProcedureAlarm[]
+  documents       ProcedureDocument[]
+  
+  @@index([code])
+  @@index([category])
+  @@index([status])
+  @@map("procedures")
+}
+
+model ProcedureExecution {
+  id              String   @id @default(cuid())
+  procedureId     String
+  procedure       Procedure @relation(fields: [procedureId], references: [id])
+  operatorId      String
+  operator        User     @relation(fields: [operatorId], references: [id])
+  
+  // Exécution
+  startTime       DateTime @default(now())
+  endTime         DateTime?
+  status          ExecutionStatus
+  currentStep     Int      @default(-1)
+  stepsStatus     Json     // Statut de chaque étape (valeurs réelles vs attendues)
+  totalDuration   Int?     // Durée totale en secondes
+  
+  // Événements
+  events          Json?    // Log temporel des événements
+  alarms          Json?    // Alarmes déclenchées durant cette session
+  fallbacks       Json?    // Fallbacks utilisés (ex: mode manuel)
+  
+  // Résultats
+  result          Json?    // Résultat final consolidé
+  notes           String?
+  signature       String?  // Signature numérique de l'opérateur
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@index([procedureId])
+  @@index([operatorId])
+  @@index([status])
+  @@map("procedure_executions")
+}
+
+model ProcedureAlarm {
+  id              String   @id @default(cuid())
+  procedureId     String
+  procedure       Procedure @relation(fields: [procedureId], references: [id])
+  code            String
+  type            AlarmType
+  severity        AlarmSeverity
+  description     String
+  remedy          Json     // Remède structuré (steps, tools, safety)
+  condition       String   // Expression de condition logic (ex: pressure > 50)
+  triggeredAt     DateTime?
+  resolvedAt      DateTime?
+  status          AlarmStatus @default(ACTIVE)
+  
+  createdAt       DateTime @default(now())
+  @@map("procedure_alarms")
+}
+
+model ProcedureDocument {
+  id              String   @id @default(cuid())
+  procedureId     String
+  procedure       Procedure @relation(fields: [procedureId], references: [id])
+  title           String
+  type            DocumentType
+  url             String
+  caption         String?
+  uploadedBy      String
+  uploadedAt      DateTime @default(now())
+  @@map("procedure_documents")
+}
+
+// --- ENUMS ---
+
+enum ProcedureCategory {
+  STARTUP
+  SHUTDOWN
+  MAINTENANCE
+  EMERGENCY
+  INSPECTION
+  CLEANING
+  CALIBRATION
+  REPAIR
+  OPERATION
+  SAFETY
+}
+
+enum Department {
+  PRODUCTION
+  MAINTENANCE
+  QUALITY
+  SAFETY
+  LOGISTICS
+}
+
+enum Criticality {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum ProcedureStatus {
+  DRAFT
+  REVIEW
+  APPROVED
+  PUBLISHED
+  ARCHIVED
+  OBSOLETE
+}
+
+enum ExecutionStatus {
+  IDLE
+  PREREQUISITES_CHECK
+  RUNNING
+  PAUSED
+  WAITING_CONFIRMATION
+  ALARM
+  COMPLETED
+  FAILED
+  ABORTED
+}
+
+enum AlarmType {
+  WARNING
+  CRITICAL
+  INFO
+}
+
+enum AlarmSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum AlarmStatus {
+  ACTIVE
+  RESOLVED
+  IGNORED
+  ESCALATED
+}
+
+enum DocumentType {
+  IMAGE
+  VIDEO
+  DIAGRAM
+  PDF
+  MODEL
 }
