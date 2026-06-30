@@ -15,9 +15,12 @@ function StreamCard({ label, isLocal, isVideoOff, placeholderSeed }: StreamProps
   const videoRef = useRef<HTMLVideoElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [time, setTime] = useState("");
-  const [bitrate] = useState((Math.random() * 2 + 1.5).toFixed(1));
+  const [bitrate, setBitrate] = useState("0.0");
 
   useEffect(() => {
+    // Calculé uniquement côté client pour éviter le Hydration Mismatch
+    setBitrate((Math.random() * 2 + 1.5).toFixed(1));
+    
     const updateTime = () => setTime(new Date().toLocaleTimeString());
     updateTime();
     const interval = setInterval(updateTime, 1000);
@@ -33,7 +36,10 @@ function StreamCard({ label, isLocal, isVideoOff, placeholderSeed }: StreamProps
         return;
       }
 
-      navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 360 }, audio: false })
+      navigator.mediaDevices.getUserMedia({ 
+        video: { facingMode: 'environment', width: 640, height: 360 }, 
+        audio: false 
+      })
         .then(s => {
           setStream(s);
           if (videoRef.current) videoRef.current.srcObject = s;
@@ -59,7 +65,7 @@ function StreamCard({ label, isLocal, isVideoOff, placeholderSeed }: StreamProps
           autoPlay 
           playsInline 
           muted 
-          className="w-full h-full object-cover opacity-90 scale-x-[-1]" 
+          className="w-full h-full object-cover opacity-90" 
         />
       ) : isVideoOff && isLocal ? (
         <div className="w-full h-full flex flex-col items-center justify-center bg-muted/5">
@@ -110,7 +116,7 @@ function StreamCard({ label, isLocal, isVideoOff, placeholderSeed }: StreamProps
              </div>
           </div>
           <div className="bg-primary/20 border border-primary/40 px-2 py-0.5 rounded-sm">
-             <span className="text-[8px] font-code text-primary font-bold uppercase">SEC_CH_0{placeholderSeed === 'local' ? '1' : Math.floor(Math.random() * 9)}</span>
+             <span className="text-[8px] font-code text-primary font-bold uppercase">SEC_CH_0{placeholderSeed === 'local' ? '1' : 'X'}</span>
           </div>
         </div>
       </div>

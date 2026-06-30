@@ -1,6 +1,8 @@
 import { createHybridRoute } from '@/lib/api-route-creator';
 import { visionAssistantDescription } from '@/ai/flows/vision-assistant-description';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * API Route pour l'analyse visuelle industrielle hybride.
  */
