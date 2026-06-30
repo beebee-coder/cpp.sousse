@@ -34,8 +34,10 @@ export default function ChatPage() {
   const [autoSpeak, setAutoSpeak] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const { isListening, isSupported, startListening, stopListening, speak } = useVoice({
-    onResult: (text) => setInput(text)
+  const { isListening, isSupported, startListening, stopListening, speak, volume } = useVoice({
+    onResult: (text) => setInput(text),
+    autoRestart: true,
+    lang: 'fr-FR'
   });
 
   useEffect(() => {
@@ -55,7 +57,15 @@ export default function ChatPage() {
     if (input.trim() && !isLoading) {
       sendMessage(input);
       setInput('');
+      // On laisse le micro ouvert si autoRestart est activé pour fluidifier l'échange
+    }
+  };
+
+  const toggleMic = () => {
+    if (isListening) {
       stopListening();
+    } else {
+      startListening();
     }
   };
 
@@ -133,12 +143,41 @@ export default function ChatPage() {
               </div>
             </ScrollArea>
 
+            {/* Visualiseur de signal vocal discret */}
+            {isListening && (
+              <div className="h-1 flex gap-0.5 px-4">
+                {[...Array(20)].map((_, i) => (
+                  <div 
+                    key={i} 
+                    className="flex-1 bg-primary transition-all duration-75 rounded-full" 
+                    style={{ height: `${Math.random() * volume * 100}%`, opacity: 0.5 + (volume * 0.5) }}
+                  />
+                ))}
+              </div>
+            )}
+
             <Card className="p-1.5 sm:p-2 border-primary/30 bg-black/60 shadow-2xl shrink-0">
               <form onSubmit={handleSubmit} className="flex gap-2">
-                <Button type="button" variant="ghost" size="icon" onClick={() => isListening ? stopListening() : startListening()} disabled={!isSupported || isLoading} className={cn("h-9 w-9 sm:h-10 sm:w-10 transition-all", isListening ? "bg-red-500/20 text-red-500 animate-pulse" : "text-primary hover:bg-primary/10")}>
+                <Button 
+                  type="button" 
+                  variant="ghost" 
+                  size="icon" 
+                  onClick={toggleMic} 
+                  disabled={!isSupported || isLoading} 
+                  className={cn(
+                    "h-9 w-9 sm:h-10 sm:w-10 transition-all", 
+                    isListening ? "bg-red-500/20 text-red-500 animate-pulse border border-red-500/50" : "text-primary hover:bg-primary/10"
+                  )}
+                >
                   {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
                 </Button>
-                <Input value={input} onChange={(e) => setInput(e.target.value)} placeholder={isListening ? "ÉCOUTE EN COURS..." : (isLoading ? "TRAVAIL..." : "COMMANDE SYSTÈME...")} className="flex-1 bg-transparent border-none focus-visible:ring-0 font-code uppercase text-xs sm:text-sm h-9 sm:h-10" disabled={isLoading} />
+                <Input 
+                  value={input} 
+                  onChange={(e) => setInput(e.target.value)} 
+                  placeholder={isListening ? "JE VOUS ÉCOUTE..." : (isLoading ? "RÉFLEXION..." : "COMMANDE SYSTÈME OU VOCALE...")} 
+                  className="flex-1 bg-transparent border-none focus-visible:ring-0 font-code uppercase text-xs sm:text-sm h-9 sm:h-10" 
+                  disabled={isLoading} 
+                />
                 <Button type="submit" size="icon" disabled={isLoading || !input.trim()} className="bg-primary text-primary-foreground hover:bg-primary/90 h-9 w-9 sm:h-10 sm:w-10">
                   {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                 </Button>
@@ -155,7 +194,7 @@ export default function ChatPage() {
               </div>
               <p className="text-[8px] font-code text-muted-foreground leading-tight uppercase">
                 &gt; Indexation : Items + Bank<br/>
-                &gt; Format : JPEG / MP4<br/>
+                &gt; Mode : Vocal Hybride<br/>
                 &gt; Statut : Opérationnel
               </p>
             </Card>

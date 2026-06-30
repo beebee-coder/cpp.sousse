@@ -64,15 +64,13 @@ export function useVoice(options: VoiceOptions = {}) {
       };
 
       recognition.onresult = (event: any) => {
-        let finalTranscript = '';
+        let transcript = '';
         for (let i = event.resultIndex; i < event.results.length; ++i) {
-          if (event.results[i].isFinal) {
-            finalTranscript += event.results[i][0].transcript;
-          }
+          transcript += event.results[i][0].transcript;
         }
         
-        if (finalTranscript && onResultRef.current) {
-          onResultRef.current(finalTranscript.trim());
+        if (transcript && onResultRef.current) {
+          onResultRef.current(transcript);
         }
       };
 
@@ -80,8 +78,13 @@ export function useVoice(options: VoiceOptions = {}) {
         setState(prev => ({ ...prev, isListening: false, volume: 0 }));
         stopVolumeAnalysis();
         
+        // Auto-restart if not manually stopped
         if (options.autoRestart && !isManuallyStopped.current) {
-          try { recognition.start(); } catch (e) {}
+          try { 
+            recognition.start(); 
+          } catch (e) {
+            console.warn("SpeechRecognition auto-restart failed", e);
+          }
         }
         
         if (onEndRef.current) onEndRef.current();
@@ -89,6 +92,7 @@ export function useVoice(options: VoiceOptions = {}) {
 
       recognition.onerror = (event: any) => {
         if (event.error === 'no-speech') return;
+        console.error("SpeechRecognition error:", event.error);
         setState(prev => ({ ...prev, error: event.error, isListening: false }));
       };
 
@@ -101,24 +105,23 @@ export function useVoice(options: VoiceOptions = {}) {
       if (typeof window === 'undefined' || typeof navigator === 'undefined') return;
       if (!navigator.mediaDevices?.getUserMedia || typeof AudioContext === 'undefined') return;
 
-      if (audioContextRef.current) {
-        if (audioContextRef.current.state === 'suspended') {
-          await audioContextRef.current.resume();
-        }
-        return;
+      if (!audioContextRef.current) {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const context = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const source = context.createMediaStreamSource(stream);
+        const analyser = context.createAnalyser();
+        analyser.fftSize = 256;
+        source.connect(analyser);
+        
+        audioContextRef.current = context;
+        analyserRef.current = analyser;
       }
 
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const context = new AudioContext();
-      const source = context.createMediaStreamSource(stream);
-      const analyser = context.createAnalyser();
-      analyser.fftSize = 256;
-      source.connect(analyser);
-      
-      audioContextRef.current = context;
-      analyserRef.current = analyser;
+      if (audioContextRef.current.state === 'suspended') {
+        await audioContextRef.current.resume();
+      }
 
-      const bufferLength = analyser.frequencyBinCount;
+      const bufferLength = analyserRef.current!.frequencyBinCount;
       const dataArray = new Uint8Array(bufferLength);
 
       const updateVolume = () => {
@@ -146,7 +149,9 @@ export function useVoice(options: VoiceOptions = {}) {
       isManuallyStopped.current = false;
       try { 
         recognitionRef.current.start(); 
-      } catch (e) {}
+      } catch (e) {
+        console.warn("SpeechRecognition already started");
+      }
     }
   }, []);
 
@@ -155,7 +160,9 @@ export function useVoice(options: VoiceOptions = {}) {
     if (recognitionRef.current) {
       try { 
         recognitionRef.current.stop(); 
-      } catch (e) {}
+      } catch (e) {
+        console.warn("SpeechRecognition already stopped");
+      }
     }
   }, []);
 
