@@ -7,11 +7,11 @@ import {
   Plus, 
   Search, 
   Settings2, 
-  AlertCircle, 
   ChevronRight,
   ShieldCheck,
   Zap,
-  Clock
+  Loader2,
+  AlertCircle
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -19,15 +19,42 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
+import { FullProcedure } from '@/lib/procedures/types';
 
 export default function ProceduresListPage() {
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
   const [search, setSearch] = useState('');
+  const [procedures, setProcedures] = useState<FullProcedure[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     setMounted(true);
+    fetchProcedures();
   }, []);
+
+  const fetchProcedures = async () => {
+    setIsLoading(true);
+    try {
+      const res = await fetch('/api/procedures');
+      const data = await res.json();
+      if (data.success) {
+        setProcedures(data.procedures || []);
+      } else {
+        throw new Error(data.message || "Erreur de chargement");
+      }
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const filteredProcedures = procedures.filter(p => 
+    p.title.toLowerCase().includes(search.toLowerCase()) || 
+    p.code.toLowerCase().includes(search.toLowerCase())
+  );
 
   if (!mounted) return null;
 
@@ -62,61 +89,82 @@ export default function ProceduresListPage() {
               />
             </div>
             <div className="flex gap-2">
-              <Button variant="outline" size="sm" className="h-10 text-[9px] uppercase border-border">
-                <Settings2 className="w-3.5 h-3.5 mr-2" /> Filtres
+              <Button variant="outline" size="sm" className="h-10 text-[9px] uppercase border-border" onClick={fetchProcedures}>
+                <Settings2 className="w-3.5 h-3.5 mr-2" /> Actualiser
               </Button>
             </div>
           </div>
 
-          {/* Procedures Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-            {/* Mock Item: Pombe CRF (Referencing our JSON data) */}
-            <Card className="p-5 border-primary/20 bg-card/40 hover:border-primary/50 transition-all group cursor-pointer" onClick={() => router.push('/procedures/proc-crf-startup-001')}>
-              <div className="flex justify-between items-start mb-4">
-                <Badge variant="outline" className="text-[8px] font-code border-primary/40 text-primary uppercase bg-primary/5">
-                  CRF-START-001
-                </Badge>
-                <div className="flex items-center gap-1.5">
-                  <ShieldCheck className="w-3.5 h-3.5 text-secondary" />
-                  <span className="text-[9px] font-bold text-secondary uppercase">Approuvé</span>
-                </div>
-              </div>
-              
-              <h3 className="font-headline font-bold text-sm uppercase leading-tight mb-2 group-hover:text-primary transition-colors">
-                Démarrage de la pompe CRF - Système de Réfrigération
-              </h3>
-              
-              <div className="space-y-3 pt-3 border-t border-border/50">
-                <div className="flex items-center justify-between text-[10px] font-code">
-                  <span className="text-muted-foreground uppercase">Département</span>
-                  <span className="text-white">Production</span>
-                </div>
-                <div className="flex items-center justify-between text-[10px] font-code">
-                  <span className="text-muted-foreground uppercase">Complexité</span>
-                  <div className="flex gap-0.5">
-                    <div className="w-2 h-1.5 bg-primary rounded-full" />
-                    <div className="w-2 h-1.5 bg-primary rounded-full" />
-                    <div className="w-2 h-1.5 bg-muted rounded-full" />
+          {isLoading ? (
+            <div className="flex flex-col items-center justify-center py-20 opacity-40">
+              <Loader2 className="w-10 h-10 animate-spin text-primary mb-4" />
+              <p className="font-code text-xs uppercase tracking-widest">Lecture du Registre...</p>
+            </div>
+          ) : error ? (
+            <div className="p-8 border border-destructive/30 bg-destructive/5 rounded-lg text-center">
+              <AlertCircle className="w-10 h-10 text-destructive mx-auto mb-4" />
+              <p className="text-sm font-code uppercase text-destructive">{error}</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+              {filteredProcedures.map((proc) => (
+                <Card 
+                  key={proc.id} 
+                  className="p-5 border-primary/20 bg-card/40 hover:border-primary/50 transition-all group cursor-pointer" 
+                  onClick={() => router.push(`/procedures/${proc.id}/execute`)}
+                >
+                  <div className="flex justify-between items-start mb-4">
+                    <Badge variant="outline" className="text-[8px] font-code border-primary/40 text-primary uppercase bg-primary/5">
+                      {proc.code || 'NO-CODE'}
+                    </Badge>
+                    <div className="flex items-center gap-1.5">
+                      <ShieldCheck className="w-3.5 h-3.5 text-secondary" />
+                      <span className="text-[9px] font-bold text-secondary uppercase">
+                        {proc.status || 'DRAFT'}
+                      </span>
+                    </div>
                   </div>
-                </div>
-              </div>
+                  
+                  <h3 className="font-headline font-bold text-sm uppercase leading-tight mb-2 group-hover:text-primary transition-colors line-clamp-2 min-h-[2.5rem]">
+                    {proc.title}
+                  </h3>
+                  
+                  <div className="space-y-3 pt-3 border-t border-border/50">
+                    <div className="flex items-center justify-between text-[10px] font-code">
+                      <span className="text-muted-foreground uppercase">Criticité</span>
+                      <Badge variant="outline" className={cn(
+                        "text-[8px] uppercase",
+                        proc.criticality === 'CRITICAL' ? "text-red-500 border-red-500/30" : "text-primary border-primary/30"
+                      )}>
+                        {proc.criticality}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center justify-between text-[10px] font-code">
+                      <span className="text-muted-foreground uppercase">Étapes</span>
+                      <span className="text-white">{(proc.steps as any[]).length}</span>
+                    </div>
+                  </div>
 
-              <div className="mt-5 flex gap-2">
-                <Button size="sm" className="flex-1 h-8 text-[9px] font-bold uppercase bg-secondary text-secondary-foreground" onClick={(e) => { e.stopPropagation(); router.push('/procedures/proc-crf-startup-001/execute'); }}>
-                  <Zap className="w-3 h-3 mr-2" /> Exécuter
-                </Button>
-                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
-                  <ChevronRight className="w-4 h-4" />
-                </Button>
-              </div>
-            </Card>
+                  <div className="mt-5 flex gap-2">
+                    <Button size="sm" className="flex-1 h-8 text-[9px] font-bold uppercase bg-secondary text-secondary-foreground">
+                      <Zap className="w-3 h-3 mr-2" /> Exécuter
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
+                      <ChevronRight className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </Card>
+              ))}
 
-            {/* Empty States / Templates Placeholder */}
-            <Card className="p-5 border-dashed border-border bg-transparent flex flex-col items-center justify-center text-center opacity-40 hover:opacity-100 transition-all">
-              <Plus className="w-8 h-8 text-muted-foreground mb-3" />
-              <p className="text-[10px] font-code uppercase tracking-widest">Utiliser un Template</p>
-            </Card>
-          </div>
+              <Card 
+                className="p-5 border-dashed border-border bg-transparent flex flex-col items-center justify-center text-center opacity-40 hover:opacity-100 transition-all cursor-pointer"
+                onClick={() => router.push('/procedures/create')}
+              >
+                <Plus className="w-8 h-8 text-muted-foreground mb-3" />
+                <p className="text-[10px] font-code uppercase tracking-widest">Créer une procédure</p>
+              </Card>
+            </div>
+          )}
         </div>
       </main>
     </div>
