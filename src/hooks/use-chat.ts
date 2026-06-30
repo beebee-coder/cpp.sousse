@@ -56,6 +56,7 @@ export function useChat() {
         content: data.text,
         provider: data.provider,
         media: data.media,
+        procedureId: data.procedureId, // ✅ FIX : Capture de l'ID pour la redirection
         timestamp: Date.now()
       };
 
