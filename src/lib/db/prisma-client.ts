@@ -17,35 +17,23 @@ if (isLocal) {
     neonConfig.webSocketConstructor = ws;
     neonConfig.poolQueryViaFetch = false;
   } catch (e) {
-    console.error("[PRISMA] Module 'ws' non trouvé localement");
+    console.warn("[PRISMA] Module 'ws' non trouvé, tentative via fetch standard.");
   }
 
   // Parser la chaîne de connexion pour contourner les erreurs internes du driver
   try {
-    if (connectionString && connectionString.startsWith('postgres')) {
+    if (connectionString && (connectionString.startsWith('postgres') || connectionString.startsWith('postgresql'))) {
       const url = new URL(connectionString);
-      const host = url.hostname;
-      const user = url.username;
-      const database = url.pathname.replace(/^\//, '');
-      const password = url.password;
-      const port = url.port || '5432';
-
-      process.env.PGHOST = host;
-      process.env.PGUSER = user;
-      process.env.PGDATABASE = database;
-      process.env.PGPASSWORD = password;
-      process.env.PGPORT = port;
-
       poolConfig = {
-        host,
-        user,
-        password,
-        database,
-        port: parseInt(port),
+        host: url.hostname,
+        user: url.username,
+        password: url.password,
+        database: url.pathname.replace(/^\//, ''),
+        port: parseInt(url.port || '5432'),
         ssl: true,
       };
     } else {
-      console.warn("⚠️ [PRISMA] DATABASE_URL absente ou invalide. Le système fonctionnera en mode dégradé.");
+      console.warn("⚠️ [PRISMA] DATABASE_URL absente ou format invalide.");
     }
   } catch (e) {
     console.error("DEBUG: Failed to parse DATABASE_URL", e);
@@ -55,10 +43,19 @@ if (isLocal) {
   neonConfig.poolQueryViaFetch = true;
 }
 
-// Créer l'adaptateur Prisma
-const adapter = new PrismaNeon(poolConfig);
+/**
+ * Création sécurisée de l'instance Prisma.
+ * Si DATABASE_URL est absente, on évite le crash au boot.
+ */
+let prismaInstance: PrismaClient;
 
-// ✅ Utiliser l'adapter pour Prisma
-export const prisma = new PrismaClient({ adapter });
+try {
+  const adapter = new PrismaNeon(poolConfig);
+  prismaInstance = new PrismaClient({ adapter });
+} catch (err) {
+  console.error("❌ [PRISMA] Impossible d'initialiser l'adapter Neon.");
+  prismaInstance = new PrismaClient(); // Fallback vers driver standard
+}
 
+export const prisma = prismaInstance;
 export default prisma;

@@ -11,7 +11,7 @@ const normalizeName = (value: string) => value.trim().toLowerCase();
 async function ensureAdminSeeded() {
   const adminFirstName = process.env.AUTH_ADMIN_FIRST_NAME ?? 'Ahmed';
   const adminLastName = process.env.AUTH_ADMIN_LAST_NAME ?? 'Abbes';
-  const adminPassword = process.env.AUTH_ADMIN_PASSWORD ?? 'admin';
+  const adminPassword = process.env.AUTH_ADMIN_PASSWORD ?? 'Admin@2024!';
   const adminEmail = 'admin@visionode.local';
 
   try {
@@ -37,7 +37,6 @@ async function ensureAdminSeeded() {
     }
   } catch (error) {
     authAudit.error('ADMIN_SEED_ERROR', {
-      email: adminEmail,
       error: error instanceof Error ? error.message : String(error),
     });
   }
@@ -65,9 +64,10 @@ export type AuthResult = {
 };
 
 export async function authenticateUser(email: string, password: string): Promise<AuthResult> {
-  await ensureAdminSeeded();
+  // On ne bloque pas si le seeding échoue
+  await ensureAdminSeeded().catch(() => {});
 
-  authAudit.info('AUTH_STORE_LOOKUP', { email });
+  authAudit.info('AUTH_ATTEMPT', { email });
 
   try {
     const user = await prisma.user.findUnique({
@@ -75,53 +75,51 @@ export async function authenticateUser(email: string, password: string): Promise
     });
 
     if (!user) {
-      authAudit.warn('AUTH_STORE_USER_NOT_FOUND', { email });
+      authAudit.warn('AUTH_FAILED_USER_NOT_FOUND', { email });
       return { success: false, error: 'INVALID_CREDENTIALS' };
-    }
-
-    if (!user.approved) {
-      authAudit.warn('AUTH_STORE_ACCOUNT_PENDING', { email, userId: user.id });
-      return { success: false, error: 'NOT_APPROVED' };
     }
 
     const passwordMatch = await bcrypt.compare(password, user.password);
 
     if (!passwordMatch) {
-      authAudit.warn('AUTH_STORE_WRONG_PASSWORD', { email, userId: user.id });
+      authAudit.warn('AUTH_FAILED_WRONG_PASSWORD', { email, userId: user.id });
       return { success: false, error: 'INVALID_CREDENTIALS' };
     }
 
-    authAudit.success('AUTH_STORE_AUTH_OK', {
+    if (!user.approved) {
+      authAudit.warn('AUTH_FAILED_NOT_APPROVED', { email, userId: user.id });
+      return { success: false, error: 'NOT_APPROVED' };
+    }
+
+    authAudit.success('AUTH_SUCCESS', {
       email,
       userId: user.id,
       role: user.role,
-      name: `${user.firstName} ${user.lastName}`,
     });
 
     return { success: true, user: mapToAuthUser(user) };
-  } catch (error) {
-    authAudit.error('AUTH_STORE_DB_ERROR', {
+  } catch (error: any) {
+    authAudit.error('AUTH_DB_CRITICAL', {
       email,
-      error: error instanceof Error ? error.message : String(error),
+      error: error.message || String(error),
     });
     return { success: false, error: 'DB_ERROR' };
   }
 }
 
 export async function addPendingUser(firstName: string, lastName: string, password: string, role?: string) {
-  await ensureAdminSeeded();
   const normalizedFirst = normalizeName(firstName);
   const normalizedLast = normalizeName(lastName);
   const normalizedRole = String(role ?? 'user').trim().toLowerCase();
   const email = `${normalizedFirst}.${normalizedLast}@visionode.local`;
 
-  authAudit.info('REGISTER_ATTEMPT', { firstName, lastName, email, role: normalizedRole });
+  authAudit.info('REGISTER_ATTEMPT', { email, role: normalizedRole });
 
   try {
     const existing = await prisma.user.findUnique({ where: { email } });
 
     if (existing) {
-      authAudit.warn('REGISTER_DUPLICATE', { firstName, lastName, email });
+      authAudit.warn('REGISTER_DUPLICATE', { email });
       return null;
     }
 
@@ -146,7 +144,6 @@ export async function addPendingUser(firstName: string, lastName: string, passwo
       userId: newUser.id,
       email,
       role: roleValue,
-      status: 'pending_approval',
     });
 
     return mapToAuthUser(newUser);
@@ -160,20 +157,17 @@ export async function addPendingUser(firstName: string, lastName: string, passwo
 }
 
 export async function listPendingUsers() {
-  await ensureAdminSeeded();
   try {
     const users = await prisma.user.findMany({
       where: { approved: false }
     });
     return users.map(mapToAuthUser);
   } catch (error) {
-    authAudit.error('ADMIN_LIST_PENDING_ERROR', { error: String(error) });
     return [];
   }
 }
 
 export async function approveUser(userId: string) {
-  await ensureAdminSeeded();
   try {
     const updated = await prisma.user.update({
       where: { id: userId },
@@ -186,7 +180,6 @@ export async function approveUser(userId: string) {
 }
 
 export async function rejectUser(userId: string) {
-  await ensureAdminSeeded();
   try {
     await prisma.user.delete({ where: { id: userId } });
     return true;
@@ -196,7 +189,6 @@ export async function rejectUser(userId: string) {
 }
 
 export async function getAllUsers() {
-  await ensureAdminSeeded();
   try {
     const users = await prisma.user.findMany();
     return users.map(mapToAuthUser);
@@ -206,7 +198,6 @@ export async function getAllUsers() {
 }
 
 export async function getUserRole(userId: string): Promise<UserRole | null> {
-  await ensureAdminSeeded();
   try {
     const user = await prisma.user.findUnique({ where: { id: userId } });
     return (user?.role as UserRole) ?? null;

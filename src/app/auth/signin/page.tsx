@@ -3,6 +3,7 @@
 import { Suspense, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { AlertCircle, Loader2 } from 'lucide-react';
 
 function SignInForm() {
   const router = useRouter();
@@ -19,70 +20,84 @@ function SignInForm() {
     setError(null);
     setLoading(true);
 
-    const response = await fetch('/api/auth/signin', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
-    });
-
-    setLoading(false);
-
-    let data;
     try {
-      data = await response.json();
+      const response = await fetch('/api/auth/signin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await response.json().catch(() => null);
+      setLoading(false);
+
+      if (!response.ok || !data || !data.success) {
+        // Capture du message spécifique renvoyé par le serveur
+        setError(data?.message || 'Erreur système : Impossible de joindre le service d\'authentification.');
+        return;
+      }
+
+      router.push(callbackUrl);
     } catch (e) {
-      data = null;
+      setLoading(false);
+      setError('Erreur réseau critique. Vérifiez votre connexion internet.');
     }
-
-    if (!response.ok || !data || !data.success) {
-      setError(data?.message || 'Identifiants invalides ou compte non approuvé.');
-      return;
-    }
-
-    router.push(callbackUrl);
   };
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-6">
       <div className="w-full max-w-md rounded-xl border border-border bg-card p-8 shadow-xl">
-        <h1 className="text-2xl font-bold mb-2">Connexion VisioNode</h1>
-        <p className="text-sm text-muted-foreground mb-6">Entrez votre email et mot de passe.</p>
+        <div className="mb-8">
+          <h1 className="text-2xl font-bold font-headline uppercase tracking-tight text-primary">Connexion VisioNode</h1>
+          <p className="text-sm text-muted-foreground mt-1">Plateforme de contrôle industriel CCP</p>
+        </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="Email"
-            autoComplete="email"
-            className="w-full rounded-md border border-border bg-background px-3 py-2"
-            required
-          />
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Mot de passe"
-            autoComplete="current-password"
-            className="w-full rounded-md border border-border bg-background px-3 py-2"
-            required
-          />
+          <div className="space-y-2">
+            <label className="text-[10px] font-bold uppercase text-muted-foreground tracking-widest">Email Professionnel</label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="votre.nom@visionode.local"
+              autoComplete="email"
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:ring-1 focus:ring-primary outline-none transition-all"
+              required
+            />
+          </div>
+          
+          <div className="space-y-2">
+            <label className="text-[10px] font-bold uppercase text-muted-foreground tracking-widest">Clé d'Accès</label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              autoComplete="current-password"
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:ring-1 focus:ring-primary outline-none transition-all"
+              required
+            />
+          </div>
 
-          {error ? <p className="text-sm text-red-500">{error}</p> : null}
+          {error && (
+            <div className="flex items-start gap-3 p-3 rounded-md bg-destructive/10 border border-destructive/30 text-destructive animate-in fade-in slide-in-from-top-1">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              <p className="text-xs font-medium leading-tight">{error}</p>
+            </div>
+          )}
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-md bg-primary px-4 py-2 font-medium text-primary-foreground disabled:opacity-60"
+            className="w-full h-11 rounded-md bg-primary text-primary-foreground font-bold uppercase text-xs tracking-widest hover:bg-primary/90 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
           >
-            {loading ? 'Connexion…' : 'Se connecter'}
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "S'identifier"}
           </button>
         </form>
 
-        <div className="mt-6 text-sm text-muted-foreground">
-          <p>Pas encore de compte ?</p>
-          <Link href="/auth/register" className="mt-2 inline-flex text-primary underline-offset-4 hover:underline">
-            Demander un accès à l&apos;administrateur
+        <div className="mt-8 pt-6 border-t border-border/50 text-xs text-center space-y-4">
+          <p className="text-muted-foreground">Pas encore de compte ?</p>
+          <Link href="/auth/register" className="inline-block text-primary font-bold uppercase tracking-widest underline-offset-4 hover:underline">
+            Demander un accès prioritaire
           </Link>
         </div>
       </div>
@@ -92,7 +107,7 @@ function SignInForm() {
 
 export default function SignInPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-background flex items-center justify-center p-6">Chargement…</div>}>
+    <Suspense fallback={<div className="min-h-screen bg-background flex items-center justify-center p-6 text-xs uppercase font-code">Chargement de la liaison...</div>}>
       <SignInForm />
     </Suspense>
   );
