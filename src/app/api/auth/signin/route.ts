@@ -3,16 +3,23 @@ import { authenticateUser } from '@/lib/auth-store';
 import { signIn } from '@/auth';
 import { authAudit } from '@/lib/auth-audit';
 
-export async function POST(request: NextRequest) {
-  const ip = request.headers.get('x-forwarded-for') ?? request.headers.get('x-real-ip') ?? 'unknown';
+export const dynamic = 'force-dynamic';
 
+/**
+ * Point d'entrée de connexion robuste.
+ * Garantit une réponse JSON même en cas de défaillance majeure de la base de données.
+ */
+export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const email = String(body?.email ?? '').trim().toLowerCase();
+    const email = String(body?.email ?? '').trim();
     const password = String(body?.password ?? '');
 
     if (!email || !password) {
-      return NextResponse.json({ success: false, message: 'Email et mot de passe requis.' }, { status: 400 });
+      return NextResponse.json({ 
+        success: false, 
+        message: 'Identifiants requis.' 
+      }, { status: 400 });
     }
 
     const result = await authenticateUser(email, password);
@@ -28,31 +35,31 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, user: result.user });
     }
 
-    // Gestion des messages d'erreur spécifiques
+    // Cartographie des erreurs métier
     if (result.error === 'NOT_APPROVED') {
       return NextResponse.json({ 
         success: false, 
-        message: 'Votre compte est en attente d\'approbation par l\'administrateur.' 
+        message: 'Compte en attente d\'approbation par l\'administrateur.' 
       }, { status: 403 });
     }
 
     if (result.error === 'DB_ERROR') {
       return NextResponse.json({ 
         success: false, 
-        message: 'Erreur de liaison avec la base de données. Vérifiez DATABASE_URL.' 
-      }, { status: 500 });
+        message: 'Liaison interrompue avec le serveur de données Neon.' 
+      }, { status: 503 });
     }
 
     return NextResponse.json({ 
       success: false, 
-      message: 'Identifiants invalides.' 
+      message: 'Email ou clé d\'accès invalide.' 
     }, { status: 401 });
 
-  } catch (err) {
-    authAudit.error('SIGNIN_INTERNAL_ERROR', {
-      ip,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return NextResponse.json({ success: false, message: 'Erreur système lors de la connexion.' }, { status: 500 });
+  } catch (err: any) {
+    authAudit.error('SIGNIN_CRITICAL_FAILURE', { error: err.message });
+    return NextResponse.json({ 
+      success: false, 
+      message: 'Le service d\'authentification est momentanément indisponible.' 
+    }, { status: 500 });
   }
 }
