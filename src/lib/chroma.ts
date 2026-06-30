@@ -33,7 +33,7 @@ const CHROMA_DATA_DIR = path.join(process.cwd(), '.data', 'chromadb');
 
 const IS_CLOUD = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
 
-const STOP_WORDS = new Set(['le', 'la', 'les', 'de', 'du', 'des', 'un', 'une', 'et', 'en', 'ce', 'ces', 'pour', 'sur', 'dans', 'avec', 'est', 'sont']);
+const STOP_WORDS = new Set(['le', 'la', 'les', 'de', 'du', 'des', 'un', 'une', 'et', 'en', 'ce', 'ces', 'pour', 'sur', 'dans', 'avec', 'est', 'sont', 'donne', 'moi', 'quel', 'quels', 'quelle']);
 
 export async function getSystemContextSummary() {
   const summary = {
@@ -68,11 +68,13 @@ function tokenize(text: string): string[] {
 
 /**
  * Recherche Physique étendue : Items + Banque d'Images
+ * Version : Multimédia Pro-Search (Boost sur mots-clés visuels)
  */
 export function fallbackSemanticSearch(query: string, nResults = 5, componentFilter?: string): SearchResult[] {
   const results: SearchResult[] = [];
   const queryTokens = tokenize(query);
   const lowerQuery = query.toLowerCase().trim();
+  const isVisualRequest = lowerQuery.includes('photo') || lowerQuery.includes('image') || lowerQuery.includes('voir') || lowerQuery.includes('visuel');
 
   // 1. Scan du Registre d'Items (JSON)
   if (fs.existsSync(REGISTRY_ITEMS_DIR)) {
@@ -94,7 +96,6 @@ export function fallbackSemanticSearch(query: string, nResults = 5, componentFil
         queryTokens.forEach(token => {
           if (fileName.includes(token)) score += 15;
           if (title.includes(token)) score += 10;
-          if (body.includes(token)) score += 2;
         });
 
         if (score > 5) {
@@ -104,7 +105,7 @@ export function fallbackSemanticSearch(query: string, nResults = 5, componentFil
             document: `${data.label || data.title || ''}\n${data.details || data.content || ''}`,
             metadata: { ...data.metadata, title: data.title, origin: 'PHY_REGISTRY', relPath: `items/${file}`, relevance_score: score },
             distance: 0,
-            score: Math.min(score / 100, 1)
+            score: Math.min(score / 100, 0.95) // Max 95% pour le texte
           });
         }
       }
@@ -127,13 +128,19 @@ export function fallbackSemanticSearch(query: string, nResults = 5, componentFil
         const tags = Array.isArray(data.tags) ? data.tags.join(' ').toLowerCase() : '';
 
         let score = 0;
-        if (name.includes(lowerQuery)) score += 70; // Priorité haute aux noms d'actifs
+        if (name.includes(lowerQuery)) score += 80; // Boost massif sur le nom de l'actif
         if (desc.includes(lowerQuery)) score += 30;
         if (tags.includes(lowerQuery)) score += 40;
 
+        // Boost contextuel multimédia
+        if (isVisualRequest) {
+           score += 50; 
+           if (name.includes('admin') && lowerQuery.includes('admin')) score += 100;
+        }
+
         queryTokens.forEach(token => {
-          if (name.includes(token)) score += 20;
-          if (tags.includes(token)) score += 15;
+          if (name.includes(token)) score += 30;
+          if (tags.includes(token)) score += 20;
         });
 
         if (score > 10) {
@@ -143,13 +150,13 @@ export function fallbackSemanticSearch(query: string, nResults = 5, componentFil
             metadata: { 
               ...data, 
               origin: 'PHY_BANK', 
-              relPath: data.path, // Chemin vers l'image réelle
+              relPath: data.path, 
               isMedia: true,
               mediaType: data.type,
               relevance_score: score 
             },
             distance: 0,
-            score: Math.min(score / 100, 1)
+            score: Math.min(score / 150, 1) // Normalisation
           });
         }
       }

@@ -1,6 +1,6 @@
 /**
- * @fileOverview Flux de chat VisioNode Core V5.0.
- * Intègre le support multimédia pour le retour d'images/vidéos depuis le RAG.
+ * @fileOverview Flux de chat VisioNode Core V5.1.
+ * Optimisé pour l'identification forcée et l'affichage des actifs multimédias.
  */
 
 import Groq from 'groq-sdk';
@@ -42,7 +42,7 @@ async function expandQueryWithContext(message: string, history: ChatMessage[]): 
     const recentHistory = history.slice(-4).map(m => `${m.role}: ${m.content}`).join('\n');
     const expansion = await groq.chat.completions.create({
       messages: [
-        { role: 'system', content: 'Expert industriel. Reformulez en recherche technique précise (noms, composants, actifs visuels). RÉPONDEZ UNIQUEMENT PAR LA RECHERCHE.' },
+        { role: 'system', content: 'Expert industriel. Reformulez en recherche technique précise (noms, composants, actifs visuels/photos). RÉPONDEZ UNIQUEMENT PAR LES TERMES DE RECHERCHE.' },
         { role: 'user', content: `Historique:\n${recentHistory}\n\nQuestion: ${message}` }
       ],
       model: 'llama-3.1-8b-instant', 
@@ -60,8 +60,8 @@ export async function dynamicChat(input: ChatInput): Promise<ChatOutput> {
   const systemState = await getSystemContextSummary();
   const expandedQuery = await expandQueryWithContext(input.message, input.history);
   
-  // Récupération RAG
-  const ragResults = await searchAcrossCollections(expandedQuery, 5);
+  // Récupération RAG (Limite étendue pour capturer textes + images)
+  const ragResults = await searchAcrossCollections(expandedQuery, 8);
   
   // Extraction d'un média potentiel si pertinent
   let detectedMedia: { url: string; type: 'image' | 'video' } | undefined = undefined;
@@ -83,26 +83,26 @@ export async function dynamicChat(input: ChatInput): Promise<ChatOutput> {
 
   const context = ragResults.map(r => {
     const source = r.metadata?.origin || 'BASE';
-    const type = r.metadata?.isMedia ? '[MÉDIA]' : '[TEXTE]';
+    const type = r.metadata?.isMedia ? '[MÉDIA_DISPONIBLE]' : '[DOCUMENT_TEXTE]';
     return `${type} [SOURCE: ${source}] : ${r.document}`;
   }).join('\n\n');
 
   try {
     const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
     
-    let systemContent = `Vous êtes VisioNode Core, l'intelligence orchestratrice industrielle.
+    let systemContent = `Vous êtes VisioNode Core, l'intelligence industrielle.
 
-CONSIGNES :
+CONSIGNES STRICTES :
 1. CONCISION : 2 phrases maximum.
-2. CITATION : Mentionnez la source (ex: "Selon la banque d'images...").
-3. MÉDIA : Si un média est détecté, confirmez que vous l'affichez.
+2. MULTIMÉDIA : Vous avez accès à la banque d'images. Si un document [MÉDIA_DISPONIBLE] est présent dans le contexte, vous devez confirmer que vous l'affichez à l'utilisateur. Ne dites JAMAIS que vous n'avez pas accès aux photos si un média est listé ci-dessous.
+3. SOURCES : Citez toujours le fichier source du registre physique.
 
 ÉTAT SYSTÈME :
 - Mode : ${systemState.mode}
 - Registre : ${systemState.ragDocuments} docs / ${systemState.bankAssets} assets.`;
 
     if (context) {
-      systemContent += `\n\n--- CONTEXTE TECHNIQUE RÉCUPÉRÉ ---\n${context}`;
+      systemContent += `\n\n--- CONTEXTE RÉCUPÉRÉ (TEXTE ET MÉDIAS) ---\n${context}`;
     }
 
     const completion = await groq.chat.completions.create({
@@ -120,7 +120,7 @@ CONSIGNES :
     if (text) {
       return { 
         text: text.trim(), 
-        provider: `Groq LPU + Pro-Search`,
+        provider: `Groq LPU + Pro-Search V5`,
         media: detectedMedia
       };
     }
