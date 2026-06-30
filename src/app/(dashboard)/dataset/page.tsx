@@ -64,20 +64,16 @@ export default function DatasetPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [isAssistantActive, setIsAssistantActive] = useState(false);
   
-  // Buffers de phrases pour la correction intelligente
   const [phraseBuffers, setPhraseBuffers] = useState<Record<string, string[]>>({});
   
-  // Form States (QA)
   const [question, setQuestion] = useState('');
   const [answer, setAnswer] = useState('');
   
-  // Form States (Procedure)
   const [procTitle, setProcTitle] = useState('');
   const [procSteps, setProcSteps] = useState<ProcedureStep[]>([
     { id: '1', title: '', duration: '', description: '', conditions: '', alarms: '' }
   ]);
 
-  // Media States
   const [mediaModal, setMediaModal] = useState<{ isOpen: boolean, type: 'image' | 'video', stepIndex: number | null }>({
     isOpen: false,
     type: 'image',
@@ -85,7 +81,6 @@ export default function DatasetPage() {
   });
   const [isCapturing, setIsCapturing] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
-  // Stockage des médias capturés par étape (clé: index, valeur: {imageData?, videoData?})
   const [stepMediaData, setStepMediaData] = useState<Record<number, { imageData?: string; videoData?: string }>>({});
   
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -101,10 +96,8 @@ export default function DatasetPage() {
     activeVoiceFieldRef.current = activeUIField;
   }, [activeUIField]);
 
-  // Helper pour obtenir la clé unique du champ (ex: "stepTitle-0")
   const getFieldKey = (type: string, index?: number) => index !== undefined ? `${type}-${index}` : type;
 
-  // Mise à jour de l'état textuel à partir des buffers de phrases
   const updateTextFromBuffer = useCallback((key: string, phrases: string[]) => {
     const fullText = phrases.join(' ');
     if (key === 'question') setQuestion(fullText);
@@ -135,20 +128,18 @@ export default function DatasetPage() {
     const key = getFieldKey(target.type, target.index);
     const lowerText = text.toLowerCase().trim();
 
-    // Logique de correction intelligente "Non"
     if (lowerText === 'non') {
       setPhraseBuffers(prev => {
         const current = prev[key] || [];
         if (current.length === 0) return prev;
         const next = current.slice(0, -1);
         updateTextFromBuffer(key, next);
-        voice.speak("Dernière phrase annulée. Vous pouvez reprendre.");
+        voice.speak("Correction prise en compte.");
         return { ...prev, [key]: next };
       });
       return;
     }
 
-    // Ajout d'une nouvelle phrase validée
     setPhraseBuffers(prev => {
       const current = prev[key] || [];
       const next = [...current, text];
@@ -167,8 +158,6 @@ export default function DatasetPage() {
     setMounted(true);
   }, []);
 
-  // -- LOGIQUE MÉTIER --
-
   const toggleAssistant = () => {
     if (isAssistantActive) {
       voice.stopListening();
@@ -176,47 +165,48 @@ export default function DatasetPage() {
       setActiveUIField(null);
       voice.speak("Assistant vocal désactivé.");
     } else {
+      if (!voice.isSupported) {
+        toast({ title: "Incompatible", description: "Reconnaissance vocale non supportée sur ce navigateur.", variant: "destructive" });
+        return;
+      }
       setIsAssistantActive(true);
       voice.startListening();
-      voice.speak("Assistant vocal activé. Je vous guiderai à chaque champ. Dites Non pour corriger la dernière phrase.");
+      voice.speak("Assistant vocal activé. Je vous guide.");
+      
+      if (!activeUIField) {
+        if (mode === 'qa') handleFieldFocus('question');
+        else handleFieldFocus('procTitle');
+      }
     }
   };
 
   const handleFieldFocus = (type: string, index?: number) => {
     if (!isAssistantActive) return;
-    
     setActiveUIField({ type, index });
     
-    // Déterminer l'instruction TTS
     let instruction = "";
-    if (type === 'question') instruction = "Veuillez dicter le symptôme ou la question.";
-    else if (type === 'answer') instruction = "Dictez la résolution technique.";
-    else if (type === 'procTitle') instruction = "Donnez un titre à cette procédure.";
-    else if (type === 'stepTitle') instruction = `Action pour l'étape ${index! + 1}.`;
-    else if (type === 'stepDescription') instruction = "Ajoutez des détails sur l'opération.";
-    else if (type === 'stepConditions') instruction = "Quelles sont les conditions de sécurité ?";
-    else if (type === 'stepAlarms') instruction = "Y a-t-il des points de vigilance ou des alarmes ?";
+    if (type === 'question') instruction = "Dites le symptôme.";
+    else if (type === 'answer') instruction = "Dites la résolution.";
+    else if (type === 'procTitle') instruction = "Titre de la procédure ?";
+    else if (type === 'stepTitle') instruction = `Action étape ${index! + 1}.`;
+    else if (type === 'stepDescription') instruction = "Détails de l'opération ?";
 
-    voice.speak(instruction);
-    if (!voice.isListening) {
-      voice.startListening();
-    }
+    if (instruction) voice.speak(instruction);
   };
 
   const handleAddItem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (mode === 'qa') {
       if (!question.trim() || !answer.trim()) {
-        toast({ title: "Champs requis", description: "Veuillez remplir la question et la réponse.", variant: "destructive" });
+        toast({ title: "Champs requis", variant: "destructive" });
         return;
       }
       setQaItems(prev => [{ id: Date.now().toString(), type: 'qa', label: question, details: answer }, ...prev]);
       setQuestion(''); setAnswer(''); setPhraseBuffers({});
-      toast({ title: "Donnée enregistrée localement." });
-      if (isAssistantActive) voice.speak("Donnée ajoutée au registre provisoire.");
+      toast({ title: "Ajouté à la file" });
     } else {
       if (!procTitle.trim()) {
-        toast({ title: "Titre requis", description: "Veuillez donner un titre à la procédure.", variant: "destructive" });
+        toast({ title: "Titre requis", variant: "destructive" });
         return;
       }
       setIsUploading(true);
@@ -227,43 +217,20 @@ export default function DatasetPage() {
           videoData: stepMediaData[i]?.videoData ?? null,
         }));
 
-        const response = await fetch('/api/procedures', {
+        const res = await fetch('/api/procedures', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            title: procTitle,
-            steps: stepsWithMedia,
-            createdAt: new Date().toISOString(),
-          }),
+          body: JSON.stringify({ title: procTitle, steps: stepsWithMedia }),
         });
 
-        const contentType = response.headers.get('content-type');
-        if (!response.ok || !contentType || !contentType.includes('application/json')) {
-           const errorText = await response.text();
-           throw new Error(errorText || `Erreur HTTP ${response.status}`);
-        }
-
-        const result = await response.json();
-
-        if (result.success) {
-          toast({ 
-            title: `Procédure sauvegardée`, 
-            description: `Registre mis à jour avec ${result.mediaCount} média(s).` 
-          });
+        if (res.ok) {
+          toast({ title: "Procédure sauvegardée" });
           setProcTitle('');
           setProcSteps([{ id: Date.now().toString(), title: '', duration: '', description: '', conditions: '', alarms: '' }]);
-          setPhraseBuffers({});
           setStepMediaData({});
-          if (isAssistantActive) voice.speak("Procédure enregistrée avec succès.");
-        } else {
-          throw new Error(result.message || "Erreur lors de la sauvegarde.");
         }
-      } catch (err: any) {
-        toast({ 
-          title: "Échec de l'enregistrement", 
-          description: err.message.includes('large') ? "Le contenu est trop lourd (vidéos trop longues)." : err.message, 
-          variant: "destructive" 
-        });
+      } catch (err) {
+        toast({ title: "Échec sauvegarde", variant: "destructive" });
       } finally {
         setIsUploading(false);
       }
@@ -279,36 +246,28 @@ export default function DatasetPage() {
         projectId: 'project-001',
         type: 'document' as const,
         content: JSON.stringify({ label: item.label, details: item.details, title: item.label, type: item.type }),
-        tags: [item.type, 'intelligent_voice_input'],
+        tags: [item.type, 'voice_input'],
         createdAt: new Date()
       }));
       await apiClient.post('/api/sync/upload', { userId: 'admin', projectId: 'project-001', items });
-      toast({ title: "Synchronisation Cloud Terminée" });
+      toast({ title: "Synchronisé" });
       setQaItems([]);
-      if (isAssistantActive) voice.speak("Synchronisation terminée. Le registre a été mis à jour.");
     } catch (e) {
-      toast({ title: "Échec Synchronisation", variant: "destructive" });
+      toast({ title: "Échec Sync", variant: "destructive" });
     } finally {
       setIsUploading(false);
     }
   };
 
-  // Gestion du flux caméra
   useEffect(() => {
     if (!mediaModal.isOpen) return;
     const startStream = async () => {
-      if (typeof window === 'undefined' || typeof navigator === 'undefined') return;
-      if (!navigator.mediaDevices?.getUserMedia) {
-        toast({ title: "Erreur Caméra", description: "L'accès caméra n'est pas disponible.", variant: "destructive" });
-        setMediaModal(prev => ({ ...prev, isOpen: false }));
-        return;
-      }
       try {
-        const s = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 360 }, audio: mediaModal.type === 'video' });
+        const s = await navigator.mediaDevices.getUserMedia({ video: true, audio: mediaModal.type === 'video' });
         streamRef.current = s;
         if (videoRef.current) videoRef.current.srcObject = s;
       } catch (err) {
-        toast({ title: "Erreur Caméra", description: "Vérifiez les permissions de votre navigateur.", variant: "destructive" });
+        toast({ title: "Erreur Caméra", variant: "destructive" });
         setMediaModal(prev => ({ ...prev, isOpen: false }));
       }
     };
@@ -387,8 +346,7 @@ export default function DatasetPage() {
                         activeUIField?.type === 'question' && "ring-2 ring-primary border-primary shadow-[0_0_20px_rgba(50,181,212,0.15)]"
                       )}
                     />
-                    <div className="absolute bottom-2 right-2 flex gap-1">
-                      {phraseBuffers['question']?.length > 0 && <Button type="button" variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground"><Undo2 className="w-3 h-3"/></Button>}
+                    <div className="absolute bottom-2 right-2">
                       <Mic className={cn("w-4 h-4", activeUIField?.type === 'question' ? "text-primary animate-bounce" : "text-muted-foreground/30")} />
                     </div>
                   </div>
@@ -426,17 +384,11 @@ export default function DatasetPage() {
                     {procSteps.map((step, index) => (
                       <Card key={step.id} className="p-4 border-border bg-black/30 space-y-4 group">
                         <div className="flex justify-between items-center border-b border-border/50 pb-2">
-                          <div className="flex items-center gap-2">
-                            <span className="text-[10px] font-bold text-secondary uppercase">Étape {index + 1}</span>
-                            <Button type="button" variant="ghost" size="icon" onClick={() => setProcSteps(prev => prev.filter(s => s.id !== step.id))} className="h-6 w-6 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity" disabled={procSteps.length <= 1}>
-                              <Trash2 className="w-3 h-3" />
-                            </Button>
-                          </div>
+                          <span className="text-[10px] font-bold text-secondary uppercase">Étape {index + 1}</span>
                           <Input 
                             placeholder="DURÉE" 
                             value={step.duration} 
-                            onFocus={() => handleFieldFocus('stepDuration', index)}
-                            onChange={(e) => { const n = [...procSteps]; n[index].duration = e.target.value; setProcSteps(n); setPhraseBuffers(prev => ({...prev, [`stepDuration-${index}`]: [e.target.value]})); }} 
+                            onChange={(e) => { const n = [...procSteps]; n[index].duration = e.target.value; setProcSteps(n); }} 
                             className="h-7 w-24 text-[9px] uppercase"
                           />
                         </div>
@@ -446,57 +398,34 @@ export default function DatasetPage() {
                             placeholder="ACTION..." 
                             value={step.title} 
                             onFocus={() => handleFieldFocus('stepTitle', index)}
-                            onChange={(e) => { const n = [...procSteps]; n[index].title = e.target.value; setProcSteps(n); setPhraseBuffers(prev => ({...prev, [`stepTitle-${index}`]: [e.target.value]})); }} 
+                            onChange={(e) => { const n = [...procSteps]; n[index].title = e.target.value; setProcSteps(n); }} 
                             className={cn("h-8 text-[10px] uppercase", activeUIField?.type === 'stepTitle' && activeUIField?.index === index && "ring-1 ring-secondary")}
                           />
                           <Input 
                             placeholder="DÉTAILS OPÉRATIONNELS..." 
                             value={step.description} 
                             onFocus={() => handleFieldFocus('stepDescription', index)}
-                            onChange={(e) => { const n = [...procSteps]; n[index].description = e.target.value; setProcSteps(n); setPhraseBuffers(prev => ({...prev, [`stepDescription-${index}`]: [e.target.value]})); }} 
+                            onChange={(e) => { const n = [...procSteps]; n[index].description = e.target.value; setProcSteps(n); }} 
                             className={cn("h-8 text-[10px] uppercase", activeUIField?.type === 'stepDescription' && activeUIField?.index === index && "ring-1 ring-secondary")}
                           />
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-1.5"><ShieldAlert className="w-3 h-3 text-primary" /><p className="text-[8px] font-bold uppercase text-primary">Conditions</p></div>
-                            <Input 
-                              placeholder="ÉQUIPEMENTS / SÉCURITÉ..." 
-                              value={step.conditions} 
-                              onFocus={() => handleFieldFocus('stepConditions', index)}
-                              onChange={(e) => { const n = [...procSteps]; n[index].conditions = e.target.value; setProcSteps(n); setPhraseBuffers(prev => ({...prev, [`stepConditions-${index}`]: [e.target.value]})); }} 
-                              className="h-8 text-[9px] uppercase"
-                            />
-                          </div>
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-1.5"><Bell className="w-3 h-3 text-destructive" /><p className="text-[8px] font-bold uppercase text-destructive">Vigilance</p></div>
-                            <Input 
-                              placeholder="ALARMES / DANGERS..." 
-                              value={step.alarms} 
-                              onFocus={() => handleFieldFocus('stepAlarms', index)}
-                              onChange={(e) => { const n = [...procSteps]; n[index].alarms = e.target.value; setProcSteps(n); setPhraseBuffers(prev => ({...prev, [`stepAlarms-${index}`]: [e.target.value]})); }} 
-                              className="h-8 text-[9px] uppercase"
-                            />
-                          </div>
-                        </div>
-
                         <div className="flex gap-2 pt-2">
-                           <Button type="button" variant="secondary" size="sm" onClick={() => setMediaModal({ isOpen: true, type: 'image', stepIndex: index })} className={cn("h-7 text-[8px] uppercase font-bold flex-1 transition-all", stepMediaData[index]?.imageData ? "bg-secondary/80 border-secondary ring-1 ring-secondary" : "")}>
-                             {stepMediaData[index]?.imageData ? <CheckCircle2 className="w-3 h-3 mr-2 text-secondary-foreground" /> : <Camera className="w-3 h-3 mr-2" />}
-                             {stepMediaData[index]?.imageData ? 'Image OK' : 'Capture Image'}
+                           <Button type="button" variant="secondary" size="sm" onClick={() => setMediaModal({ isOpen: true, type: 'image', stepIndex: index })} className={cn("h-7 text-[8px] uppercase font-bold flex-1", stepMediaData[index]?.imageData && "bg-secondary/80")}>
+                             {stepMediaData[index]?.imageData ? <CheckCircle2 className="w-3 h-3 mr-2" /> : <Camera className="w-3 h-3 mr-2" />}
+                             Capture Image
                            </Button>
-                           <Button type="button" variant="outline" size="sm" onClick={() => setMediaModal({ isOpen: true, type: 'video', stepIndex: index })} className={cn("h-7 text-[8px] uppercase font-bold flex-1 transition-all", stepMediaData[index]?.videoData ? "border-secondary text-secondary ring-1 ring-secondary" : "")}>
+                           <Button type="button" variant="outline" size="sm" onClick={() => setMediaModal({ isOpen: true, type: 'video', stepIndex: index })} className="h-7 text-[8px] uppercase font-bold flex-1">
                              {stepMediaData[index]?.videoData ? <CheckCircle2 className="w-3 h-3 mr-2" /> : <VideoIcon className="w-3 h-3 mr-2" />}
-                             {stepMediaData[index]?.videoData ? 'Vidéo OK' : 'Séquence Vidéo'}
+                             Séquence Vidéo
                            </Button>
                         </div>
                       </Card>
                     ))}
                   </div>
 
-                  <Button type="button" variant="ghost" onClick={() => setProcSteps([...procSteps, { id: Date.now().toString(), title: '', duration: '', description: '', conditions: '', alarms: '' }])} className="w-full border border-dashed border-border h-10 text-[9px] uppercase hover:bg-secondary/10 hover:border-secondary/50 text-muted-foreground hover:text-secondary transition-all">
-                    <Plus className="w-3.5 h-3.5 mr-2" /> Ajouter une étape de procédure
+                  <Button type="button" variant="ghost" onClick={() => setProcSteps([...procSteps, { id: Date.now().toString(), title: '', duration: '', description: '', conditions: '', alarms: '' }])} className="w-full border border-dashed border-border h-10 text-[9px] uppercase">
+                    <Plus className="w-3.5 h-3.5 mr-2" /> Ajouter une étape
                   </Button>
                 </div>
               )}
@@ -504,123 +433,53 @@ export default function DatasetPage() {
               <Button 
                 type="submit" 
                 disabled={isUploading}
-                className={cn(
-                  "w-full font-headline font-bold uppercase text-xs h-12 shadow-xl transition-all active:scale-95", 
-                  mode === 'qa' ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground"
-                )}
+                className={cn("w-full font-headline font-bold uppercase text-xs h-12 shadow-xl", mode === 'qa' ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground")}
               >
                 {isUploading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-                {mode === 'qa' ? "Enregistrer dans la file d'audit" : "Sauvegarder la Procédure dans le Registre"}
+                {mode === 'qa' ? "Enregistrer dans la file" : "Sauvegarder la Procédure"}
               </Button>
             </form>
           </Card>
-
-          {/* Registre Provisoire (Uniquement pour FAQ) */}
-          {mode === 'qa' && qaItems.length > 0 && (
-            <div className="space-y-4 pb-12">
-              <div className="flex justify-between items-center px-2">
-                <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground flex items-center gap-2">
-                  <Layers className="w-3.5 h-3.5 text-secondary" /> 
-                  Registre Provisoire ({qaItems.length})
-                </h3>
-                <Button onClick={handleFinalSubmit} disabled={isUploading} size="sm" className="bg-secondary text-secondary-foreground text-[9px] uppercase font-bold shadow-lg">
-                  {isUploading ? <Loader2 className="w-3 h-3 mr-2 animate-spin" /> : <UploadCloud className="w-3 h-3 mr-2" />} Synchroniser Cloud
-                </Button>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {qaItems.map(item => (
-                  <Card key={item.id} className={cn("p-4 border bg-card/20 relative group transition-all hover:bg-card/40", item.type === 'qa' ? "border-primary/20" : "border-secondary/20")}>
-                    <Button variant="ghost" size="icon" onClick={() => setQaItems(prev => prev.filter(i => i.id !== item.id))} className="absolute top-2 right-2 h-6 w-6 opacity-0 group-hover:opacity-100 text-destructive"><Trash2 className="w-3 h-3" /></Button>
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className={cn("w-1.5 h-1.5 rounded-full shadow-[0_0_5px_currentColor]", item.type === 'qa' ? "text-primary bg-primary" : "text-secondary bg-secondary")} />
-                      <p className={cn("text-[10px] font-bold uppercase pr-8 truncate", item.type === 'qa' ? "text-primary" : "text-secondary")}>{item.label}</p>
-                    </div>
-                    <p className="text-[9px] font-code text-muted-foreground line-clamp-3 italic bg-black/20 p-2 rounded-sm whitespace-pre-wrap">{item.details}</p>
-                  </Card>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       </main>
 
-      <Dialog 
-        open={mediaModal.isOpen} 
-        onOpenChange={(open) => {
-          if (!open) { setMediaModal(prev => ({ ...prev, isOpen: false })); setIsCapturing(false); }
-        }}
-      >
+      <Dialog open={mediaModal.isOpen} onOpenChange={(o) => !o && setMediaModal(prev => ({ ...prev, isOpen: false }))}>
         <DialogContent className="sm:max-w-2xl bg-black border-primary/30 shadow-2xl">
-          <DialogHeader>
-            <DialogTitle className="text-xs uppercase font-headline tracking-widest text-primary flex items-center gap-2">
-              {mediaModal.type === 'image' ? <Camera className="w-4 h-4" /> : <VideoIcon className="w-4 h-4" />}
-              Capture de Preuve Industrielle
-            </DialogTitle>
-          </DialogHeader>
-          <div className="relative aspect-video bg-muted/10 rounded-sm overflow-hidden border border-border">
+          <DialogHeader><DialogTitle className="text-xs uppercase font-headline tracking-widest text-primary">Capture de Preuve</DialogTitle></DialogHeader>
+          <div className="relative aspect-video bg-muted/10 rounded-sm overflow-hidden">
             <video ref={videoRef} autoPlay playsInline muted={mediaModal.type === 'image'} className="w-full h-full object-cover" />
-            <div className="absolute inset-0 pointer-events-none border-[15px] border-black/20" />
-            {isCapturing && (
-              <div className="absolute top-4 right-4 bg-red-600 text-white px-2 py-1 rounded-sm text-[10px] font-code animate-pulse flex items-center gap-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" /> REC | {recordingTime}s
-              </div>
-            )}
+            {isCapturing && <div className="absolute top-4 right-4 bg-red-600 text-white px-2 py-1 rounded-sm text-[10px] font-code animate-pulse">REC | {recordingTime}s</div>}
           </div>
           <div className="flex justify-center gap-4 mt-4">
              {mediaModal.type === 'image' ? (
                <Button onClick={() => { 
-                 if (videoRef.current && mediaModal.stepIndex !== null) {
+                 if (videoRef.current) {
                    const canvas = document.createElement('canvas');
-                   canvas.width = videoRef.current.videoWidth || 640;
-                   canvas.height = videoRef.current.videoHeight || 360;
-                   const ctx = canvas.getContext('2d');
-                   if (ctx) {
-                     ctx.drawImage(videoRef.current, 0, 0);
-                     const imageData = canvas.toDataURL('image/jpeg', 0.8);
-                     setStepMediaData(prev => ({ ...prev, [mediaModal.stepIndex!]: { ...prev[mediaModal.stepIndex!], imageData } }));
-                     toast({ title: `Image capturée` });
-                   }
+                   canvas.width = 640; canvas.height = 360;
+                   canvas.getContext('2d')?.drawImage(videoRef.current, 0, 0);
+                   setStepMediaData(prev => ({ ...prev, [mediaModal.stepIndex!]: { ...prev[mediaModal.stepIndex!], imageData: canvas.toDataURL('image/jpeg') } }));
+                   setMediaModal(prev => ({ ...prev, isOpen: false }));
                  }
-                 setMediaModal(prev => ({ ...prev, isOpen: false })); 
-               }} className="bg-primary text-primary-foreground font-bold uppercase text-[10px] px-8"><Camera className="w-4 h-4 mr-2" /> Capturer</Button>
+               }} className="bg-primary text-primary-foreground font-bold uppercase text-[10px] px-8">Capturer</Button>
              ) : (
                !isCapturing ? (
                  <Button onClick={() => { 
-                   setIsCapturing(true); 
-                   setRecordingTime(0); 
-                   chunksRef.current = [];
-                   if (streamRef.current) {
-                     const recorder = new MediaRecorder(streamRef.current);
-                     recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
-                     recorder.onstop = () => {
-                       const blob = new Blob(chunksRef.current, { type: 'video/webm' });
-                       const reader = new FileReader();
-                       reader.onloadend = () => {
-                         if (mediaModal.stepIndex !== null && typeof reader.result === 'string') {
-                           setStepMediaData(prev => ({ ...prev, [mediaModal.stepIndex!]: { ...prev[mediaModal.stepIndex!], videoData: reader.result as string } }));
-                           toast({ title: `Vidéo enregistrée` });
-                         }
-                       };
-                       reader.readAsDataURL(blob);
-                     };
-                     mediaRecorderRef.current = recorder;
-                     recorder.start();
-                   }
-                   recordingIntervalRef.current = setInterval(() => setRecordingTime(t => t + 1), 1000); 
-                 }} className="bg-red-600 text-white font-bold uppercase text-[10px] px-8"><VideoIcon className="w-4 h-4 mr-2" /> Démarrer</Button>
+                   setIsCapturing(true); setRecordingTime(0); chunksRef.current = [];
+                   const recorder = new MediaRecorder(streamRef.current!);
+                   recorder.ondataavailable = (e) => chunksRef.current.push(e.data);
+                   recorder.onstop = () => {
+                     const reader = new FileReader();
+                     reader.onloadend = () => setStepMediaData(prev => ({ ...prev, [mediaModal.stepIndex!]: { ...prev[mediaModal.stepIndex!], videoData: reader.result as string } }));
+                     reader.readAsDataURL(new Blob(chunksRef.current, { type: 'video/webm' }));
+                   };
+                   mediaRecorderRef.current = recorder; recorder.start();
+                   recordingIntervalRef.current = setInterval(() => setRecordingTime(t => t + 1), 1000);
+                 }} className="bg-red-600 text-white font-bold uppercase text-[10px] px-8">Démarrer</Button>
                ) : (
                  <Button onClick={() => { 
-                   setIsCapturing(false); 
-                   if (recordingIntervalRef.current) {
-                     clearInterval(recordingIntervalRef.current);
-                     recordingIntervalRef.current = null;
-                   }
-                   if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-                     mediaRecorderRef.current.stop();
-                   }
-                   setMediaModal(prev => ({ ...prev, isOpen: false })); 
-                 }} className="bg-white text-black font-bold uppercase text-[10px] px-8"><StopCircle className="w-4 h-4 mr-2" /> Arrêter</Button>
+                   setIsCapturing(false); clearInterval(recordingIntervalRef.current!);
+                   mediaRecorderRef.current?.stop(); setMediaModal(prev => ({ ...prev, isOpen: false }));
+                 }} className="bg-white text-black font-bold uppercase text-[10px] px-8">Arrêter</Button>
                )
              )}
           </div>

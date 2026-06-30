@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -33,9 +32,8 @@ export function useVoice(options: VoiceOptions = {}) {
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animationFrameRef = useRef<number | null>(null);
-  const isManuallyStopped = useRef(false);
+  const isManuallyStopped = useRef(true);
   
-  // Utilisation de Refs pour les callbacks afin d'éviter les dépendances circulaires
   const onResultRef = useRef(options.onResult);
   const onEndRef = useRef(options.onEnd);
   
@@ -44,7 +42,6 @@ export function useVoice(options: VoiceOptions = {}) {
     onEndRef.current = options.onEnd;
   }, [options.onResult, options.onEnd]);
 
-  // Initialisation STT
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
@@ -63,7 +60,6 @@ export function useVoice(options: VoiceOptions = {}) {
 
       recognition.onstart = () => {
         setState(prev => ({ ...prev, isListening: true, error: null }));
-        isManuallyStopped.current = false;
         startVolumeAnalysis();
       };
 
@@ -92,33 +88,37 @@ export function useVoice(options: VoiceOptions = {}) {
       };
 
       recognition.onerror = (event: any) => {
-        const errorMsg = typeof event.error === 'string' ? event.error : "ERREUR_RECONNAISSANCE_INCONNUE";
-        if (errorMsg === 'no-speech') return;
-        setState(prev => ({ ...prev, error: errorMsg, isListening: false }));
+        if (event.error === 'no-speech') return;
+        setState(prev => ({ ...prev, error: event.error, isListening: false }));
       };
 
       recognitionRef.current = recognition;
     }
-
-    return () => {
-      stopVolumeAnalysis();
-    };
   }, [options.lang, options.autoRestart]);
 
   const startVolumeAnalysis = async () => {
     try {
       if (typeof window === 'undefined' || typeof navigator === 'undefined') return;
       if (!navigator.mediaDevices?.getUserMedia || typeof AudioContext === 'undefined') return;
-      if (audioContextRef.current) return;
+
+      if (audioContextRef.current) {
+        if (audioContextRef.current.state === 'suspended') {
+          await audioContextRef.current.resume();
+        }
+        return;
+      }
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      audioContextRef.current = new AudioContext();
-      const source = audioContextRef.current.createMediaStreamSource(stream);
-      analyserRef.current = audioContextRef.current.createAnalyser();
-      analyserRef.current.fftSize = 256;
-      source.connect(analyserRef.current);
+      const context = new AudioContext();
+      const source = context.createMediaStreamSource(stream);
+      const analyser = context.createAnalyser();
+      analyser.fftSize = 256;
+      source.connect(analyser);
+      
+      audioContextRef.current = context;
+      analyserRef.current = analyser;
 
-      const bufferLength = analyserRef.current.frequencyBinCount;
+      const bufferLength = analyser.frequencyBinCount;
       const dataArray = new Uint8Array(bufferLength);
 
       const updateVolume = () => {
@@ -138,15 +138,12 @@ export function useVoice(options: VoiceOptions = {}) {
 
   const stopVolumeAnalysis = () => {
     if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
-    if (audioContextRef.current) {
-      try { audioContextRef.current.close(); } catch(e) {}
-    }
-    audioContextRef.current = null;
-    analyserRef.current = null;
+    animationFrameRef.current = null;
   };
 
   const startListening = useCallback(() => {
     if (recognitionRef.current) {
+      isManuallyStopped.current = false;
       try { 
         recognitionRef.current.start(); 
       } catch (e) {}
@@ -156,7 +153,9 @@ export function useVoice(options: VoiceOptions = {}) {
   const stopListening = useCallback(() => {
     isManuallyStopped.current = true;
     if (recognitionRef.current) {
-      try { recognitionRef.current.stop(); } catch (e) {}
+      try { 
+        recognitionRef.current.stop(); 
+      } catch (e) {}
     }
   }, []);
 
@@ -168,6 +167,16 @@ export function useVoice(options: VoiceOptions = {}) {
     utterance.lang = options.lang || 'fr-FR';
     utterance.rate = 1.0;
     utterance.pitch = 1.0;
+
+    const wasListening = !isManuallyStopped.current;
+    if (wasListening) recognitionRef.current?.stop();
+
+    utterance.onend = () => {
+      if (wasListening && !isManuallyStopped.current) {
+        try { recognitionRef.current?.start(); } catch(e) {}
+      }
+    };
+
     window.speechSynthesis.speak(utterance);
   }, [options.lang]);
 
