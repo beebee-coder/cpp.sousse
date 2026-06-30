@@ -1,13 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { authenticateUser } from '@/lib/auth-users';
+import { authenticateUser } from '@/lib/auth-store';
 import { signIn } from '@/auth';
 import { authAudit } from '@/lib/auth-audit';
 
 export async function POST(request: NextRequest) {
   const ip = request.headers.get('x-forwarded-for') ?? request.headers.get('x-real-ip') ?? 'unknown';
-  const userAgent = request.headers.get('user-agent') ?? 'unknown';
-
-  authAudit.info('SIGNIN_ATTEMPT', { ip, userAgent });
 
   try {
     const body = await request.json();
@@ -15,42 +12,47 @@ export async function POST(request: NextRequest) {
     const password = String(body?.password ?? '');
 
     if (!email || !password) {
-      authAudit.warn('SIGNIN_MISSING_FIELDS', { ip, email: email || '(empty)', passwordProvided: !!password });
       return NextResponse.json({ success: false, message: 'Email et mot de passe requis.' }, { status: 400 });
     }
 
-    authAudit.info('SIGNIN_CREDENTIALS_RECEIVED', { ip, email });
+    const result = await authenticateUser(email, password);
 
-    const user = await authenticateUser(email, password);
+    if (result.success && result.user) {
+      await signIn({
+        id: result.user.id,
+        firstName: result.user.firstName,
+        lastName: result.user.lastName,
+        role: result.user.role,
+      });
 
-    if (!user) {
-      authAudit.warn('SIGNIN_FAILED', { ip, email, reason: 'Identifiants invalides ou compte non approuvé' });
-      return NextResponse.json({ success: false, message: 'Identifiants invalides ou compte non approuvé.' }, { status: 401 });
+      return NextResponse.json({ success: true, user: result.user });
     }
 
-    authAudit.info('SIGNIN_USER_AUTHENTICATED', { ip, email, userId: user.id, role: user.role });
+    // Gestion des messages d'erreur spécifiques
+    if (result.error === 'NOT_APPROVED') {
+      return NextResponse.json({ 
+        success: false, 
+        message: 'Votre compte est en attente d\'approbation par l\'administrateur.' 
+      }, { status: 403 });
+    }
 
-    await signIn({
-      id: user.id,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      role: user.role,
-    });
+    if (result.error === 'DB_ERROR') {
+      return NextResponse.json({ 
+        success: false, 
+        message: 'Erreur de liaison avec la base de données. Vérifiez DATABASE_URL.' 
+      }, { status: 500 });
+    }
 
-    authAudit.success('SIGNIN_SESSION_CREATED', {
-      ip,
-      email,
-      userId: user.id,
-      role: user.role,
-      name: `${user.firstName} ${user.lastName}`,
-    });
+    return NextResponse.json({ 
+      success: false, 
+      message: 'Identifiants invalides.' 
+    }, { status: 401 });
 
-    return NextResponse.json({ success: true, user });
   } catch (err) {
     authAudit.error('SIGNIN_INTERNAL_ERROR', {
       ip,
       error: err instanceof Error ? err.message : String(err),
     });
-    return NextResponse.json({ success: false, message: 'Erreur de connexion.' }, { status: 500 });
+    return NextResponse.json({ success: false, message: 'Erreur système lors de la connexion.' }, { status: 500 });
   }
 }

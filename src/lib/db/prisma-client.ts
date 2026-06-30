@@ -17,12 +17,12 @@ if (isLocal) {
     neonConfig.webSocketConstructor = ws;
     neonConfig.poolQueryViaFetch = false;
   } catch (e) {
-    console.error("Failed to load ws module locally", e);
+    console.error("[PRISMA] Module 'ws' non trouvé localement");
   }
 
-  // Parser la chaîne de connexion pour contourner les erreurs internes du driver et initialiser les variables PG
+  // Parser la chaîne de connexion pour contourner les erreurs internes du driver
   try {
-    if (connectionString) {
+    if (connectionString && connectionString.startsWith('postgres')) {
       const url = new URL(connectionString);
       const host = url.hostname;
       const user = url.username;
@@ -30,7 +30,6 @@ if (isLocal) {
       const password = url.password;
       const port = url.port || '5432';
 
-      // Injecter dans process.env pour le driver
       process.env.PGHOST = host;
       process.env.PGUSER = user;
       process.env.PGDATABASE = database;
@@ -45,16 +44,18 @@ if (isLocal) {
         port: parseInt(port),
         ssl: true,
       };
+    } else {
+      console.warn("⚠️ [PRISMA] DATABASE_URL absente ou invalide. Le système fonctionnera en mode dégradé.");
     }
   } catch (e) {
-    console.error("DEBUG: Failed to parse DATABASE_URL as URL", e);
+    console.error("DEBUG: Failed to parse DATABASE_URL", e);
   }
 } else {
   // Sur Vercel, utiliser les requêtes HTTP (fetch) beaucoup plus adaptées et rapides en serverless
   neonConfig.poolQueryViaFetch = true;
 }
 
-// Créer l'adaptateur Prisma avec la configuration du pool directement
+// Créer l'adaptateur Prisma
 const adapter = new PrismaNeon(poolConfig);
 
 // ✅ Utiliser l'adapter pour Prisma
