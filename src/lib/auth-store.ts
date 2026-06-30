@@ -1,3 +1,4 @@
+
 import { prisma } from './db/prisma-client';
 import bcrypt from 'bcryptjs';
 import type { AuthUser, UserRole } from '@/lib/auth-users';
@@ -6,15 +7,13 @@ import { authAudit } from '@/lib/auth-audit';
 const normalizeName = (value: string) => value.trim().toLowerCase();
 
 /**
- * Assure que l'administrateur système existe.
- * Isolé pour ne pas faire planter la connexion si le seeding échoue.
+ * Assure que l'administrateur système existe de manière sécurisée.
  */
 async function ensureAdminSeeded() {
   const adminEmail = 'admin@visionode.local';
   const adminPassword = process.env.AUTH_ADMIN_PASSWORD || 'Admin@2024!';
 
   try {
-    // Vérification légère
     const admin = await prisma.user.findUnique({
       where: { email: adminEmail }
     });
@@ -24,8 +23,8 @@ async function ensureAdminSeeded() {
       await prisma.user.create({
         data: {
           id: 'admin-root',
-          firstName: 'Ahmed',
-          lastName: 'Abbes',
+          firstName: 'Admin',
+          lastName: 'VisioNode',
           password: hashedPassword,
           email: adminEmail,
           role: 'admin',
@@ -35,7 +34,8 @@ async function ensureAdminSeeded() {
       authAudit.info('ADMIN_AUTO_CREATED');
     }
   } catch (error: any) {
-    authAudit.warn('ADMIN_SEED_FAILED', { reason: error.message });
+    // On logge l'erreur mais on ne crash pas le processus
+    console.warn('[AUTH_SEED] Background seeding skip/fail:', error.message);
   }
 }
 
@@ -60,7 +60,7 @@ export type AuthResult = {
 export async function authenticateUser(email: string, password: string): Promise<AuthResult> {
   const normalizedEmail = email.toLowerCase();
   
-  // Lancement du seeding asynchrone (non-bloquant)
+  // Tenter le seeding en arrière-plan sans bloquer
   ensureAdminSeeded().catch(() => {});
 
   try {
@@ -78,7 +78,7 @@ export async function authenticateUser(email: string, password: string): Promise
       return { success: false, error: 'INVALID_CREDENTIALS' };
     }
 
-    // L'admin root n'a jamais besoin d'approbation
+    // Protection admin root
     const isAdmin = normalizedEmail === 'admin@visionode.local' || user.role === 'admin';
 
     if (!user.approved && !isAdmin) {
@@ -95,7 +95,7 @@ export async function authenticateUser(email: string, password: string): Promise
 export async function addPendingUser(firstName: string, lastName: string, password: string, role?: string) {
   const normalizedFirst = normalizeName(firstName);
   const normalizedLast = normalizeName(lastName);
-  const normalizedRole = String(role ?? 'user').trim().toLowerCase();
+  const roleValue = String(role ?? 'user').trim().toLowerCase();
   const email = `${normalizedFirst}.${normalizedLast}@visionode.local`;
 
   try {
@@ -109,7 +109,7 @@ export async function addPendingUser(firstName: string, lastName: string, passwo
         lastName: lastName.trim(),
         password: hashedPassword,
         email,
-        role: normalizedRole as any,
+        role: roleValue as any,
         approved: false,
       }
     });
