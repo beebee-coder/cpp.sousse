@@ -170,7 +170,7 @@ export default function DashboardPage() {
               <StatusBadge status="online" label="AWS" />
               <StatusBadge status="online" label="DB" />
               <StatusBadge status={health?.healthy ? 'online' : 'alert'} label="SANTÉ" />
-              {isDesktop && <StatusBadge status="online" label="LOCAL" />}
+              {mounted && isDesktop && <StatusBadge status="online" label="LOCAL" />}
             </div>
           </div>
 
@@ -220,7 +220,7 @@ export default function DashboardPage() {
             <div>
               <h2 className="font-headline text-xl lg:text-2xl font-bold tracking-tight mb-1 uppercase">Cockpit Visuel</h2>
               <p className="text-xs text-muted-foreground font-code">
-                {platform.toUpperCase()} | NOMINAL | {role?.toUpperCase() ?? 'USER'}
+                {mounted ? platform.toUpperCase() : 'CHARGEMENT...'} | NOMINAL | {role?.toUpperCase() ?? 'USER'}
               </p>
             </div>
             <div className="text-left sm:text-right font-code">
@@ -293,11 +293,11 @@ export default function DashboardPage() {
         <footer className="h-8 border-t border-border bg-black/40 hidden sm:flex items-center justify-between px-6 text-[9px] font-code text-muted-foreground uppercase tracking-widest shrink-0">
           <div className="flex gap-6">
             <span>Uptime : 14j 05h</span>
-            <span>Mode : {isDesktop ? 'NATIF' : 'WEB'}</span>
+            <span>Mode : {mounted ? (isDesktop ? 'NATIF' : 'WEB') : '...'}</span>
           </div>
           <div className="flex gap-4">
             <span className="text-secondary">AI PIPE : PRÊT</span>
-            {isDesktop && <span className="text-primary">CHROMA : LOCAL</span>}
+            {mounted && isDesktop && <span className="text-primary">CHROMA : LOCAL</span>}
           </div>
         </footer>
       </main>
