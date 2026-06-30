@@ -7,6 +7,7 @@ const normalizeName = (value: string) => value.trim().toLowerCase();
 
 /**
  * Assure que l'utilisateur administrateur par défaut est inséré en base de données.
+ * Ce compte est la racine du système et est approuvé par défaut.
  */
 async function ensureAdminSeeded() {
   const adminFirstName = process.env.AUTH_ADMIN_FIRST_NAME ?? 'Ahmed';
@@ -34,6 +35,13 @@ async function ensureAdminSeeded() {
         }
       });
       authAudit.success('ADMIN_SEED_DONE', { email: adminEmail });
+    } else if (!admin.approved) {
+      // Correction automatique si l'admin a été désapprouvé par erreur
+      await prisma.user.update({
+        where: { email: adminEmail },
+        data: { approved: true }
+      });
+      authAudit.info('ADMIN_AUTO_REAPPROVE', { email: adminEmail });
     }
   } catch (error) {
     authAudit.error('ADMIN_SEED_ERROR', {
@@ -67,32 +75,36 @@ export async function authenticateUser(email: string, password: string): Promise
   // On ne bloque pas si le seeding échoue
   await ensureAdminSeeded().catch(() => {});
 
-  authAudit.info('AUTH_ATTEMPT', { email });
+  const normalizedEmail = email.toLowerCase();
+  authAudit.info('AUTH_ATTEMPT', { email: normalizedEmail });
 
   try {
     const user = await prisma.user.findUnique({
-      where: { email: email.toLowerCase() },
+      where: { email: normalizedEmail },
     });
 
     if (!user) {
-      authAudit.warn('AUTH_FAILED_USER_NOT_FOUND', { email });
+      authAudit.warn('AUTH_FAILED_USER_NOT_FOUND', { email: normalizedEmail });
       return { success: false, error: 'INVALID_CREDENTIALS' };
     }
 
     const passwordMatch = await bcrypt.compare(password, user.password);
 
     if (!passwordMatch) {
-      authAudit.warn('AUTH_FAILED_WRONG_PASSWORD', { email, userId: user.id });
+      authAudit.warn('AUTH_FAILED_WRONG_PASSWORD', { email: normalizedEmail, userId: user.id });
       return { success: false, error: 'INVALID_CREDENTIALS' };
     }
 
-    if (!user.approved) {
-      authAudit.warn('AUTH_FAILED_NOT_APPROVED', { email, userId: user.id });
+    // RÈGLE PRIORITAIRE : L'administrateur système n'a jamais besoin d'approbation manuelle
+    const isAdmin = normalizedEmail === 'admin@visionode.local' || user.role === 'admin';
+
+    if (!user.approved && !isAdmin) {
+      authAudit.warn('AUTH_FAILED_NOT_APPROVED', { email: normalizedEmail, userId: user.id });
       return { success: false, error: 'NOT_APPROVED' };
     }
 
     authAudit.success('AUTH_SUCCESS', {
-      email,
+      email: normalizedEmail,
       userId: user.id,
       role: user.role,
     });
@@ -100,7 +112,7 @@ export async function authenticateUser(email: string, password: string): Promise
     return { success: true, user: mapToAuthUser(user) };
   } catch (error: any) {
     authAudit.error('AUTH_DB_CRITICAL', {
-      email,
+      email: normalizedEmail,
       error: error.message || String(error),
     });
     return { success: false, error: 'DB_ERROR' };
