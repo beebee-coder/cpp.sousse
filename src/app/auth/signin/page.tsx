@@ -27,19 +27,28 @@ function SignInForm() {
         body: JSON.stringify({ email, password }),
       });
 
-      const data = await response.json().catch(() => null);
-      setLoading(false);
-
-      if (!response.ok || !data || !data.success) {
-        // Capture du message spécifique renvoyé par le serveur
-        setError(data?.message || 'Erreur système : Impossible de joindre le service d\'authentification.');
+      // Tentative de lecture sécurisée du JSON
+      let data;
+      try {
+        data = await response.json();
+      } catch (e) {
+        setError(`Réponse serveur invalide (HTTP ${response.status}). Le service d'authentification est mal configuré.`);
+        setLoading(false);
         return;
       }
 
+      setLoading(false);
+
+      if (!response.ok || !data || !data.success) {
+        setError(data?.message || `Erreur système inattendue (Code: ${response.status})`);
+        return;
+      }
+
+      // Succès : Redirection
       router.push(callbackUrl);
     } catch (e) {
       setLoading(false);
-      setError('Erreur réseau critique. Vérifiez votre connexion internet.');
+      setError('Impossible de joindre le serveur. Vérifiez votre connexion ou la disponibilité de la base de données.');
     }
   };
 
@@ -58,7 +67,7 @@ function SignInForm() {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="votre.nom@visionode.local"
+              placeholder="admin@visionode.local"
               autoComplete="email"
               className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:ring-1 focus:ring-primary outline-none transition-all"
               required
@@ -95,7 +104,7 @@ function SignInForm() {
         </form>
 
         <div className="mt-8 pt-6 border-t border-border/50 text-xs text-center space-y-4">
-          <p className="text-muted-foreground">Pas encore de compte ?</p>
+          <p className="text-muted-foreground">Utilisez <strong>Admin@2024!</strong> pour le compte admin</p>
           <Link href="/auth/register" className="inline-block text-primary font-bold uppercase tracking-widest underline-offset-4 hover:underline">
             Demander un accès prioritaire
           </Link>

@@ -1,45 +1,50 @@
 import { PrismaClient } from '@prisma/client';
 import { neonConfig, Pool } from '@neondatabase/serverless';
 import { PrismaNeon } from '@prisma/adapter-neon';
-import ws from 'ws';
 
 /**
- * Initialisation sécurisée du client Prisma pour Neon.
- * Supporte le mode Serverless (HTTP) et Local (WebSocket).
+ * Initialisation ultra-robuste du client Prisma pour Neon.
+ * Optimisée pour éviter les crashs au démarrage si DATABASE_URL est instable.
  */
 
 const connectionString = process.env.DATABASE_URL || '';
 const isCloud = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
 
-// Configuration globale Neon
-if (!isCloud) {
-  // Nécessaire pour les connexions persistantes en local (Dev/Desktop)
-  neonConfig.webSocketConstructor = ws;
-} else {
-  // Optimisation pour Vercel Edge/Serverless
-  neonConfig.poolQueryViaFetch = true;
+// Configuration Neon (uniquement si URL présente)
+if (connectionString) {
+  if (isCloud) {
+    neonConfig.poolQueryViaFetch = true;
+  }
 }
 
 const createPrismaClient = () => {
-  console.log(`[PRISMA] 🛰️ Initialisation du client (Mode: ${isCloud ? 'Cloud' : 'Local'})`);
-  
   if (!connectionString) {
-    console.warn("⚠️ [PRISMA] DATABASE_URL manquante. Le client démarrera en mode dégradé.");
+    console.warn("⚠️ [PRISMA] DATABASE_URL absente. Mode dégradé activé.");
     return new PrismaClient();
   }
 
   try {
+    // En mode développement/studio, on privilégie une connexion directe plus stable
+    if (!isCloud) {
+      return new PrismaClient({
+        datasources: {
+          db: {
+            url: connectionString,
+          },
+        },
+      });
+    }
+
+    // En mode cloud, on utilise l'adaptateur optimisé Neon
     const pool = new Pool({ connectionString });
     const adapter = new PrismaNeon(pool);
     return new PrismaClient({ adapter });
   } catch (err: any) {
-    console.error("❌ [PRISMA] Erreur fatale d'initialisation :", err.message);
-    // Retourne un client standard pour éviter le crash au chargement du module
+    console.error("❌ [PRISMA] Échec initialisation client :", err.message);
     return new PrismaClient();
   }
 };
 
-// Singleton pattern pour Next.js (Fast Refresh safe)
 const globalForPrisma = global as unknown as { prisma: PrismaClient };
 export const prisma = globalForPrisma.prisma || createPrismaClient();
 
