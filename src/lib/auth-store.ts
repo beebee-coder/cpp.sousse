@@ -7,13 +7,20 @@ import { authAudit } from '@/lib/auth-audit';
 const normalizeName = (value: string) => value.trim().toLowerCase();
 
 /**
- * Assure que l'administrateur système existe de manière sécurisée.
+ * Assure que l'administrateur système existe de manière sécurisée sans bloquer le boot.
  */
 async function ensureAdminSeeded() {
   const adminEmail = 'admin@visionode.local';
   const adminPassword = process.env.AUTH_ADMIN_PASSWORD || 'Admin@2024!';
 
   try {
+    // Vérifier d'abord si la table user existe en tentant un count simple
+    const userCount = await prisma.user.count().catch(() => -1);
+    if (userCount === -1) {
+      console.warn('[AUTH_SEED] Table "users" non trouvée. Le schéma doit être appliqué.');
+      return;
+    }
+
     const admin = await prisma.user.findUnique({
       where: { email: adminEmail }
     });
@@ -34,8 +41,7 @@ async function ensureAdminSeeded() {
       authAudit.info('ADMIN_AUTO_CREATED');
     }
   } catch (error: any) {
-    // On logge l'erreur mais on ne crash pas le processus
-    console.warn('[AUTH_SEED] Background seeding skip/fail:', error.message);
+    console.warn('[AUTH_SEED] Background seeding skip:', error.message);
   }
 }
 
@@ -60,7 +66,7 @@ export type AuthResult = {
 export async function authenticateUser(email: string, password: string): Promise<AuthResult> {
   const normalizedEmail = email.toLowerCase();
   
-  // Tenter le seeding en arrière-plan sans bloquer
+  // Tenter le seeding en arrière-plan sans bloquer la requête
   ensureAdminSeeded().catch(() => {});
 
   try {
@@ -69,19 +75,22 @@ export async function authenticateUser(email: string, password: string): Promise
     });
 
     if (!user) {
+      authAudit.warn('SIGNIN_FAILED_USER_NOT_FOUND', { email: normalizedEmail });
       return { success: false, error: 'INVALID_CREDENTIALS' };
     }
 
     const passwordMatch = await bcrypt.compare(password, user.password);
 
     if (!passwordMatch) {
+      authAudit.warn('SIGNIN_FAILED_WRONG_PASSWORD', { email: normalizedEmail });
       return { success: false, error: 'INVALID_CREDENTIALS' };
     }
 
-    // Protection admin root
+    // Protection admin root ou règle d'approbation
     const isAdmin = normalizedEmail === 'admin@visionode.local' || user.role === 'admin';
 
     if (!user.approved && !isAdmin) {
+      authAudit.warn('SIGNIN_FAILED_NOT_APPROVED', { userId: user.id, email: normalizedEmail });
       return { success: false, error: 'NOT_APPROVED' };
     }
 

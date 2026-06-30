@@ -2,22 +2,19 @@
 import { PrismaClient } from '@prisma/client';
 
 /**
- * Initialisation stable du client Prisma pour environnement hybride.
- * Utilise la connexion native PostgreSQL plus robuste en mode développement.
+ * @fileOverview Initialisation ultra-robuste du client Prisma.
+ * Évite les crashs au démarrage si la base de données est instable.
  */
 
 const globalForPrisma = global as unknown as { prisma: PrismaClient };
 
-export const prisma =
-  globalForPrisma.prisma ||
-  new PrismaClient({
-    datasources: {
-      db: {
-        url: process.env.DATABASE_URL,
-      },
-    },
+const createPrismaClient = () => {
+  return new PrismaClient({
     log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
   });
+};
+
+export const prisma = globalForPrisma.prisma || createPrismaClient();
 
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
 

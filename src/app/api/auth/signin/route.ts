@@ -7,7 +7,8 @@ import { authAudit } from '@/lib/auth-audit';
 export const dynamic = 'force-dynamic';
 
 /**
- * Route d'authentification ultra-résiliente.
+ * Route d'authentification résiliente.
+ * Retourne TOUJOURS du JSON pour éviter les erreurs de parsing côté client.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -24,7 +25,7 @@ export async function POST(request: NextRequest) {
 
     authAudit.info('SIGNIN_ATTEMPT', { email });
 
-    // Appel au magasin d'authentification (inclut l'accès Prisma sécurisé)
+    // Appel au magasin d'authentification
     const result = await authenticateUser(email, password);
 
     if (result.success && result.user) {
@@ -42,15 +43,15 @@ export async function POST(request: NextRequest) {
         authAudit.error('SESSION_CREATION_ERROR', { error: sessionErr.message });
         return NextResponse.json({ 
           success: false, 
-          message: 'Erreur technique lors de la création de la session.' 
+          message: 'Erreur technique lors de la création de la session locale.' 
         }, { status: 500 });
       }
     }
 
-    // Mappage des erreurs métier
+    // Gestion des erreurs métier
     const errorMap: Record<string, { msg: string, status: number }> = {
-      'NOT_APPROVED': { msg: 'Compte en attente d\'approbation par l\'administrateur.', status: 403 },
-      'DB_ERROR': { msg: 'La base de données Neon est actuellement injoignable.', status: 503 },
+      'NOT_APPROVED': { msg: 'Compte en attente d\'approbation administrateur.', status: 403 },
+      'DB_ERROR': { msg: 'La base de données est injoignable (Neon).', status: 503 },
       'INVALID_CREDENTIALS': { msg: 'Identifiants incorrects.', status: 401 }
     };
 
@@ -62,10 +63,16 @@ export async function POST(request: NextRequest) {
     }, { status: errorDetail.status });
 
   } catch (err: any) {
+    console.error('[SIGNIN_CRITICAL_PANIC]', err);
     authAudit.error('SIGNIN_CRITICAL_EXCEPTION', { error: err.message });
-    return NextResponse.json({ 
+    
+    // On garantit une réponse JSON même en cas de panique totale
+    return new Response(JSON.stringify({ 
       success: false, 
-      message: 'Erreur critique du service d\'authentification.' 
-    }, { status: 500 });
+      message: 'Erreur critique interne du service d\'authentification.' 
+    }), { 
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
   }
 }
