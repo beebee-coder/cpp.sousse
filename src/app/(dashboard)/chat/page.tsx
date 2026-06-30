@@ -11,7 +11,6 @@ import {
   Loader2, 
   Shield, 
   Zap, 
-  Activity, 
   Trash2,
   Mic,
   MicOff,
@@ -35,34 +34,34 @@ export default function ChatPage() {
   const [autoSpeak, setAutoSpeak] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const autoSendTimerRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Stabiliser le callback d'envoi pour éviter les boucles
+  const handleSend = useCallback((text: string) => {
+    if (text.trim() && !isLoading) {
+      sendMessage(text);
+      setInput('');
+    }
+  }, [isLoading, sendMessage]);
 
   const handleManualSubmit = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (input.trim() && !isLoading) {
-      if (autoSendTimerRef.current) clearTimeout(autoSendTimerRef.current);
-      sendMessage(input);
-      setInput('');
-      // On redémarre la voix pour vider le tampon du navigateur
-      voice.restart();
-    }
+    if (autoSendTimerRef.current) clearTimeout(autoSendTimerRef.current);
+    handleSend(input);
   };
 
   const handleVoiceResult = useCallback((text: string) => {
     setInput(text);
     
-    // Automatisation : Envoi après 3 secondes d'inactivité vocale
+    // Détection de fin de phrase : 3s de silence
     if (autoSendTimerRef.current) clearTimeout(autoSendTimerRef.current);
     
     if (text.trim() && !isLoading) {
       autoSendTimerRef.current = setTimeout(() => {
-        sendMessage(text);
-        setInput('');
-        // On redémarre la voix pour vider le tampon du navigateur après l'envoi
-        voice.restart();
+        handleSend(text);
         autoSendTimerRef.current = null;
       }, 3000);
     }
-  }, [isLoading, sendMessage]);
+  }, [isLoading, handleSend]);
 
   const voice = useVoice({
     onResult: handleVoiceResult,
@@ -70,17 +69,22 @@ export default function ChatPage() {
     lang: 'fr-FR'
   });
 
+  // Gestion du scroll auto
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollIntoView({ behavior: 'smooth' });
     }
-    if (autoSpeak && messages.length > 0) {
+  }, [messages]);
+
+  // Gestion de la synthèse vocale découplée pour éviter les lags
+  useEffect(() => {
+    if (autoSpeak && messages.length > 0 && !isLoading) {
       const lastMsg = messages[messages.length - 1];
-      if (lastMsg.role === 'model' && !isLoading) {
+      if (lastMsg.role === 'model') {
         voice.speak(lastMsg.content);
       }
     }
-  }, [messages, autoSpeak, isLoading, voice]);
+  }, [messages, autoSpeak, isLoading, voice.speak]);
 
   const toggleMic = () => {
     if (voice.isListening) {
@@ -89,6 +93,11 @@ export default function ChatPage() {
     } else {
       voice.startListening();
     }
+  };
+
+  const handleClear = () => {
+    if (autoSendTimerRef.current) clearTimeout(autoSendTimerRef.current);
+    clearChat();
   };
 
   return (
@@ -108,7 +117,7 @@ export default function ChatPage() {
               {autoSpeak ? <Volume2 className="w-3.5 h-3.5 mr-2" /> : <VolumeX className="w-3.5 h-3.5 mr-2" />}
               <span className="hidden sm:inline">{autoSpeak ? "Audio ON" : "Audio OFF"}</span>
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => { if (autoSendTimerRef.current) clearTimeout(autoSendTimerRef.current); clearChat(); }} className="h-8 text-[9px] uppercase text-muted-foreground hover:text-destructive">
+            <Button variant="ghost" size="sm" onClick={handleClear} className="h-8 text-[9px] uppercase text-muted-foreground hover:text-destructive">
               <Trash2 className="w-3 h-3 sm:mr-2" />
               <span className="hidden sm:inline">Reset</span>
             </Button>
@@ -164,7 +173,6 @@ export default function ChatPage() {
               </div>
             </ScrollArea>
 
-            {/* Visualiseur de signal et timer auto-send */}
             <div className="px-4 flex flex-col gap-1 shrink-0">
                {voice.isListening && (
                  <div className="flex items-center justify-between mb-1">
@@ -175,7 +183,7 @@ export default function ChatPage() {
                     {input.trim() && (
                       <div className="flex items-center gap-1.5">
                          <Timer className="w-2.5 h-2.5 text-primary animate-pulse" />
-                         <span className="text-[8px] font-code text-primary uppercase">Envoi auto dans 3s...</span>
+                         <span className="text-[8px] font-code text-primary uppercase">Envoi auto (silence détecté)...</span>
                       </div>
                     )}
                  </div>
