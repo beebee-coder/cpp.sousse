@@ -10,24 +10,24 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Modèle utilisateur
 model User {
-  id        String   @id @default(uuid())
-  firstName String
-  lastName  String
-  password  String
-  email     String   @unique
-  role      String   @default("user")
-  approved  Boolean  @default(false)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  
+  id             String          @id @default(cuid())
+  firstName      String
+  lastName       String
+  password       String
+  email          String          @unique
+  role           String          @default("user")
+  approved       Boolean         @default(false)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  lastSyncAt     DateTime?
   knowledgeItems KnowledgeItem[]
+
+  @@map("users")
 }
 
-// Modèle de connaissances et procédures
 model KnowledgeItem {
-  id          String   @id @default(uuid())
+  id          String   @id @default(cuid())
   userId      String
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   type        String
@@ -48,4 +48,5 @@ model KnowledgeItem {
   @@index([type])
   @@index([syncedLocal])
   @@index([createdAt])
+  @@map("knowledge_items")
 }
