@@ -6,12 +6,12 @@ import { authAudit } from '@/lib/auth-audit';
 export const dynamic = 'force-dynamic';
 
 /**
- * Point d'entrée de connexion robuste.
- * Garantit une réponse JSON même en cas de défaillance majeure de la base de données.
+ * Route d'authentification robuste.
+ * Garantit une réponse JSON constante pour éviter les erreurs de parsing client.
  */
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    const body = await request.json().catch(() => ({}));
     const email = String(body?.email ?? '').trim();
     const password = String(body?.password ?? '');
 
@@ -22,9 +22,12 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
+    authAudit.info('SIGNIN_ATTEMPT', { email });
+
     const result = await authenticateUser(email, password);
 
     if (result.success && result.user) {
+      // Création de la session via cookie JWT
       await signIn({
         id: result.user.id,
         firstName: result.user.firstName,
@@ -32,34 +35,30 @@ export async function POST(request: NextRequest) {
         role: result.user.role,
       });
 
+      authAudit.success('SIGNIN_SUCCESS', { userId: result.user.id, email });
       return NextResponse.json({ success: true, user: result.user });
     }
 
-    // Cartographie des erreurs métier
-    if (result.error === 'NOT_APPROVED') {
-      return NextResponse.json({ 
-        success: false, 
-        message: 'Compte en attente d\'approbation par l\'administrateur.' 
-      }, { status: 403 });
-    }
+    // Gestion des erreurs métier
+    const errorMap: Record<string, { msg: string, status: number }> = {
+      'NOT_APPROVED': { msg: 'Compte en attente d\'approbation par l\'administrateur.', status: 403 },
+      'DB_ERROR': { msg: 'Liaison interrompue avec le serveur de données Neon.', status: 503 },
+      'INVALID_CREDENTIALS': { msg: 'Email ou clé d\'accès invalide.', status: 401 }
+    };
 
-    if (result.error === 'DB_ERROR') {
-      return NextResponse.json({ 
-        success: false, 
-        message: 'Liaison interrompue avec le serveur de données Neon.' 
-      }, { status: 503 });
-    }
-
+    const errorDetail = errorMap[result.error || 'INVALID_CREDENTIALS'];
     return NextResponse.json({ 
       success: false, 
-      message: 'Email ou clé d\'accès invalide.' 
-    }, { status: 401 });
+      message: errorDetail.msg 
+    }, { status: errorDetail.status });
 
   } catch (err: any) {
-    authAudit.error('SIGNIN_CRITICAL_FAILURE', { error: err.message });
+    authAudit.error('SIGNIN_CRITICAL_EXCEPTION', { error: err.message });
+    
+    // On renvoie TOUJOURS du JSON, même en cas de crash total
     return NextResponse.json({ 
       success: false, 
-      message: 'Le service d\'authentification est momentanément indisponible.' 
+      message: 'Le service d\'authentification est momentanément indisponible. Erreur réseau ou base de données.' 
     }, { status: 500 });
   }
 }

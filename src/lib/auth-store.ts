@@ -6,45 +6,36 @@ import { authAudit } from '@/lib/auth-audit';
 const normalizeName = (value: string) => value.trim().toLowerCase();
 
 /**
- * Assure que l'utilisateur administrateur par défaut est inséré en base de données.
- * Cette opération est asynchrone et non-bloquante pour la connexion.
+ * Assure que l'administrateur système existe.
+ * Isolé pour ne pas faire planter la connexion si le seeding échoue.
  */
 async function ensureAdminSeeded() {
   const adminEmail = 'admin@visionode.local';
-  const adminPassword = process.env.AUTH_ADMIN_PASSWORD ?? 'Admin@2024!';
-  const adminFirstName = process.env.AUTH_ADMIN_FIRST_NAME ?? 'Ahmed';
-  const adminLastName = process.env.AUTH_ADMIN_LAST_NAME ?? 'Abbes';
+  const adminPassword = process.env.AUTH_ADMIN_PASSWORD || 'Admin@2024!';
 
   try {
+    // Vérification légère
     const admin = await prisma.user.findUnique({
       where: { email: adminEmail }
     });
 
     if (!admin) {
-      authAudit.info('ADMIN_SEED_START', { email: adminEmail });
       const hashedPassword = await bcrypt.hash(adminPassword, 12);
       await prisma.user.create({
         data: {
           id: 'admin-root',
-          firstName: adminFirstName,
-          lastName: adminLastName,
+          firstName: 'Ahmed',
+          lastName: 'Abbes',
           password: hashedPassword,
           email: adminEmail,
           role: 'admin',
           approved: true,
         }
       });
-      authAudit.success('ADMIN_SEED_DONE', { email: adminEmail });
-    } else if (!admin.approved) {
-      await prisma.user.update({
-        where: { email: adminEmail },
-        data: { approved: true }
-      });
-      authAudit.info('ADMIN_AUTO_REAPPROVE', { email: adminEmail });
+      authAudit.info('ADMIN_AUTO_CREATED');
     }
   } catch (error: any) {
-    // On log l'erreur mais on ne bloque pas le processus
-    authAudit.warn('ADMIN_SEED_SKIPPED', { reason: error.message });
+    authAudit.warn('ADMIN_SEED_FAILED', { reason: error.message });
   }
 }
 
@@ -56,7 +47,7 @@ function mapToAuthUser(u: any): AuthUser {
     password: u.password,
     role: u.role as UserRole,
     approved: u.approved,
-    createdAt: u.createdAt.getTime(),
+    createdAt: u.createdAt instanceof Date ? u.createdAt.getTime() : Date.now(),
   };
 }
 
@@ -69,8 +60,8 @@ export type AuthResult = {
 export async function authenticateUser(email: string, password: string): Promise<AuthResult> {
   const normalizedEmail = email.toLowerCase();
   
-  // Lancement du seeding en arrière-plan
-  void ensureAdminSeeded();
+  // Lancement du seeding asynchrone (non-bloquant)
+  ensureAdminSeeded().catch(() => {});
 
   try {
     const user = await prisma.user.findUnique({
@@ -78,28 +69,25 @@ export async function authenticateUser(email: string, password: string): Promise
     });
 
     if (!user) {
-      authAudit.warn('AUTH_FAILED_USER_NOT_FOUND', { email: normalizedEmail });
       return { success: false, error: 'INVALID_CREDENTIALS' };
     }
 
     const passwordMatch = await bcrypt.compare(password, user.password);
 
     if (!passwordMatch) {
-      authAudit.warn('AUTH_FAILED_WRONG_PASSWORD', { email: normalizedEmail });
       return { success: false, error: 'INVALID_CREDENTIALS' };
     }
 
-    // L'admin root ou le rôle admin ne nécessite pas d'approbation manuelle
+    // L'admin root n'a jamais besoin d'approbation
     const isAdmin = normalizedEmail === 'admin@visionode.local' || user.role === 'admin';
 
     if (!user.approved && !isAdmin) {
-      authAudit.warn('AUTH_FAILED_NOT_APPROVED', { email: normalizedEmail });
       return { success: false, error: 'NOT_APPROVED' };
     }
 
     return { success: true, user: mapToAuthUser(user) };
   } catch (error: any) {
-    authAudit.error('AUTH_DB_ERROR', { error: error.message });
+    authAudit.error('AUTH_STORE_DB_ERROR', { error: error.message });
     return { success: false, error: 'DB_ERROR' };
   }
 }
