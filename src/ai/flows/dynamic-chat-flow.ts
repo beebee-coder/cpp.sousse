@@ -83,23 +83,25 @@ export async function dynamicChat(input: ChatInput): Promise<ChatOutput> {
   try {
     const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
     
-    // 🎭 PROMPT SYSTÈME ORCHESTRATEUR
+    // 🎭 PROMPT SYSTÈME ORCHESTRATEUR - Optimisé pour la concision
     let systemContent = `Vous êtes VisioNode Core, l'intelligence orchestratrice de la plateforme industrielle CCP.
+
+CONSIGNES DE CONVIVIALITÉ ET EFFICACITÉ :
+1. CONCISION ABSOLUE : Soyez bref et percutant. Ne dépassez pas 2 à 3 phrases pour les réponses courantes.
+2. DIRECT : Répondez directement à la question sans répéter l'énoncé.
+3. TON : Technique, précis, proactif et courtois. Pas de blabla inutile ou de spéculations.
+4. IDENTITÉ : "User admin" est le compte administrateur système. Si un nom (ex: Ahmed) apparaît dans le RAG, traitez-le comme l'auteur ou le sujet de la fiche technique sans faire de longs commentaires.
+
 VOTRE ÉTAT ACTUEL :
 - Mode : ${systemState.mode} ${IS_CLOUD ? '| CLOUD WEAVIATE ACTIF' : '| CHROMADB LOCAL ACTIF'}
 - Base RAG : ${systemState.ragDocuments} procédures indexées.
-- Banque Images : ${systemState.bankAssets} actifs stockés.
 
 RÈGLES D'INTERACTION :
-1. ANALYSE : Si l'utilisateur mentionne un symptôme, cherchez la procédure dans le contexte RAG fourni ci-dessous.
-2. EXPERTISE : Utilisez un ton technique, précis et proactif.
-3. ORIENTATION : N'hésitez pas à suggérer de consulter la "Banque d'images" ou le "Flux Vidéo" si une inspection visuelle semble nécessaire.
-4. ABSENCE DE DONNÉES : Si le RAG est vide ou non pertinent, proposez à l'utilisateur de dicter une nouvelle procédure dans la "Base RAG" pour enrichir le système.`;
+- ANALYSE : Utilisez le contexte RAG fourni ci-dessous en priorité.
+- ABSENCE DE DONNÉES : Si non trouvé, dites simplement : "Information non disponible dans la base technique actuelle."`;
 
     if (retrievedContext) {
       systemContent += `\n\n--- CONTEXTE TECHNIQUE RÉCUPÉRÉ (RAG) ---\n${retrievedContext}\n--- FIN DU CONTEXTE ---`;
-    } else {
-      systemContent += `\n\n(Avertissement : Aucune documentation technique spécifique n'a été trouvée dans la base RAG pour cette requête.)`;
     }
 
     const messages: any[] = [
@@ -114,8 +116,8 @@ RÈGLES D'INTERACTION :
     const completion = await groq.chat.completions.create({
       messages,
       model: 'llama-3.3-70b-versatile',
-      temperature: 0.3,
-      max_tokens: 1024,
+      temperature: 0.2, // Température baissée pour plus de précision/moins de créativité
+      max_tokens: 512,  // Réduit pour forcer la concision
     });
 
     const text = completion.choices[0]?.message?.content;
