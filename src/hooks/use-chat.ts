@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
@@ -27,27 +26,19 @@ export function useChat() {
   const sendMessage = useCallback(async (content: string) => {
     if (!content.trim() || isLoading) return;
 
-    const timeStr = new Date().toLocaleTimeString();
-    console.log(`🚀 [${timeStr}] [CLIENT_SEND] Transmission : ${content.substring(0, 30)}...`);
-    
     const userMsg: ChatMessage = { role: 'user', content, timestamp: Date.now() };
     setMessages(prev => [...prev, userMsg]);
     setIsLoading(true);
 
     try {
       let data;
-
       if (isDesktop) {
-        // PONT NATIF TAURI (Pour l'EXE Desktop)
-        console.log(`📡 [${timeStr}] [CLIENT_BRIDGE] Appel du pont natif Rust...`);
         const { invoke } = await import('@tauri-apps/api/core');
         data = await invoke('chat_with_ia', { 
           message: content,
           history: messages.map(m => ({ role: m.role, content: m.content }))
-        }) as { text: string; provider: string };
+        }) as any;
       } else {
-        // API ROUTE STANDARD (Pour Vercel Web)
-        console.log(`📡 [${timeStr}] [CLIENT_UPLINK] Négociation API Route...`);
         const res = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -56,36 +47,24 @@ export function useChat() {
             history: messages.map(m => ({ role: m.role, content: m.content }))
           })
         });
-
         if (!res.ok) throw new Error("Réponse API non valide");
         data = await res.json();
       }
 
-      console.log(`✅ [${timeStr}] [CLIENT_RECEIVE] Nœud : ${data.provider}`);
-      
       const aiMsg: ChatMessage = {
         role: 'model',
         content: data.text,
         provider: data.provider,
+        media: data.media,
         timestamp: Date.now()
       };
 
       setMessages(prev => [...prev, aiMsg]);
       setCurrentProvider(data.provider);
     } catch (error: any) {
-      console.error(`❌ [${timeStr}] [CLIENT_ERROR] Liaison interrompue :`, error);
-      
-      let errorMsg = "";
-      if (isDesktop) {
-        const detail = typeof error === 'string' ? error : (error?.message || JSON.stringify(error));
-        errorMsg = `ERREUR_LIAISON_CRITIQUE : Le pont natif n'a pas pu joindre les services IA. Détail : ${detail}`;
-      } else {
-        errorMsg = "ERREUR_LIAISON_CRITIQUE : Le centre de commande cloud est injoignable.";
-      }
-        
       setMessages(prev => [...prev, {
         role: 'model',
-        content: errorMsg,
+        content: "ERREUR_LIAISON_CRITIQUE : Le centre de commande est injoignable.",
         timestamp: Date.now()
       }]);
     } finally {

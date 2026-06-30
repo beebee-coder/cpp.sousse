@@ -1,6 +1,6 @@
 /**
  * @fileOverview Moteur de recherche professionnel VisioNode Pro-Search V5.0.
- * Intègre 20 options professionnelles de recherche industrielle.
+ * Intègre 20 options professionnelles de recherche industrielle incluant le support multimédia.
  */
 
 import path from 'path';
@@ -33,12 +33,8 @@ const CHROMA_DATA_DIR = path.join(process.cwd(), '.data', 'chromadb');
 
 const IS_CLOUD = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
 
-// 6. STOP-WORDS PROFESSIONNELS (Français)
 const STOP_WORDS = new Set(['le', 'la', 'les', 'de', 'du', 'des', 'un', 'une', 'et', 'en', 'ce', 'ces', 'pour', 'sur', 'dans', 'avec', 'est', 'sont']);
 
-/**
- * 18. SOMMAIRE DE CONTEXTE (Stats système)
- */
 export async function getSystemContextSummary() {
   const summary = {
     ragDocuments: 0,
@@ -60,89 +56,111 @@ export async function getSystemContextSummary() {
   return summary;
 }
 
-/**
- * 4. TOKENISATION & 14. NORMALISATION (NLP)
- */
 function tokenize(text: string): string[] {
   return text
     .toLowerCase()
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '') // Supprime accents
-    .replace(/[^a-z0-9\s]/g, ' ') // Garde alphanum
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
     .split(/\s+/)
-    .filter(word => word.length > 2 && !STOP_WORDS.has(word)); // Filtrage Stop-words
+    .filter(word => word.length > 2 && !STOP_WORDS.has(word));
 }
 
 /**
- * 2. PONDÉRATION (BOOSTING) & 10. PHRASE MATCHING
+ * Recherche Physique étendue : Items + Banque d'Images
  */
 export function fallbackSemanticSearch(query: string, nResults = 5, componentFilter?: string): SearchResult[] {
-  if (!fs.existsSync(REGISTRY_ITEMS_DIR)) return [];
-  
-  try {
-    const files = fs.readdirSync(REGISTRY_ITEMS_DIR).filter(f => f.endsWith('.json'));
-    const results: SearchResult[] = [];
-    const queryTokens = tokenize(query);
-    const lowerQuery = query.toLowerCase().trim();
+  const results: SearchResult[] = [];
+  const queryTokens = tokenize(query);
+  const lowerQuery = query.toLowerCase().trim();
 
-    for (const file of files) {
-      const content = fs.readFileSync(path.join(REGISTRY_ITEMS_DIR, file), 'utf8');
-      const data = JSON.parse(content);
-      
-      const fileName = file.replace('.json', '');
-      const title = String(data.title || data.label || '').toLowerCase();
-      const body = String(data.details || data.content || '').toLowerCase();
-      const tags = Array.isArray(data.tags) ? data.tags.join(' ').toLowerCase() : '';
-      
-      let score = 0;
+  // 1. Scan du Registre d'Items (JSON)
+  if (fs.existsSync(REGISTRY_ITEMS_DIR)) {
+    try {
+      const files = fs.readdirSync(REGISTRY_ITEMS_DIR).filter(f => f.endsWith('.json'));
+      for (const file of files) {
+        const content = fs.readFileSync(path.join(REGISTRY_ITEMS_DIR, file), 'utf8');
+        const data = JSON.parse(content);
+        
+        const fileName = file.replace('.json', '');
+        const title = String(data.title || data.label || '').toLowerCase();
+        const body = String(data.details || data.content || '').toLowerCase();
+        
+        let score = 0;
+        if (title.includes(lowerQuery)) score += 50;
+        if (fileName.includes(lowerQuery)) score += 60;
+        if (body.includes(lowerQuery)) score += 20;
 
-      // 10. RECHERCHE PAR PHRASE EXACTE (Boost massif)
-      if (title.includes(lowerQuery)) score += 50;
-      if (fileName.includes(lowerQuery)) score += 60; // 9. File Name Boosting
-      if (body.includes(lowerQuery)) score += 20;
-
-      // 7. DENSITÉ & 2. BOOSTING PAR CHAMP
-      queryTokens.forEach(token => {
-        if (fileName.includes(token)) score += 15;
-        if (title.includes(token)) score += 10;
-        if (tags.includes(token)) score += 5;
-        if (body.includes(token)) score += 2;
-      });
-
-      // 17. THRESHOLDING (Seuil de bruit) - Seul le pertinent remonte
-      if (score > 5) { 
-        // 15. FILTRAGE PAR COMPOSANT (Métadonnées)
-        if (componentFilter && data.metadata?.component !== componentFilter) continue;
-
-        results.push({
-          id: file,
-          document: `${data.label || data.title || ''}\n${data.details || data.content || ''}`,
-          metadata: { 
-            ...data.metadata, 
-            title: data.title, 
-            source_file: file, 
-            origin: 'PHY_REGISTRY',
-            relevance_score: score 
-          },
-          distance: 0,
-          // 5. NORMALISATION DU SCORE
-          score: Math.min(score / 100, 1) 
+        queryTokens.forEach(token => {
+          if (fileName.includes(token)) score += 15;
+          if (title.includes(token)) score += 10;
+          if (body.includes(token)) score += 2;
         });
+
+        if (score > 5) {
+          if (componentFilter && data.metadata?.component !== componentFilter) continue;
+          results.push({
+            id: file,
+            document: `${data.label || data.title || ''}\n${data.details || data.content || ''}`,
+            metadata: { ...data.metadata, title: data.title, origin: 'PHY_REGISTRY', relPath: `items/${file}`, relevance_score: score },
+            distance: 0,
+            score: Math.min(score / 100, 1)
+          });
+        }
       }
-    }
-    
-    // 16. RANKING FINAL
-    return results
-      .sort((a, b) => b.score - a.score)
-      .slice(0, nResults);
-  } catch (e) {
-    return [];
+    } catch (e) {}
   }
+
+  // 2. Scan de la Banque d'Images (Metadata.json)
+  if (fs.existsSync(REGISTRY_BANK_DIR)) {
+    try {
+      const folders = fs.readdirSync(REGISTRY_BANK_DIR);
+      for (const folder of folders) {
+        const metaPath = path.join(REGISTRY_BANK_DIR, folder, 'metadata.json');
+        if (!fs.existsSync(metaPath)) continue;
+
+        const content = fs.readFileSync(metaPath, 'utf8');
+        const data = JSON.parse(content);
+        
+        const name = String(data.name || '').toLowerCase();
+        const desc = String(data.description || '').toLowerCase();
+        const tags = Array.isArray(data.tags) ? data.tags.join(' ').toLowerCase() : '';
+
+        let score = 0;
+        if (name.includes(lowerQuery)) score += 70; // Priorité haute aux noms d'actifs
+        if (desc.includes(lowerQuery)) score += 30;
+        if (tags.includes(lowerQuery)) score += 40;
+
+        queryTokens.forEach(token => {
+          if (name.includes(token)) score += 20;
+          if (tags.includes(token)) score += 15;
+        });
+
+        if (score > 10) {
+          results.push({
+            id: folder,
+            document: `[ACTIF_BANQUE]: ${data.name}\n${data.description}`,
+            metadata: { 
+              ...data, 
+              origin: 'PHY_BANK', 
+              relPath: data.path, // Chemin vers l'image réelle
+              isMedia: true,
+              mediaType: data.type,
+              relevance_score: score 
+            },
+            distance: 0,
+            score: Math.min(score / 100, 1)
+          });
+        }
+      }
+    } catch (e) {}
+  }
+
+  return results
+    .sort((a, b) => b.score - a.score)
+    .slice(0, nResults);
 }
 
-/**
- * LOGIQUE CHROMA DB (MODE LOCAL)
- */
 export class LocalEmbeddingFunction {
   async generate(texts: string[]): Promise<number[][]> {
     return texts.map(() => new Array(384).fill(0));
@@ -187,21 +205,15 @@ export async function upsertDocuments(collectionName: string, documents: Documen
   } catch (e) {}
 }
 
-/**
- * 1. RECHERCHE HYBRIDE (Vectoriel + Lexical)
- */
 export async function semanticSearch(options: SearchOptions): Promise<SearchResult[]> {
   const { collectionName, query, nResults = 5 } = options;
-  
   if (IS_CLOUD) return fallbackSemanticSearch(query, nResults);
-  
   try {
     const col = await getOrCreateCollection(collectionName);
     const results = await col.query({ queryTexts: [query], nResults });
     const ids = results.ids[0] ?? [];
     const docs = results.documents[0] ?? [];
     const distances = results.distances?.[0] ?? [];
-    
     return ids.map((id: string, i: number) => ({
       id,
       document: String(docs[i] || ''),
@@ -214,17 +226,10 @@ export async function semanticSearch(options: SearchOptions): Promise<SearchResu
   }
 }
 
-/**
- * 12. DÉDUPLICATION & 13. FUSION DE COLLECTIONS
- */
 export async function searchAcrossCollections(query: string, nResultsPerCollection = 3): Promise<SearchResult[]> {
   const mergedResults: SearchResult[] = [];
-
-  // Phase lexicale (Physique + Fichiers)
   const physical = fallbackSemanticSearch(query, nResultsPerCollection * 2);
   mergedResults.push(...physical);
-
-  // Phase vectorielle (Local uniquement)
   if (!IS_CLOUD) {
     try {
       const cols = await listCollections() as any[];
@@ -238,14 +243,8 @@ export async function searchAcrossCollections(query: string, nResultsPerCollecti
       }
     } catch (e) {}
   }
-
-  // 12. DÉDUPLICATION PAR CONTENU (Content Hash simulé par trim)
   const unique = Array.from(new Map(mergedResults.map(r => [r.document.toLowerCase().trim(), r])).values());
-  
-  // 16. CLASSEMENT FINAL
-  return unique
-    .sort((a, b) => b.score - a.score)
-    .slice(0, nResultsPerCollection * 2);
+  return unique.sort((a, b) => b.score - a.score).slice(0, nResultsPerCollection * 2);
 }
 
 export async function seedIndustrialManuals() {
