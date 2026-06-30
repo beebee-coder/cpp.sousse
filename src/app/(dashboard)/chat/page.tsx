@@ -18,7 +18,8 @@ import {
   VolumeX,
   ImageIcon,
   Timer,
-  PlayCircle
+  PlayCircle,
+  ArrowRight
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -67,6 +68,19 @@ export default function ChatPage() {
     autoRestart: true,
     lang: 'fr-FR'
   });
+
+  // ✅ AUTO-NAVIGATION : Redirige vers la procédure dès qu'elle est détectée
+  useEffect(() => {
+    if (messages.length > 0 && !isLoading) {
+      const lastMsg = messages[messages.length - 1];
+      if (lastMsg.role === 'model' && lastMsg.procedureId) {
+        const timer = setTimeout(() => {
+          router.push(`/procedures/${lastMsg.procedureId}/execute`);
+        }, 2000); // Délai de 2s pour laisser l'utilisateur lire la confirmation
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [messages, isLoading, router]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -138,18 +152,15 @@ export default function ChatPage() {
                         {m.procedureId && (
                           <div className="mt-4 p-4 border border-secondary/30 bg-secondary/5 rounded-sm flex flex-col gap-3 animate-in zoom-in-95 duration-500">
                              <div className="flex items-center gap-2">
-                               <PlayCircle className="w-5 h-5 text-secondary animate-pulse" />
-                               <span className="text-[10px] font-bold text-secondary uppercase tracking-widest">Procédure Interactive Détectée</span>
+                               <Loader2 className="w-5 h-5 text-secondary animate-spin" />
+                               <span className="text-[10px] font-bold text-secondary uppercase tracking-widest">Initialisation du cockpit interactif</span>
                              </div>
                              <p className="text-[10px] font-code text-muted-foreground uppercase leading-tight">
-                               Le moteur de vision a identifié la séquence complète dans le registre. Cliquez ci-dessous pour lancer le cockpit.
+                               Transfert automatique vers la séquence opérationnelle...
                              </p>
-                             <Button 
-                              onClick={() => router.push(`/procedures/${m.procedureId}/execute`)}
-                              className="bg-secondary text-secondary-foreground font-bold uppercase text-[10px] h-10 shadow-xl"
-                             >
-                               Lancer l'Exécution Réelle
-                             </Button>
+                             <div className="h-1 bg-secondary/20 rounded-full overflow-hidden">
+                                <div className="h-full bg-secondary animate-progress-fast" style={{ width: '100%' }} />
+                             </div>
                           </div>
                         )}
 

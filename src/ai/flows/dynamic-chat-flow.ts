@@ -1,6 +1,6 @@
 /**
- * @fileOverview Flux de chat VisioNode Core V5.3.
- * Optimisé pour la navigation directe vers les procédures dynamiques.
+ * @fileOverview Flux de chat VisioNode Core V5.4.
+ * Passage automatique vers les procédures dynamiques sans bouton.
  */
 
 import Groq from 'groq-sdk';
@@ -103,7 +103,7 @@ CONSIGNES STRICTES :
 1. CONCISION : 2 phrases maximum.
 2. DISCRÉTION DES SOURCES : Ne mentionnez JAMAIS les noms techniques des fichiers, les extensions ou les répertoires.
 3. MULTIMÉDIA : Si un document [MÉDIA_DISPONIBLE] est présent, confirmez son affichage.
-4. TRANSITION PROCÉDURE : Si vous identifiez une [PROCÉDURE_GUIDÉ] pertinente dans le contexte, invitez explicitement l'utilisateur à lancer l'exécution interactive via le bouton qui apparaîtra.
+4. TRANSITION PROCÉDURE : Si vous identifiez une [PROCÉDURE_GUIDÉ] pertinente dans le contexte, confirmez que vous initialisez immédiatement le transfert vers le cockpit interactif.
 
 ÉTAT SYSTÈME :
 - Mode : ${systemState.mode}
@@ -128,7 +128,7 @@ CONSIGNES STRICTES :
     if (text) {
       return { 
         text: text.trim(), 
-        provider: `Groq LPU + Pro-Search V5.2`,
+        provider: `Groq LPU + Pro-Search V5.4`,
         media: detectedMedia,
         procedureId: detectedProcedureId
       };
