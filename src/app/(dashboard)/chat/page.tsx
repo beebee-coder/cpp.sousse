@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { DashboardSidebar } from '@/components/dashboard/Sidebar';
 import { ConnectionStatus } from '@/components/dashboard/ConnectionStatus';
 import { 
@@ -17,7 +17,8 @@ import {
   MicOff,
   Volume2,
   VolumeX,
-  ImageIcon
+  ImageIcon,
+  Timer
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -33,9 +34,38 @@ export default function ChatPage() {
   const [input, setInput] = useState('');
   const [autoSpeak, setAutoSpeak] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const autoSendTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  const { isListening, isSupported, startListening, stopListening, speak, volume } = useVoice({
-    onResult: (text) => setInput(text),
+  const handleManualSubmit = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (input.trim() && !isLoading) {
+      if (autoSendTimerRef.current) clearTimeout(autoSendTimerRef.current);
+      sendMessage(input);
+      setInput('');
+      // On redémarre la voix pour vider le tampon du navigateur
+      voice.restart();
+    }
+  };
+
+  const handleVoiceResult = useCallback((text: string) => {
+    setInput(text);
+    
+    // Automatisation : Envoi après 3 secondes d'inactivité vocale
+    if (autoSendTimerRef.current) clearTimeout(autoSendTimerRef.current);
+    
+    if (text.trim() && !isLoading) {
+      autoSendTimerRef.current = setTimeout(() => {
+        sendMessage(text);
+        setInput('');
+        // On redémarre la voix pour vider le tampon du navigateur après l'envoi
+        voice.restart();
+        autoSendTimerRef.current = null;
+      }, 3000);
+    }
+  }, [isLoading, sendMessage]);
+
+  const voice = useVoice({
+    onResult: handleVoiceResult,
     autoRestart: true,
     lang: 'fr-FR'
   });
@@ -47,25 +77,17 @@ export default function ChatPage() {
     if (autoSpeak && messages.length > 0) {
       const lastMsg = messages[messages.length - 1];
       if (lastMsg.role === 'model' && !isLoading) {
-        speak(lastMsg.content);
+        voice.speak(lastMsg.content);
       }
     }
-  }, [messages, autoSpeak, isLoading, speak]);
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (input.trim() && !isLoading) {
-      sendMessage(input);
-      setInput('');
-      // On laisse le micro ouvert si autoRestart est activé pour fluidifier l'échange
-    }
-  };
+  }, [messages, autoSpeak, isLoading, voice]);
 
   const toggleMic = () => {
-    if (isListening) {
-      stopListening();
+    if (voice.isListening) {
+      if (autoSendTimerRef.current) clearTimeout(autoSendTimerRef.current);
+      voice.stopListening();
     } else {
-      startListening();
+      voice.startListening();
     }
   };
 
@@ -86,7 +108,7 @@ export default function ChatPage() {
               {autoSpeak ? <Volume2 className="w-3.5 h-3.5 mr-2" /> : <VolumeX className="w-3.5 h-3.5 mr-2" />}
               <span className="hidden sm:inline">{autoSpeak ? "Audio ON" : "Audio OFF"}</span>
             </Button>
-            <Button variant="ghost" size="sm" onClick={clearChat} className="h-8 text-[9px] uppercase text-muted-foreground hover:text-destructive">
+            <Button variant="ghost" size="sm" onClick={() => { if (autoSendTimerRef.current) clearTimeout(autoSendTimerRef.current); clearChat(); }} className="h-8 text-[9px] uppercase text-muted-foreground hover:text-destructive">
               <Trash2 className="w-3 h-3 sm:mr-2" />
               <span className="hidden sm:inline">Reset</span>
             </Button>
@@ -112,7 +134,6 @@ export default function ChatPage() {
                       <div className={cn("p-3 sm:p-4 rounded-sm font-code text-[11px] sm:text-sm leading-relaxed border shadow-sm relative group", m.role === 'user' ? "bg-primary/5 border-primary/20" : "bg-card/80 border-border")}>
                         {m.content}
                         
-                        {/* Rendu Média RAG */}
                         {m.media && (
                           <div className="mt-4 border border-primary/20 rounded-sm overflow-hidden bg-black/40 shadow-xl max-w-sm">
                             <div className="p-1 border-b border-primary/10 bg-primary/5 flex items-center gap-2">
@@ -128,7 +149,7 @@ export default function ChatPage() {
                         )}
 
                         <div className="mt-3 flex justify-between items-center">
-                          <button onClick={() => speak(m.content)} className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-primary/10 rounded-sm">
+                          <button onClick={() => voice.speak(m.content)} className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-primary/10 rounded-sm">
                             <Volume2 className="w-3 h-3 text-muted-foreground hover:text-primary" />
                           </button>
                           {m.provider && (
@@ -143,38 +164,60 @@ export default function ChatPage() {
               </div>
             </ScrollArea>
 
-            {/* Visualiseur de signal vocal discret */}
-            {isListening && (
-              <div className="h-1 flex gap-0.5 px-4">
-                {[...Array(20)].map((_, i) => (
-                  <div 
-                    key={i} 
-                    className="flex-1 bg-primary transition-all duration-75 rounded-full" 
-                    style={{ height: `${Math.random() * volume * 100}%`, opacity: 0.5 + (volume * 0.5) }}
-                  />
-                ))}
-              </div>
-            )}
+            {/* Visualiseur de signal et timer auto-send */}
+            <div className="px-4 flex flex-col gap-1 shrink-0">
+               {voice.isListening && (
+                 <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center gap-2">
+                      <div className="w-1.5 h-1.5 bg-red-500 rounded-full animate-ping" />
+                      <span className="text-[8px] font-code text-red-500 uppercase font-bold">Écoute Active</span>
+                    </div>
+                    {input.trim() && (
+                      <div className="flex items-center gap-1.5">
+                         <Timer className="w-2.5 h-2.5 text-primary animate-pulse" />
+                         <span className="text-[8px] font-code text-primary uppercase">Envoi auto dans 3s...</span>
+                      </div>
+                    )}
+                 </div>
+               )}
+               {voice.isListening && (
+                 <div className="h-1 flex gap-0.5">
+                   {[...Array(30)].map((_, i) => (
+                     <div 
+                       key={i} 
+                       className="flex-1 bg-primary transition-all duration-75 rounded-full" 
+                       style={{ 
+                         height: `${Math.random() * voice.volume * 100}%`, 
+                         opacity: 0.3 + (voice.volume * 0.7) 
+                       }}
+                     />
+                   ))}
+                 </div>
+               )}
+            </div>
 
             <Card className="p-1.5 sm:p-2 border-primary/30 bg-black/60 shadow-2xl shrink-0">
-              <form onSubmit={handleSubmit} className="flex gap-2">
+              <form onSubmit={handleManualSubmit} className="flex gap-2">
                 <Button 
                   type="button" 
                   variant="ghost" 
                   size="icon" 
                   onClick={toggleMic} 
-                  disabled={!isSupported || isLoading} 
+                  disabled={!voice.isSupported || isLoading} 
                   className={cn(
                     "h-9 w-9 sm:h-10 sm:w-10 transition-all", 
-                    isListening ? "bg-red-500/20 text-red-500 animate-pulse border border-red-500/50" : "text-primary hover:bg-primary/10"
+                    voice.isListening ? "bg-red-500/20 text-red-500 border border-red-500/50" : "text-primary hover:bg-primary/10"
                   )}
                 >
-                  {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+                  {voice.isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
                 </Button>
                 <Input 
                   value={input} 
-                  onChange={(e) => setInput(e.target.value)} 
-                  placeholder={isListening ? "JE VOUS ÉCOUTE..." : (isLoading ? "RÉFLEXION..." : "COMMANDE SYSTÈME OU VOCALE...")} 
+                  onChange={(e) => {
+                    if (autoSendTimerRef.current) clearTimeout(autoSendTimerRef.current);
+                    setInput(e.target.value);
+                  }} 
+                  placeholder={voice.isListening ? "JE VOUS ÉCOUTE..." : (isLoading ? "RÉFLEXION..." : "COMMANDE SYSTÈME OU VOCALE...")} 
                   className="flex-1 bg-transparent border-none focus-visible:ring-0 font-code uppercase text-xs sm:text-sm h-9 sm:h-10" 
                   disabled={isLoading} 
                 />
@@ -194,7 +237,7 @@ export default function ChatPage() {
               </div>
               <p className="text-[8px] font-code text-muted-foreground leading-tight uppercase">
                 &gt; Indexation : Items + Bank<br/>
-                &gt; Mode : Vocal Hybride<br/>
+                &gt; Mode : Mains Libres<br/>
                 &gt; Statut : Opérationnel
               </p>
             </Card>

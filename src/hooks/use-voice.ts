@@ -78,7 +78,7 @@ export function useVoice(options: VoiceOptions = {}) {
         setState(prev => ({ ...prev, isListening: false, volume: 0 }));
         stopVolumeAnalysis();
         
-        // Auto-restart if not manually stopped
+        // Auto-restart if not manually stopped (for continuous mode flow)
         if (options.autoRestart && !isManuallyStopped.current) {
           try { 
             recognition.start(); 
@@ -150,7 +150,7 @@ export function useVoice(options: VoiceOptions = {}) {
       try { 
         recognitionRef.current.start(); 
       } catch (e) {
-        console.warn("SpeechRecognition already started");
+        // already started
       }
     }
   }, []);
@@ -161,8 +161,16 @@ export function useVoice(options: VoiceOptions = {}) {
       try { 
         recognitionRef.current.stop(); 
       } catch (e) {
-        console.warn("SpeechRecognition already stopped");
+        // already stopped
       }
+    }
+  }, []);
+
+  const restart = useCallback(() => {
+    if (recognitionRef.current) {
+      isManuallyStopped.current = false;
+      recognitionRef.current.stop();
+      // onend will automatically restart if autoRestart is true
     }
   }, []);
 
@@ -187,5 +195,5 @@ export function useVoice(options: VoiceOptions = {}) {
     window.speechSynthesis.speak(utterance);
   }, [options.lang]);
 
-  return { ...state, startListening, stopListening, speak };
+  return { ...state, startListening, stopListening, restart, speak };
 }
