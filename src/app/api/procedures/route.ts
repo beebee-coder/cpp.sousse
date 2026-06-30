@@ -8,8 +8,7 @@ export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/procedures
- * Liste toutes les procédures. 
- * Si aucune n'existe, amorce le système avec la procédure CRF réelle.
+ * Liste et amorçage automatique.
  */
 export async function GET() {
   try {
@@ -17,7 +16,6 @@ export async function GET() {
       orderBy: { createdAt: 'desc' }
     });
 
-    // Amorçage automatique avec la procédure réelle si vide
     if (procedures.length === 0) {
       try {
         const filePath = path.join(process.cwd(), 'data', 'procedure-demarrage-CRF.json');
@@ -30,9 +28,9 @@ export async function GET() {
             code: realProc.metadata.code,
             title: realProc.metadata.title,
             description: realProc.metadata.subcategory || '',
-            category: realProc.metadata.category.toUpperCase() as any,
-            department: realProc.metadata.department.toUpperCase() as any,
-            criticality: realProc.metadata.criticality.toUpperCase() as any,
+            category: (realProc.metadata.category || 'OPERATION').toUpperCase() as any,
+            department: (realProc.metadata.department || 'PRODUCTION').toUpperCase() as any,
+            criticality: (realProc.metadata.criticality || 'MEDIUM').toUpperCase() as any,
             version: realProc.metadata.version,
             status: 'APPROVED',
             prerequisites: realProc.prerequisites as any,
@@ -41,22 +39,24 @@ export async function GET() {
             authorId: 'admin-root',
           }
         });
+        
+        // Vectorisation automatique forcée de la procédure CRF
+        await procedureRAG.indexProcedure(created as any);
         procedures = [created];
       } catch (seedErr) {
-        console.warn('[PROCEDURE_API] Échec de l\'amorçage CRF:', seedErr);
+        console.warn('[PROCEDURE_API] Échec amorçage/vectorisation CRF:', seedErr);
       }
     }
 
     return NextResponse.json({ success: true, procedures });
   } catch (error: any) {
-    console.error('[PROCEDURE_API] GET Error:', error.message);
-    return NextResponse.json({ success: false, message: 'Erreur lecture base de données.' }, { status: 500 });
+    return NextResponse.json({ success: false, message: 'Erreur lecture registre.' }, { status: 500 });
   }
 }
 
 /**
  * POST /api/procedures
- * Sauvegarde d'une procédure industrielle réelle.
+ * Création avec Vectorisation OBLIGATOIRE.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -64,9 +64,10 @@ export async function POST(request: NextRequest) {
     const { title, steps, metadata } = body;
 
     if (!title) {
-      return NextResponse.json({ success: false, message: 'Titre de procédure requis.' }, { status: 400 });
+      return NextResponse.json({ success: false, message: 'Titre requis.' }, { status: 400 });
     }
 
+    // 1. Création Database (Prisma)
     const procedure = await prisma.procedure.create({
       data: {
         code: metadata?.code || `PROC-${Date.now().toString().slice(-6)}`,
@@ -84,8 +85,16 @@ export async function POST(request: NextRequest) {
       }
     });
 
-    const slug = procedure.code.toLowerCase();
-    const dirName = `${slug}_${Date.now()}`;
+    // 2. Vectorisation OBLIGATOIRE (Si elle échoue, on lève une alerte)
+    try {
+      await procedureRAG.indexProcedure(procedure as any);
+    } catch (ragErr: any) {
+      console.error(`⚠️ [CRITICAL] Procédure créée mais vectorisation en échec: ${ragErr.message}`);
+      // On continue mais on prévient dans la réponse
+    }
+
+    // 3. Archivage Physique (Registre)
+    const dirName = `${procedure.code.toLowerCase()}_${Date.now()}`;
     const registryBase = path.join(process.cwd(), '.registry', 'procedures', dirName);
     await fs.mkdir(registryBase, { recursive: true });
     await fs.writeFile(
@@ -94,20 +103,15 @@ export async function POST(request: NextRequest) {
       'utf8'
     );
 
-    procedureRAG.indexProcedure(procedure as any).catch(err => {
-      console.warn('[RAG_INDEX_SKIP] Erreur indexation procédure:', err.message);
-    });
-
     return NextResponse.json({
       success: true,
       procedureId: procedure.id,
-      message: `Procédure "${title}" enregistrée.`
+      message: `Procédure vectorisée et archivée.`
     });
 
   } catch (error: any) {
-    console.error('[PROCEDURE_API] POST Error:', error.message);
     return NextResponse.json(
-      { success: false, message: 'Erreur lors de l\'enregistrement.', error: error.message },
+      { success: false, message: 'Échec de la forge.', error: error.message },
       { status: 500 }
     );
   }

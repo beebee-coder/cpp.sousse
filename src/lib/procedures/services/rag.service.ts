@@ -1,46 +1,80 @@
 /**
  * @fileOverview Service RAG spécialisé pour les procédures industrielles.
- * Gère l'indexation sémantique et la recherche documentaire liée aux opérations.
+ * Version : Automatique et Obligatoire (Support Hybride Weaviate/Chroma).
  */
 
-import { FullProcedure, ProcedureStep } from '../types';
-import { upsertDocuments, searchAcrossCollections, SearchResult } from '@/lib/chroma';
+import { FullProcedure } from '../types';
+import { upsertDocuments as upsertChroma, searchAcrossCollections, SearchResult } from '@/lib/chroma';
+
+const IS_CLOUD = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
 
 export class ProcedureRAGService {
   /**
-   * Indexe une procédure complète en la découpant en chunks (Étapes + Métadonnées).
+   * Indexe une procédure de manière obligatoire.
+   * Gère le routage vers Weaviate (Cloud) ou Chroma (Local).
    */
   async indexProcedure(procedure: FullProcedure): Promise<void> {
-    const documents = [
-      // Chunk 1: Métadonnées globales
+    const timestamp = new Date().toISOString();
+    
+    // Décomposition en chunks sémantiques
+    const chunks = [
       {
         id: `proc-meta-${procedure.id}`,
-        content: `Procédure: ${procedure.title} [CODE: ${procedure.code}]. Catégorie: ${procedure.metadata.category}. Département: ${procedure.metadata.department}. Description: ${procedure.metadata.title}`,
-        metadata: { procedureId: procedure.id, type: 'metadata', code: procedure.code }
+        content: `Procédure Industrielle: ${procedure.title} [CODE: ${procedure.code}]. Catégorie: ${procedure.metadata.category}. Département: ${procedure.metadata.department}. Criticité: ${procedure.metadata.criticality}.`,
+        metadata: { 
+          procedureId: procedure.id, 
+          type: 'metadata', 
+          code: procedure.code,
+          indexedAt: timestamp 
+        }
       },
-      // Chunks pour chaque étape
       ...procedure.steps.map((step, index) => ({
         id: `proc-step-${procedure.id}-${index}`,
-        content: `Étape ${step.order}: ${step.title}. Action: ${step.action.instruction}. Description: ${step.description}`,
-        metadata: { procedureId: procedure.id, type: 'step', order: step.order, stepId: step.id }
+        content: `Étape ${step.order} de ${procedure.code}: ${step.title}. Description: ${step.description}. Validation: ${step.validation.successExpression}.`,
+        metadata: { 
+          procedureId: procedure.id, 
+          type: 'step', 
+          order: step.order, 
+          stepId: step.id,
+          indexedAt: timestamp
+        }
       }))
     ];
 
     try {
-      await upsertDocuments('industrial_procedures', documents);
-      console.log(`✅ [RAG] Procédure ${procedure.code} indexée.`);
-    } catch (e) {
-      console.error(`❌ [RAG] Échec indexation procédure:`, e);
+      if (IS_CLOUD) {
+        // Indexation Weaviate Cloud via l'API interne pour les procédures
+        const { upsertKnowledgeItem } = await import('@/lib/weaviate/weaviate-knowledge');
+        await upsertKnowledgeItem({
+          knowledgeId: procedure.id,
+          userId: procedure.authorId || 'system',
+          type: 'procedure',
+          title: procedure.title,
+          content: chunks.map(c => c.content).join('\n'),
+          tags: procedure.metadata.tags || [],
+          category: procedure.metadata.category,
+          difficulty: procedure.metadata.criticality,
+          isPublic: true,
+          createdAt: procedure.metadata.createdAt
+        });
+        console.log(`📡 [RAG_CLOUD] Procédure ${procedure.code} vectorisée dans Weaviate.`);
+      } else {
+        // Indexation ChromaDB Local
+        await upsertChroma('industrial_procedures', chunks);
+        console.log(`🧠 [RAG_LOCAL] Procédure ${procedure.code} vectorisée dans ChromaDB.`);
+      }
+    } catch (e: any) {
+      console.error(`❌ [RAG_ERROR] Échec de vectorisation obligatoire pour ${procedure.code}:`, e.message);
+      throw new Error(`INDEXATION_FAILED: ${e.message}`);
     }
   }
 
   /**
-   * Recherche des informations pertinentes pour aider l'opérateur.
+   * Recherche d'assistance contextuelle.
    */
   async findHelp(query: string, procedureId?: string): Promise<SearchResult[]> {
     const results = await searchAcrossCollections(query, 5);
     if (procedureId) {
-      // Filtrer ou prioriser les résultats de la procédure actuelle
       return results.filter(r => r.metadata?.procedureId === procedureId || !r.metadata?.procedureId);
     }
     return results;
