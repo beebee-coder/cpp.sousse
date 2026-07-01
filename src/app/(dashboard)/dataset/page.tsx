@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * @fileOverview Station de Forge Industrielle V7.2.
+ * @fileOverview Station de Forge Industrielle V7.5.
  * Permet de forger des Procédures Industrielles (CRF) ou des Connaissances Q/R.
  * Logs structurés [FORGE_STATION].
  */
@@ -62,7 +62,7 @@ export default function DatasetPage() {
   const [qaAnswer, setQaAnswer] = useState('');
   const [qaTags, setQaTags] = useState('');
 
-  // ✅ INITIALISATION SÉCURISÉE (Évite Hydration Mismatch)
+  // Initialisation stable
   useEffect(() => { 
     setMounted(true); 
     const initialStep: ProcedureStep = { 
@@ -157,7 +157,6 @@ export default function DatasetPage() {
     }
     setIsUploading(true);
     const ts = new Date().toLocaleTimeString();
-    console.log(`🚀 [FORGE_STATION] [INIT] [${ts}] Forger Procedure : ${procCode}`);
 
     try {
       const res = await fetch('/api/procedures', {
@@ -179,7 +178,6 @@ export default function DatasetPage() {
         throw new Error(data.message || "Erreur de liaison");
       }
     } catch (err: any) { 
-      console.error(`❌ [FORGE_STATION] [ERROR]`, err.message);
       toast({ title: "ÉCHEC DE LA FORGE", description: err.message, variant: "destructive" }); 
     } finally { 
       setIsUploading(false); 
@@ -193,8 +191,6 @@ export default function DatasetPage() {
       return;
     }
     setIsUploading(true);
-    const ts = new Date().toLocaleTimeString();
-    console.log(`🚀 [FORGE_STATION] [INIT] [${ts}] Forger Q/A : ${qaTitle}`);
 
     try {
       const res = await fetch('/api/knowledge', {

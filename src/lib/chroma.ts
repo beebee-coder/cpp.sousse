@@ -1,6 +1,6 @@
 /**
- * @fileOverview Moteur de recherche professionnel VisioNode Pro-Search V5.2.
- * Version : Détection d'ID de procédure améliorée pour le transfert automatique.
+ * @fileOverview Moteur de recherche professionnel VisioNode Pro-Search V5.3.
+ * Version : Support de listage des collections pour l'Explorateur BDD.
  */
 
 import path from 'path';
@@ -81,7 +81,6 @@ export function fallbackSemanticSearch(query: string, nResults = 5, componentFil
         queryTokens.forEach(token => { if (searchSpace.includes(token)) score += 10; });
 
         if (score > 5) {
-          // Extraire l'ID de procédure si présent dans les données
           const procedureId = data.procedureId || data.knowledgeId || (file.startsWith('proc-') ? file.replace('.json', '') : undefined);
           
           results.push({
@@ -151,13 +150,41 @@ export async function getChromaClient(): Promise<any> {
   } catch { return null; }
 }
 
-export async function upsertDocuments(collectionName: string, documents: DocumentToAdd[]) {
-  if (IS_CLOUD) return; // Mode Web utilize Weaviate direct via Knowledge API
+export async function listCollections() {
+  if (IS_CLOUD) return [];
   try {
-    const col = await (await getChromaClient()).getOrCreateCollection({ 
-      name: collectionName, 
-      embeddingFunction: new LocalEmbeddingFunction() 
-    });
+    const client = await getChromaClient();
+    if (!client) return [];
+    return await client.listCollections();
+  } catch (e) {
+    console.error("❌ [CHROMA_LIST]", e);
+    return [];
+  }
+}
+
+export async function deleteCollection(name: string) {
+  if (IS_CLOUD) return;
+  try {
+    const client = await getChromaClient();
+    if (client) await client.deleteCollection({ name });
+  } catch (e) {
+    console.error("❌ [CHROMA_DELETE]", e);
+  }
+}
+
+export async function getOrCreateCollection(name: string, embeddingFunction?: any) {
+  if (IS_CLOUD) throw new Error("CHROMA_NOT_AVAILABLE_ON_CLOUD");
+  const client = await getChromaClient();
+  return await client.getOrCreateCollection({ 
+    name, 
+    embeddingFunction: embeddingFunction || new LocalEmbeddingFunction() 
+  });
+}
+
+export async function upsertDocuments(collectionName: string, documents: DocumentToAdd[]) {
+  if (IS_CLOUD) return;
+  try {
+    const col = await getOrCreateCollection(collectionName);
     await col.upsert({
       ids: documents.map(d => d.id),
       documents: documents.map(d => d.content),
@@ -168,6 +195,34 @@ export async function upsertDocuments(collectionName: string, documents: Documen
   }
 }
 
+export async function semanticSearch(options: SearchOptions, embeddingFunction?: any): Promise<SearchResult[]> {
+  if (IS_CLOUD) return [];
+  try {
+    const col = await getOrCreateCollection(options.collectionName, embeddingFunction);
+    const results = await col.query({
+      queryTexts: [options.query],
+      nResults: options.nResults || 5,
+      where: options.whereFilter
+    });
+    
+    const formatted: SearchResult[] = [];
+    if (results.ids[0]) {
+      results.ids[0].forEach((id: string, i: number) => {
+        formatted.push({
+          id,
+          document: String(results.documents[0][i]),
+          metadata: results.metadatas[0][i],
+          distance: Number(results.distances?.[0][i] || 0),
+          score: 1 - Number(results.distances?.[0][i] || 0)
+        });
+      });
+    }
+    return formatted;
+  } catch (e) {
+    return [];
+  }
+}
+
 export async function searchAcrossCollections(query: string, nResults = 5): Promise<SearchResult[]> {
   const mergedResults: SearchResult[] = [];
   const physical = fallbackSemanticSearch(query, nResults);
@@ -175,21 +230,13 @@ export async function searchAcrossCollections(query: string, nResults = 5): Prom
 
   if (!IS_CLOUD) {
     try {
-      const client = await getChromaClient();
-      const cols = await client?.listCollections() || [];
-      for (const c of cols) {
-        const col = await client.getCollection({ name: c.name });
-        const results = await col.query({ queryTexts: [query], nResults });
-        const ids = results.ids[0] ?? [];
-        const docs = results.documents[0] ?? [];
-        const distances = results.distances?.[0] ?? [];
-        ids.forEach((id: string, i: number) => {
+      const collections = await listCollections();
+      for (const c of collections) {
+        const results = await semanticSearch({ collectionName: c.name, query, nResults });
+        results.forEach(r => {
           mergedResults.push({
-            id,
-            document: String(docs[i]),
-            metadata: { ...results.metadatas[0][i], origin: 'VEC_CHROMA' },
-            distance: Number(distances[i]),
-            score: 1 - Number(distances[i])
+            ...r,
+            metadata: { ...r.metadata, origin: 'VEC_CHROMA' }
           });
         });
       }

@@ -1,14 +1,11 @@
 // Configuration Prisma 7 pour VisioNode Core
-// Note : La source de données (url) est gérée via prisma.config.ts et l'adaptateur Neon
-
 generator client {
-  provider        = "prisma-client-js"
-  previewFeatures = ["driverAdapters"]
+  provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
-  url      = "" // Géré dynamiquement
+  url      = "" // Géré par prisma.config.ts et l'adaptateur Neon
 }
 
 model User {
@@ -25,7 +22,6 @@ model User {
   
   knowledgeItems  KnowledgeItem[]
   procedures      Procedure[]
-  executions      ProcedureExecution[]
 
   @@map("users")
 }
@@ -34,11 +30,11 @@ model KnowledgeItem {
   id              String           @id @default(cuid())
   userId          String
   user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type            String           // "qa" | "document"
+  type            String           // 'qa' | 'text' | 'manual'
   title           String
   question        String?
   answer          String?
-  steps           Json?
+  steps           Json?            // Pour les mini-procédures
   tags            String[]
   category        String?
   difficulty      String           @default("medium")
@@ -64,17 +60,17 @@ model Procedure {
   version         String           @default("1.0.0")
   status          String           @default("DRAFT")
   
-  prerequisites   Json             // Structure CRF prerequisites
-  steps           Json             // Structure CRF steps
-  parameters      Json?
-  postExecution   Json?
-  metadata        Json             // Métadonnées complètes CRF
+  prerequisites   Json             // Liste structurée des prérequis
+  steps           Json             // Liste ordonnée des séquences
+  parameters      Json?            // Variables configurables
+  postExecution   Json?            // Checks de fin
+  metadata        Json             // Métadonnées industrielles
   
   authorId        String
   author          User             @relation(fields: [authorId], references: [id])
-  approvers       Json?
-  syncedLocal     Boolean          @default(false)
+  approvers       Json?            // Liste des approbateurs
   
+  syncedLocal     Boolean          @default(false)
   lastExecutedAt  DateTime?
   executionCount  Int              @default(0)
   avgDuration     Int?
@@ -82,39 +78,8 @@ model Procedure {
   
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
-  
-  executions      ProcedureExecution[]
 
   @@index([code])
   @@index([status])
   @@map("procedures")
-}
-
-model ProcedureExecution {
-  id              String           @id @default(cuid())
-  procedureId     String
-  procedure       Procedure        @relation(fields: [procedureId], references: [id], onDelete: Cascade)
-  operatorId      String
-  operator        User             @relation(fields: [operatorId], references: [id])
-  
-  startTime       DateTime         @default(now())
-  endTime         DateTime?
-  status          String
-  currentStep     Int              @default(-1)
-  stepsStatus     Json             
-  totalDuration   Int?
-  
-  events          Json?
-  alarms          Json?
-  fallbacks       Json?
-  result          Json?
-  notes           String?
-  signature       String?
-  
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
-
-  @@index([procedureId])
-  @@index([operatorId])
-  @@map("procedure_executions")
 }

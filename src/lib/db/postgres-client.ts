@@ -36,6 +36,7 @@ export const postgresClient = {
     console.log(`🔍 [REGISTRY_FS] [SCAN] [${ts}] Début du scan de l'arborescence physique.`);
 
     const scan = (dir: string, base: string = ''): FSNode[] => {
+      if (!fs.existsSync(dir)) return [];
       const items = fs.readdirSync(dir, { withFileTypes: true });
       return items.map(item => {
         const relPath = path.join(base, item.name).replace(/\\/g, '/');
@@ -71,7 +72,6 @@ export const postgresClient = {
     const fullPath = path.join(REGISTRY_ROOT, relPath);
     if (!fs.existsSync(fullPath)) throw new Error("FICHIER_INTROUVABLE");
     
-    // Pour les fichiers binaires (images/vidéos), renvoyer en base64
     const ext = path.extname(fullPath).toLowerCase();
     if (['.jpg', '.jpeg', '.png', '.mp4'].includes(ext)) {
       const buffer = fs.readFileSync(fullPath);
