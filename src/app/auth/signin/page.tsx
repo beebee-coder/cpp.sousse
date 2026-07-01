@@ -1,7 +1,7 @@
 
 "use client";
 
-import { Suspense, useState, useEffect } from 'react';
+import { Suspense, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { AlertCircle, Loader2, Database } from 'lucide-react';
@@ -22,7 +22,7 @@ function SignInForm() {
     setLoading(true);
 
     const ts = new Date().toLocaleTimeString();
-    console.log(`🔐 [AUTH_FRONT] [INIT] [${ts}] Soumission des identifiants...`);
+    console.log(`🔐 [AUTH_FRONT] [INIT] [${ts}] Tentative de connexion pour : ${email}`);
 
     try {
       const response = await fetch('/api/auth/signin', {
@@ -31,31 +31,22 @@ function SignInForm() {
         body: JSON.stringify({ email, password }),
       });
 
-      const contentType = response.headers.get('content-type') || '';
-      
-      if (!contentType.includes('application/json')) {
-        console.error(`🔐 [AUTH_FRONT] [ERROR] Réponse non-JSON du serveur.`);
-        setError(`Erreur Serveur (HTTP ${response.status}).`);
-        setLoading(false);
-        return;
-      }
-
       const data = await response.json();
       setLoading(false);
 
       if (!response.ok || !data.success) {
-        console.warn(`🔐 [AUTH_FRONT] [REJECT] Échec authentification : ${data.message}`);
-        setError(data.message || `Erreur ${response.status}`);
+        console.warn(`🔐 [AUTH_FRONT] [REJECT] [${ts}] Échec : ${data.message}`);
+        setError(data.message || "Erreur de connexion");
         return;
       }
 
-      console.log(`🔐 [AUTH_FRONT] [SUCCESS] Accès autorisé. Redirection vers : ${callbackUrl}`);
+      console.log(`🔐 [AUTH_FRONT] [SUCCESS] [${ts}] Liaison établie. Redirection...`);
       router.push(callbackUrl);
       router.refresh();
     } catch (e: any) {
-      console.error(`🔐 [AUTH_FRONT] [FATAL] Panique liaison :`, e.message);
+      console.error(`🔐 [AUTH_FRONT] [ERROR] [${ts}] Liaison interrompue :`, e.message);
       setLoading(false);
-      setError('Échec de liaison : Le serveur ne répond pas.');
+      setError("Le serveur d'authentification ne répond pas.");
     }
   };
 
@@ -67,7 +58,7 @@ function SignInForm() {
              <Database className="w-5 h-5 text-primary" />
              <h1 className="text-2xl font-bold font-headline uppercase tracking-tight text-primary">VisioNode Access</h1>
           </div>
-          <p className="text-sm text-muted-foreground mt-1">Contrôle industriel hybride CCP</p>
+          <p className="text-sm text-muted-foreground mt-1">Liaison de contrôle industriel hybride</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -78,7 +69,7 @@ function SignInForm() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="admin@visionode.local"
-              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:ring-1 focus:ring-primary outline-none transition-all"
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:ring-1 focus:ring-primary outline-none"
               required
             />
           </div>
@@ -90,15 +81,15 @@ function SignInForm() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
-              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:ring-1 focus:ring-primary outline-none transition-all"
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:ring-1 focus:ring-primary outline-none"
               required
             />
           </div>
 
           {error && (
-            <div className="flex items-start gap-3 p-3 rounded-md bg-destructive/10 border border-destructive/30 text-destructive animate-in fade-in slide-in-from-top-1">
+            <div className="flex items-start gap-3 p-3 rounded-md bg-destructive/10 border border-destructive/30 text-destructive">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-              <p className="text-[10px] font-code uppercase font-medium leading-tight">{error}</p>
+              <p className="text-[10px] font-code uppercase leading-tight">{error}</p>
             </div>
           )}
 
@@ -124,7 +115,7 @@ function SignInForm() {
 
 export default function SignInPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-background flex items-center justify-center p-6 text-xs uppercase font-code">Initialisation du Terminal...</div>}>
+    <Suspense fallback={<div className="min-h-screen bg-background flex items-center justify-center p-6 text-xs uppercase font-code">Initialisation...</div>}>
       <SignInForm />
     </Suspense>
   );

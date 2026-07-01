@@ -1,13 +1,20 @@
+
 import type { NextConfig } from 'next';
 
 const isDesktop = process.env.TAURI_ENV === 'true';
 
 /** @type {import('next').NextConfig} */
 const nextConfig: NextConfig = {
-  // En mode Desktop (Tauri), on force l'export statique. 
   output: isDesktop ? 'export' : undefined,
   
-  // Modules natifs et lourds à exclure strictement du bundle d'exécution pour éviter les erreurs de compilation.
+  // Désactivation des caches agressifs pour stabiliser le démarrage en environnement Cloud
+  webpack: (config, { isServer }) => {
+    if (!isServer) {
+      config.cache = false;
+    }
+    return config;
+  },
+
   serverExternalPackages: [
     'onnxruntime-node', 
     'chromadb', 
@@ -16,8 +23,6 @@ const nextConfig: NextConfig = {
     'sharp',
     'canvas',
     'jsdom',
-    'bufferutil',
-    'utf-8-validate',
     'prisma',
     '@prisma/client'
   ],
@@ -26,19 +31,11 @@ const nextConfig: NextConfig = {
     unoptimized: true,
     remotePatterns: [
       { protocol: 'https', hostname: 'picsum.photos' },
-      { protocol: 'https', hostname: 'images.unsplash.com' },
     ],
   },
   
-  typescript: {
-    ignoreBuildErrors: true,
-  },
-  
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
-
-  productionBrowserSourceMaps: false,
+  typescript: { ignoreBuildErrors: true },
+  eslint: { ignoreDuringBuilds: true },
 };
 
 export default nextConfig;
