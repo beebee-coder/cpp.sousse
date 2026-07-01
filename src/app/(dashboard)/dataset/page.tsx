@@ -270,17 +270,25 @@ export default function DatasetPage() {
           body: JSON.stringify(payload),
         });
 
-        const data = await res.json().catch(() => ({ success: false, message: "Erreur de réponse serveur" }));
-        console.log(`📥 [FORGE_FRONT] RÉPONSE_BACKEND:`, data);
-
+        const data = await res.json();
+        
         if (res.ok && data.success) {
+          const successMsg = data.sqlStatus === 'BYPASSED' 
+            ? "Forge réussie (Mode Registre Physique)" 
+            : "Forge réussie (Mode Hybride)";
+            
           toast({ 
-            title: "Forge Réussie ✅", 
+            title: successMsg, 
             description: data.message || `L'actif "${procTitle}" est archivé.` 
           });
+          
+          if (data.sqlStatus === 'BYPASSED') {
+            console.warn("⚠️ [FORGE_FRONT] Bypass SQL détecté :", data.diagnostic);
+          }
+
           router.push('/procedures');
         } else {
-          const errorMsg = data.message || data.error || "Échec de la forge industrielle.";
+          const errorMsg = data.message || "Échec de la forge industrielle.";
           console.error("❌ [FORGE_FRONT] REJET_BACKEND:", errorMsg);
           toast({ 
             title: "Échec de la Forge", 
@@ -292,7 +300,7 @@ export default function DatasetPage() {
         console.error("❌ [FORGE_FRONT] ERREUR_CRITIQUE:", err.message);
         toast({ 
           title: "Échec critique", 
-          description: "Le centre de forge est injoignable ou a rencontré une erreur fatale.", 
+          description: "Le centre de forge est injoignable.", 
           variant: "destructive" 
         });
       } finally { setIsUploading(false); }
@@ -333,9 +341,9 @@ export default function DatasetPage() {
             <Card className="p-4 bg-primary/5 border border-primary/20 flex items-center gap-4">
                <Zap className="w-8 h-8 text-primary" />
                <div className="space-y-1">
-                 <p className="text-[10px] font-code text-white uppercase font-bold">Flux d'archivage synchrone</p>
+                 <p className="text-[10px] font-code text-white uppercase font-bold">Flux d'archivage résilient</p>
                  <p className="text-[9px] font-code text-muted-foreground uppercase leading-tight">
-                   Liaison active vers Neon PostgreSQL et Registre Physique .registry/
+                   Liaison prioritaire vers Registre Physique .registry/ (Bypass SQL activé)
                  </p>
                </div>
             </Card>
