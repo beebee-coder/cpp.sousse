@@ -199,6 +199,8 @@ export default function DatasetPage() {
     e.preventDefault();
     if (isUploading) return;
 
+    console.log("🚀 [FORGE_FRONT] Initiation du flux de soumission...");
+
     if (mode === 'qa') {
       if (!question.trim() || !answer.trim()) {
         toast({ title: "Données incomplètes", variant: "destructive" });
@@ -206,6 +208,7 @@ export default function DatasetPage() {
       }
       setIsUploading(true);
       try {
+        console.log("📥 [FORGE_FRONT] Envoi Item Q/R...");
         const res = await fetch('/api/knowledge', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -213,12 +216,14 @@ export default function DatasetPage() {
         });
         const data = await res.json();
         if (res.ok && data.success) {
+          console.log("✅ [FORGE_FRONT] Item Q/R indexé.");
           toast({ title: "Savoir sémantique indexé" });
           setQuestion(''); setAnswer(''); setPhraseBuffers({});
         } else {
           throw new Error(data.error || "Échec liaison BDD");
         }
       } catch (err: any) {
+        console.error("❌ [FORGE_FRONT] Échec Q/R:", err.message);
         toast({ title: "Échec de l'indexation", description: err.message, variant: "destructive" });
       } finally { setIsUploading(false); }
     } else {
@@ -228,6 +233,7 @@ export default function DatasetPage() {
       }
       setIsUploading(true);
       try {
+        console.log("🏗️ [FORGE_FRONT] Formatage de la procédure complexe...");
         const formattedSteps = procSteps.map((s, i) => ({
           id: `step-${Date.now()}-${i}`,
           order: i + 1,
@@ -254,6 +260,8 @@ export default function DatasetPage() {
           media: s.media ? { [s.mediaType === 'image' ? 'image' : 'video']: { url: s.media } } : undefined
         }));
 
+        console.log(`📦 [FORGE_FRONT] Envoi de ${formattedSteps.length} étapes vers l'API...`);
+
         const res = await fetch('/api/procedures', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -269,14 +277,27 @@ export default function DatasetPage() {
           }),
         });
 
-        const data = await res.json();
-        if (data.success) {
+        const text = await res.text();
+        console.log("📡 [FORGE_FRONT] Statut HTTP:", res.status);
+        
+        let data;
+        try {
+          data = JSON.parse(text);
+        } catch (e) {
+          console.error("❌ [FORGE_FRONT] La réponse serveur n'est pas du JSON:", text.slice(0, 500));
+          throw new Error("Erreur de format serveur (non-JSON).");
+        }
+
+        if (res.ok && data.success) {
+          console.log("✅ [FORGE_FRONT] Procédure forgée avec succès. ID:", data.procedureId);
           toast({ title: "Forge réussie", description: "La procédure est enregistrée et archivée." });
           router.push('/procedures');
         } else {
+          console.error("❌ [FORGE_FRONT] Rejet de forge:", data.message || "Inconnu");
           throw new Error(data.message || "Erreur serveur critique");
         }
       } catch (err: any) {
+        console.error("❌ [FORGE_FRONT] Échec critique de la forge:", err.message);
         toast({ title: "Échec de la Forge", description: err.message, variant: "destructive" });
       } finally { setIsUploading(false); }
     }

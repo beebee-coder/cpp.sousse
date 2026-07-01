@@ -15,6 +15,7 @@ export class ProcedureRAGService {
    */
   async indexProcedure(procedure: FullProcedure): Promise<void> {
     const timestamp = new Date().toISOString();
+    console.log(`🧠 [RAG_SERVICE] Préparation indexation pour: ${procedure.code}`);
     
     // Construction du bloc de connaissances sémantiques
     const chunks = [
@@ -41,9 +42,11 @@ export class ProcedureRAGService {
       }))
     ];
 
+    console.log(`🧱 [RAG_SERVICE] ${chunks.length} chunks générés pour vectorisation.`);
+
     try {
       if (IS_CLOUD) {
-        // Mode Web : Tentative Weaviate (Cloud)
+        console.log("📡 [RAG_SERVICE] Mode Cloud: Tentative Weaviate...");
         if (process.env.WEAVIATE_URL && process.env.WEAVIATE_API_KEY) {
           try {
             const { upsertKnowledgeItem } = await import('@/lib/weaviate/weaviate-knowledge');
@@ -59,16 +62,21 @@ export class ProcedureRAGService {
               isPublic: true,
               createdAt: timestamp
             });
+            console.log(`✅ [RAG_SERVICE] Vectorisé dans Weaviate Cloud.`);
           } catch (e) {
-             console.warn("[RAG_WEAVIATE_SKIP] Serveur non configuré.");
+             console.warn("[RAG_SERVICE] Échec Weaviate (non-bloquant):", (e as Error).message);
           }
+        } else {
+          console.log("ℹ️ [RAG_SERVICE] Weaviate non configuré. Vectorisation cloud ignorée.");
         }
       } else {
         // Mode Natif : Indexation ChromaDB Local (obligatoire pour le mode desktop)
+        console.log("🧠 [RAG_SERVICE] Mode Natif: Indexation ChromaDB local...");
         await upsertChroma('industrial_procedures', chunks);
+        console.log(`✅ [RAG_SERVICE] Vectorisé dans ChromaDB.`);
       }
     } catch (e: any) {
-      console.warn(`[RAG_INDEX_WARN] Vectorisation ignorée pour ${procedure.code}: ${e.message}`);
+      console.warn(`⚠️ [RAG_SERVICE] Vectorisation échouée pour ${procedure.code}: ${e.message}`);
     }
   }
 
@@ -77,12 +85,16 @@ export class ProcedureRAGService {
    */
   async findHelp(query: string, procedureId?: string): Promise<SearchResult[]> {
     try {
+      console.log(`🔍 [RAG_SERVICE] Recherche aide pour: "${query}"`);
       const results = await searchAcrossCollections(query, 5);
       if (procedureId) {
-        return results.filter(r => r.metadata?.procedureId === procedureId || !r.metadata?.procedureId);
+        const filtered = results.filter(r => r.metadata?.procedureId === procedureId || !r.metadata?.procedureId);
+        console.log(`✅ [RAG_SERVICE] ${filtered.length} aides trouvées.`);
+        return filtered;
       }
       return results;
     } catch (e) {
+      console.error("❌ [RAG_SERVICE] Erreur recherche:", (e as Error).message);
       return [];
     }
   }
