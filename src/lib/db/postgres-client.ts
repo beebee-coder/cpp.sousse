@@ -1,27 +1,68 @@
-
 import fs from 'fs';
 import path from 'path';
 
 /**
- * Liaison physique pour le Registre local [REGISTRY_FS].
+ * @fileOverview Liaison physique pour le Registre local [REGISTRY_FS].
+ * Version : Scan récursif pour synchronisation réelle de l'Explorateur BDD.
  */
+
 const REGISTRY_ROOT = path.join(process.cwd(), '.registry');
 
 const ensureRegistry = () => {
   if (!fs.existsSync(REGISTRY_ROOT)) {
     fs.mkdirSync(REGISTRY_ROOT, { recursive: true });
   }
-  ['items', 'bank', 'procedures'].forEach(dir => {
+  const dirs = ['items', 'bank', 'procedures'];
+  dirs.forEach(dir => {
     const target = path.join(REGISTRY_ROOT, dir);
     if (!fs.existsSync(target)) fs.mkdirSync(target, { recursive: true });
   });
 };
 
+interface FSNode {
+  id: string;
+  name: string;
+  type: 'file' | 'folder';
+  children?: FSNode[];
+}
+
 export const postgresClient = {
-  async getRegistryTree(): Promise<any[]> {
+  /**
+   * Scan récursif du registre physique pour l'arborescence UI.
+   */
+  async getRegistryTree(): Promise<FSNode[]> {
     ensureRegistry();
-    // Logique simplifiée pour l'exemple
-    return [];
+    const ts = new Date().toLocaleTimeString();
+    console.log(`🔍 [REGISTRY_FS] [SCAN] [${ts}] Début du scan de l'arborescence physique.`);
+
+    const scan = (dir: string, base: string = ''): FSNode[] => {
+      const items = fs.readdirSync(dir, { withFileTypes: true });
+      return items.map(item => {
+        const relPath = path.join(base, item.name).replace(/\\/g, '/');
+        const absPath = path.join(dir, item.name);
+        
+        if (item.isDirectory()) {
+          return {
+            id: relPath,
+            name: item.name,
+            type: 'folder',
+            children: scan(absPath, relPath)
+          };
+        }
+        return {
+          id: relPath,
+          name: item.name,
+          type: 'file'
+        };
+      });
+    };
+
+    try {
+      return scan(REGISTRY_ROOT);
+    } catch (e: any) {
+      console.error(`❌ [REGISTRY_FS] [SCAN_ERROR] :`, e.message);
+      return [];
+    }
   },
 
   async getFile(relPath: string) {
@@ -29,6 +70,15 @@ export const postgresClient = {
     console.log(`📖 [REGISTRY_FS] [READ] [${ts}] Lecture : ${relPath}`);
     const fullPath = path.join(REGISTRY_ROOT, relPath);
     if (!fs.existsSync(fullPath)) throw new Error("FICHIER_INTROUVABLE");
+    
+    // Pour les fichiers binaires (images/vidéos), renvoyer en base64
+    const ext = path.extname(fullPath).toLowerCase();
+    if (['.jpg', '.jpeg', '.png', '.mp4'].includes(ext)) {
+      const buffer = fs.readFileSync(fullPath);
+      const mime = ext === '.mp4' ? 'video/mp4' : 'image/jpeg';
+      return `data:${mime};base64,${buffer.toString('base64')}`;
+    }
+    
     return fs.readFileSync(fullPath, 'utf8');
   },
 
@@ -39,7 +89,46 @@ export const postgresClient = {
     const dir = path.dirname(fullPath);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     
-    fs.writeFileSync(fullPath, content, 'utf8');
+    if (content.startsWith('data:')) {
+      const base64Data = content.split(',')[1];
+      fs.writeFileSync(fullPath, Buffer.from(base64Data, 'base64'));
+    } else {
+      fs.writeFileSync(fullPath, content, 'utf8');
+    }
     console.log(`💾 [REGISTRY_FS] [WRITE] [${ts}] Succès : ${relPath} (${content.length} bytes)`);
+  },
+
+  async createFolder(relPath: string) {
+    ensureRegistry();
+    const fullPath = path.join(REGISTRY_ROOT, relPath);
+    if (!fs.existsSync(fullPath)) {
+      fs.mkdirSync(fullPath, { recursive: true });
+    }
+  },
+
+  async deleteItem(relPath: string) {
+    const fullPath = path.join(REGISTRY_ROOT, relPath);
+    if (fs.existsSync(fullPath)) {
+      const stats = fs.statSync(fullPath);
+      if (stats.isDirectory()) {
+        fs.rmSync(fullPath, { recursive: true, force: true });
+      } else {
+        fs.unlinkSync(fullPath);
+      }
+      console.log(`🗑️ [REGISTRY_FS] [DELETE] Succès : ${relPath}`);
+    }
+  },
+
+  async renameItem(oldPath: string, newName: string) {
+    const oldFullPath = path.join(REGISTRY_ROOT, oldPath);
+    const newFullPath = path.join(path.dirname(oldFullPath), newName);
+    if (fs.existsSync(oldFullPath)) {
+      fs.renameSync(oldFullPath, newFullPath);
+      console.log(`📝 [REGISTRY_FS] [RENAME] ${oldPath} -> ${newName}`);
+    }
+  },
+
+  async saveAsset(relPath: string, dataUri: string) {
+    await this.saveFile(relPath, dataUri);
   }
 };

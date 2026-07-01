@@ -1,11 +1,14 @@
-// schema.prisma (Standard Prisma 7 pour Neon)
+// Configuration Prisma 7 pour VisioNode Core
+// Note : La source de données (url) est gérée via prisma.config.ts et l'adaptateur Neon
+
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
 }
 
 datasource db {
   provider = "postgresql"
-  url      = "" // Géré dynamiquement par l'adaptateur Neon dans src/lib/db/prisma-client.ts
+  url      = "" // Géré dynamiquement
 }
 
 model User {
@@ -28,57 +31,57 @@ model User {
 }
 
 model KnowledgeItem {
-  id              String   @id @default(cuid())
+  id              String           @id @default(cuid())
   userId          String
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type            String   // 'qa' ou 'document'
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type            String           // "qa" | "document"
   title           String
   question        String?
   answer          String?
-  steps           Json?    // Pour stocker des mini-procédures dans le RAG
+  steps           Json?
   tags            String[]
   category        String?
-  difficulty      String   @default("medium")
-  isPublic        Boolean  @default(true)
-  syncedLocal     Boolean  @default(false)
+  difficulty      String           @default("medium")
+  isPublic        Boolean          @default(true)
+  syncedLocal     Boolean          @default(false)
   vectorId        String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
 
   @@index([userId])
   @@map("knowledge_items")
 }
 
 model Procedure {
-  id              String   @id @default(cuid())
-  code            String   @unique
+  id              String           @id @default(cuid())
+  code            String           @unique
   title           String
   description     String?
-  category        String   @default("OPERATION")
+  category        String           @default("OPERATION")
   subcategory     String?
-  department      String   @default("PRODUCTION")
-  criticality     String   @default("MEDIUM")
-  version         String   @default("1.0.0")
-  status          String   @default("DRAFT")
+  department      String           @default("PRODUCTION")
+  criticality     String           @default("MEDIUM")
+  version         String           @default("1.0.0")
+  status          String           @default("DRAFT")
   
-  prerequisites   Json     // Standard industriel CRF
-  steps           Json     // Liste ordonnée d'étapes
-  parameters      Json?    // Variables configurables
-  postExecution   Json?    
-  metadata        Json     // Métadonnées complètes
+  prerequisites   Json             // Structure CRF prerequisites
+  steps           Json             // Structure CRF steps
+  parameters      Json?
+  postExecution   Json?
+  metadata        Json             // Métadonnées complètes CRF
   
   authorId        String
-  author          User     @relation(fields: [authorId], references: [id])
-  approvers       Json?    
+  author          User             @relation(fields: [authorId], references: [id])
+  approvers       Json?
+  syncedLocal     Boolean          @default(false)
   
-  syncedLocal     Boolean  @default(false)
   lastExecutedAt  DateTime?
-  executionCount  Int      @default(0)
-  avgDuration     Int?     
-  successRate     Float?   
+  executionCount  Int              @default(0)
+  avgDuration     Int?
+  successRate     Float?
   
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
   
   executions      ProcedureExecution[]
 
@@ -88,28 +91,28 @@ model Procedure {
 }
 
 model ProcedureExecution {
-  id              String   @id @default(cuid())
+  id              String           @id @default(cuid())
   procedureId     String
-  procedure       Procedure @relation(fields: [procedureId], references: [id], onDelete: Cascade)
+  procedure       Procedure        @relation(fields: [procedureId], references: [id], onDelete: Cascade)
   operatorId      String
-  operator        User      @relation(fields: [operatorId], references: [id])
+  operator        User             @relation(fields: [operatorId], references: [id])
   
-  startTime       DateTime @default(now())
+  startTime       DateTime         @default(now())
   endTime         DateTime?
   status          String
-  currentStep     Int      @default(-1)
-  stepsStatus     Json     
-  totalDuration   Int?     
+  currentStep     Int              @default(-1)
+  stepsStatus     Json             
+  totalDuration   Int?
   
-  events          Json?    
-  alarms          Json?    
-  fallbacks       Json?    
-  result          Json?    
+  events          Json?
+  alarms          Json?
+  fallbacks       Json?
+  result          Json?
   notes           String?
-  signature       String?  
+  signature       String?
   
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
 
   @@index([procedureId])
   @@index([operatorId])

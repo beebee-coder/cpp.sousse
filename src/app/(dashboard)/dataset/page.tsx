@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * @fileOverview Station de Forge Industrielle V7.0.
+ * @fileOverview Station de Forge Industrielle V7.2.
  * Permet de forger des Procédures Industrielles (CRF) ou des Connaissances Q/R.
  * Logs structurés [FORGE_STATION].
  */
@@ -66,7 +66,7 @@ export default function DatasetPage() {
   useEffect(() => { 
     setMounted(true); 
     const initialStep: ProcedureStep = { 
-      id: `step-init-${Date.now()}`, 
+      id: `step-${Date.now()}`, 
       order: 1,
       title: '', 
       description: '',
