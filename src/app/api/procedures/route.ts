@@ -1,3 +1,4 @@
+
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db/prisma-client';
 import { postgresClient } from '@/lib/db/postgres-client';
@@ -7,21 +8,21 @@ import { v4 as uuidv4 } from 'uuid';
 export const dynamic = 'force-dynamic';
 
 /**
- * @fileOverview API de Forge Industrielle V6.7 - Stratégie de Bypass & Concordance CRF.
- * Logs structurés [FORGE_API]. Priorité au Registre Physique.
+ * @fileOverview API de Forge Industrielle V6.7 - Concordance CRF & Réponse Rapide.
+ * Logs structurés [FORGE]. Priorité au Registre Physique.
  */
 export async function POST(request: NextRequest) {
   const ts = new Date().toLocaleTimeString();
   const traceId = uuidv4().slice(0, 8);
   
-  console.log(`🚀 [FORGE_API] [INIT] [${traceId}] Réception demande à ${ts}`);
+  console.log(`🚀 [FORGE] [INIT] [${traceId}] Réception demande de création à ${ts}`);
 
   try {
     const session = await getSessionFromCookie();
     const body = await request.json().catch(() => null);
     
     if (!body || !body.title) {
-      console.error(`❌ [FORGE_API] [REJECT] [${traceId}] Payload incomplet.`);
+      console.error(`❌ [FORGE] [REJECT] [${traceId}] Payload incomplet.`);
       return NextResponse.json({ success: false, message: 'Titre requis.' }, { status: 400 });
     }
 
@@ -30,7 +31,7 @@ export async function POST(request: NextRequest) {
     const code = (metadata.code || body.code || `PROC-${Date.now().toString().slice(-6)}`).toUpperCase();
 
     // 1. ARCHIVAGE PHYSIQUE (Priorité Critique - Libère le client immédiatement)
-    console.log(`📂 [FORGE_API] [STEP] [${traceId}] Archivage physique dans .registry/...`);
+    console.log(`📂 [REGISTRY] [STEP] [${traceId}] Archivage dans .registry/procedures/${code.toLowerCase()}`);
     const regPath = `procedures/${code.toLowerCase()}/procedure.json`;
     
     const procedureData = {
@@ -53,30 +54,23 @@ export async function POST(request: NextRequest) {
     };
 
     try {
-      // Simulation ou exécution réelle du stockage asset
       await postgresClient.saveFile(regPath, JSON.stringify(procedureData, null, 2));
-      console.log(`✅ [FORGE_API] [SUCCESS] [${traceId}] Fichier créé : ${regPath}`);
+      console.log(`✅ [REGISTRY] [SUCCESS] [${traceId}] Fichier JSON créé.`);
     } catch (e: any) {
-      console.warn(`⚠️ [FORGE_API] [BYPASS] [${traceId}] Échec archivage disque (Simulé) :`, e.message);
+      console.warn(`⚠️ [REGISTRY] [ERROR] [${traceId}] Échec archivage disque :`, e.message);
     }
 
-    // 2. SYNCHRONISATION SQL NEON (Bypass si Prisma est instable)
-    console.log(`💾 [FORGE_API] [STEP] [${traceId}] Tentative liaison SQL Neon...`);
+    // 2. SYNCHRONISATION SQL NEON (Asynchrone)
+    console.log(`💾 [FORGE] [STEP] [${traceId}] Tentative liaison SQL Neon...`);
     
     try {
-      // Sécurité : Vérifier si prisma.user est accessible
-      if (!prisma || !(prisma as any).user) {
-        throw new Error("Moteur Prisma non initialisé");
-      }
-
       let authorId = session?.user?.id;
       if (!authorId) {
-        // Fallback admin system
-        const admin = await (prisma as any).user.findUnique({ where: { email: 'admin@visionode.local' } });
+        const admin = await prisma.user.findFirst({ where: { role: 'admin' } });
         authorId = admin?.id || 'admin-root';
       }
 
-      await (prisma as any).procedure.upsert({
+      await prisma.procedure.upsert({
         where: { code },
         update: {
           title,
@@ -102,11 +96,9 @@ export async function POST(request: NextRequest) {
           authorId: authorId,
         }
       });
-
-      console.log(`✅ [FORGE_API] [SUCCESS] [${traceId}] Liaison SQL établie.`);
+      console.log(`✅ [FORGE] [SUCCESS] [${traceId}] Liaison SQL établie.`);
     } catch (sqlErr: any) {
-      console.error(`🛡️ [FORGE_API] [BYPASS_SQL] [${traceId}] SQL ignoré :`, sqlErr.message);
-      // On retourne quand même un succès car le fichier physique est notre source de vérité
+      console.error(`🛡️ [FORGE] [BYPASS_SQL] [${traceId}] SQL non critique ignoré :`, sqlErr.message);
     }
 
     return NextResponse.json({ 
@@ -117,7 +109,7 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (err: any) {
-    console.error(`❌ [FORGE_API] [FATAL] [${traceId}] Panique :`, err.message);
+    console.error(`❌ [FORGE] [FATAL] [${traceId}] Panique :`, err.message);
     return NextResponse.json({ 
       success: false, 
       error: 'ERREUR_INTERNE_FORGE',
@@ -128,13 +120,13 @@ export async function POST(request: NextRequest) {
 
 export async function GET() {
   try {
-    if (!prisma || !(prisma as any).procedure) return NextResponse.json({ success: true, procedures: [] });
-    const procedures = await (prisma as any).procedure.findMany({
+    const procedures = await prisma.procedure.findMany({
       orderBy: { createdAt: 'desc' },
       include: { author: { select: { firstName: true, lastName: true } } }
     });
     return NextResponse.json({ success: true, procedures });
   } catch (e: any) {
-    return NextResponse.json({ success: false, procedures: [], message: 'Mode Registre Physique uniquement.' });
+    console.error(`❌ [FORGE] [READ_ERROR]`, e.message);
+    return NextResponse.json({ success: false, procedures: [], message: 'Mode Registre Physique actif.' });
   }
 }

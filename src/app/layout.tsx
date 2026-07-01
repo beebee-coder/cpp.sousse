@@ -1,3 +1,4 @@
+
 import type {Metadata} from 'next';
 import './globals.css';
 import { PlatformProvider } from '@/components/PlatformProvider';
@@ -27,6 +28,7 @@ export const metadata: Metadata = {
   title: 'VisioNode Control | CCP Industrial Vision',
   description: 'Industrial Computer Vision Control Platform',
   icons: {
+    // Favicon inline pour éviter les erreurs 404 Google Workstations
     icon: 'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>👁️</text></svg>',
   }
 };

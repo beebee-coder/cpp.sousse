@@ -7,7 +7,7 @@ const isDesktop = process.env.TAURI_ENV === 'true';
 const nextConfig: NextConfig = {
   output: isDesktop ? 'export' : undefined,
   
-  // Désactivation des caches agressifs pour stabiliser le démarrage en environnement Cloud
+  // Désactivation du cache Webpack pour stabiliser l'environnement Cloud et éviter les 404 statiques
   webpack: (config, { isServer }) => {
     if (!isServer) {
       config.cache = false;

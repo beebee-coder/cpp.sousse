@@ -1,12 +1,13 @@
+
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { 
   Database, Plus, Loader2, Trash2, 
   Zap, CheckCircle2, Layers, ShieldAlert,
   Info, Camera, Video, AlertTriangle, Activity, Settings2,
   ListChecks, ShieldCheck, MessageSquare, BookOpen,
-  Filter, Globe, Lock, Save, ChevronRight
+  Filter, Globe, Lock, Save, ChevronRight, Mic, MicOff
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -16,13 +17,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { DashboardSidebar } from '@/components/dashboard/Sidebar';
+import { useVoice } from '@/hooks/use-voice';
 import { cn } from '@/lib/utils';
 import { useRouter } from 'next/navigation';
 
-/**
- * @fileOverview Station de Forge Industrielle V6.6 - Concordance CRF Totale.
- * Logs structurés [FORGE_FRONT].
- */
 export default function DatasetPage() {
   const { toast } = useToast();
   const router = useRouter();
@@ -36,8 +34,18 @@ export default function DatasetPage() {
   const [category, setCategory] = useState('OPERATION');
   const [department, setDepartment] = useState('PRODUCTION');
   const [criticality, setCriticality] = useState('MEDIUM');
-  const [procSteps, setProcSteps] = useState<any[]>([
-    { 
+  const [procSteps, setProcSteps] = useState<any[]>([]);
+
+  // --- STATE Q/R Sémantique ---
+  const [qaTitle, setQaTitle] = useState('');
+  const [qaQuestion, setQaQuestion] = useState('');
+  const [qaAnswer, setQaAnswer] = useState('');
+  const [qaTags, setQaTags] = useState('');
+  const [qaCategory, setQaCategory] = useState('Sécurité');
+
+  useEffect(() => { 
+    setMounted(true); 
+    setProcSteps([{ 
       id: `step-${Date.now()}`, 
       title: '', 
       subtitle: '', 
@@ -51,17 +59,33 @@ export default function DatasetPage() {
       validation: { conditions: [], successExpression: 'status == OK', timeout: { value: 300, unit: 'seconds', action: 'warn' } },
       alarms: [],
       media: {}
+    }]);
+  }, []);
+
+  // --- MOTEUR VOCAL POUR DICTÉE ---
+  const [activeVoiceField, setActiveVoiceField] = useState<string | null>(null);
+  const voice = useVoice({
+    onResult: (text) => {
+      if (activeVoiceField === 'qaAnswer') setQaAnswer(text);
+      if (activeVoiceField?.startsWith('step-desc-')) {
+        const index = parseInt(activeVoiceField.split('-')[2]);
+        const n = [...procSteps];
+        n[index].description = text;
+        setProcSteps(n);
+      }
+    },
+    autoRestart: true
+  });
+
+  const toggleDictation = (fieldId: string) => {
+    if (voice.isListening && activeVoiceField === fieldId) {
+      voice.stopListening();
+      setActiveVoiceField(null);
+    } else {
+      setActiveVoiceField(fieldId);
+      voice.startListening();
     }
-  ]);
-
-  // --- STATE Q/R Sémantique ---
-  const [qaTitle, setQaTitle] = useState('');
-  const [qaQuestion, setQaQuestion] = useState('');
-  const [qaAnswer, setQaAnswer] = useState('');
-  const [qaTags, setQaTags] = useState('');
-  const [qaCategory, setQaCategory] = useState('Sécurité');
-
-  useEffect(() => { setMounted(true); }, []);
+  };
 
   const handleForgeProcedure = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -73,7 +97,7 @@ export default function DatasetPage() {
     }
 
     const ts = new Date().toLocaleTimeString();
-    console.log(`🚀 [FORGE_FRONT] [INIT] [${ts}] Lancement de la forge procédure.`);
+    console.log(`🚀 [FORGE] [INIT] [${ts}] Lancement de la forge procédure.`);
     setIsUploading(true);
 
     try {
@@ -93,14 +117,14 @@ export default function DatasetPage() {
       const data = await res.json();
       
       if (res.ok && data.success) {
-        console.log(`✅ [FORGE_FRONT] [SUCCESS] [${ts}] Actif forgé.`);
+        console.log(`✅ [FORGE] [SUCCESS] [${ts}] Actif procédure forgé.`);
         toast({ title: "PROCÉDURE FORGÉE", description: data.message });
         router.push('/procedures');
       } else {
         throw new Error(data.message || data.error || "REJET_BACKEND");
       }
     } catch (err: any) {
-      console.error(`❌ [FORGE_FRONT] [ERROR] [${ts}]`, err.message);
+      console.error(`❌ [FORGE] [ERROR] [${ts}]`, err.message);
       toast({ title: "ÉCHEC DE LA FORGE", description: err.message, variant: "destructive" });
     } finally { 
       setIsUploading(false); 
@@ -117,7 +141,7 @@ export default function DatasetPage() {
     }
 
     const ts = new Date().toLocaleTimeString();
-    console.log(`🧠 [FORGE_FRONT] [INIT] [${ts}] Injection sémantique.`);
+    console.log(`🧠 [RAG] [INIT] [${ts}] Injection sémantique Q/R.`);
     setIsUploading(true);
 
     try {
@@ -138,14 +162,14 @@ export default function DatasetPage() {
       const data = await res.json();
       
       if (res.ok && data.success) {
-        console.log(`✅ [FORGE_FRONT] [SUCCESS] [${ts}] Item indexé.`);
+        console.log(`✅ [RAG] [SUCCESS] [${ts}] Item de connaissance indexé.`);
         toast({ title: "CONNAISSANCE INDEXÉE", description: "L'item est prêt pour le RAG." });
         setQaTitle(''); setQaQuestion(''); setQaAnswer(''); setQaTags('');
       } else {
         throw new Error(data.error || "ERREUR_INDEXATION");
       }
     } catch (err: any) {
-      console.error(`❌ [FORGE_FRONT] [ERROR] [${ts}]`, err.message);
+      console.error(`❌ [RAG] [ERROR] [${ts}]`, err.message);
       toast({ title: "ÉCHEC Q/R", description: err.message, variant: "destructive" });
     } finally { 
       setIsUploading(false); 
@@ -162,7 +186,7 @@ export default function DatasetPage() {
           <div className="flex items-center gap-4">
             <div className="lg:hidden w-10" />
             <Database className="w-4 h-4 text-primary" />
-            <span className="font-headline font-bold text-xs uppercase tracking-widest text-primary">Station de Forge Industrielle V6.6</span>
+            <span className="font-headline font-bold text-xs uppercase tracking-widest text-primary">Station de Forge Industrielle</span>
           </div>
           <div className="flex items-center gap-3">
              <div className="hidden sm:flex items-center gap-2 px-3 py-1 bg-secondary/10 border border-secondary/20 rounded-sm">
@@ -186,7 +210,6 @@ export default function DatasetPage() {
 
               <TabsContent value="procedure">
                 <form onSubmit={handleForgeProcedure} className="space-y-8 pb-24">
-                  {/* Configuration Générale */}
                   <Card className="p-6 border-primary/20 bg-black/40 space-y-6 shadow-2xl">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div className="space-y-4">
@@ -226,7 +249,6 @@ export default function DatasetPage() {
                     </div>
                   </Card>
 
-                  {/* Séquences */}
                   <div className="space-y-6">
                     {procSteps.map((step, index) => (
                       <Card key={step.id} className="p-6 border-border bg-black/40 space-y-6 relative group shadow-xl">
@@ -246,7 +268,18 @@ export default function DatasetPage() {
                         
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                           <div className="space-y-4">
-                            <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Instruction Opérateur</label>
+                            <div className="flex items-center justify-between">
+                              <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Instruction Opérateur</label>
+                              <Button 
+                                type="button" 
+                                variant="ghost" 
+                                size="sm" 
+                                onClick={() => toggleDictation(`step-desc-${index}`)}
+                                className={cn("h-7 text-[8px] uppercase", voice.isListening && activeVoiceField === `step-desc-${index}` ? "text-red-500 animate-pulse" : "text-primary")}
+                              >
+                                <Mic className="w-3 h-3 mr-1" /> Dictée
+                              </Button>
+                            </div>
                             <Textarea 
                               value={step.description} 
                               onChange={e => { const n = [...procSteps]; n[index].description = e.target.value; setProcSteps(n); }} 
@@ -282,7 +315,7 @@ export default function DatasetPage() {
                                </div>
                             </div>
                             <div className="pt-4 border-t border-border/50">
-                               <p className="text-[8px] font-bold text-red-500 uppercase flex items-center gap-2"><AlertTriangle className="w-3 h-3" /> Alarmes Config : 0</p>
+                               <p className="text-[8px] font-bold text-red-500 uppercase flex items-center gap-2"><AlertTriangle className="w-3 h-3" /> Alarmes : {step.alarms?.length || 0}</p>
                             </div>
                           </div>
                         </div>
@@ -328,12 +361,23 @@ export default function DatasetPage() {
                       </div>
 
                       <div className="space-y-2">
-                        <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Réponse de l'Audit</label>
+                        <div className="flex items-center justify-between">
+                          <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Réponse de l'Audit</label>
+                          <Button 
+                            type="button" 
+                            variant="ghost" 
+                            size="sm" 
+                            onClick={() => toggleDictation('qaAnswer')}
+                            className={cn("h-7 text-[8px] uppercase", voice.isListening && activeVoiceField === 'qaAnswer' ? "text-red-500 animate-pulse" : "text-secondary")}
+                          >
+                            <Mic className="w-3 h-3 mr-1" /> Dictée Vocale
+                          </Button>
+                        </div>
                         <Textarea value={qaAnswer} onChange={e => setQaAnswer(e.target.value)} placeholder="Rédigez la réponse technique précise ici..." className="h-40 bg-black/60 border-border text-sm leading-relaxed" />
                       </div>
 
                       <div className="space-y-2">
-                        <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Mots-clés (tags, séparés par virgules)</label>
+                        <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Mots-clés (tags)</label>
                         <Input value={qaTags} onChange={e => setQaTags(e.target.value)} placeholder="crf, sécurité, vanne..." className="h-10 bg-black/20 border-border font-code text-xs" />
                       </div>
                     </div>
