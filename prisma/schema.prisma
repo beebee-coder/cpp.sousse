@@ -1,3 +1,4 @@
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -8,79 +9,72 @@ datasource db {
 }
 
 model User {
-  id            String    @id @default(cuid())
-  firstName     String
-  lastName      String
-  password      String
-  email         String    @unique
-  role          String    @default("user")
-  approved      Boolean   @default(false)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  lastSyncAt    DateTime?
-
-  knowledgeItems KnowledgeItem[]
-  procedures     Procedure[]
-  executions     ProcedureExecution[]
+  id              String           @id @default(cuid())
+  firstName       String
+  lastName        String
+  password        String
+  email           String           @unique
+  role            String           @default("user")
+  approved        Boolean          @default(false)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  lastSyncAt      DateTime?
+  knowledgeItems  KnowledgeItem[]
+  procedures      Procedure[]
+  executions      ProcedureExecution[]
 
   @@map("users")
 }
 
 model KnowledgeItem {
-  id          String   @id @default(cuid())
-  userId      String
-  type        String   // "qa" | "procedure"
-  title       String
-  question    String?
-  answer      String?
-  steps       Json?
-  tags        String[]
-  category    String?
-  difficulty  String   @default("medium")
-  isPublic    Boolean  @default(true)
-  syncedLocal Boolean  @default(false)
-  vectorId    String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type            String   // "qa" | "procedure"
+  title           String
+  question        String?
+  answer          String?
+  steps           Json?
+  tags            String[]
+  category        String?
+  difficulty      String   @default("medium")
+  isPublic        Boolean  @default(true)
+  syncedLocal     Boolean  @default(false)
+  vectorId        String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   @@index([userId])
   @@map("knowledge_items")
 }
 
 model Procedure {
-  id             String    @id @default(cuid())
-  code           String    @unique
-  title          String
-  description    String?
-  category       String    @default("OPERATION")
-  subcategory    String?
-  department     String    @default("PRODUCTION")
-  criticality    String    @default("MEDIUM")
-  version        String    @default("1.0.0")
-  status         String    @default("DRAFT")
-  
-  prerequisites  Json      // Liste des prérequis structurés
-  steps          Json      // Liste des séquences opérationnelles
-  parameters     Json?     // Variables configurables
-  postExecution  Json?     // Checks finaux
-  metadata       Json      // Métadonnées d'audit (auteur, trace, etc)
-  
-  authorId       String
-  approvers      Json?
-  syncedLocal    Boolean   @default(false)
-  
-  lastExecutedAt DateTime?
-  executionCount Int       @default(0)
-  avgDuration    Int?
-  successRate    Float?
-  
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-
-  author     User                 @relation(fields: [authorId], references: [id])
-  executions ProcedureExecution[]
+  id              String               @id @default(cuid())
+  code            String               @unique
+  title           String
+  description     String?
+  category        String               @default("OPERATION")
+  subcategory     String?
+  department      String               @default("PRODUCTION")
+  criticality     String               @default("MEDIUM")
+  version         String               @default("1.0.0")
+  status          String               @default("DRAFT")
+  prerequisites   Json                 // { description: string, items: Array }
+  steps           Json                 // Array of ProcedureStep
+  parameters      Json?
+  postExecution   Json?
+  metadata        Json
+  authorId        String
+  author          User                 @relation(fields: [authorId], references: [id])
+  approvers       Json?
+  syncedLocal     Boolean              @default(false)
+  lastExecutedAt  DateTime?
+  executionCount  Int                  @default(0)
+  avgDuration     Int?
+  successRate     Float?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  executions      ProcedureExecution[]
 
   @@index([code])
   @@index([status])
@@ -88,26 +82,25 @@ model Procedure {
 }
 
 model ProcedureExecution {
-  id            String    @id @default(cuid())
-  procedureId   String
-  operatorId    String
-  startTime     DateTime  @default(now())
-  endTime       DateTime?
-  status        String
-  currentStep   Int       @default(-1)
-  stepsStatus   Json
-  totalDuration Int?
-  events        Json?
-  alarms        Json?
-  fallbacks     Json?
-  result        Json?
-  notes         String?
-  signature     String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-
-  procedure Procedure @relation(fields: [procedureId], references: [id], onDelete: Cascade)
-  operator  User      @relation(fields: [operatorId], references: [id])
+  id              String    @id @default(cuid())
+  procedureId     String
+  procedure       Procedure @relation(fields: [procedureId], references: [id], onDelete: Cascade)
+  operatorId      String
+  operator        User      @relation(fields: [operatorId], references: [id])
+  startTime       DateTime  @default(now())
+  endTime         DateTime?
+  status          String
+  currentStep     Int       @default(-1)
+  stepsStatus     Json      // Map of stepId -> status
+  totalDuration   Int?
+  events          Json?
+  alarms          Json?
+  fallbacks       Json?
+  result          Json?
+  notes           String?
+  signature       String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   @@index([procedureId])
   @@index([operatorId])

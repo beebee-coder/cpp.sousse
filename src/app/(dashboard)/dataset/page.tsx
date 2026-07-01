@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from 'react';
@@ -212,7 +213,7 @@ export default function DatasetPage() {
           toast({ title: "Savoir sémantique indexé" });
           setQuestion(''); setAnswer(''); setPhraseBuffers({});
         } else {
-          throw new Error(data.error || "Échec liaison BDD");
+          throw new Error(data.message || data.error || "Échec de liaison BDD");
         }
       } catch (err: any) {
         toast({ title: "Échec de l'indexation", description: err.message, variant: "destructive" });
@@ -270,27 +271,33 @@ export default function DatasetPage() {
           body: JSON.stringify(payload),
         });
 
-        const data = await res.json();
-        console.log(`📥 [FORGE_FRONT] RÉPONSE_BACKEND [Trace: ${data.traceId}]:`, data);
+        // Lecture sécurisée du JSON de réponse
+        const data = await res.json().catch(() => ({}));
+        console.log(`📥 [FORGE_FRONT] RÉPONSE_BACKEND [Status: ${res.status}]:`, data);
 
         if (res.ok && data.success) {
           toast({ 
             title: "Forge Réussie ✅", 
-            description: `L'actif "${procTitle}" est archivé en BDD et dans le Registre.` 
+            description: data.message || `L'actif "${procTitle}" est archivé.` 
           });
           router.push('/procedures');
         } else {
-          const errorMsg = data.message || data.error || "Échec de la transaction SQL.";
+          // Extraction du message d'erreur réel renvoyé par Prisma ou l'API
+          const errorMsg = data.message || data.error || "Échec de la forge industrielle.";
           console.error("❌ [FORGE_FRONT] REJET_BACKEND:", data);
           toast({ 
             title: "Échec de la Forge", 
-            description: `Raison : ${errorMsg}`, 
+            description: errorMsg, 
             variant: "destructive" 
           });
         }
       } catch (err: any) {
         console.error("❌ [FORGE_FRONT] ERREUR_LIAISON_CRITIQUE:", err.message);
-        toast({ title: "Échec critique", description: "Le centre de forge est injoignable.", variant: "destructive" });
+        toast({ 
+          title: "Échec critique", 
+          description: "Le centre de forge est injoignable ou a rencontré une erreur fatale.", 
+          variant: "destructive" 
+        });
       } finally { setIsUploading(false); }
     }
   };
