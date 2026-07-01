@@ -27,6 +27,7 @@ function createPrismaClient() {
   const pool = new Pool({ connectionString });
   const adapter = new PrismaNeon(pool);
 
+  // @ts-ignore - Compatibilité typage adapter Neon/Prisma 7
   return new PrismaClient({
     adapter,
     log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],

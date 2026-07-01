@@ -1,9 +1,7 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../src/lib/db/prisma-client';
 import bcrypt from 'bcryptjs';
 import fs from 'fs';
 import path from 'path';
-
-const prisma = new PrismaClient();
 
 async function main() {
   console.log('🌱 Amorçage de la base de données VisioNode...');
@@ -73,7 +71,7 @@ async function main() {
           authorId: admin.id,
         },
       });
-      console.log('✅ Procédure CRF-START-001 injectée avec succès.');
+      console.log(`✅ [SEED] Procédure ${crfData.metadata.code} injectée.`);
     }
   } catch (err: any) {
     console.warn('⚠️ Échec injection procédure CRF:', err.message);
