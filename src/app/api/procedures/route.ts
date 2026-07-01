@@ -9,17 +9,20 @@ export const dynamic = 'force-dynamic';
 
 /**
  * POST /api/procedures
- * Forge de procédure ultra-résiliente.
+ * Forge de procédure avec auto-réparation et gestion des collisions.
  */
 export async function POST(request: NextRequest) {
   const timestamp = new Date().toISOString();
   const traceId = uuidv4().slice(0, 8);
   
+  console.log(`🚀 [FORGE_API] [${traceId}] Initiation de la requête...`);
+
   try {
     const session = await getSessionFromCookie();
     const body = await request.json().catch(() => null);
     
     if (!body || !body.title || !body.steps || !Array.isArray(body.steps)) {
+      console.error(`❌ [FORGE_API] [${traceId}] Payload invalide.`);
       return NextResponse.json({ 
         success: false, 
         message: 'Structure invalide : Titre et Étapes requis.',
@@ -29,14 +32,19 @@ export async function POST(request: NextRequest) {
 
     const { title, steps, metadata } = body;
 
-    // 1. Validation de l'Auteur
+    // 1. GESTION DE L'AUTEUR (Résiliente)
     let finalAuthorId: string | null = null;
+    
     if (session?.user?.id) {
       const userExists = await prisma.user.findUnique({ where: { id: session.user.id } });
-      if (userExists) finalAuthorId = session.user.id;
+      if (userExists) {
+        finalAuthorId = session.user.id;
+        console.log(`👤 [FORGE_API] [${traceId}] Auteur session : ${finalAuthorId}`);
+      }
     }
 
     if (!finalAuthorId) {
+      console.log(`⚠️ [FORGE_API] [${traceId}] Aucun auteur session. Fallback admin-root...`);
       const systemAdmin = await prisma.user.upsert({
         where: { email: 'admin@visionode.local' },
         update: { approved: true },
@@ -53,17 +61,19 @@ export async function POST(request: NextRequest) {
       finalAuthorId = systemAdmin.id;
     }
 
-    // 2. Code unique
+    // 2. GESTION DU CODE (Collision-safe)
     let code = metadata?.code || `FORGE-${Date.now().toString().slice(-6)}`;
     const existingProc = await prisma.procedure.findUnique({ where: { code } });
-    if (existingProc) code = `${code}-${Math.floor(Math.random() * 1000)}`;
+    if (existingProc) {
+      const originalCode = code;
+      code = `${code}-${Math.floor(Math.random() * 1000)}`;
+      console.log(`🔄 [FORGE_API] [${traceId}] Collision code : ${originalCode} -> ${code}`);
+    }
 
-    const procId = uuidv4();
-
-    // 3. Enregistrement Neon SQL
+    // 3. ENREGISTREMENT NEON SQL
+    console.log(`💾 [FORGE_API] [${traceId}] Écriture Neon PostgreSQL...`);
     const procedure = await prisma.procedure.create({
       data: {
-        id: procId,
         code,
         title: title.trim(),
         description: body.description || metadata?.description || 'Procédure générée via Station de Dictée.',
@@ -72,21 +82,23 @@ export async function POST(request: NextRequest) {
         criticality: String(metadata?.criticality || 'MEDIUM').toUpperCase(),
         version: metadata?.version || '1.0.0',
         status: 'APPROVED',
-        prerequisites: (body.prerequisites || { description: "Sécurité standard", items: [] }) as any,
-        steps: steps as any,
-        metadata: { ...metadata, authorId: finalAuthorId, traceId, forged_at: timestamp } as any,
-        parameters: (body.parameters || { variables: [] }) as any,
-        postExecution: (body.postExecution || { checks: [], reporting: { generateReport: true, reportFields: [] } }) as any,
+        prerequisites: (body.prerequisites || { description: "Sécurité standard", items: [] }),
+        steps: steps,
+        metadata: { ...metadata, authorId: finalAuthorId, traceId, forged_at: timestamp },
+        parameters: (body.parameters || { variables: [] }),
+        postExecution: (body.postExecution || { checks: [], reporting: { generateReport: true, reportFields: [] } }),
         authorId: finalAuthorId,
         syncedLocal: false
       }
     });
 
-    // 4. Archivage Physique
+    // 4. ARCHIVAGE PHYSIQUE
     try {
+      console.log(`📂 [FORGE_API] [${traceId}] Archivage dans le Registre Physique...`);
       const registryPath = `procedures/${procedure.code.toLowerCase()}/procedure.json`;
       await postgresClient.saveFile(registryPath, JSON.stringify(procedure, null, 2));
 
+      // Projection sémantique pour la recherche rapide
       const projectionPath = `items/proc_${procedure.code.toLowerCase()}.json`;
       await postgresClient.saveFile(projectionPath, JSON.stringify({
         id: procedure.id,
@@ -97,12 +109,17 @@ export async function POST(request: NextRequest) {
         content: `PROCÉDURE INDUSTRIELLE: ${procedure.title}. ${steps.length} séquences.`,
         metadata: { origin: 'FORGE_SYSTEM', code: procedure.code, traceId }
       }, null, 2));
-    } catch (fsErr) {
-      console.warn("⚠️ Échec archivage FS (non-bloquant)");
+    } catch (fsErr: any) {
+      console.warn(`⚠️ [FORGE_API] [${traceId}] Échec archivage FS (non-bloquant):`, fsErr.message);
     }
 
-    // 5. Vectorisation
-    procedureRAG.indexProcedure(procedure as any).catch(() => {});
+    // 5. VECTORISATION ASYNCHRONE
+    console.log(`🧠 [FORGE_API] [${traceId}] Déclenchement vectorisation RAG...`);
+    procedureRAG.indexProcedure(procedure as any).catch(err => {
+       console.error(`⚠️ [FORGE_API] [${traceId}] Erreur RAG ignorée :`, err.message);
+    });
+
+    console.log(`✅ [FORGE_API] [${traceId}] Forge réussie pour "${procedure.title}"`);
 
     return NextResponse.json({
       success: true,
@@ -112,8 +129,14 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error: any) {
-    console.error(`❌ [FORGE_FATAL]`, error.message);
-    return NextResponse.json({ success: false, message: 'Échec du service de forge.', error: error.message, traceId }, { status: 500 });
+    console.error(`❌ [FORGE_API] [${traceId}] Erreur fatale :`, error.message, error.code);
+    return NextResponse.json({ 
+      success: false, 
+      message: 'Échec du service de forge.', 
+      error: error.message,
+      prismaCode: error.code,
+      traceId 
+    }, { status: 500 });
   }
 }
 

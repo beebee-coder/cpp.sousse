@@ -281,15 +281,16 @@ export default function DatasetPage() {
           router.push('/procedures');
         } else {
           console.error("❌ [FORGE_FRONT] Échec:", data);
+          const errorMsg = data.error || data.message || "Erreur SQL ou contrainte.";
           toast({ 
             title: "Échec de la Forge", 
-            description: data.error || data.message || "Erreur SQL ou contrainte.", 
+            description: `Diagnostic: ${errorMsg} (Code: ${data.prismaCode || 'ERR'})`, 
             variant: "destructive" 
           });
         }
       } catch (err: any) {
         console.error("❌ [FORGE_FRONT] Erreur fatale:", err.message);
-        toast({ title: "Échec critique", description: err.message, variant: "destructive" });
+        toast({ title: "Échec critique", description: `Liaison réseau interrompue: ${err.message}`, variant: "destructive" });
       } finally { setIsUploading(false); }
     }
   };
