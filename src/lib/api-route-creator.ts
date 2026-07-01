@@ -1,22 +1,21 @@
 import { NextResponse } from 'next/server';
 
 /**
- * @fileOverview Utilities for creating hybrid-compatible API Routes.
- * This file is SERVER-ONLY to prevent next/server leaking to client bundles.
+ * @fileOverview Utilitaires pour la création de routes API compatibles avec le mode hybride.
+ * Ce fichier est SERVER-ONLY.
  */
 
 export interface HybridRouteDefinition<TReq, TRes> {
   name: string;
-  webHandler: (req: Request, body: TReq) => Promise<Response | TRes>;
+  webHandler: (req: Request, body: TReq, params?: any) => Promise<Response | TRes>;
 }
 
 /**
- * Next.js API Route builder helper.
- * Strictly used on Server-side (Vercel/Dev).
+ * Helper pour construire des routes API Next.js résilientes.
  */
 export function createHybridRoute<TReq, TRes>(definition: HybridRouteDefinition<TReq, TRes>) {
-  return async (req: Request) => {
-    // Avoid dynamic execution during static export phase
+  return async (req: Request, context?: { params: Promise<any> }) => {
+    // Éviter l'exécution dynamique pendant la phase d'export statique (Tauri)
     const isDesktopBuild = process.env.TAURI_ENV === 'true';
     if (isDesktopBuild) {
       return NextResponse.json({ error: 'STATIC_EXPORT' });
@@ -28,7 +27,10 @@ export function createHybridRoute<TReq, TRes>(definition: HybridRouteDefinition<
         body = await req.json().catch(() => ({} as TReq));
       }
       
-      const response = await definition.webHandler(req, body);
+      // Attendre les paramètres de chemin si présents (Next.js 15)
+      const resolvedParams = context?.params ? await context.params : undefined;
+      
+      const response = await definition.webHandler(req, body, resolvedParams);
       if (response instanceof Response) {
         return response;
       }

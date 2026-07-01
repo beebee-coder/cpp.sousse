@@ -1,24 +1,24 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, use } from 'react';
 import { DashboardSidebar } from '@/components/dashboard/Sidebar';
 import { ProcedureExecutor } from '@/components/procedures/execution/ProcedureExecutor';
 import { 
   ArrowLeft, 
   Settings2, 
   Share2, 
-  MoreHorizontal,
   Loader2,
   FileWarning
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { useRouter, useParams } from 'next/navigation';
+import { Badge } from '@/components/ui/badge';
+import { useRouter } from 'next/navigation';
 import { FullProcedure } from '@/lib/procedures/types';
 
-export default function ExecuteProcedurePage() {
+export default function ExecuteProcedurePage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter();
-  const params = useParams();
+  const resolvedParams = use(params);
   const [procedure, setProcedure] = useState<FullProcedure | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -27,14 +27,12 @@ export default function ExecuteProcedurePage() {
     const loadProcedure = async () => {
       setIsLoading(true);
       try {
-        // Chargement strict via l'ID ou la première disponible (CRF par défaut)
         const response = await fetch('/api/procedures');
         const data = await response.json();
         
         if (data.success && data.procedures && data.procedures.length > 0) {
-          // Si on a un ID, on cherche la correspondance, sinon on prend la première (CRF)
-          const target = params.id 
-            ? data.procedures.find((p: any) => p.id === params.id) 
+          const target = resolvedParams.id 
+            ? data.procedures.find((p: any) => p.id === resolvedParams.id) 
             : data.procedures[0];
           
           if (target) {
@@ -53,7 +51,7 @@ export default function ExecuteProcedurePage() {
     };
 
     loadProcedure();
-  }, [params.id]);
+  }, [resolvedParams.id]);
 
   if (isLoading) {
     return (
@@ -112,5 +110,3 @@ export default function ExecuteProcedurePage() {
     </div>
   );
 }
-
-import { Badge } from '@/components/ui/badge';
