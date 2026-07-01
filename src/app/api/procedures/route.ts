@@ -7,7 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 export const dynamic = 'force-dynamic';
 
 /**
- * @fileOverview API de Forge Industrielle V6.0 - Nomenclature Reformée.
+ * @fileOverview API de Forge Industrielle V6.5 - Concordance JSON Template.
  * Logs structurés [FORGE_API].
  */
 export async function POST(request: NextRequest) {
@@ -25,84 +25,89 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, message: 'Données incomplètes (Titre/Étapes requis).' }, { status: 400 });
     }
 
-    const { title, steps, metadata } = body;
-    
-    // Normalisation du code
-    let code = (metadata?.code || `PROC-${Date.now().toString().slice(-6)}`).toUpperCase();
+    // Extraction des champs pour concordance Prisma
+    const title = body.title;
+    const metadata = body.metadata || {};
+    let code = (metadata.code || body.code || `PROC-${Date.now().toString().slice(-6)}`).toUpperCase();
 
-    // 1. ARCHIVAGE PHYSIQUE (Source de Vérité)
+    // 1. ARCHIVAGE PHYSIQUE (Source de Vérité - Template 1:1)
     console.log(`📂 [FORGE_API] [STEP] [${traceId}] Archivage physique...`);
     try {
       const regPath = `procedures/${code.toLowerCase()}/procedure.json`;
-      await postgresClient.saveFile(regPath, JSON.stringify({ ...body, forged_at: ts, traceId }, null, 2));
+      await postgresClient.saveFile(regPath, JSON.stringify({ 
+        ...body, 
+        _forged_at: ts, 
+        _traceId: traceId 
+      }, null, 2));
       console.log(`✅ [FORGE_API] [SUCCESS] [${traceId}] Fichier physique créé.`);
     } catch (e: any) {
       console.error(`❌ [FORGE_API] [ERROR] [${traceId}] Échec archivage physique :`, e.message);
     }
 
-    // 2. SYNCHRONISATION SQL (Neon)
-    console.log(`💾 [FORGE_API] [STEP] [${traceId}] Synchronisation SQL Neon...`);
+    // 2. SYNCHRONISATION SQL NEON (Bypass en cas d'erreur client Prisma)
+    console.log(`💾 [FORGE_API] [STEP] [${traceId}] Tentative synchronisation SQL Neon...`);
     try {
-      // Garantir un auteur
+      // Sécurité Auteur
       let authorId = session?.user?.id;
-      
-      // Auto-réparation de l'infrastructure admin si nécessaire
-      const admin = await prisma.user.upsert({
-        where: { email: 'admin@visionode.local' },
-        update: { approved: true },
-        create: {
-          id: 'admin-root',
-          firstName: 'System',
-          lastName: 'Administrator',
-          email: 'admin@visionode.local',
-          password: 'SYSTEM_PROTECTED',
-          role: 'admin',
-          approved: true
-        }
-      });
+      if (!authorId) {
+        // Garantir admin-root
+        const admin = await prisma.user.upsert({
+          where: { email: 'admin@visionode.local' },
+          update: { approved: true },
+          create: {
+            id: 'admin-root',
+            firstName: 'System',
+            lastName: 'Administrator',
+            email: 'admin@visionode.local',
+            password: 'SYSTEM_PROTECTED',
+            role: 'admin',
+            approved: true
+          }
+        });
+        authorId = admin.id;
+      }
 
-      if (!authorId) authorId = admin.id;
-
-      // Gestion des collisions de code
+      // Check collision
       const existing = await prisma.procedure.findUnique({ where: { code } });
       if (existing) {
         code = `${code}-${Math.floor(Math.random() * 1000)}`;
-        console.warn(`⚠️ [FORGE_API] [COLLISION] Nouveau code généré : ${code}`);
       }
 
       const procedure = await prisma.procedure.create({
         data: {
           code,
           title: title.trim(),
-          description: body.description || metadata?.description || 'Généré via Station de Forge.',
-          category: (metadata?.category || body.category || 'OPERATION').toUpperCase(),
-          department: (metadata?.department || body.department || 'PRODUCTION').toUpperCase(),
-          criticality: (metadata?.criticality || body.criticality || 'MEDIUM').toUpperCase(),
-          version: metadata?.version || '1.0.0',
+          description: body.description || metadata.description || 'Généré via Station de Forge.',
+          category: (metadata.category || body.category || 'OPERATION').toUpperCase(),
+          subcategory: metadata.subcategory || body.subcategory || null,
+          department: (metadata.department || body.department || 'PRODUCTION').toUpperCase(),
+          criticality: (metadata.criticality || body.criticality || 'MEDIUM').toUpperCase(),
+          version: metadata.version || body.version || '1.0.0',
           status: 'APPROVED',
           prerequisites: (body.prerequisites || { description: "Prerequis standard", items: [] }),
-          steps: steps as any,
-          metadata: { ...metadata, traceId, forged_at: ts },
-          authorId: authorId
+          steps: body.steps as any,
+          metadata: { ...metadata, _traceId: traceId, _forged_at: ts },
+          authorId: authorId,
+          parameters: body.parameters || null,
+          postExecution: body.postExecution || null
         }
       });
 
-      console.log(`✅ [FORGE_API] [SUCCESS] [${traceId}] Entrée SQL créée : ${procedure.id}`);
+      console.log(`✅ [FORGE_API] [SUCCESS] [${traceId}] Liaison SQL établie : ${procedure.id}`);
       
       return NextResponse.json({ 
         success: true, 
-        message: `Actif "${title}" forgé et indexé.`, 
+        message: `Actif "${title}" forgé et synchronisé.`, 
         id: procedure.id,
         code: code,
         traceId 
       });
 
     } catch (sqlErr: any) {
-      console.error(`❌ [FORGE_API] [ERROR] [${traceId}] Échec SQL :`, sqlErr.message);
-      // On retourne quand même un succès partiel si le fichier physique est là
+      console.warn(`⚠️ [FORGE_API] [BYPASS] [${traceId}] Échec SQL (Mais physique OK) :`, sqlErr.message);
       return NextResponse.json({ 
         success: true, 
-        message: `Actif sauvegardé physiquement (Sync SQL différée).`, 
+        message: `Actif forgé physiquement (Sync SQL différée).`, 
         warning: sqlErr.message,
         traceId 
       });
@@ -110,12 +115,11 @@ export async function POST(request: NextRequest) {
 
   } catch (err: any) {
     console.error(`❌ [FORGE_API] [FATAL] [${traceId}] Panique critique :`, err.message);
-    return NextResponse.json({ success: false, message: `ERREUR_FATALE : ${err.message}`, traceId }, { status: 500 });
+    return NextResponse.json({ success: false, message: `ERREUR_FATALE : ${err.message}` }, { status: 500 });
   }
 }
 
 export async function GET() {
-  console.log(`🔍 [FORGE_API] [LIST] Lecture du registre central.`);
   try {
     const procedures = await prisma.procedure.findMany({
       orderBy: { createdAt: 'desc' },
@@ -123,7 +127,6 @@ export async function GET() {
     });
     return NextResponse.json({ success: true, procedures });
   } catch (e: any) {
-    console.error(`❌ [FORGE_API] [LIST_ERROR]`, e.message);
-    return NextResponse.json({ success: false, message: 'Base d\'audit inaccessible.' }, { status: 500 });
+    return NextResponse.json({ success: false, message: 'Base SQL indisponible.' }, { status: 500 });
   }
 }

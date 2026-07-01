@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react';
 import { 
   Database, Plus, Loader2, Trash2, 
   Zap, CheckCircle2, Layers, ShieldAlert,
-  Info, Camera, Video, AlertTriangle, Activity, Settings2
+  Info, Camera, Video, AlertTriangle, Activity, Settings2,
+  ListChecks, ShieldCheck, Thermometer, Gauge
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -15,53 +16,39 @@ import { DashboardSidebar } from '@/components/dashboard/Sidebar';
 import { cn } from '@/lib/utils';
 import { useRouter } from 'next/navigation';
 
-interface ForgeCondition {
-  id: string;
-  displayName: string;
-  operator: string;
-  value: string;
-  unit: string;
-}
-
-interface ForgeAlarm {
-  id: string;
-  code: string;
-  severity: string;
-  description: string;
-}
-
-interface DictationStep {
-  id: string;
-  title: string;
-  subtitle: string;
-  duration: string;
-  description: string;
-  actionType: 'confirmation' | 'valve_operation' | 'command' | 'wait';
-  target?: string;
-  conditions: ForgeCondition[];
-  alarms: ForgeAlarm[];
-  imageUrl?: string;
-  videoUrl?: string;
-}
-
 export default function DatasetPage() {
   const { toast } = useToast();
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   
+  // Root level data
   const [procTitle, setProcTitle] = useState('');
+  const [procCode, setProcCode] = useState('');
   const [category, setCategory] = useState('OPERATION');
-  const [procSteps, setProcSteps] = useState<DictationStep[]>([
+  const [department, setDepartment] = useState('PRODUCTION');
+  const [criticality, setCriticality] = useState('MEDIUM');
+
+  // Prerequisites
+  const [prereqDesc, setPrereqDesc] = useState('Conditions obligatoires avant démarrage');
+  const [prereqItems, setPrereqItems] = useState<any[]>([]);
+
+  // Steps
+  const [procSteps, setProcSteps] = useState<any[]>([
     { 
-      id: '1', 
+      id: `step-${Date.now()}`, 
       title: '', 
       subtitle: '', 
-      duration: '60', 
+      duration: { value: 60, unit: 'seconds', display: '1 minute', type: 'fixed' },
       description: '', 
-      actionType: 'confirmation',
-      conditions: [],
-      alarms: []
+      action: {
+        type: 'confirmation',
+        instruction: '',
+        ui: { component: 'action_button', label: 'CONFIRMER', icon: 'check_circle' }
+      },
+      validation: { conditions: [], successExpression: 'status == OK', timeout: { value: 300, unit: 'seconds', action: 'warn' } },
+      alarms: [],
+      media: {}
     }
   ]);
 
@@ -71,72 +58,43 @@ export default function DatasetPage() {
     e.preventDefault();
     if (isUploading) return;
 
-    const ts = new Date().toLocaleTimeString();
-    console.log(`⚒️ [FORGE_FRONT] [INIT] Lancement de la forge à ${ts}`);
-
     if (!procTitle.trim() || procSteps.some(s => !s.title.trim())) {
       toast({ title: "Données incomplètes", description: "Le titre et les étapes sont requis.", variant: "destructive" });
       return;
     }
 
     setIsUploading(true);
+    const ts = new Date().toISOString();
+
     try {
       const payload = {
         title: procTitle,
         category: category,
+        prerequisites: {
+          description: prereqDesc,
+          items: prereqItems
+        },
         steps: procSteps.map((s, i) => ({
-          id: `step-${Date.now()}-${i}`,
+          ...s,
           order: i + 1,
-          title: s.title.toUpperCase(),
-          subtitle: s.subtitle || "",
-          description: s.description || "Instruction technique standard.",
-          duration: { 
-            value: parseInt(s.duration) || 60, 
-            unit: "seconds", 
-            display: `${s.duration}s`, 
-            type: "fixed" 
-          },
-          action: { 
-            type: s.actionType, 
-            instruction: s.description || s.title,
-            target: s.target ? parseInt(s.target) : undefined,
-            ui: { 
-              component: "action_button", 
-              label: s.actionType === 'valve_operation' ? `RÉGLER À ${s.target}%` : "CONFIRMER SÉQUENCE",
-              color: s.actionType === 'valve_operation' ? 'primary' : 'success'
-            } 
-          },
-          validation: { 
-            conditions: s.conditions.map(c => ({
-              ...c,
-              id: c.id || `cond-${Date.now()}`,
-              type: 'numeric',
-              monitoring: true
-            })), 
-            successExpression: "status == OK", 
-            timeout: { value: 300, unit: "seconds", action: "warn" } 
-          },
-          alarms: s.alarms.map(a => ({
-            ...a,
-            id: a.id || `alarm-${Date.now()}`,
-            type: 'CRITICAL',
-            remedy: { title: "Protocole de secours", steps: ["Arrêt d'urgence", "Vérification manuelle"], estimatedTime: 120 }
-          })),
-          media: {
-            image: s.imageUrl,
-            video: s.videoUrl
-          },
-          dependencies: { prerequisites: [], dependsOn: [], requiresConfirmation: true }
+          id: s.id || `step-${Date.now()}-${i}`
         })),
         metadata: { 
-          category: category.toUpperCase(), 
-          department: "PRODUCTION", 
+          title: procTitle,
+          code: procCode || `PROC-${Date.now().toString().slice(-6)}`,
+          category: category,
+          department: department,
+          criticality: criticality,
           version: "1.0.0",
-          criticality: "MEDIUM",
-          description: `Généré via Station de Forge - ${ts}`,
-          tags: ["forge_direct", category.toLowerCase()]
+          author: { id: "admin", name: "System Admin", role: "admin", department: "IT" },
+          createdAt: ts,
+          lastUpdated: ts,
+          tags: ["forge_v6", category.toLowerCase()],
+          language: "fr-FR"
         }
       };
+
+      console.log(`⚒️ [FORGE_FRONT] Envoi du payload structuré...`);
 
       const res = await fetch('/api/procedures', {
         method: 'POST',
@@ -161,27 +119,31 @@ export default function DatasetPage() {
 
   const addStep = () => {
     setProcSteps([...procSteps, { 
-      id: Date.now().toString(), 
+      id: `step-${Date.now()}`, 
       title: '', 
-      subtitle: '',
-      duration: '60', 
-      description: '',
-      actionType: 'confirmation',
-      conditions: [],
-      alarms: []
+      subtitle: '', 
+      duration: { value: 60, unit: 'seconds', display: '1 minute', type: 'fixed' },
+      description: '', 
+      action: {
+        type: 'confirmation',
+        instruction: '',
+        ui: { component: 'action_button', label: 'CONFIRMER', icon: 'check_circle' }
+      },
+      validation: { conditions: [], successExpression: 'status == OK', timeout: { value: 300, unit: 'seconds', action: 'warn' } },
+      alarms: [],
+      media: {}
     }]);
   };
 
-  const addCondition = (stepIndex: number) => {
-    const next = [...procSteps];
-    next[stepIndex].conditions.push({ id: Date.now().toString(), displayName: '', operator: '>', value: '', unit: '' });
-    setProcSteps(next);
-  };
-
-  const addAlarm = (stepIndex: number) => {
-    const next = [...procSteps];
-    next[stepIndex].alarms.push({ id: Date.now().toString(), code: '', severity: 'HIGH', description: '' });
-    setProcSteps(next);
+  const addPrereq = () => {
+    setPrereqItems([...prereqItems, {
+      id: `pr-${Date.now()}`,
+      description: '',
+      condition: 'status == OK',
+      expectedState: 'OK',
+      verificationType: 'automatic',
+      displayName: 'Nouveau paramètre'
+    }]);
   };
 
   if (!mounted) return null;
@@ -194,206 +156,210 @@ export default function DatasetPage() {
           <div className="flex items-center gap-4">
             <div className="lg:hidden w-10" />
             <Database className="w-4 h-4 text-primary" />
-            <span className="font-headline font-bold text-xs uppercase tracking-widest text-primary">Station de Forge Industrielle</span>
+            <span className="font-headline font-bold text-xs uppercase tracking-widest text-primary">Station de Forge Industrielle V6.5</span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-[10px] font-code text-muted-foreground uppercase px-3 py-1 border border-border rounded-sm bg-black/20">Moteur V6.1 Audit Actif</span>
+             <span className="text-[9px] font-code text-secondary uppercase px-3 py-1 border border-secondary/30 rounded-sm bg-secondary/5">Concordance Template CRF</span>
           </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto terminal-scroll p-4 lg:p-8 bg-[radial-gradient(circle_at_50%_0%,rgba(50,181,212,0.05),transparent_50%)]">
-          <form onSubmit={handleForge} className="max-w-5xl mx-auto space-y-8">
-            <Card className="p-4 bg-primary/5 border border-primary/20 flex items-center gap-4 shadow-inner">
-               <Zap className="w-6 h-6 text-primary animate-pulse" />
-               <p className="text-[10px] font-code text-muted-foreground uppercase leading-relaxed tracking-wider">
-                 SYSTÈME DE FORGE OBLIGATOIRE. TOUT ACTIF EST ARCHIVÉ DANS LE REGISTRE PHYSIQUE ET INDEXÉ POUR L'AUDIT IA.
-               </p>
+        <div className="flex-1 overflow-y-auto terminal-scroll p-4 lg:p-8">
+          <form onSubmit={handleForge} className="max-w-6xl mx-auto space-y-12 pb-24">
+            
+            {/* Header Metadata Section */}
+            <Card className="p-8 border-primary/20 bg-black/40 space-y-8 shadow-2xl relative overflow-hidden">
+              <div className="absolute top-0 right-0 p-4 opacity-10">
+                <ShieldCheck className="w-24 h-24 text-primary" />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="space-y-4">
+                   <label className="text-[10px] font-bold text-primary uppercase tracking-[0.2em]">Identification de l'Actif</label>
+                   <Input 
+                    value={procTitle} 
+                    onChange={e => setProcTitle(e.target.value)} 
+                    placeholder="TITRE DE LA PROCÉDURE" 
+                    className="h-14 uppercase font-bold text-lg border-primary/30 bg-black/60 focus:border-primary"
+                   />
+                   <div className="grid grid-cols-2 gap-4">
+                      <Input value={procCode} onChange={e => setProcCode(e.target.value)} placeholder="CODE (EX: CRF-001)" className="h-10 font-code uppercase text-xs" />
+                      <select 
+                        value={category} 
+                        onChange={e => setCategory(e.target.value)}
+                        className="bg-black/60 border border-border rounded-md px-3 text-[10px] font-bold uppercase text-white outline-none"
+                      >
+                        <option value="STARTUP">DÉMARRAGE</option>
+                        <option value="SHUTDOWN">ARRÊT</option>
+                        <option value="MAINTENANCE">MAINTENANCE</option>
+                        <option value="EMERGENCY">URGENCE</option>
+                      </select>
+                   </div>
+                </div>
+
+                <div className="space-y-4">
+                   <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.2em]">Classification Audit</label>
+                   <div className="grid grid-cols-2 gap-4">
+                      <select 
+                        value={department} 
+                        onChange={e => setDepartment(e.target.value)}
+                        className="h-10 bg-black/60 border border-border rounded-md px-3 text-[10px] font-bold uppercase text-white"
+                      >
+                        <option value="PRODUCTION">PRODUCTION</option>
+                        <option value="MAINTENANCE">MAINTENANCE</option>
+                        <option value="QUALITY">QUALITÉ</option>
+                      </select>
+                      <select 
+                        value={criticality} 
+                        onChange={e => setCriticality(e.target.value)}
+                        className={cn(
+                          "h-10 bg-black/60 border rounded-md px-3 text-[10px] font-bold uppercase",
+                          criticality === 'CRITICAL' ? "border-red-500 text-red-500" : "border-border text-white"
+                        )}
+                      >
+                        <option value="LOW">BASSE</option>
+                        <option value="MEDIUM">MOYENNE</option>
+                        <option value="HIGH">HAUTE</option>
+                        <option value="CRITICAL">CRITIQUE</option>
+                      </select>
+                   </div>
+                   <Textarea placeholder="Description globale du périmètre industriel..." className="h-20 text-xs bg-black/20" />
+                </div>
+              </div>
             </Card>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="md:col-span-2 space-y-2">
-                <label className="text-[10px] font-bold text-primary uppercase tracking-widest block">Intitulé de la Procédure</label>
-                <Input 
-                  value={procTitle} 
-                  onChange={(e) => setProcTitle(e.target.value)} 
-                  placeholder="EX: DÉMARRAGE POMPE CRF..." 
-                  className="bg-black/60 uppercase font-bold border-primary/30 h-12 text-sm focus:border-primary" 
-                />
+            {/* Prerequisites Section */}
+            <div className="space-y-6">
+              <div className="flex items-center justify-between border-b border-border pb-2">
+                 <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-2">
+                   <ListChecks className="w-4 h-4 text-secondary" /> Conditions de Pré-Démarrage
+                 </h3>
+                 <Button type="button" variant="outline" size="sm" onClick={addPrereq} className="h-7 text-[8px] uppercase font-bold">
+                    + Ajouter Prérequis
+                 </Button>
               </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest block">Catégorie</label>
-                <select 
-                  value={category} 
-                  onChange={(e) => setCategory(e.target.value)}
-                  className="w-full h-12 bg-black/60 border border-border rounded-md px-3 text-[10px] font-bold uppercase outline-none focus:border-primary/50 text-white"
-                >
-                  <option value="OPERATION">OPÉRATION</option>
-                  <option value="MAINTENANCE">MAINTENANCE</option>
-                  <option value="SAFETY">SÉCURITÉ</option>
-                  <option value="EMERGENCY">URGENCE</option>
-                </select>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {prereqItems.map((item, idx) => (
+                  <Card key={item.id} className="p-4 border-border bg-black/20 flex gap-4">
+                     <div className="w-8 h-8 rounded-sm bg-secondary/10 flex items-center justify-center text-[10px] font-bold text-secondary">{idx + 1}</div>
+                     <div className="flex-1 space-y-2">
+                        <Input value={item.displayName} onChange={e => { const n = [...prereqItems]; n[idx].displayName = e.target.value; setPrereqItems(n); }} placeholder="Nom du paramètre (ex: Niveau bassin)" className="h-8 text-[10px] uppercase font-bold bg-transparent" />
+                        <div className="flex gap-2">
+                           <select className="h-7 text-[8px] bg-black/40 border border-border rounded px-1 uppercase text-muted-foreground">
+                              <option>AUTOMATIQUE</option>
+                              <option>MANUEL</option>
+                           </select>
+                           <Input placeholder="VAL CIBLE" className="h-7 text-[9px] w-20" />
+                        </div>
+                     </div>
+                     <Button type="button" variant="ghost" size="icon" onClick={() => { const n = [...prereqItems]; n.splice(idx, 1); setPrereqItems(n); }} className="h-8 w-8 text-muted-foreground/30 hover:text-destructive"><Trash2 className="w-3.5 h-3.5" /></Button>
+                  </Card>
+                ))}
               </div>
             </div>
 
-            <div className="space-y-6">
+            {/* Steps Section */}
+            <div className="space-y-8">
               <div className="flex items-center justify-between border-b border-border pb-2">
-                <h3 className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-2">
-                  <Layers className="w-4 h-4 text-secondary" />
-                  Séquençage Opérationnel
-                </h3>
+                 <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-2">
+                   <Layers className="w-4 h-4 text-primary" /> Séquençage Opérationnel
+                 </h3>
               </div>
-              
+
               {procSteps.map((step, index) => (
-                <Card key={step.id} className="p-6 border-border bg-black/30 space-y-6 relative group hover:border-primary/30 transition-all shadow-xl">
-                  <div className="absolute top-0 left-0 w-1 h-full bg-primary/20 group-hover:bg-primary transition-all" />
+                <Card key={step.id} className="p-6 lg:p-8 border-border bg-black/40 space-y-8 relative group hover:border-primary/30 transition-all shadow-xl">
+                  <div className="absolute top-0 left-0 w-1.5 h-full bg-primary/20 group-hover:bg-primary transition-all" />
                   
-                  <div className="flex justify-between items-center">
-                    <div className="flex items-center gap-3">
-                       <span className="w-8 h-8 rounded-full bg-primary/10 border border-primary/30 flex items-center justify-center text-[10px] font-bold text-primary font-code">{index + 1}</span>
-                       <span className="text-[10px] font-bold text-white uppercase tracking-wider">Séquence Opérationnelle {index + 1}</span>
-                    </div>
-                    <Button 
-                      type="button" 
-                      variant="ghost" 
-                      size="icon" 
-                      onClick={() => { const n = [...procSteps]; n.splice(index, 1); setProcSteps(n); }} 
-                      className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-4">
-                      <div>
-                        <label className="text-[8px] font-bold text-muted-foreground uppercase mb-1.5 block">Action de Séquence</label>
-                        <Input 
-                          value={step.title} 
-                          onChange={(e) => { const n = [...procSteps]; n[index].title = e.target.value; setProcSteps(n); }} 
-                          placeholder="TITRE DE L'ACTION" 
-                          className="h-10 text-[10px] uppercase font-bold bg-black/40 border-border/50" 
-                        />
-                      </div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <Button 
-                          type="button" 
-                          variant="outline" 
-                          size="sm"
-                          className={cn("h-10 text-[8px] uppercase font-bold border-border/40", step.imageUrl && "border-primary text-primary")}
-                          onClick={() => {
-                            const url = prompt("URL de l'image de référence :");
-                            if (url !== null) { const n = [...procSteps]; n[index].imageUrl = url; setProcSteps(n); }
-                          }}
-                        >
-                          <Camera className="w-3.5 h-3.5 mr-2" /> Image
-                        </Button>
-                        <Button 
-                          type="button" 
-                          variant="outline" 
-                          size="sm"
-                          className={cn("h-10 text-[8px] uppercase font-bold border-border/40", step.videoUrl && "border-secondary text-secondary")}
-                          onClick={() => {
-                            const url = prompt("URL de la vidéo de démonstration :");
-                            if (url !== null) { const n = [...procSteps]; n[index].videoUrl = url; setProcSteps(n); }
-                          }}
-                        >
-                          <Video className="w-3.5 h-3.5 mr-2" /> Vidéo
-                        </Button>
-                      </div>
-                    </div>
-
-                    <div className="space-y-4">
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="text-[8px] font-bold text-muted-foreground uppercase mb-1.5 block">Durée Estimée</label>
-                          <div className="relative">
-                            <Input 
-                              value={step.duration} 
-                              onChange={(e) => { const n = [...procSteps]; n[index].duration = e.target.value; setProcSteps(n); }} 
-                              placeholder="60" 
-                              className="h-10 text-[10px] font-code bg-black/40 pr-8" 
-                            />
-                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[8px] font-bold text-muted-foreground">SEC</span>
-                          </div>
-                        </div>
-                        <div>
-                          <label className="text-[8px] font-bold text-muted-foreground uppercase mb-1.5 block">Mode Action</label>
-                          <select 
-                            value={step.actionType} 
-                            onChange={(e) => { const n = [...procSteps]; n[index].actionType = e.target.value as any; setProcSteps(n); }}
-                            className="w-full h-10 bg-black/40 border border-border/50 rounded-md px-2 text-[10px] font-bold uppercase text-white outline-none focus:border-primary/40"
-                          >
-                            <option value="confirmation">CONFIRMATION</option>
-                            <option value="valve_operation">VANNE / VALVE</option>
-                            <option value="command">COMMANDE</option>
-                            <option value="wait">ATTENTE</option>
-                          </select>
-                        </div>
-                      </div>
-
-                      {step.actionType === 'valve_operation' && (
-                        <div className="animate-in slide-in-from-top-2 duration-300">
-                          <label className="text-[8px] font-bold text-primary uppercase mb-1.5 block">Ouverture Cible (%)</label>
+                  <div className="flex justify-between items-start">
+                    <div className="flex items-center gap-4">
+                       <span className="w-10 h-10 rounded-full bg-primary/10 border border-primary/30 flex items-center justify-center text-xs font-bold text-primary font-code">{index + 1}</span>
+                       <div>
                           <Input 
-                            type="number"
-                            value={step.target || ''} 
-                            onChange={(e) => { const n = [...procSteps]; n[index].target = e.target.value; setProcSteps(n); }} 
-                            placeholder="EX: 30" 
-                            className="h-10 text-[11px] font-code bg-primary/5 border-primary/30 text-primary" 
+                            value={step.title} 
+                            onChange={e => { const n = [...procSteps]; n[index].title = e.target.value; setProcSteps(n); }} 
+                            placeholder="TITRE DE LA SÉQUENCE" 
+                            className="h-10 text-sm uppercase font-bold bg-transparent border-none p-0 focus-visible:ring-0 min-w-[300px]" 
                           />
+                          <Input 
+                            value={step.subtitle} 
+                            onChange={e => { const n = [...procSteps]; n[index].subtitle = e.target.value; setProcSteps(n); }} 
+                            placeholder="SOUS-TITRE (PHASE)" 
+                            className="h-6 text-[10px] uppercase font-code text-muted-foreground bg-transparent border-none p-0 focus-visible:ring-0" 
+                          />
+                       </div>
+                    </div>
+                    <Button type="button" variant="ghost" size="icon" onClick={() => { const n = [...procSteps]; n.splice(index, 1); setProcSteps(n); }} className="text-muted-foreground hover:text-destructive"><Trash2 className="w-5 h-5" /></Button>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+                     <div className="space-y-6">
+                        <div className="space-y-2">
+                           <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Instruction Technique</label>
+                           <Textarea 
+                             value={step.description} 
+                             onChange={e => { const n = [...procSteps]; n[index].description = e.target.value; setProcSteps(n); }} 
+                             placeholder="Détailler l'action pour l'opérateur..." 
+                             className="h-32 text-xs font-code bg-black/20 resize-none border-border/50" 
+                           />
                         </div>
-                      )}
-                    </div>
-                  </div>
+                        <div className="grid grid-cols-2 gap-4">
+                           <div className="space-y-2">
+                              <label className="text-[8px] font-bold text-muted-foreground uppercase">Mode Action</label>
+                              <select 
+                                value={step.action.type} 
+                                onChange={e => { const n = [...procSteps]; n[index].action.type = e.target.value; setProcSteps(n); }}
+                                className="w-full h-9 bg-black/40 border border-border/50 rounded-md px-2 text-[10px] font-bold uppercase"
+                              >
+                                <option value="confirmation">CONFIRMATION</option>
+                                <option value="valve_operation">OPÉRATION VANNE</option>
+                                <option value="command">COMMANDE SYSTÈME</option>
+                                <option value="wait">ATTENTE STABILISATION</option>
+                              </select>
+                           </div>
+                           {step.action.type === 'valve_operation' && (
+                             <div className="space-y-2">
+                                <label className="text-[8px] font-bold text-primary uppercase">Cible Ouverture (%)</label>
+                                <Input type="number" placeholder="EX: 30" className="h-9 text-[11px] font-code text-primary bg-primary/5 border-primary/20" />
+                             </div>
+                           )}
+                        </div>
+                     </div>
 
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    {/* Section Conditions */}
-                    <div className="space-y-3 p-3 bg-black/20 border border-border/30 rounded-sm">
-                      <div className="flex items-center justify-between">
-                         <h4 className="text-[8px] font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-2">
-                           <Activity className="w-3 h-3 text-primary" /> Conditions Monitoring
-                         </h4>
-                         <button type="button" onClick={() => addCondition(index)} className="text-[8px] font-bold text-primary uppercase hover:underline">+ Ajouter</button>
-                      </div>
-                      <div className="space-y-2">
-                        {step.conditions.map((cond, ci) => (
-                          <div key={cond.id} className="grid grid-cols-4 gap-2">
-                            <Input placeholder="NOM" value={cond.displayName} onChange={e => { const n = [...procSteps]; n[index].conditions[ci].displayName = e.target.value; setProcSteps(n); }} className="h-7 text-[8px] uppercase bg-black/40" />
-                            <Input placeholder="OP" value={cond.operator} onChange={e => { const n = [...procSteps]; n[index].conditions[ci].operator = e.target.value; setProcSteps(n); }} className="h-7 text-[8px] bg-black/40 text-center" />
-                            <Input placeholder="VAL" value={cond.value} onChange={e => { const n = [...procSteps]; n[index].conditions[ci].value = e.target.value; setProcSteps(n); }} className="h-7 text-[8px] bg-black/40" />
-                            <Input placeholder="UNITE" value={cond.unit} onChange={e => { const n = [...procSteps]; n[index].conditions[ci].unit = e.target.value; setProcSteps(n); }} className="h-7 text-[8px] bg-black/40" />
-                          </div>
-                        ))}
-                      </div>
-                    </div>
+                     <div className="space-y-6">
+                        <div className="p-4 bg-black/20 border border-border/50 rounded-sm space-y-4">
+                           <div className="flex items-center justify-between">
+                              <label className="text-[9px] font-bold text-secondary uppercase tracking-widest flex items-center gap-2">
+                                <Activity className="w-3.5 h-3.5" /> Monitoring & Validation
+                              </label>
+                              <Button type="button" variant="ghost" size="sm" className="h-6 text-[8px] uppercase">+ Condition</Button>
+                           </div>
+                           <div className="space-y-2">
+                              <div className="grid grid-cols-3 gap-2">
+                                 <Input placeholder="SENSOR" className="h-7 text-[8px] bg-black/40" />
+                                 <Input placeholder="OP" className="h-7 text-[8px] bg-black/40 text-center" />
+                                 <Input placeholder="TARGET" className="h-7 text-[8px] bg-black/40" />
+                              </div>
+                           </div>
+                        </div>
 
-                    {/* Section Alarmes */}
-                    <div className="space-y-3 p-3 bg-red-950/10 border border-red-900/30 rounded-sm">
-                      <div className="flex items-center justify-between">
-                         <h4 className="text-[8px] font-bold text-red-500/70 uppercase tracking-widest flex items-center gap-2">
-                           <AlertTriangle className="w-3 h-3 text-red-500" /> Protocoles Alarme
-                         </h4>
-                         <button type="button" onClick={() => addAlarm(index)} className="text-[8px] font-bold text-red-500 uppercase hover:underline">+ Ajouter</button>
-                      </div>
-                      <div className="space-y-2">
-                        {step.alarms.map((alarm, ai) => (
-                          <div key={alarm.id} className="flex gap-2">
-                            <Input placeholder="CODE" value={alarm.code} onChange={e => { const n = [...procSteps]; n[index].alarms[ai].code = e.target.value; setProcSteps(n); }} className="h-7 w-20 text-[8px] uppercase bg-black/40" />
-                            <Input placeholder="DESCRIPTION" value={alarm.description} onChange={e => { const n = [...procSteps]; n[index].alarms[ai].description = e.target.value; setProcSteps(n); }} className="h-7 flex-1 text-[8px] bg-black/40" />
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
+                        <div className="grid grid-cols-2 gap-4">
+                           <Button type="button" variant="outline" className="h-10 text-[9px] uppercase font-bold border-border/40 hover:border-primary/40">
+                              <Camera className="w-4 h-4 mr-2" /> Ressource Image
+                           </Button>
+                           <Button type="button" variant="outline" className="h-10 text-[9px] uppercase font-bold border-border/40 hover:border-secondary/40">
+                              <Video className="w-4 h-4 mr-2" /> Ressource Vidéo
+                           </Button>
+                        </div>
 
-                  <div>
-                    <label className="text-[8px] font-bold text-muted-foreground uppercase mb-1.5 block">Instructions techniques détaillées</label>
-                    <Textarea 
-                      value={step.description} 
-                      onChange={(e) => { const n = [...procSteps]; n[index].description = e.target.value; setProcSteps(n); }} 
-                      placeholder="INSTRUCTIONS OPÉRATIONNELLES DÉTAILLÉES POUR L'AUDIT..." 
-                      className="h-24 text-[10px] uppercase font-code bg-black/20 resize-none border-border/50 focus:border-primary/30" 
-                    />
+                        <div className="p-4 bg-red-950/10 border border-red-900/30 rounded-sm">
+                           <div className="flex items-center justify-between mb-3">
+                              <label className="text-[9px] font-bold text-red-500 uppercase tracking-widest flex items-center gap-2">
+                                <AlertTriangle className="w-3.5 h-3.5" /> Protocoles Alarme
+                              </label>
+                              <Button type="button" variant="ghost" size="sm" className="h-6 text-[8px] text-red-500 uppercase">+ Alarme</Button>
+                           </div>
+                           <p className="text-[8px] font-code text-red-500/50 uppercase italic">Aucune alarme spécifique configurée pour cette séquence.</p>
+                        </div>
+                     </div>
                   </div>
                 </Card>
               ))}
@@ -402,24 +368,24 @@ export default function DatasetPage() {
                 type="button" 
                 variant="outline" 
                 onClick={addStep} 
-                className="w-full border-dashed border-primary/20 h-16 text-[10px] uppercase font-bold hover:bg-primary/5 hover:border-primary/40 group transition-all"
+                className="w-full border-dashed border-primary/20 h-20 text-[10px] uppercase font-bold hover:bg-primary/5 group transition-all"
               >
-                <Plus className="w-5 h-5 mr-2 group-hover:scale-110 transition-transform" /> 
-                Ajouter une Séquence Opérationnelle au Registre
+                <Plus className="w-6 h-6 mr-3 group-hover:scale-110 transition-transform text-primary" /> 
+                Ajouter une Séquence au Registre Central
               </Button>
 
-              <div className="pt-8 border-t border-border/50">
+              <div className="pt-12 border-t border-border/50">
                 <Button 
                   type="submit" 
                   disabled={isUploading} 
-                  className="w-full font-headline font-bold uppercase text-sm h-16 bg-primary text-primary-foreground shadow-[0_0_30px_rgba(50,181,212,0.3)] transition-all active:scale-[0.98] hover:shadow-[0_0_40px_rgba(50,181,212,0.4)]"
+                  className="w-full font-headline font-bold uppercase text-base h-20 bg-primary text-primary-foreground shadow-[0_0_40px_rgba(50,181,212,0.3)] transition-all active:scale-[0.98]"
                 >
                   {isUploading ? (
-                    <Loader2 className="w-6 h-6 animate-spin mr-3" />
+                    <Loader2 className="w-8 h-8 animate-spin mr-4" />
                   ) : (
-                    <CheckCircle2 className="w-6 h-6 mr-3" />
+                    <ShieldCheck className="w-8 h-8 mr-4" />
                   )}
-                  {isUploading ? "Forge en cours..." : "FORGER L'ACTIF ET ARCHIVER DANS LE REGISTRE"}
+                  {isUploading ? "TRANSMISSION AU REGISTRE..." : "FORGER L'ACTIF ET ARCHIVER DANS LE RÉSEAU"}
                 </Button>
               </div>
             </div>

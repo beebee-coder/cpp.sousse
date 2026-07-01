@@ -1,12 +1,13 @@
 /**
- * @fileOverview Types et interfaces reformés pour le système VisioNode Precision.
- * Version : Nomenclature V6.1 (Audit Multimédia & Alarmes).
+ * @fileOverview Types et interfaces alignés sur le standard industriel CRF.
+ * Version : Nomenclature V6.5 (Concordance Template JSON).
  */
 
 export interface ProcedureMetadata {
   title: string;
   code: string;
   category: string;
+  subcategory?: string;
   department: string;
   criticality: string;
   version: string;
@@ -16,11 +17,32 @@ export interface ProcedureMetadata {
     role: string;
     department: string;
   };
+  approvers?: Array<{
+    id: string;
+    name: string;
+    role: string;
+    approvalDate: string;
+  }>;
   tags: string[];
   language: string;
   forged_at?: string;
   traceId?: string;
   description?: string;
+}
+
+export interface PrerequisiteItem {
+  id: string;
+  description: string;
+  condition: string;
+  expectedState: string;
+  verificationType: 'automatic' | 'manual';
+  sensorRef?: string;
+  displayName: string;
+  unit?: string;
+  threshold?: number;
+  operator?: string;
+  manualCheckInstruction?: string;
+  expectedPosition?: string;
 }
 
 export interface StepValidationCondition {
@@ -32,18 +54,29 @@ export interface StepValidationCondition {
   unit?: string;
   displayName: string;
   monitoring?: boolean;
+  tolerance?: number;
+  critical?: boolean;
 }
 
 export interface StepAlarm {
   id: string;
   code: string;
-  type: 'WARNING' | 'CRITICAL' | 'INFO';
-  severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  type: 'warning' | 'critical' | 'info';
+  severity: 'low' | 'medium' | 'high' | 'critical';
   description: string;
+  condition?: string;
   remedy: {
     title: string;
+    description: string;
     steps: string[];
     estimatedTime: number;
+    tools?: string[];
+    safety?: string[];
+  };
+  escalation?: {
+    ifPersistsAfter: number;
+    contact: string;
+    message: string;
   };
 }
 
@@ -57,18 +90,28 @@ export interface ProcedureStep {
     value: number;
     unit: string;
     display: string;
-    type: 'fixed' | 'estimated';
+    type: 'fixed' | 'estimated' | 'ramp';
+    animation?: boolean;
+    countdown?: boolean;
   };
   action: {
     type: 'confirmation' | 'command' | 'valve_operation' | 'wait' | 'verification';
     instruction: string;
-    target?: number;
+    expectedConfirmation?: string;
     command?: string;
+    valveId?: string;
+    operation?: 'open' | 'close' | 'adjust';
+    target?: number;
+    speed?: 'rapid' | 'progressive' | 'slow';
+    parameters?: Record<string, any>;
     ui: {
       component: string;
       label: string;
       icon?: string;
       color?: string;
+      showProgress?: boolean;
+      progressDuration?: number;
+      showMessage?: boolean;
     };
   };
   validation: {
@@ -81,10 +124,13 @@ export interface ProcedureStep {
     };
   };
   alarms: StepAlarm[];
+  fallbacks: any[];
   media: {
-    image?: string;
-    video?: string;
+    image?: { url: string; caption?: string; alt?: string };
+    diagram?: { url: string; caption?: string };
+    video?: { url: string; caption?: string; duration?: number };
   };
+  notes: string[];
   dependencies: {
     prerequisites: string[];
     dependsOn: string[];
@@ -98,15 +144,32 @@ export interface FullProcedure {
   title: string;
   description?: string;
   category: string;
+  subcategory?: string;
   department: string;
   criticality: string;
   version: string;
   status: string;
   prerequisites: {
     description: string;
-    items: any[];
+    items: PrerequisiteItem[];
   };
   steps: ProcedureStep[];
+  parameters?: {
+    variables: Array<{
+      id: string;
+      name: string;
+      value: any;
+      unit?: string;
+      type: string;
+      min?: number;
+      max?: number;
+      description?: string;
+    }>;
+  };
+  postExecution?: {
+    checks: any[];
+    reporting: any;
+  };
   metadata: ProcedureMetadata;
   authorId?: string;
   createdAt: Date;
