@@ -222,6 +222,9 @@ export default function DatasetPage() {
         return;
       }
       setIsUploading(true);
+      
+      console.log("🚀 [FORGE_FRONT] Préparation de l'envoi procédure...");
+
       try {
         const formattedSteps = procSteps.map((s, i) => ({
           id: `step-${Date.now()}-${i}`,
@@ -249,30 +252,45 @@ export default function DatasetPage() {
           media: s.media ? { [s.mediaType === 'image' ? 'image' : 'video']: { url: s.media } } : undefined
         }));
 
+        const payload = { 
+          title: procTitle, 
+          steps: formattedSteps,
+          metadata: { 
+            category: "MAINTENANCE", 
+            department: "PRODUCTION", 
+            criticality: "MEDIUM", 
+            version: "1.0.0"
+          }
+        };
+
+        console.log("📡 [FORGE_FRONT] Envoi payload:", payload);
+
         const res = await fetch('/api/procedures', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            title: procTitle, 
-            steps: formattedSteps,
-            metadata: { 
-              category: "MAINTENANCE", 
-              department: "PRODUCTION", 
-              criticality: "MEDIUM", 
-              version: "1.0.0"
-            }
-          }),
+          body: JSON.stringify(payload),
         });
 
-        const data = await res.json().catch(() => ({ success: false, message: "Réponse serveur invalide" }));
+        const textRes = await res.text();
+        console.log("📥 [FORGE_FRONT] Réponse brute serveur:", textRes);
+
+        let data;
+        try {
+          data = JSON.parse(textRes);
+        } catch (e) {
+          throw new Error("Le serveur a renvoyé un format invalide (Non-JSON).");
+        }
 
         if (res.ok && data.success) {
-          toast({ title: "Forge réussie", description: "La procédure est archivée." });
+          console.log("✅ [FORGE_FRONT] Forge réussie:", data);
+          toast({ title: "Forge réussie", description: `Procédure "${procTitle}" archivée.` });
           router.push('/procedures');
         } else {
-          throw new Error(data.message || data.error || "Erreur de forge");
+          console.error("❌ [FORGE_FRONT] Rejet de forge:", data.message || data.error);
+          throw new Error(data.message || data.error || "Échec de la forge industrielle.");
         }
       } catch (err: any) {
+        console.error("❌ [FORGE_FRONT] Erreur fatale:", err.message);
         toast({ title: "Échec de la Forge", description: err.message, variant: "destructive" });
       } finally { setIsUploading(false); }
     }

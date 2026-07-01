@@ -9,105 +9,140 @@ export const dynamic = 'force-dynamic';
 
 /**
  * POST /api/procedures
- * Forge de procédure ultra-résiliente avec audit détaillé.
+ * Forge de procédure ultra-résiliente avec audit détaillé et logs intensifs.
  */
 export async function POST(request: NextRequest) {
   const timestamp = new Date().toISOString();
   const traceId = uuidv4().slice(0, 8);
-  console.log(`🚀 [${traceId}] [API_PROC_POST] Initiation de la forge...`);
+  console.log(`\n🚀 [${traceId}] [FORGE_START] Initiation de la forge industrielle...`);
 
   try {
     const session = await getSessionFromCookie();
-    const body = await request.json();
-    const { title, steps, metadata } = body;
+    console.log(`🕵️ [${traceId}] [FORGE_AUTH] État session:`, session ? `Connecté (${session.user.role})` : 'Hors-session');
 
-    if (!title || !steps || !Array.isArray(steps)) {
-      console.error(`❌ [${traceId}] [API_PROC_POST] Structure invalide reçue.`);
-      return NextResponse.json({ success: false, message: 'Structure invalide : Titre et Étapes requis.' }, { status: 400 });
+    const body = await request.json().catch(() => null);
+    if (!body || !body.title || !body.steps || !Array.isArray(body.steps)) {
+      console.error(`❌ [${traceId}] [FORGE_ERROR] Corps de requête invalide ou incomplet.`);
+      return NextResponse.json({ 
+        success: false, 
+        message: 'Structure invalide : Titre et Étapes requis.',
+        traceId 
+      }, { status: 400 });
     }
 
-    // 1. Identification ou Création de l'auteur (Crucial)
+    const { title, steps, metadata } = body;
+    console.log(`📝 [${traceId}] [FORGE_DATA] Titre: "${title}", Étapes: ${steps.length}`);
+
+    // 1. Identification de l'auteur (Crucial pour la contrainte SQL)
     let authorId = session?.user?.id;
     if (!authorId) {
-      console.log(`🕵️ [${traceId}] [API_PROC_POST] Session absente, identification admin-root...`);
-      const rootAdmin = await prisma.user.upsert({
-        where: { email: 'admin@visionode.local' },
-        update: { approved: true },
-        create: {
-          id: 'admin-root',
-          firstName: 'System',
-          lastName: 'Administrator',
-          email: 'admin@visionode.local',
-          password: 'System@NoPassword@2024',
-          role: 'admin',
-          approved: true
-        }
-      });
-      authorId = rootAdmin.id;
+      console.log(`⚠️ [${traceId}] [FORGE_AUTH] Aucun auteur en session. Tentative identification admin-root...`);
+      try {
+        const rootAdmin = await prisma.user.upsert({
+          where: { email: 'admin@visionode.local' },
+          update: { approved: true },
+          create: {
+            id: 'admin-root',
+            firstName: 'System',
+            lastName: 'Administrator',
+            email: 'admin@visionode.local',
+            password: 'System@NoPassword@2024', // Ne sera pas utilisé car bypassé par le mécanisme de session
+            role: 'admin',
+            approved: true
+          }
+        });
+        authorId = rootAdmin.id;
+        console.log(`✅ [${traceId}] [FORGE_AUTH] Auteur substitué: ${authorId}`);
+      } catch (authErr: any) {
+        console.error(`❌ [${traceId}] [FORGE_AUTH_CRASH] Échec création auteur système:`, authErr.message);
+        throw new Error(`Erreur d'accréditation système: ${authErr.message}`);
+      }
     }
 
     const code = metadata?.code || `FORGE-${Date.now().toString().slice(-6)}`;
     const procId = uuidv4();
 
     // 2. Enregistrement Neon SQL
-    console.log(`💾 [${traceId}] [API_PROC_POST] Insertion Neon SQL pour ${code}...`);
-    const procedure = await prisma.procedure.create({
-      data: {
-        id: procId,
-        code,
-        title: title.trim(),
-        description: body.description || metadata?.description || 'Procédure générée via Station de Dictée.',
-        category: String(metadata?.category || 'OPERATION').toUpperCase(),
-        department: String(metadata?.department || 'PRODUCTION').toUpperCase(),
-        criticality: String(metadata?.criticality || 'MEDIUM').toUpperCase(),
-        version: metadata?.version || '1.0.0',
-        status: 'APPROVED',
-        prerequisites: body.prerequisites || { description: "Sécurité standard", items: [] },
-        steps: steps,
-        metadata: { ...metadata, authorId, traceId, forged_at: timestamp },
-        parameters: body.parameters || { variables: [] },
-        postExecution: body.postExecution || { checks: [], reporting: { generateReport: true, reportFields: [] } },
-        authorId: authorId,
-        syncedLocal: false
-      }
-    });
-
-    // 3. Archivage Physique (Registre .registry/)
+    console.log(`💾 [${traceId}] [FORGE_SQL] Tentative d'insertion Prisma pour le code: ${code}...`);
     try {
-      const registryPath = `procedures/${procedure.code.toLowerCase()}/procedure.json`;
-      await postgresClient.saveFile(registryPath, JSON.stringify(procedure, null, 2));
+      const procedure = await prisma.procedure.create({
+        data: {
+          id: procId,
+          code,
+          title: title.trim(),
+          description: body.description || metadata?.description || 'Procédure générée via Station de Dictée.',
+          category: String(metadata?.category || 'OPERATION').toUpperCase(),
+          department: String(metadata?.department || 'PRODUCTION').toUpperCase(),
+          criticality: String(metadata?.criticality || 'MEDIUM').toUpperCase(),
+          version: metadata?.version || '1.0.0',
+          status: 'APPROVED',
+          prerequisites: body.prerequisites || { description: "Sécurité standard", items: [] },
+          steps: steps,
+          metadata: { ...metadata, authorId, traceId, forged_at: timestamp },
+          parameters: body.parameters || { variables: [] },
+          postExecution: body.postExecution || { checks: [], reporting: { generateReport: true, reportFields: [] } },
+          authorId: authorId,
+          syncedLocal: false
+        }
+      });
+      console.log(`✅ [${traceId}] [FORGE_SQL_SUCCESS] Procédure enregistrée en DB avec ID: ${procedure.id}`);
 
-      // Projection sémantique pour recherche offline
-      const projectionPath = `items/proc_${procedure.code.toLowerCase()}.json`;
-      await postgresClient.saveFile(projectionPath, JSON.stringify({
-        id: procedure.id,
+      // 3. Archivage Physique (Registre .registry/)
+      console.log(`📂 [${traceId}] [FORGE_FS] Archivage physique dans le registre...`);
+      try {
+        const registryPath = `procedures/${procedure.code.toLowerCase()}/procedure.json`;
+        await postgresClient.saveFile(registryPath, JSON.stringify(procedure, null, 2));
+
+        // Projection sémantique pour recherche offline
+        const projectionPath = `items/proc_${procedure.code.toLowerCase()}.json`;
+        await postgresClient.saveFile(projectionPath, JSON.stringify({
+          id: procedure.id,
+          procedureId: procedure.id,
+          type: 'procedure',
+          title: procedure.title,
+          label: procedure.code,
+          content: `PROCÉDURE: ${procedure.title}. ${steps.length} étapes.`,
+          metadata: { origin: 'FORGE_SYSTEM', code: procedure.code, traceId }
+        }, null, 2));
+        
+        console.log(`✅ [${traceId}] [FORGE_FS_SUCCESS] Archivage physique terminé.`);
+      } catch (fsErr: any) {
+        console.error(`⚠️ [${traceId}] [FORGE_FS_FAIL] Échec archivage physique:`, fsErr.message);
+      }
+
+      // 4. Vectorisation RAG (Background)
+      console.log(`🧠 [${traceId}] [FORGE_RAG] Déclenchement de la vectorisation...`);
+      procedureRAG.indexProcedure(procedure as any)
+        .then(() => console.log(`✅ [${traceId}] [FORGE_RAG_SUCCESS] Vectorisation terminée.`))
+        .catch(e => console.error(`⚠️ [${traceId}] [FORGE_RAG_FAIL] Échec vectorisation:`, e.message));
+
+      console.log(`🏁 [${traceId}] [FORGE_COMPLETE] Succès total de l'opération.`);
+      return NextResponse.json({
+        success: true,
         procedureId: procedure.id,
-        type: 'procedure',
-        title: procedure.title,
-        label: procedure.code,
-        content: `PROCÉDURE: ${procedure.title}. ${steps.length} étapes.`,
-        metadata: { origin: 'FORGE_SYSTEM', code: procedure.code }
-      }, null, 2));
+        message: `La procédure "${procedure.title}" est forgée et archivée.`,
+        traceId
+      });
+
+    } catch (prismaErr: any) {
+      console.error(`❌ [${traceId}] [FORGE_SQL_FAIL] Erreur Prisma critique:`);
+      console.error(`   Code: ${prismaErr.code}`);
+      console.error(`   Message: ${prismaErr.message}`);
+      if (prismaErr.meta) console.error(`   Meta:`, prismaErr.meta);
       
-      console.log(`✅ [${traceId}] [API_PROC_POST] Archivage physique réussi.`);
-    } catch (fsErr: any) {
-      console.error(`⚠️ [${traceId}] [API_PROC_POST] Échec archivage physique : ${fsErr.message}`);
+      return NextResponse.json({ 
+        success: false, 
+        message: 'Échec de l\'enregistrement en base de données.', 
+        error: prismaErr.message,
+        code: prismaErr.code,
+        traceId 
+      }, { status: 500 });
     }
 
-    // 4. Vectorisation RAG (Background)
-    procedureRAG.indexProcedure(procedure as any).catch(e => console.error("RAG_FAIL:", e.message));
-
-    console.log(`🏁 [${traceId}] [API_PROC_POST] Forge terminée avec succès.`);
-    return NextResponse.json({
-      success: true,
-      procedureId: procedure.id,
-      message: `La procédure "${procedure.title}" est forgée.`
-    });
-
   } catch (error: any) {
-    console.error(`❌ [${traceId}] [API_PROC_POST] ÉCHEC :`, error.message);
+    console.error(`❌ [${traceId}] [FORGE_FATAL] Erreur globale non gérée:`, error.message);
     return NextResponse.json(
-      { success: false, message: 'Échec de la forge industrielle.', error: error.message },
+      { success: false, message: 'Échec critique de la forge industrielle.', error: error.message, traceId },
       { status: 500 }
     );
   }
@@ -125,6 +160,6 @@ export async function GET() {
     });
     return NextResponse.json({ success: true, procedures });
   } catch (error: any) {
-    return NextResponse.json({ success: false, message: 'Erreur lecture.', error: error.message }, { status: 500 });
+    return NextResponse.json({ success: false, message: 'Erreur lecture registre.', error: error.message }, { status: 500 });
   }
 }
