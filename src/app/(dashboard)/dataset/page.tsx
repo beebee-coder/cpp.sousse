@@ -104,14 +104,9 @@ export default function DatasetPage() {
     const key = getFieldKey(target.type, target.index);
     const lowerText = text.toLowerCase().trim();
 
-    if (lowerText === 'non' || lowerText === 'effacer') {
-      setPhraseBuffers(prev => {
-        const current = prev[key] || [];
-        if (current.length === 0) return prev;
-        const next = current.slice(0, -1);
-        updateTextFromBuffer(key, next);
-        return { ...prev, [key]: next };
-      });
+    if (lowerText === 'effacer') {
+      setPhraseBuffers(prev => ({ ...prev, [key]: [] }));
+      updateTextFromBuffer(key, []);
       return;
     }
 
@@ -199,8 +194,6 @@ export default function DatasetPage() {
     e.preventDefault();
     if (isUploading) return;
 
-    console.log("🚀 [FORGE_FRONT] Initiation du flux de soumission...");
-
     if (mode === 'qa') {
       if (!question.trim() || !answer.trim()) {
         toast({ title: "Données incomplètes", variant: "destructive" });
@@ -208,7 +201,6 @@ export default function DatasetPage() {
       }
       setIsUploading(true);
       try {
-        console.log("📥 [FORGE_FRONT] Envoi Item Q/R...");
         const res = await fetch('/api/knowledge', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -216,33 +208,30 @@ export default function DatasetPage() {
         });
         const data = await res.json();
         if (res.ok && data.success) {
-          console.log("✅ [FORGE_FRONT] Item Q/R indexé.");
           toast({ title: "Savoir sémantique indexé" });
           setQuestion(''); setAnswer(''); setPhraseBuffers({});
         } else {
           throw new Error(data.error || "Échec liaison BDD");
         }
       } catch (err: any) {
-        console.error("❌ [FORGE_FRONT] Échec Q/R:", err.message);
         toast({ title: "Échec de l'indexation", description: err.message, variant: "destructive" });
       } finally { setIsUploading(false); }
     } else {
       if (!procTitle.trim() || procSteps.some(s => !s.title.trim())) {
-        toast({ title: "Forge interrompue", description: "Le titre et les étapes sont requis.", variant: "destructive" });
+        toast({ title: "Données manquantes", description: "Titre et Séquences requis.", variant: "destructive" });
         return;
       }
       setIsUploading(true);
       try {
-        console.log("🏗️ [FORGE_FRONT] Formatage de la procédure complexe...");
         const formattedSteps = procSteps.map((s, i) => ({
           id: `step-${Date.now()}-${i}`,
           order: i + 1,
           title: s.title,
-          description: s.description || "Instruction technique.",
+          description: s.description || "Instruction opérationnelle.",
           duration: { value: parseInt(s.duration) || 60, unit: "seconds", display: `${s.duration}s`, type: "fixed" },
           action: { 
             type: "confirmation", 
-            instruction: s.description, 
+            instruction: s.description || s.title, 
             ui: { component: "action_button", label: "Valider", icon: "check" } 
           },
           validation: {
@@ -260,8 +249,6 @@ export default function DatasetPage() {
           media: s.media ? { [s.mediaType === 'image' ? 'image' : 'video']: { url: s.media } } : undefined
         }));
 
-        console.log(`📦 [FORGE_FRONT] Envoi de ${formattedSteps.length} étapes vers l'API...`);
-
         const res = await fetch('/api/procedures', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -277,27 +264,15 @@ export default function DatasetPage() {
           }),
         });
 
-        const text = await res.text();
-        console.log("📡 [FORGE_FRONT] Statut HTTP:", res.status);
-        
-        let data;
-        try {
-          data = JSON.parse(text);
-        } catch (e) {
-          console.error("❌ [FORGE_FRONT] La réponse serveur n'est pas du JSON:", text.slice(0, 500));
-          throw new Error("Erreur de format serveur (non-JSON).");
-        }
+        const data = await res.json().catch(() => ({ success: false, message: "Réponse serveur invalide" }));
 
         if (res.ok && data.success) {
-          console.log("✅ [FORGE_FRONT] Procédure forgée avec succès. ID:", data.procedureId);
-          toast({ title: "Forge réussie", description: "La procédure est enregistrée et archivée." });
+          toast({ title: "Forge réussie", description: "La procédure est archivée." });
           router.push('/procedures');
         } else {
-          console.error("❌ [FORGE_FRONT] Rejet de forge:", data.message || "Inconnu");
-          throw new Error(data.message || "Erreur serveur critique");
+          throw new Error(data.message || data.error || "Erreur de forge");
         }
       } catch (err: any) {
-        console.error("❌ [FORGE_FRONT] Échec critique de la forge:", err.message);
         toast({ title: "Échec de la Forge", description: err.message, variant: "destructive" });
       } finally { setIsUploading(false); }
     }
@@ -339,7 +314,7 @@ export default function DatasetPage() {
                <div className="space-y-1">
                  <p className="text-[10px] font-code text-white uppercase font-bold">Liaison de Données Critique</p>
                  <p className="text-[9px] font-code text-muted-foreground uppercase leading-tight">
-                   L'enregistrement en base de données cloud (Neon) et l'archivage physique sont effectués simultanément pour garantir l'auditabilité.
+                   L'enregistrement en base de données Neon et l'archivage physique (.registry/) sont effectués simultanément pour garantir l'auditabilité.
                  </p>
                </div>
             </Card>
