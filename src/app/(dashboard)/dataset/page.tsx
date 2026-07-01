@@ -40,6 +40,7 @@ export default function DatasetPage() {
   const [qaAnswer, setQaAnswer] = useState('');
   const [qaTags, setQaTags] = useState('');
 
+  // ✅ CORRECTION HYDRATION : Initialiser les données complexes après le montage
   useEffect(() => { 
     setMounted(true); 
     const initialStep: ProcedureStep = { 
@@ -68,9 +69,13 @@ export default function DatasetPage() {
     onResult: (text) => {
       if (activeVoiceField === 'qaAnswer') setQaAnswer(text);
       if (activeVoiceField?.startsWith('step-desc-')) {
-        const idx = parseInt(activeVoiceField.split('-')[2]);
-        const n = [...procSteps];
-        if (n[idx]) { n[idx].description = text; setProcSteps(n); }
+        const parts = activeVoiceField.split('-');
+        const idx = parseInt(parts[2]);
+        setProcSteps(prev => {
+          const next = [...prev];
+          if (next[idx]) next[idx].description = text;
+          return next;
+        });
       }
     },
     autoRestart: true
@@ -88,6 +93,10 @@ export default function DatasetPage() {
 
   const handleForgeProcedure = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!procTitle || !procCode) {
+      toast({ title: "CHAMPS MANQUANTS", variant: "destructive" });
+      return;
+    }
     setIsUploading(true);
     try {
       const res = await fetch('/api/procedures', {
@@ -100,13 +109,25 @@ export default function DatasetPage() {
           prerequisites: { description: "Audit", items: [] }
         }),
       });
-      if (res.ok) { toast({ title: "PROCÉDURE FORGÉE" }); router.push('/procedures'); }
-    } catch { toast({ title: "ÉCHEC", variant: "destructive" }); }
-    finally { setIsUploading(false); }
+      if (res.ok) { 
+        toast({ title: "PROCÉDURE FORGÉE", description: "Liaison physique établie." }); 
+        router.push('/procedures'); 
+      } else {
+        throw new Error("Erreur serveur");
+      }
+    } catch { 
+      toast({ title: "ÉCHEC DE LA FORGE", variant: "destructive" }); 
+    } finally { 
+      setIsUploading(false); 
+    }
   };
 
   const handleForgeQA = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!qaTitle || !qaAnswer) {
+      toast({ title: "CHAMPS MANQUANTS", variant: "destructive" });
+      return;
+    }
     setIsUploading(true);
     try {
       const res = await fetch('/api/knowledge', {
@@ -117,9 +138,17 @@ export default function DatasetPage() {
           tags: qaTags.split(',').map(t => t.trim()), category: 'Sécurité'
         }),
       });
-      if (res.ok) { toast({ title: "CONNAISSANCE INDEXÉE" }); setQaTitle(''); setQaQuestion(''); setQaAnswer(''); }
-    } catch { toast({ title: "ÉCHEC", variant: "destructive" }); }
-    finally { setIsUploading(false); }
+      if (res.ok) { 
+        toast({ title: "CONNAISSANCE INDEXÉE", description: "Mémoire RAG mise à jour." }); 
+        setQaTitle(''); setQaQuestion(''); setQaAnswer(''); 
+      } else {
+        throw new Error("Erreur serveur");
+      }
+    } catch { 
+      toast({ title: "ÉCHEC D'INDEXATION", variant: "destructive" }); 
+    } finally { 
+      setIsUploading(false); 
+    }
   };
 
   if (!mounted) return null;
@@ -174,7 +203,7 @@ export default function DatasetPage() {
                        <div className="space-y-2">
                          <Input value={step.title} onChange={e => { const n = [...procSteps]; n[idx].title = e.target.value; setProcSteps(n); }} placeholder="TITRE ACTION" className="uppercase font-bold" />
                          <div className="relative">
-                            <Textarea value={step.description} onChange={e => { const n = [...procSteps]; n[idx].description = e.target.value; setProcSteps(n); }} placeholder="Instructions techniques..." className="h-24 text-xs font-code" />
+                            <Textarea value={step.description} onChange={e => { const n = [...prev => { const next = [...prev]; next[idx].description = e.target.value; return next; }]; }} placeholder="Instructions techniques..." className="h-24 text-xs font-code" />
                             <Button type="button" variant="ghost" size="sm" onClick={() => toggleDictation(`step-desc-${idx}`)} className={cn("absolute bottom-2 right-2 h-7 text-[8px] uppercase", voice.isListening && activeVoiceField === `step-desc-${idx}` ? "text-red-500 animate-pulse" : "text-primary")}><Mic className="w-3 h-3 mr-1" /> Dictée</Button>
                          </div>
                        </div>
@@ -192,7 +221,7 @@ export default function DatasetPage() {
                   </Card>
                 ))}
                 
-                <Button type="button" variant="outline" onClick={() => setProcSteps([...procSteps, { ...procSteps[0], id: `step-${Date.now()}`, title: '', description: '' }])} className="w-full h-12 border-dashed border-primary/30 uppercase text-[10px] font-bold">
+                <Button type="button" variant="outline" onClick={() => setProcSteps(prev => [...prev, { ...prev[0], id: `step-${Date.now()}`, title: '', description: '' }])} className="w-full h-12 border-dashed border-primary/30 uppercase text-[10px] font-bold">
                   <Plus className="w-4 h-4 mr-2" /> Ajouter une Séquence CRF
                 </Button>
 

@@ -3,11 +3,10 @@ import bcrypt from 'bcryptjs';
 import type { UserRole } from '@/lib/auth-users';
 
 /**
- * Magasin d'identités consolidé [AUTH_STORE].
+ * Magasin d'identités consolidé [AUTH_STORE] pour VisioNode.
  */
 
 export async function authenticateUser(email: string, password: string) {
-  const ts = new Date().toLocaleTimeString();
   try {
     const user = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
     if (!user) return { success: false, error: 'INVALID_CREDENTIALS' };

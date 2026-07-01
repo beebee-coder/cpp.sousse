@@ -14,20 +14,21 @@ function createPrismaClient() {
   const ts = new Date().toLocaleTimeString();
   console.log(`🔌 [PRISMA_CLIENT] [INIT] [${ts}] Liaison Neon lancée.`);
 
+  // Configuration WebSocket pour Neon en mode serverless
   if (typeof window === 'undefined') {
     neonConfig.webSocketConstructor = ws;
   }
 
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
-    console.warn(`⚠️ [PRISMA_CLIENT] DATABASE_URL manquante.`);
+    console.warn(`⚠️ [PRISMA_CLIENT] DATABASE_URL manquante. Fallback standard client.`);
     return new PrismaClient();
   }
 
   const pool = new Pool({ connectionString });
   const adapter = new PrismaNeon(pool);
 
-  // Prisma 7 injecte l'adaptateur directement via le constructeur
+  // Prisma 7 injecte l'adaptateur via le constructeur
   return new PrismaClient({
     adapter,
     log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
