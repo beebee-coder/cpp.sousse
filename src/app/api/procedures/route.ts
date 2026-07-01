@@ -23,16 +23,21 @@ export async function GET() {
         const fileContent = await fs.readFile(dataPath, 'utf8');
         const realProc = JSON.parse(fileContent);
 
-        // 1. Création Database (Prisma)
-        const created = await prisma.procedure.create({
-          data: {
+        // S'assurer que l'auteur admin existe
+        const admin = await prisma.user.findFirst({ where: { role: 'admin' } });
+        const authorId = admin?.id || 'admin-root';
+
+        const created = await prisma.procedure.upsert({
+          where: { code: realProc.metadata.code },
+          update: {},
+          create: {
             id: realProc._id || `proc-crf-${Date.now()}`,
             code: realProc.metadata.code,
             title: realProc.metadata.title,
             description: realProc.metadata.subcategory || realProc.metadata.description || '',
-            category: (realProc.metadata.category || 'OPERATION').toUpperCase() as any,
-            department: (realProc.metadata.department || 'PRODUCTION').toUpperCase() as any,
-            criticality: (realProc.metadata.criticality || 'MEDIUM').toUpperCase() as any,
+            category: (realProc.metadata.category || 'OPERATION').toUpperCase(),
+            department: (realProc.metadata.department || 'PRODUCTION').toUpperCase(),
+            criticality: (realProc.metadata.criticality || 'MEDIUM').toUpperCase(),
             version: realProc.metadata.version,
             status: 'APPROVED',
             prerequisites: realProc.prerequisites as any,
@@ -40,7 +45,7 @@ export async function GET() {
             metadata: realProc.metadata as any,
             parameters: realProc.parameters as any,
             postExecution: realProc.postExecution as any,
-            authorId: 'admin-root',
+            authorId: authorId,
           }
         });
 
@@ -50,7 +55,7 @@ export async function GET() {
         await fs.mkdir(registryBase, { recursive: true });
         await fs.writeFile(
           path.join(registryBase, 'procedure.json'),
-          JSON.stringify({ ...created, registryDir: dirName }, null, 2),
+          JSON.stringify(created, null, 2),
           'utf8'
         );
         
@@ -58,7 +63,6 @@ export async function GET() {
         await procedureRAG.indexProcedure(created as any);
         
         procedures = [created];
-        console.log(`✅ [PROCEDURE_SEED] Amorçage réussi : ${created.code} synchronisé dans le registre.`);
       } catch (seedErr: any) {
         console.warn('[PROCEDURE_API] Échec amorçage critique CRF:', seedErr.message);
       }
@@ -77,56 +81,65 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { title, steps, metadata, prerequisites, parameters, postExecution } = body;
+    const { title, steps, metadata } = body;
 
     if (!title) {
       return NextResponse.json({ success: false, message: 'Titre requis.' }, { status: 400 });
     }
 
+    // S'assurer que l'auteur existe
+    const admin = await prisma.user.findFirst({ where: { role: 'admin' } });
+    if (!admin) {
+       return NextResponse.json({ success: false, message: 'Administrateur racine introuvable. Lancez le seeding.' }, { status: 500 });
+    }
+
+    const code = metadata?.code || `PROC-${Date.now().toString().slice(-6)}`;
+
     // 1. Création Database (Prisma)
     const procedure = await prisma.procedure.create({
       data: {
-        code: metadata?.code || `PROC-${Date.now().toString().slice(-6)}`,
+        code,
         title,
         description: body.description || '',
-        category: (metadata?.category || 'OPERATION').toUpperCase() as any,
-        department: (metadata?.department || 'PRODUCTION').toUpperCase() as any,
-        criticality: (metadata?.criticality || 'MEDIUM').toUpperCase() as any,
+        category: (metadata?.category || 'OPERATION').toUpperCase(),
+        department: (metadata?.department || 'PRODUCTION').toUpperCase(),
+        criticality: (metadata?.criticality || 'MEDIUM').toUpperCase(),
         version: metadata?.version || '1.0.0',
         status: 'APPROVED',
-        prerequisites: prerequisites || {},
+        prerequisites: body.prerequisites || { items: [] },
         steps: steps || [],
-        metadata: metadata || {},
-        parameters: parameters || {},
-        postExecution: postExecution || {},
-        authorId: 'admin-root',
+        metadata: { ...metadata, createdAt: new Date().toISOString() } as any,
+        parameters: body.parameters || { variables: [] },
+        postExecution: body.postExecution || { checks: [] },
+        authorId: admin.id,
       }
     });
 
-    // 2. Vectorisation OBLIGATOIRE
-    try {
-      await procedureRAG.indexProcedure(procedure as any);
-    } catch (ragErr: any) {
-      console.error(`⚠️ [CRITICAL] Vectorisation en échec: ${ragErr.message}`);
-    }
-
-    // 3. Archivage Physique (Registre)
+    // 2. Archivage Physique (Registre)
     const dirName = `${procedure.code.toLowerCase()}_${Date.now()}`;
     const registryBase = path.join(process.cwd(), '.registry', 'procedures', dirName);
     await fs.mkdir(registryBase, { recursive: true });
     await fs.writeFile(
       path.join(registryBase, 'procedure.json'),
-      JSON.stringify({ ...procedure, registryDir: dirName }, null, 2),
+      JSON.stringify(procedure, null, 2),
       'utf8'
     );
+
+    // 3. Vectorisation OBLIGATOIRE (Non-bloquante pour la réponse client si timeout)
+    try {
+      await procedureRAG.indexProcedure(procedure as any);
+    } catch (ragErr: any) {
+      console.error(`⚠️ [RAG_FAIL] ${ragErr.message}`);
+    }
 
     return NextResponse.json({
       success: true,
       procedureId: procedure.id,
-      message: `Procédure vectorisée et archivée dans le registre physique.`
+      message: `Procédure forgée et indexée avec succès.`
     });
 
   } catch (error: any) {
+    console.error('[API_PROCEDURES_POST]', error);
     return NextResponse.json(
       { success: false, message: 'Échec de la forge.', error: error.message },
       { status: 500 }

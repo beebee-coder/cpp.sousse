@@ -35,7 +35,7 @@ import { useVoice } from '@/hooks/use-voice';
 import { cn } from '@/lib/utils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
-// Interface locale simplifiée pour la dictée, compatible avec le moteur final
+// Interface locale simplifiée pour la dictée
 interface DictationStep {
   id: string;
   title: string;
@@ -45,19 +45,11 @@ interface DictationStep {
   alarms: string;
 }
 
-interface QAItem {
-  id: string;
-  type: 'qa' | 'procedure';
-  label: string;
-  details: string;
-}
-
 export default function DatasetPage() {
   const { toast } = useToast();
   
   const [mounted, setMounted] = useState(false);
   const [mode, setMode] = useState<'qa' | 'procedure'>('qa');
-  const [qaItems, setQaItems] = useState<QAItem[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [isAssistantActive, setIsAssistantActive] = useState(false);
   
@@ -68,7 +60,7 @@ export default function DatasetPage() {
   
   const [procTitle, setProcTitle] = useState('');
   const [procSteps, setProcSteps] = useState<DictationStep[]>([
-    { id: '1', title: '', duration: '', description: '', conditions: '', alarms: '' }
+    { id: '1', title: '', duration: '60', description: '', conditions: '', alarms: '' }
   ]);
 
   const [mediaModal, setMediaModal] = useState<{ isOpen: boolean, type: 'image' | 'video', stepIndex: number | null }>({
@@ -163,32 +155,26 @@ export default function DatasetPage() {
       voice.speak("Station de dictée en veille.");
     } else {
       if (!voice.isSupported) {
-        toast({ title: "Incompatible", description: "Reconnaissance vocale non supportée sur ce navigateur.", variant: "destructive" });
+        toast({ title: "Incompatible", description: "Reconnaissance vocale non supportée.", variant: "destructive" });
         return;
       }
       setIsAssistantActive(true);
       voice.startListening();
-      voice.speak("Station active. Je vous guide pour la saisie.");
-      
-      if (!activeUIField) {
-        if (mode === 'qa') handleFieldFocus('question');
-        else handleFieldFocus('procTitle');
-      }
+      voice.speak("Station active. Dites le titre de la procédure.");
+      handleFieldFocus('procTitle');
     }
   };
 
   const handleFieldFocus = (type: string, index?: number) => {
-    if (!isAssistantActive) return;
     setActiveUIField({ type, index });
+    if (!isAssistantActive) return;
     
     let instruction = "";
     if (type === 'question') instruction = "Dites le symptôme.";
     else if (type === 'answer') instruction = "Dites la résolution.";
-    else if (type === 'procTitle') instruction = "Donnez un titre à la procédure.";
-    else if (type === 'stepTitle') instruction = `Action pour l'étape ${index! + 1}.`;
-    else if (type === 'stepDescription') instruction = "Détails de l'opération ?";
-    else if (type === 'stepConditions') instruction = "Quelles sont les conditions de validation ?";
-    else if (type === 'stepAlarms') instruction = "Précisez les alarmes critiques si nécessaire.";
+    else if (type === 'procTitle') instruction = "Quel est le titre ?";
+    else if (type === 'stepTitle') instruction = `Action pour l'étape ${index! + 1} ?`;
+    else if (type === 'stepDescription') instruction = "Détails techniques ?";
 
     if (instruction) voice.speak(instruction);
   };
@@ -200,9 +186,20 @@ export default function DatasetPage() {
         toast({ title: "Champs requis", variant: "destructive" });
         return;
       }
-      setQaItems(prev => [{ id: Date.now().toString(), type: 'qa', label: question, details: answer }, ...prev]);
-      setQuestion(''); setAnswer(''); setPhraseBuffers({});
-      toast({ title: "Q/R ajouté à la file" });
+      setIsUploading(true);
+      try {
+        const res = await fetch('/api/knowledge', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'qa', title: question.slice(0, 50), question, answer }),
+        });
+        if (res.ok) {
+          toast({ title: "Q/R enregistré et indexé" });
+          setQuestion(''); setAnswer(''); setPhraseBuffers({});
+        }
+      } catch {
+        toast({ title: "Échec indexation", variant: "destructive" });
+      } finally { setIsUploading(false); }
     } else {
       if (!procTitle.trim()) {
         toast({ title: "Titre requis", variant: "destructive" });
@@ -210,35 +207,15 @@ export default function DatasetPage() {
       }
       setIsUploading(true);
       try {
-        // Transformation des étapes de dictée vers le format FullProcedure requis par l'API
         const formattedSteps = procSteps.map((s, i) => ({
-          id: s.id || `step-${Date.now()}-${i}`,
+          id: `step-${Date.now()}-${i}`,
           order: i + 1,
           title: s.title || `Action ${i + 1}`,
-          subtitle: "",
-          description: s.description || "Aucune description",
-          duration: {
-            value: parseInt(s.duration) || 60,
-            unit: "seconds",
-            display: `${s.duration || 60}s`,
-            type: "fixed"
-          },
-          action: {
-            type: "confirmation",
-            instruction: s.description,
-            ui: { component: "action_button", label: "Confirmer", icon: "check" }
-          },
+          description: s.description || "Instruction technique",
+          duration: { value: parseInt(s.duration) || 60, unit: "seconds", display: `${s.duration}s`, type: "fixed" },
+          action: { type: "confirmation", instruction: s.description, ui: { component: "action_button", label: "Confirmer", icon: "check" } },
           validation: {
-            conditions: [
-              {
-                id: `val-${Date.now()}-${i}`,
-                description: s.conditions || "Validation manuelle",
-                type: "status",
-                operator: "==",
-                value: "OK",
-                displayName: "Conformité"
-              }
-            ],
+            conditions: s.conditions ? [{ id: `val-${i}`, description: s.conditions, type: "status", operator: "==", value: "OK", displayName: "Validation" }] : [],
             successExpression: "status == OK",
             timeout: { value: 300, unit: "seconds", action: "warn" }
           },
@@ -251,53 +228,31 @@ export default function DatasetPage() {
           body: JSON.stringify({ 
             title: procTitle, 
             steps: formattedSteps,
-            metadata: {
-              category: "MAINTENANCE",
-              department: "PRODUCTION",
-              criticality: "MEDIUM",
-              version: "1.0.0"
-            }
+            metadata: { category: "MAINTENANCE", department: "PRODUCTION", criticality: "MEDIUM", version: "1.0.0" }
           }),
         });
 
-        if (res.ok) {
-          toast({ title: "Procédure forgée avec succès", description: "L'actif est enregistré dans le registre." });
+        const data = await res.json();
+        if (data.success) {
+          toast({ title: "Procédure forgée", description: "L'actif est prêt dans le registre." });
           setProcTitle('');
-          setProcSteps([{ id: Date.now().toString(), title: '', duration: '', description: '', conditions: '', alarms: '' }]);
-          setStepMediaData({});
+          setProcSteps([{ id: '1', title: '', duration: '60', description: '', conditions: '', alarms: '' }]);
           setPhraseBuffers({});
-          if (isAssistantActive) voice.speak("Procédure enregistrée dans le registre industriel.");
+          if (isAssistantActive) voice.speak("Procédure enregistrée.");
+        } else {
+          throw new Error(data.message);
         }
-      } catch (err) {
-        toast({ title: "Échec de la forge", variant: "destructive" });
-      } finally {
-        setIsUploading(false);
-      }
+      } catch (err: any) {
+        toast({ title: "Échec de la forge", description: err.message, variant: "destructive" });
+      } finally { setIsUploading(false); }
     }
   };
-
-  useEffect(() => {
-    if (!mediaModal.isOpen) return;
-    const startStream = async () => {
-      try {
-        const s = await navigator.mediaDevices.getUserMedia({ video: true, audio: mediaModal.type === 'video' });
-        streamRef.current = s;
-        if (videoRef.current) videoRef.current.srcObject = s;
-      } catch (err) {
-        toast({ title: "Signal Vidéo Indisponible", variant: "destructive" });
-        setMediaModal(prev => ({ ...prev, isOpen: false }));
-      }
-    };
-    startStream();
-    return () => streamRef.current?.getTracks().forEach(t => t.stop());
-  }, [mediaModal.isOpen, mediaModal.type, toast]);
 
   if (!mounted) return null;
 
   return (
     <div className="flex flex-col lg:flex-row h-screen bg-background overflow-hidden">
       <DashboardSidebar />
-
       <main className="flex-1 flex flex-col min-w-0 h-full overflow-y-auto terminal-scroll">
         <header className="h-16 border-b border-border bg-card/30 flex items-center justify-between px-6 shrink-0">
           <div className="flex items-center gap-4">
@@ -305,19 +260,10 @@ export default function DatasetPage() {
             <Database className="w-4 h-4 text-primary" />
             <span className="font-headline font-bold text-xs uppercase tracking-widest text-primary">Station de Dictée Industrielle</span>
           </div>
-
           <div className="flex items-center gap-4">
-            <Button 
-              variant="outline" 
-              size="sm" 
-              onClick={toggleAssistant}
-              className={cn(
-                "h-9 text-[9px] font-code uppercase transition-all", 
-                isAssistantActive ? "bg-primary/20 border-primary text-primary animate-pulse shadow-[0_0_15px_rgba(50,181,212,0.3)]" : "text-muted-foreground"
-              )}
-            >
+            <Button variant="outline" size="sm" onClick={toggleAssistant} className={cn("h-9 text-[9px] font-code uppercase transition-all", isAssistantActive ? "bg-primary/20 border-primary text-primary animate-pulse" : "text-muted-foreground")}>
               {isAssistantActive ? <Sparkles className="w-3.5 h-3.5 mr-2" /> : <Mic className="w-3.5 h-3.5 mr-2" />}
-              Assistant Vocal {isAssistantActive ? "ACTIF" : "VEILLE"}
+              Assistant {isAssistantActive ? "ACTIF" : "VEILLE"}
             </Button>
             <div className="flex bg-muted/30 p-1 rounded-sm border border-border">
               <button onClick={() => setMode('qa')} className={cn("px-3 py-1 text-[9px] uppercase rounded-sm", mode === 'qa' ? "bg-primary text-primary-foreground font-bold" : "text-muted-foreground")}>FAQ</button>
@@ -327,177 +273,53 @@ export default function DatasetPage() {
         </header>
 
         <div className="p-4 lg:p-8 max-w-5xl mx-auto w-full space-y-8">
-          {isAssistantActive && (
-            <div className="flex items-center gap-4 p-3 bg-black/40 border border-primary/20 rounded-sm">
-               <Volume2 className="w-4 h-4 text-primary" />
-               <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden flex items-center">
-                  <div 
-                    className="h-full bg-primary transition-all duration-75 shadow-[0_0_10px_rgba(50,181,212,0.5)]" 
-                    style={{ width: `${Math.min(voice.volume * 100, 100)}%` }} 
-                  />
-               </div>
-               <span className="text-[9px] font-code text-primary uppercase">Signal Entrant</span>
-            </div>
-          )}
-
           <Card className="p-6 border-border bg-card/50 space-y-6 rounded-sm shadow-2xl relative overflow-hidden">
             <form onSubmit={handleAddItem} className="space-y-6">
               {mode === 'qa' ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="relative group">
+                  <div className="relative">
                     <p className="text-[10px] font-bold text-primary mb-2 uppercase tracking-widest">Symptôme / Question</p>
-                    <Textarea 
-                      value={question} 
-                      onChange={(e) => setQuestion(e.target.value)} 
-                      onFocus={() => handleFieldFocus('question')}
-                      placeholder="EX: ÉCHAUFFEMENT POMPE CRF..." 
-                      className={cn(
-                        "h-32 bg-background font-code text-xs uppercase transition-all", 
-                        activeUIField?.type === 'question' && "ring-2 ring-primary border-primary shadow-[0_0_20px_rgba(50,181,212,0.15)]"
-                      )}
-                    />
-                    <div className="absolute bottom-2 right-2">
-                      <Mic className={cn("w-4 h-4", activeUIField?.type === 'question' ? "text-primary animate-bounce" : "text-muted-foreground/30")} />
-                    </div>
+                    <Textarea value={question} onChange={(e) => setQuestion(e.target.value)} onFocus={() => handleFieldFocus('question')} placeholder="EX: ÉCHAUFFEMENT POMPE CRF..." className={cn("h-32 bg-background font-code text-xs uppercase transition-all", activeUIField?.type === 'question' && "ring-2 ring-primary border-primary")} />
                   </div>
                   <div className="relative">
                     <p className="text-[10px] font-bold text-secondary mb-2 uppercase tracking-widest">Résolution / Réponse</p>
-                    <Textarea 
-                      value={answer} 
-                      onChange={(e) => setAnswer(e.target.value)} 
-                      onFocus={() => handleFieldFocus('answer')}
-                      placeholder="EX: VÉRIFIER CIRCUIT DE LUBRIFICATION..." 
-                      className={cn(
-                        "h-32 bg-background font-code text-xs uppercase transition-all", 
-                        activeUIField?.type === 'answer' && "ring-2 ring-secondary border-secondary shadow-[0_0_20px_rgba(46,184,146,0.15)]"
-                      )}
-                    />
-                    <div className="absolute bottom-2 right-2">
-                       <Mic className={cn("w-4 h-4", activeUIField?.type === 'answer' ? "text-secondary animate-bounce" : "text-muted-foreground/30")} />
-                    </div>
+                    <Textarea value={answer} onChange={(e) => setAnswer(e.target.value)} onFocus={() => handleFieldFocus('answer')} placeholder="EX: VÉRIFIER CIRCUIT DE LUBRIFICATION..." className={cn("h-32 bg-background font-code text-xs uppercase transition-all", activeUIField?.type === 'answer' && "ring-2 ring-secondary border-secondary")} />
                   </div>
                 </div>
               ) : (
                 <div className="space-y-6">
                   <div className="relative">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Type className="w-3.5 h-3.5 text-primary" />
-                      <p className="text-[10px] font-bold text-primary uppercase tracking-widest">Titre de la procédure industrielle</p>
-                    </div>
-                    <Input 
-                      value={procTitle} 
-                      onChange={(e) => setProcTitle(e.target.value)} 
-                      onFocus={() => handleFieldFocus('procTitle')}
-                      placeholder="EX: DÉMARRAGE POMPE CRF..." 
-                      className={cn(
-                        "bg-background uppercase h-12 text-sm font-bold transition-all border-primary/20", 
-                        activeUIField?.type === 'procTitle' && "ring-2 ring-primary border-primary shadow-[0_0_15px_rgba(50,181,212,0.2)]"
-                      )} 
-                    />
-                    <div className="absolute top-10 right-4">
-                      <Mic className={cn("w-4 h-4", activeUIField?.type === 'procTitle' ? "text-primary animate-bounce" : "text-muted-foreground/20")} />
-                    </div>
+                    <label className="text-[10px] font-bold text-primary uppercase tracking-widest block mb-2">Titre de la procédure</label>
+                    <Input value={procTitle} onChange={(e) => setProcTitle(e.target.value)} onFocus={() => handleFieldFocus('procTitle')} placeholder="EX: DÉMARRAGE POMPE CRF..." className={cn("bg-background uppercase h-12 text-sm font-bold transition-all border-primary/20", activeUIField?.type === 'procTitle' && "ring-2 ring-primary")} />
                   </div>
-
                   <div className="space-y-6">
                     {procSteps.map((step, index) => (
-                      <Card key={step.id} className="p-4 border-border bg-black/30 space-y-4 group relative">
+                      <Card key={index} className="p-4 border-border bg-black/30 space-y-4">
                         <div className="flex justify-between items-center border-b border-border/50 pb-2">
-                          <div className="flex items-center gap-2">
-                            <span className="w-6 h-6 rounded-full bg-secondary/10 border border-secondary/30 flex items-center justify-center text-[10px] font-bold text-secondary">
-                              {index + 1}
-                            </span>
-                            <span className="text-[10px] font-bold text-secondary uppercase">Séquence Opérationnelle</span>
-                          </div>
+                          <span className="text-[10px] font-bold text-secondary uppercase">Séquence {index + 1}</span>
                           <div className="flex items-center gap-2">
                              <Clock className="w-3.5 h-3.5 text-muted-foreground" />
-                             <Input 
-                              placeholder="360" 
-                              value={step.duration} 
-                              onChange={(e) => { const n = [...procSteps]; n[index].duration = e.target.value; setProcSteps(n); }} 
-                              className="h-7 w-16 text-[10px] font-code text-center"
-                            />
-                            <span className="text-[8px] font-bold text-muted-foreground uppercase">SEC</span>
+                             <Input value={step.duration} onChange={(e) => { const n = [...procSteps]; n[index].duration = e.target.value; setProcSteps(n); }} className="h-7 w-16 text-[10px] font-code text-center" />
                           </div>
                         </div>
-                        
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div className="relative">
-                            <label className="text-[9px] font-bold text-muted-foreground uppercase block mb-1">Titre de l'action</label>
-                            <Input 
-                              placeholder="EX: LAVAGE GRILLE CFI..." 
-                              value={step.title} 
-                              onFocus={() => handleFieldFocus('stepTitle', index)}
-                              onChange={(e) => { const n = [...procSteps]; n[index].title = e.target.value; setProcSteps(n); }} 
-                              className={cn("h-9 text-[10px] uppercase", activeUIField?.type === 'stepTitle' && activeUIField?.index === index && "ring-1 ring-secondary")}
-                            />
-                          </div>
-                          <div className="relative">
-                            <label className="text-[9px] font-bold text-muted-foreground uppercase block mb-1">Instructions détaillées</label>
-                            <Input 
-                              placeholder="DÉTAILLER L'OPÉRATION TECHNIQUE..." 
-                              value={step.description} 
-                              onFocus={() => handleFieldFocus('stepDescription', index)}
-                              onChange={(e) => { const n = [...procSteps]; n[index].description = e.target.value; setProcSteps(n); }} 
-                              className={cn("h-9 text-[10px] uppercase", activeUIField?.type === 'stepDescription' && activeUIField?.index === index && "ring-1 ring-secondary")}
-                            />
-                          </div>
+                          <Input placeholder="Titre de l'action..." value={step.title} onFocus={() => handleFieldFocus('stepTitle', index)} onChange={(e) => { const n = [...procSteps]; n[index].title = e.target.value; setProcSteps(n); }} className="h-9 text-[10px] uppercase" />
+                          <Input placeholder="Instructions techniques..." value={step.description} onFocus={() => handleFieldFocus('stepDescription', index)} onChange={(e) => { const n = [...procSteps]; n[index].description = e.target.value; setProcSteps(n); }} className="h-9 text-[10px] uppercase" />
                         </div>
-
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                           <div className="relative">
-                              <div className="flex items-center gap-1.5 mb-1">
-                                <Settings2 className="w-3 h-3 text-primary" />
-                                <label className="text-[9px] font-bold text-primary uppercase">Conditions de validation</label>
-                              </div>
-                              <Input 
-                                placeholder="EX: PRESSION < 200 MMCE..." 
-                                value={step.conditions} 
-                                onFocus={() => handleFieldFocus('stepConditions', index)}
-                                onChange={(e) => { const n = [...procSteps]; n[index].conditions = e.target.value; setProcSteps(n); }} 
-                                className={cn("h-9 text-[10px] uppercase bg-primary/5 border-primary/20", activeUIField?.type === 'stepConditions' && activeUIField?.index === index && "ring-1 ring-primary")}
-                              />
-                           </div>
-                           <div className="relative">
-                              <div className="flex items-center gap-1.5 mb-1">
-                                <ShieldAlert className="w-3 h-3 text-destructive" />
-                                <label className="text-[9px] font-bold text-destructive uppercase">Alarmes & Risques</label>
-                              </div>
-                              <Input 
-                                placeholder="EX: DÉFAUT ÉLECTRIQUE CRF..." 
-                                value={step.alarms} 
-                                onFocus={() => handleFieldFocus('stepAlarms', index)}
-                                onChange={(e) => { const n = [...procSteps]; n[index].alarms = e.target.value; setProcSteps(n); }} 
-                                className={cn("h-9 text-[10px] uppercase bg-destructive/5 border-destructive/20", activeUIField?.type === 'stepAlarms' && activeUIField?.index === index && "ring-1 ring-destructive")}
-                              />
-                           </div>
-                        </div>
-
-                        <div className="flex gap-2 pt-2 border-t border-border/30">
-                           <Button type="button" variant="outline" size="sm" onClick={() => setMediaModal({ isOpen: true, type: 'image', stepIndex: index })} className={cn("h-8 text-[8px] uppercase font-bold flex-1", stepMediaData[index]?.imageData && "bg-secondary/20 border-secondary text-secondary")}>
-                             {stepMediaData[index]?.imageData ? <CheckCircle2 className="w-3 h-3 mr-2" /> : <Camera className="w-3 h-3 mr-2" />}
-                             Capture Preuve Visuelle
-                           </Button>
-                           <Button type="button" variant="ghost" size="sm" onClick={() => { const n = [...procSteps]; n.splice(index, 1); setProcSteps(n); }} className="h-8 w-8 text-muted-foreground hover:text-destructive">
-                             <Trash2 className="w-3.5 h-3.5" />
-                           </Button>
+                          <Input placeholder="Conditions de validation..." value={step.conditions} onChange={(e) => { const n = [...procSteps]; n[index].conditions = e.target.value; setProcSteps(n); }} className="h-9 text-[10px] uppercase bg-primary/5" />
+                          <Input placeholder="Alarmes & Risques..." value={step.alarms} onChange={(e) => { const n = [...procSteps]; n[index].alarms = e.target.value; setProcSteps(n); }} className="h-9 text-[10px] uppercase bg-destructive/5" />
                         </div>
                       </Card>
                     ))}
                   </div>
-
-                  <Button type="button" variant="outline" onClick={() => setProcSteps([...procSteps, { id: Date.now().toString(), title: '', duration: '', description: '', conditions: '', alarms: '' }])} className="w-full border-dashed border-border h-10 text-[9px] uppercase font-bold">
+                  <Button type="button" variant="outline" onClick={() => setProcSteps([...procSteps, { id: Date.now().toString(), title: '', duration: '60', description: '', conditions: '', alarms: '' }])} className="w-full border-dashed h-10 text-[9px] uppercase font-bold">
                     <Plus className="w-3.5 h-3.5 mr-2" /> Ajouter une séquence
                   </Button>
                 </div>
               )}
-
               <div className="pt-6">
-                <Button 
-                  type="submit" 
-                  disabled={isUploading}
-                  className={cn("w-full font-headline font-bold uppercase text-xs h-14 shadow-2xl transition-all active:scale-95", mode === 'qa' ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground")}
-                >
+                <Button type="submit" disabled={isUploading} className={cn("w-full font-headline font-bold uppercase text-xs h-14 shadow-2xl", mode === 'qa' ? "bg-primary" : "bg-secondary")}>
                   {isUploading ? <Loader2 className="w-5 h-5 animate-spin mr-2" /> : null}
                   {mode === 'qa' ? "Enregistrer dans la file sémantique" : "Forger la Procédure et Indexer"}
                 </Button>
@@ -506,50 +328,6 @@ export default function DatasetPage() {
           </Card>
         </div>
       </main>
-
-      <Dialog open={mediaModal.isOpen} onOpenChange={(o) => !o && setMediaModal(prev => ({ ...prev, isOpen: false }))}>
-        <DialogContent className="sm:max-w-2xl bg-black border-primary/30 shadow-2xl">
-          <DialogHeader><DialogTitle className="text-xs uppercase font-headline tracking-widest text-primary">Capture de Ressource Visuelle</DialogTitle></DialogHeader>
-          <div className="relative aspect-video bg-muted/10 rounded-sm overflow-hidden border border-border">
-            <video ref={videoRef} autoPlay playsInline muted={mediaModal.type === 'image'} className="w-full h-full object-cover" />
-            {isCapturing && <div className="absolute top-4 right-4 bg-red-600 text-white px-2 py-1 rounded-sm text-[10px] font-code animate-pulse">REC | {recordingTime}s</div>}
-          </div>
-          <div className="flex justify-center gap-4 mt-4">
-             {mediaModal.type === 'image' ? (
-               <Button onClick={() => { 
-                 if (videoRef.current) {
-                   const canvas = document.createElement('canvas');
-                   canvas.width = 1280; canvas.height = 720;
-                   canvas.getContext('2d')?.drawImage(videoRef.current, 0, 0);
-                   setStepMediaData(prev => ({ ...prev, [mediaModal.stepIndex!]: { ...prev[mediaModal.stepIndex!], imageData: canvas.toDataURL('image/jpeg') } }));
-                   setMediaModal(prev => ({ ...prev, isOpen: false }));
-                   toast({ title: "Image capturée pour l'étape " + (mediaModal.stepIndex! + 1) });
-                 }
-               }} className="bg-primary text-primary-foreground font-bold uppercase text-[10px] px-12 h-10">Prendre la photo</Button>
-             ) : (
-               !isCapturing ? (
-                 <Button onClick={() => { 
-                   setIsCapturing(true); setRecordingTime(0); chunksRef.current = [];
-                   const recorder = new MediaRecorder(streamRef.current!);
-                   recorder.ondataavailable = (e) => chunksRef.current.push(e.data);
-                   recorder.onstop = () => {
-                     const reader = new FileReader();
-                     reader.onloadend = () => setStepMediaData(prev => ({ ...prev, [mediaModal.stepIndex!]: { ...prev[mediaModal.stepIndex!], videoData: reader.result as string } }));
-                     reader.readAsDataURL(new Blob(chunksRef.current, { type: 'video/webm' }));
-                   };
-                   mediaRecorderRef.current = recorder; recorder.start();
-                   recordingIntervalRef.current = setInterval(() => setRecordingTime(t => t + 1), 1000);
-                 }} className="bg-red-600 text-white font-bold uppercase text-[10px] px-12 h-10">Lancer REC</Button>
-               ) : (
-                 <Button onClick={() => { 
-                   setIsCapturing(false); clearInterval(recordingIntervalRef.current!);
-                   mediaRecorderRef.current?.stop(); setMediaModal(prev => ({ ...prev, isOpen: false }));
-                 }} className="bg-white text-black font-bold uppercase text-[10px] px-12 h-10">Terminer REC</Button>
-               )
-             )}
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
