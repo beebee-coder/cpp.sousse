@@ -13,14 +13,14 @@ const ensureRegistry = () => {
     if (!fs.existsSync(REGISTRY_ROOT)) {
       fs.mkdirSync(REGISTRY_ROOT, { recursive: true });
     }
-    const itemsDir = path.join(REGISTRY_ROOT, 'items');
-    if (!fs.existsSync(itemsDir)) {
-      fs.mkdirSync(itemsDir, { recursive: true });
-    }
-    const bankDir = path.join(REGISTRY_ROOT, 'bank');
-    if (!fs.existsSync(bankDir)) {
-      fs.mkdirSync(bankDir, { recursive: true });
-    }
+    // Dossiers de base du registre industriel
+    const dirs = ['items', 'bank', 'procedures'];
+    dirs.forEach(dir => {
+      const target = path.join(REGISTRY_ROOT, dir);
+      if (!fs.existsSync(target)) {
+        fs.mkdirSync(target, { recursive: true });
+      }
+    });
   } catch (e) {
     console.error("❌ [postgresClient] Erreur accès disque :", e);
   }
@@ -102,6 +102,7 @@ export const postgresClient = {
     const dir = path.dirname(fullPath);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(fullPath, content, 'utf8');
+    console.log(`💾 [POSTGRES_CLIENT] Fichier sauvegardé : ${relPath}`);
   },
 
   async saveAsset(relPath: string, base64Data: string) {
@@ -139,27 +140,14 @@ export const postgresClient = {
 
   async deleteItem(relPath: string) {
     ensureRegistry();
-    // Normalize path and prevent directory traversal
     const cleanRelPath = relPath.startsWith('/') ? relPath.substring(1) : relPath;
     const safePath = path.normalize(cleanRelPath).replace(/^(\.\.(\/|\\|$))+/, '');
     
     if (!safePath || safePath === '.' || safePath === '/') throw new Error("ACCES_INTERDIT_RACINE");
     
     const fullPath = path.join(REGISTRY_ROOT, safePath);
-    console.log(`📡 [POSTGRES_CLIENT] Tentative de suppression physique : ${fullPath}`);
-    
     if (fs.existsSync(fullPath)) {
-      try {
-        // Radical recursive deletion
-        fs.rmSync(fullPath, { recursive: true, force: true });
-        console.log(`✅ [POSTGRES_CLIENT] Suppression réussie : ${fullPath}`);
-      } catch (e: any) {
-        console.error(`❌ [POSTGRES_CLIENT] Échec suppression système : ${e.message}`);
-        throw new Error(`ERREUR_SYSTEME_FICHIER : ${e.message}`);
-      }
-    } else {
-      console.warn(`⚠️ [POSTGRES_CLIENT] Élément non trouvé sur le disque : ${fullPath}`);
-      throw new Error("ELEMENT_DEJA_ABSENT_DU_DISQUE");
+      fs.rmSync(fullPath, { recursive: true, force: true });
     }
   },
 
@@ -170,8 +158,6 @@ export const postgresClient = {
 
     items.forEach(newItem => {
       const parsed = typeof newItem.content === 'string' ? JSON.parse(newItem.content) : newItem.content;
-      
-      // On utilise le titre pour créer un nom de fichier hautement descriptif pour le moteur de recherche
       const baseName = parsed.title || parsed.label || newItem.id;
       const safeId = baseName
         .toLowerCase()
@@ -181,48 +167,12 @@ export const postgresClient = {
         .replace(/^_+|_+$/g, '');
         
       const filePath = path.join(itemsDir, `${safeId}.json`);
-      
       fs.writeFileSync(filePath, JSON.stringify({
         ...newItem,
         label: parsed.label || "",
         details: parsed.details || "",
         title: parsed.title || baseName
       }, null, 2));
-      
-      console.log(`💾 [POSTGRES_CLIENT] Fichier descriptif créé : ${safeId}.json`);
     });
-  },
-
-  async getCloudData(projectId: string, lastSyncDate?: Date): Promise<any[]> {
-    ensureRegistry();
-    const itemsDir = path.join(REGISTRY_ROOT, 'items');
-    if (!fs.existsSync(itemsDir)) return [];
-
-    const files = fs.readdirSync(itemsDir).filter(f => f.endsWith('.json'));
-    const allItems = files.map(file => {
-      try {
-        const content = fs.readFileSync(path.join(itemsDir, file), 'utf8');
-        return JSON.parse(content);
-      } catch {
-        return null;
-      }
-    }).filter((item): item is any => item !== null && item.projectId === projectId);
-
-    if (!lastSyncDate) return allItems;
-
-    return allItems.filter(item => {
-      const createdAt = item.createdAt ? new Date(item.createdAt) : null;
-      return createdAt ? createdAt > lastSyncDate : true;
-    });
-  },
-
-  async deleteItems(projectId: string, ids: string[]) {
-    for (const id of ids) {
-      try {
-        await this.deleteItem(id);
-      } catch (e) {
-        // ignore individual delete failures when cleaning up
-      }
-    }
   }
 };
