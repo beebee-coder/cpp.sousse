@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from 'react';
@@ -210,10 +209,10 @@ export default function DatasetPage() {
         });
         const data = await res.json();
         if (res.ok && data.success) {
-          toast({ title: "Savoir sémantique indexé" });
+          toast({ title: "Savoir sémantique indexé ✅" });
           setQuestion(''); setAnswer(''); setPhraseBuffers({});
         } else {
-          throw new Error(data.message || data.error || "Échec de liaison BDD");
+          throw new Error(data.message || "Échec de liaison BDD");
         }
       } catch (err: any) {
         toast({ title: "Échec de l'indexation", description: err.message, variant: "destructive" });
@@ -271,9 +270,8 @@ export default function DatasetPage() {
           body: JSON.stringify(payload),
         });
 
-        // Lecture sécurisée du JSON de réponse
-        const data = await res.json().catch(() => ({}));
-        console.log(`📥 [FORGE_FRONT] RÉPONSE_BACKEND [Status: ${res.status}]:`, data);
+        const data = await res.json().catch(() => ({ success: false, message: "Erreur de réponse serveur" }));
+        console.log(`📥 [FORGE_FRONT] RÉPONSE_BACKEND:`, data);
 
         if (res.ok && data.success) {
           toast({ 
@@ -282,9 +280,8 @@ export default function DatasetPage() {
           });
           router.push('/procedures');
         } else {
-          // Extraction du message d'erreur réel renvoyé par Prisma ou l'API
           const errorMsg = data.message || data.error || "Échec de la forge industrielle.";
-          console.error("❌ [FORGE_FRONT] REJET_BACKEND:", data);
+          console.error("❌ [FORGE_FRONT] REJET_BACKEND:", errorMsg);
           toast({ 
             title: "Échec de la Forge", 
             description: errorMsg, 
@@ -292,7 +289,7 @@ export default function DatasetPage() {
           });
         }
       } catch (err: any) {
-        console.error("❌ [FORGE_FRONT] ERREUR_LIAISON_CRITIQUE:", err.message);
+        console.error("❌ [FORGE_FRONT] ERREUR_CRITIQUE:", err.message);
         toast({ 
           title: "Échec critique", 
           description: "Le centre de forge est injoignable ou a rencontré une erreur fatale.", 
@@ -511,7 +508,7 @@ export default function DatasetPage() {
                     onClick={() => setProcSteps([...procSteps, { id: Date.now().toString(), title: '', duration: '60', description: '', conditions: '', alarms: '' }])} 
                     className="w-full border-dashed h-14 text-[10px] uppercase font-bold"
                   >
-                    <Plus className="w-4 h-4 mr-2 text-secondary" /> Ajouter une séquence
+                    <Plus className="w-3.5 h-3.5 mr-2 text-secondary" /> Ajouter une séquence
                   </Button>
                 </>
               )}

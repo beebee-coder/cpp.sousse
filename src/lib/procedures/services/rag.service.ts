@@ -16,7 +16,7 @@ export class ProcedureRAGService {
     const timestamp = new Date().toISOString();
     console.log(`🧠 [RAG_SERVICE] Préparation indexation pour: ${procedure.code}`);
     
-    // Casting sécurisé des étapes Prisma (Json) vers notre interface
+    // Transtypage sécurisé des étapes Prisma (Json) vers notre interface locale
     const steps = (procedure.steps as unknown as ProcedureStep[]) || [];
 
     const chunks = [
@@ -45,6 +45,7 @@ export class ProcedureRAGService {
 
     try {
       if (IS_CLOUD) {
+        // En mode Cloud, on tente l'indexation Weaviate si configuré
         if (process.env.WEAVIATE_URL && process.env.WEAVIATE_API_KEY) {
           try {
             const { upsertKnowledgeItem } = await import('@/lib/weaviate/weaviate-knowledge');
@@ -54,7 +55,7 @@ export class ProcedureRAGService {
               type: 'procedure',
               title: procedure.title,
               content: chunks.map(c => c.content).join('\n'),
-              tags: (procedure.metadata as any)?.tags || [],
+              tags: ((procedure.metadata as any)?.tags) || [],
               category: procedure.category || 'OPERATION',
               difficulty: procedure.criticality || 'MEDIUM',
               isPublic: true,
@@ -62,15 +63,16 @@ export class ProcedureRAGService {
             });
             console.log(`✅ [RAG_SERVICE] Vectorisé dans Weaviate Cloud.`);
           } catch (e: any) {
-             console.warn("[RAG_SERVICE] Échec Weaviate:", e.message);
+             console.warn("[RAG_SERVICE] Échec Weaviate Cloud:", e.message);
           }
         }
       } else {
+        // En mode Local, on utilise ChromaDB
         await upsertChroma('industrial_procedures', chunks);
-        console.log(`✅ [RAG_SERVICE] Vectorisé dans ChromaDB.`);
+        console.log(`✅ [RAG_SERVICE] Vectorisé dans ChromaDB local.`);
       }
     } catch (e: any) {
-      console.warn(`⚠️ [RAG_SERVICE] Erreur RAG: ${e.message}`);
+      console.warn(`⚠️ [RAG_SERVICE] Erreur non-fatale lors de la vectorisation: ${e.message}`);
     }
   }
 
