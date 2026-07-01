@@ -4,9 +4,9 @@ import { useState, useEffect, useCallback } from 'react';
 import { 
   Database, Plus, Loader2, Trash2, 
   Zap, Layers, ShieldAlert,
-  Info, Camera, Video, AlertTriangle, Activity, Settings2,
+  Info, Camera, Video, AlertTriangle, Activity,
   ListChecks, ShieldCheck, MessageSquare, BookOpen,
-  Filter, Globe, Lock, Save, ChevronRight, Mic, MicOff
+  Save, Mic, MicOff
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
