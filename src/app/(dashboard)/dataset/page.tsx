@@ -59,11 +59,11 @@ export default function DatasetPage() {
   const [qaAnswer, setQaAnswer] = useState('');
   const [qaTags, setQaTags] = useState('');
 
-  // Initialisation stable pour éviter Hydration Mismatch et ReferenceError fs
+  // Initialisation stable pour éviter Hydration Mismatch
   useEffect(() => { 
     setMounted(true); 
     const initialStep: ProcedureStep = { 
-      id: `step-${Math.random().toString(36).substr(2, 9)}`, 
+      id: `step-${Math.random().toString(36).substring(2, 9)}`, 
       order: 1,
       title: '', 
       description: '',
@@ -112,7 +112,7 @@ export default function DatasetPage() {
 
   const handleAddStep = () => {
     const newStep: ProcedureStep = {
-      id: `step-${Math.random().toString(36).substr(2, 9)}`,
+      id: `step-${Math.random().toString(36).substring(2, 9)}`,
       order: procSteps.length + 1,
       title: '',
       description: '',
@@ -449,7 +449,7 @@ export default function DatasetPage() {
                     </div>
 
                     <div className="space-y-2">
-                       <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Question de l'Opérateur</label>
+                       <label className="text-[9px] font-bold text-secondary uppercase tracking-widest">Question de l'Opérateur</label>
                        <Input 
                         value={qaQuestion} 
                         onChange={e => setQaQuestion(e.target.value)} 
@@ -459,7 +459,7 @@ export default function DatasetPage() {
                     </div>
 
                     <div className="space-y-2">
-                       <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Réponse technique (Dictée possible)</label>
+                       <label className="text-[9px] font-bold text-secondary uppercase tracking-widest">Réponse technique (Dictée possible)</label>
                        <div className="relative">
                           <Textarea 
                             value={qaAnswer} 
