@@ -48,14 +48,14 @@ export async function POST(request: NextRequest) {
       } else {
         // Fallback ultime : on assure la présence d'un admin racine pour l'audit
         const rootAdmin = await prisma.user.upsert({
-          where: { email: 'admin@visionode.local' },
-          update: {},
+          where: { id: 'admin-root' },
+          update: { approved: true },
           create: {
             id: 'admin-root',
             firstName: 'System',
             lastName: 'Administrator',
             email: 'admin@visionode.local',
-            password: 'System@NoPassword@2024', // Non utilisé pour connexion directe ici
+            password: 'System@NoPassword@2024',
             role: 'admin',
             approved: true
           }

@@ -274,7 +274,7 @@ export default function DatasetPage() {
           toast({ title: "Forge réussie", description: "La procédure est enregistrée et archivée." });
           router.push('/procedures');
         } else {
-          throw new Error(data.message || "Erreur serveur");
+          throw new Error(data.message || "Erreur serveur critique");
         }
       } catch (err: any) {
         toast({ title: "Échec de la Forge", description: err.message, variant: "destructive" });
@@ -318,7 +318,7 @@ export default function DatasetPage() {
                <div className="space-y-1">
                  <p className="text-[10px] font-code text-white uppercase font-bold">Liaison de Données Critique</p>
                  <p className="text-[9px] font-code text-muted-foreground uppercase leading-tight">
-                   L'enregistrement en base de données cloud et l'archivage physique sont effectués simultanément.
+                   L'enregistrement en base de données cloud (Neon) et l'archivage physique sont effectués simultanément pour garantir l'auditabilité.
                  </p>
                </div>
             </Card>

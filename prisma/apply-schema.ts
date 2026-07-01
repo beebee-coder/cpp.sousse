@@ -1,13 +1,18 @@
 import { prisma } from '../src/lib/db/prisma-client';
 
 async function main() {
-  console.log('Applying schema to database...');
+  console.log('🚀 Initialisation du Schéma Industriel VisioNode...');
   
-  // DDL commands
   const commands = [
+    // Nettoyage sécurisé
+    `DROP TABLE IF EXISTS "procedure_documents" CASCADE`,
+    `DROP TABLE IF EXISTS "procedure_alarms" CASCADE`,
+    `DROP TABLE IF EXISTS "procedure_executions" CASCADE`,
+    `DROP TABLE IF EXISTS "procedures" CASCADE`,
     `DROP TABLE IF EXISTS "knowledge_items" CASCADE`,
     `DROP TABLE IF EXISTS "users" CASCADE`,
-    `CREATE SCHEMA IF NOT EXISTS "public"`,
+    
+    // Table Utilisateurs
     `CREATE TABLE "users" (
         "id" TEXT NOT NULL,
         "firstName" TEXT NOT NULL,
@@ -21,6 +26,8 @@ async function main() {
         "lastSyncAt" TIMESTAMP(3),
         CONSTRAINT "users_pkey" PRIMARY KEY ("id")
     )`,
+
+    // Table Connaissances RAG
     `CREATE TABLE "knowledge_items" (
         "id" TEXT NOT NULL,
         "userId" TEXT NOT NULL,
@@ -37,33 +44,84 @@ async function main() {
         "vectorId" TEXT,
         "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
         "updatedAt" TIMESTAMP(3) NOT NULL,
-        CONSTRAINT "knowledge_items_pkey" PRIMARY KEY ("id")
+        CONSTRAINT "knowledge_items_pkey" PRIMARY KEY ("id"),
+        CONSTRAINT "knowledge_items_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE
     )`,
+
+    // Table Procédures (Moteur Principal)
+    `CREATE TABLE "procedures" (
+        "id" TEXT NOT NULL,
+        "code" TEXT NOT NULL,
+        "title" TEXT NOT NULL,
+        "description" TEXT,
+        "category" TEXT NOT NULL DEFAULT 'OPERATION',
+        "subcategory" TEXT,
+        "department" TEXT NOT NULL DEFAULT 'PRODUCTION',
+        "criticality" TEXT NOT NULL DEFAULT 'MEDIUM',
+        "version" TEXT NOT NULL DEFAULT '1.0.0',
+        "status" TEXT NOT NULL DEFAULT 'DRAFT',
+        "prerequisites" JSONB NOT NULL,
+        "steps" JSONB NOT NULL,
+        "parameters" JSONB,
+        "postExecution" JSONB,
+        "metadata" JSONB NOT NULL,
+        "authorId" TEXT NOT NULL,
+        "approvers" JSONB,
+        "syncedLocal" BOOLEAN NOT NULL DEFAULT false,
+        "lastExecutedAt" TIMESTAMP(3),
+        "executionCount" INTEGER NOT NULL DEFAULT 0,
+        "avgDuration" INTEGER,
+        "successRate" DOUBLE PRECISION,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL,
+        CONSTRAINT "procedures_pkey" PRIMARY KEY ("id"),
+        CONSTRAINT "procedures_authorId_fkey" FOREIGN KEY ("authorId") REFERENCES "users"("id") ON DELETE RESTRICT
+    )`,
+
+    // Table Exécutions (Audit)
+    `CREATE TABLE "procedure_executions" (
+        "id" TEXT NOT NULL,
+        "procedureId" TEXT NOT NULL,
+        "operatorId" TEXT NOT NULL,
+        "startTime" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "endTime" TIMESTAMP(3),
+        "status" TEXT NOT NULL,
+        "currentStep" INTEGER NOT NULL DEFAULT -1,
+        "stepsStatus" JSONB NOT NULL,
+        "totalDuration" INTEGER,
+        "events" JSONB,
+        "alarms" JSONB,
+        "fallbacks" JSONB,
+        "result" JSONB,
+        "notes" TEXT,
+        "signature" TEXT,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL,
+        CONSTRAINT "procedure_executions_pkey" PRIMARY KEY ("id"),
+        CONSTRAINT "procedure_executions_procedureId_fkey" FOREIGN KEY ("procedureId") REFERENCES "procedures"("id") ON DELETE CASCADE,
+        CONSTRAINT "procedure_executions_operatorId_fkey" FOREIGN KEY ("operatorId") REFERENCES "users"("id") ON DELETE RESTRICT
+    )`,
+
+    // Index de performance
     `CREATE UNIQUE INDEX "users_email_key" ON "users"("email")`,
+    `CREATE UNIQUE INDEX "procedures_code_key" ON "procedures"("code")`,
     `CREATE INDEX "knowledge_items_userId_idx" ON "knowledge_items"("userId")`,
-    `CREATE INDEX "knowledge_items_type_idx" ON "knowledge_items"("type")`,
-    `CREATE INDEX "knowledge_items_syncedLocal_idx" ON "knowledge_items"("syncedLocal")`,
-    `CREATE INDEX "knowledge_items_createdAt_idx" ON "knowledge_items"("createdAt")`,
+    `CREATE INDEX "procedures_code_idx" ON "procedures"("code")`,
+    `CREATE INDEX "procedures_status_idx" ON "procedures"("status")`,
+    `CREATE INDEX "procedure_executions_procedureId_idx" ON "procedure_executions"("procedureId")`
   ];
 
   for (const cmd of commands) {
     try {
       await prisma.$executeRawUnsafe(cmd);
-      console.log('✅ Executed:', cmd.substring(0, 50) + '...');
-    } catch (e) {
-      console.error('❌ Failed:', cmd.substring(0, 50) + '...');
-      console.error(e);
+      console.log('✅ EXÉCUTÉ :', cmd.substring(0, 60) + '...');
+    } catch (e: any) {
+      console.error('❌ ÉCHEC :', cmd.substring(0, 60) + '...');
+      console.error('Détail :', e.message);
     }
   }
-  
-  try {
-    await prisma.$executeRawUnsafe(`ALTER TABLE "knowledge_items" ADD CONSTRAINT "knowledge_items_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE`);
-    console.log('✅ Executed foreign key constraint');
-  } catch (e) {
-    console.log('ℹ️ Foreign key might already exist, ignoring error.');
-  }
 
-  console.log('Done applying schema!');
+  console.log('✨ Schéma industriel appliqué avec succès !');
 }
 
 main()
