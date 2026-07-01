@@ -20,6 +20,18 @@ export interface ProcedureMetadata {
   language: string;
   forged_at?: string;
   traceId?: string;
+  description?: string;
+}
+
+export interface StepValidationCondition {
+  id: string;
+  description: string;
+  type: string;
+  operator: string;
+  value: number | string;
+  unit?: string;
+  displayName: string;
+  monitoring?: boolean;
 }
 
 export interface ProcedureStep {
@@ -35,22 +47,24 @@ export interface ProcedureStep {
     type: 'fixed' | 'estimated';
   };
   action: {
-    type: string;
+    type: 'confirmation' | 'command' | 'valve_operation' | 'wait' | 'verification';
     instruction: string;
     target?: number;
+    command?: string;
     ui: {
       component: string;
       label: string;
       icon?: string;
+      color?: string;
     };
   };
   validation: {
-    conditions: any[];
+    conditions: StepValidationCondition[];
     successExpression: string;
     timeout: {
       value: number;
       unit: string;
-      action: string;
+      action: 'abort' | 'warn' | 'retry';
     };
   };
   dependencies: {
