@@ -1,9 +1,8 @@
 "use client";
 
 /**
- * @fileOverview Station de Forge Industrielle V7.5.
- * Permet de forger des Procédures Industrielles (CRF) ou des Connaissances Q/R.
- * Logs structurés [FORGE_STATION].
+ * @fileOverview Station de Forge Industrielle V7.9.
+ * Version : Concordance V6.5 (Procédures) + Interaction Vocale + Fix fs/Badge.
  */
 
 import { useState, useEffect } from 'react';
@@ -21,8 +20,6 @@ import {
   Activity, 
   Settings2, 
   Info, 
-  Camera, 
-  Video,
   FileText,
   Layers,
   ChevronRight,
@@ -62,11 +59,11 @@ export default function DatasetPage() {
   const [qaAnswer, setQaAnswer] = useState('');
   const [qaTags, setQaTags] = useState('');
 
-  // Initialisation stable
+  // Initialisation stable pour éviter Hydration Mismatch et ReferenceError fs
   useEffect(() => { 
     setMounted(true); 
     const initialStep: ProcedureStep = { 
-      id: `step-${Date.now()}`, 
+      id: `step-${Math.random().toString(36).substr(2, 9)}`, 
       order: 1,
       title: '', 
       description: '',
@@ -115,7 +112,7 @@ export default function DatasetPage() {
 
   const handleAddStep = () => {
     const newStep: ProcedureStep = {
-      id: `step-${Date.now()}`,
+      id: `step-${Math.random().toString(36).substr(2, 9)}`,
       order: procSteps.length + 1,
       title: '',
       description: '',
@@ -156,7 +153,6 @@ export default function DatasetPage() {
       return;
     }
     setIsUploading(true);
-    const ts = new Date().toLocaleTimeString();
 
     try {
       const res = await fetch('/api/procedures', {
@@ -172,7 +168,7 @@ export default function DatasetPage() {
       
       const data = await res.json();
       if (res.ok && data.success) { 
-        toast({ title: "ACTIF FORGÉ", description: `Liaison physique établie : ${procCode}` }); 
+        toast({ title: "ACTIF FORGÉ", description: `Liaison établie : ${procCode}` }); 
         router.push('/procedures'); 
       } else {
         throw new Error(data.message || "Erreur de liaison");
@@ -207,7 +203,7 @@ export default function DatasetPage() {
       });
       
       if (res.ok) { 
-        toast({ title: "CONNAISSANCE INDEXÉE", description: "Mémoire RAG mise à jour." }); 
+        toast({ title: "CONNAISSANCE INDEXÉE", description: "Mémoire sémantique mise à jour." }); 
         setQaTitle(''); setQaQuestion(''); setQaAnswer(''); setQaTags('');
       } else {
         throw new Error("Erreur de liaison sémantique");
@@ -233,7 +229,7 @@ export default function DatasetPage() {
           </div>
           <div className="flex items-center gap-3">
              <div className="px-3 py-1 bg-secondary/10 border border-secondary/20 rounded-sm">
-                <span className="text-[9px] font-code text-secondary uppercase font-bold tracking-tighter">Production Active</span>
+                <span className="text-[9px] font-code text-secondary uppercase font-bold tracking-tighter">Prêt pour Injection</span>
              </div>
           </div>
         </header>
@@ -256,7 +252,7 @@ export default function DatasetPage() {
                       <div className="space-y-4">
                         <div className="flex items-center gap-2 mb-2">
                            <Settings2 className="w-4 h-4 text-primary" />
-                           <label className="text-[10px] font-bold text-primary uppercase tracking-widest">Identification de l'Actif</label>
+                           <label className="text-[10px] font-bold text-primary uppercase tracking-widest">Identification CRF</label>
                         </div>
                         <Input 
                           value={procTitle} 
@@ -268,7 +264,7 @@ export default function DatasetPage() {
                            <Input 
                             value={procCode} 
                             onChange={e => setProcCode(e.target.value)} 
-                            placeholder="CODE_CRF" 
+                            placeholder="CODE_REGISTRE" 
                             className="h-10 bg-black/20 font-code uppercase text-xs" 
                            />
                            <select 
@@ -287,11 +283,11 @@ export default function DatasetPage() {
                       <div className="space-y-4">
                         <div className="flex items-center gap-2 mb-2">
                            <ShieldAlert className="w-4 h-4 text-muted-foreground" />
-                           <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Contrôle d'Audit</label>
+                           <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Audit & Criticité</label>
                         </div>
                         <div className="p-4 bg-muted/5 border border-border rounded-sm space-y-4">
                            <div className="flex justify-between items-center">
-                              <span className="text-[10px] font-code uppercase text-muted-foreground">Niveau de Criticité</span>
+                              <span className="text-[10px] font-code uppercase text-muted-foreground">Niveau Réel</span>
                               <select 
                                 value={criticality} 
                                 onChange={e => setCriticality(e.target.value)} 
@@ -324,7 +320,7 @@ export default function DatasetPage() {
                   <div className="flex items-center justify-between px-2">
                      <div className="flex items-center gap-2">
                         <Layers className="w-4 h-4 text-secondary" />
-                        <h3 className="text-[10px] font-bold text-secondary uppercase tracking-widest">Séquençage des Actions</h3>
+                        <h3 className="text-[10px] font-bold text-secondary uppercase tracking-widest">Séquençage Opérationnel</h3>
                      </div>
                      <Badge variant="outline" className="text-[8px] font-code border-secondary/30 text-secondary uppercase">
                        {procSteps.length} ÉTAPES DÉFINIES
@@ -358,12 +354,12 @@ export default function DatasetPage() {
 
                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                          <div className="space-y-2">
-                           <label className="text-[9px] font-bold text-muted-foreground uppercase">Instructions techniques</label>
+                           <label className="text-[9px] font-bold text-muted-foreground uppercase">Description Technique</label>
                            <div className="relative">
                               <Textarea 
                                 value={step.description} 
                                 onChange={e => handleUpdateStep(idx, 'description', e.target.value)} 
-                                placeholder="Détailler l'opération pour l'opérateur..." 
+                                placeholder="Détailler l'opération réelle..." 
                                 className="h-28 text-xs font-code bg-black/40 border-border/50 resize-none pr-10" 
                               />
                               <Button 
@@ -376,35 +372,24 @@ export default function DatasetPage() {
                                   voice.isListening && activeVoiceField === `step-desc-${idx}` ? "text-red-500 bg-red-500/10 animate-pulse" : "text-primary"
                                 )}
                               >
-                                {voice.isListening && activeVoiceField === `step-desc-${idx}` ? <MicOff className="w-3 h-3 mr-1" /> : <Mic className="w-3 h-3 mr-1" />}
+                                {voice.isListening && activeVoiceField === `step-desc-${idx}` ? <MicOff className="w-3.5 h-3.5 mr-1" /> : <Mic className="w-3.5 h-3.5 mr-1" />}
                                 Dictée
                               </Button>
                            </div>
                          </div>
 
                          <div className="space-y-4">
-                            <div className="grid grid-cols-2 gap-2">
-                               <Button type="button" variant="outline" className="h-10 text-[9px] uppercase border-border/50 hover:bg-primary/5">
-                                 <Camera className="w-4 h-4 mr-2 text-primary" /> Image de Réf.
-                               </Button>
-                               <Button type="button" variant="outline" className="h-10 text-[9px] uppercase border-border/50 hover:bg-primary/5">
-                                 <Video className="w-4 h-4 mr-2 text-primary" /> Vidéo Guide
-                               </Button>
-                            </div>
                             <div className="p-3 bg-primary/5 border border-primary/20 rounded-sm">
                                <p className="text-[8px] font-bold text-primary uppercase mb-2 flex items-center gap-2">
-                                 <Activity className="w-3 h-3" /> Monitoring et Validation
+                                 <Activity className="w-3 h-3" /> Monitoring & Validation
                                </p>
                                <div className="flex items-center gap-3">
                                   <select className="flex-1 bg-black border border-border rounded-sm px-2 py-1 text-[8px] font-bold uppercase text-muted-foreground">
                                     <option>CONFIRMATION MANUELLE</option>
                                     <option>VALEUR CAPTEUR (AUTO)</option>
-                                    <option>ANALYSE VISUELLE IA</option>
+                                    <option>RECONNAISSANCE VISUELLE</option>
                                   </select>
-                                  <div className="flex items-center gap-1">
-                                    <ChevronRight className="w-3 h-3 text-muted-foreground" />
-                                    <span className="text-[8px] font-code text-white/50 uppercase">V6.5_STD</span>
-                                  </div>
+                                  <ChevronRight className="w-3 h-3 text-muted-foreground" />
                                </div>
                             </div>
                          </div>
@@ -418,7 +403,7 @@ export default function DatasetPage() {
                     onClick={handleAddStep} 
                     className="w-full h-12 border-dashed border-primary/30 hover:border-primary/60 hover:bg-primary/5 uppercase text-[10px] font-bold text-primary transition-all"
                   >
-                    <Plus className="w-4 h-4 mr-2" /> Ajouter une Séquence Opérationnelle
+                    <Plus className="w-4 h-4 mr-2" /> Ajouter une Action Opérationnelle
                   </Button>
                 </div>
 
@@ -433,7 +418,7 @@ export default function DatasetPage() {
                     ) : (
                       <Sparkles className="w-6 h-6 mr-3 group-hover:animate-bounce" />
                     )}
-                    Forger l'Actif Industriel CRF
+                    Forger la Procédure dans le Registre
                   </Button>
                 </div>
               </form>
@@ -448,38 +433,38 @@ export default function DatasetPage() {
                     </div>
                     <div>
                       <h3 className="text-xl font-headline font-bold uppercase text-white tracking-tight">Injection Sémantique</h3>
-                      <p className="text-[10px] font-code text-muted-foreground uppercase tracking-widest">Base de Connaissances RAG</p>
+                      <p className="text-[10px] font-code text-muted-foreground uppercase tracking-widest">Base de Connaissances Move-to-Local</p>
                     </div>
                   </div>
 
                   <div className="space-y-5">
                     <div className="space-y-2">
-                       <label className="text-[9px] font-bold text-secondary uppercase tracking-widest">Titre de Référence</label>
+                       <label className="text-[9px] font-bold text-secondary uppercase tracking-widest">Titre de l'Item</label>
                        <Input 
                         value={qaTitle} 
                         onChange={e => setQaTitle(e.target.value)} 
-                        placeholder="EX: CONSIGNES SÉCURITÉ PALIERS" 
+                        placeholder="EX: CONSIGNES CRF PALIERS" 
                         className="h-12 bg-black/60 font-bold uppercase border-secondary/20" 
                        />
                     </div>
 
                     <div className="space-y-2">
-                       <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Question type de l'opérateur</label>
+                       <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Question de l'Opérateur</label>
                        <Input 
                         value={qaQuestion} 
                         onChange={e => setQaQuestion(e.target.value)} 
-                        placeholder="Quelle est la température maximale des paliers ?" 
+                        placeholder="Quelle est la température maximale ?" 
                         className="h-12 bg-black/60 border-border" 
                        />
                     </div>
 
                     <div className="space-y-2">
-                       <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Réponse technique à indexer</label>
+                       <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Réponse technique (Dictée possible)</label>
                        <div className="relative">
                           <Textarea 
                             value={qaAnswer} 
                             onChange={e => setQaAnswer(e.target.value)} 
-                            placeholder="La température de service nominale est de 75°C. Alerte critique à 90°C..." 
+                            placeholder="Saisissez ou dictez la réponse technique..." 
                             className="h-44 bg-black/60 border-border font-code text-sm leading-relaxed pr-10" 
                           />
                           <Button 
@@ -499,11 +484,11 @@ export default function DatasetPage() {
                     </div>
 
                     <div className="space-y-2">
-                       <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Tags d'indexation (virgules)</label>
+                       <label className="text-[9px] font-bold text-secondary uppercase tracking-widest">Tags d'indexation (virgules)</label>
                        <Input 
                         value={qaTags} 
                         onChange={e => setQaTags(e.target.value)} 
-                        placeholder="température, paliers, alerte, maintenance" 
+                        placeholder="température, alerte, CRF" 
                         className="h-10 bg-black/20 border-border font-code text-xs uppercase" 
                        />
                     </div>
@@ -519,14 +504,14 @@ export default function DatasetPage() {
                     ) : (
                       <Zap className="w-6 h-6 mr-3 group-hover:scale-125 transition-transform" />
                     )}
-                    Injecter dans la Mémoire RAG
+                    Injecter dans la Mémoire Cloud (Provisoire)
                   </Button>
                 </Card>
 
                 <div className="flex items-start gap-4 p-4 bg-secondary/5 border border-secondary/20 rounded-sm">
                    <Info className="w-5 h-5 text-secondary shrink-0 mt-0.5" />
                    <p className="text-[10px] font-code text-muted-foreground uppercase leading-relaxed">
-                     L'injection sémantique permet au <span className="text-secondary font-bold">Chat Neural</span> de répondre instantanément aux questions techniques des opérateurs sans consulter les manuels PDF.
+                     Les données Web sont considérées comme <span className="text-secondary font-bold">Provisoires</span>. Une fois la station locale connectée, elles seront automatiquement <span className="text-primary font-bold">Injectées</span> dans ChromaDB local et <span className="text-destructive font-bold">Purgées</span> du Cloud.
                    </p>
                 </div>
               </form>

@@ -1,9 +1,9 @@
 import { prisma } from './db/prisma-client';
 import bcrypt from 'bcryptjs';
-import type { UserRole } from '@/lib/auth-users';
 
 /**
  * Magasin d'identités consolidé [AUTH_STORE] pour VisioNode.
+ * Version : 7.8.0 - Support Neon Serverless & Fonctions Administratives.
  */
 
 export async function authenticateUser(email: string, password: string) {
@@ -24,7 +24,7 @@ export async function authenticateUser(email: string, password: string) {
         id: user.id,
         firstName: user.firstName,
         lastName: user.lastName,
-        role: user.role as UserRole,
+        role: user.role,
         approved: user.approved,
         createdAt: user.createdAt.getTime()
       }
@@ -36,28 +36,35 @@ export async function authenticateUser(email: string, password: string) {
 }
 
 export async function addPendingUser(firstName: string, lastName: string, password: string, role: string) {
-  const email = `${firstName.toLowerCase()}.${lastName.toLowerCase()}@visionode.local`;
-  const existing = await prisma.user.findUnique({ where: { email } });
-  if (existing) return null;
+  try {
+    const email = `${firstName.toLowerCase()}.${lastName.toLowerCase()}@visionode.local`;
+    const existing = await prisma.user.findUnique({ where: { email } });
+    if (existing) return null;
 
-  const hashedPassword = await bcrypt.hash(password, 12);
-  return await prisma.user.create({
-    data: {
-      firstName,
-      lastName,
-      email,
-      password: hashedPassword,
-      role,
-      approved: false,
-    }
-  });
+    const hashedPassword = await bcrypt.hash(password, 12);
+    return await prisma.user.create({
+      data: {
+        firstName,
+        lastName,
+        email,
+        password: hashedPassword,
+        role,
+        approved: role === 'admin', // Auto-approbation si admin root
+      }
+    });
+  } catch (e: any) {
+    console.error(`❌ [AUTH_STORE] addPendingUser :`, e.message);
+    return null;
+  }
 }
 
 export async function listPendingUsers() {
-  return await prisma.user.findMany({
-    where: { approved: false },
-    orderBy: { createdAt: 'desc' }
-  });
+  try {
+    return await prisma.user.findMany({
+      where: { approved: false },
+      orderBy: { createdAt: 'desc' }
+    });
+  } catch { return []; }
 }
 
 export async function approveUser(userId: string) {
@@ -77,7 +84,9 @@ export async function rejectUser(userId: string) {
 }
 
 export async function getAllUsers() {
-  return await prisma.user.findMany({
-    orderBy: { createdAt: 'desc' }
-  });
+  try {
+    return await prisma.user.findMany({
+      orderBy: { createdAt: 'desc' }
+    });
+  } catch { return []; }
 }

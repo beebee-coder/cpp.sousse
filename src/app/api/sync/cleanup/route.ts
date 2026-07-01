@@ -1,24 +1,43 @@
-
 import { createHybridRoute } from '@/lib/api-route-creator';
-import { postgresClient } from '@/lib/db/postgres-client';
+import { prisma } from '@/lib/db/prisma-client';
 
 /**
- * API Route pour purger les fichiers JSON une fois synchronisés localement.
+ * API Route de Purge Cloud après Injection.
+ * Supprime définitivement les données du Web une fois qu'elles sont sécurisées localement.
  */
 export const POST = createHybridRoute<{ ids: string[]; projectId: string }, any>({
-  name: 'SYNC_CLEANUP',
+  name: 'SYNC_CLEANUP_PURGE',
   webHandler: async (req, body) => {
-    const { ids, projectId } = body;
+    const { ids } = body;
+    const ts = new Date().toLocaleTimeString();
     
     if (!ids || !Array.isArray(ids)) {
-      return { success: false, error: 'INVALID_IDS' };
+      return { success: false, error: 'IDS_MANQUANTS' };
     }
 
+    console.log(`🗑️ [SYNC_PURGE_API] [INIT] [${ts}] Purge de ${ids.length} items demandée.`);
+
     try {
-      await postgresClient.deleteItems(projectId, ids);
-      return { success: true, purgedCount: ids.length };
-    } catch (e: any) {
-      return { success: false, error: e.message };
+      // Suppression des items de connaissances
+      const knowledgePurge = await prisma.knowledgeItem.deleteMany({
+        where: { id: { in: ids } }
+      });
+
+      // Suppression des procédures correspondantes si nécessaire
+      const procedurePurge = await prisma.procedure.deleteMany({
+        where: { id: { in: ids } }
+      });
+
+      console.log(`✅ [SYNC_PURGE_API] [SUCCESS] Items supprimés : ${knowledgePurge.count + procedurePurge.count}`);
+
+      return { 
+        success: true, 
+        purgedCount: knowledgePurge.count + procedurePurge.count,
+        timestamp: new Date().toISOString()
+      };
+    } catch (error: any) {
+      console.error(`❌ [SYNC_PURGE_API] [ERROR] :`, error.message);
+      return { success: false, error: error.message };
     }
   }
 });
