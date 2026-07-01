@@ -14,10 +14,9 @@ async function ensureAdminSeeded() {
   const adminPassword = process.env.AUTH_ADMIN_PASSWORD || 'Admin@2024!';
 
   try {
-    // Vérifier d'abord si la table user existe en tentant un count simple
     const userCount = await prisma.user.count().catch(() => -1);
     if (userCount === -1) {
-      console.warn('[AUTH_SEED] Table "users" non trouvée. Le schéma doit être appliqué.');
+      console.warn('[AUTH_STORE] [ERROR] Table "users" non trouvée. Schéma SQL manquant.');
       return;
     }
 
@@ -26,6 +25,7 @@ async function ensureAdminSeeded() {
     });
 
     if (!admin) {
+      console.log(`[AUTH_STORE] [STEP] Création automatique de l'administrateur système...`);
       const hashedPassword = await bcrypt.hash(adminPassword, 12);
       await prisma.user.create({
         data: {
@@ -38,10 +38,10 @@ async function ensureAdminSeeded() {
           approved: true,
         }
       });
-      authAudit.info('ADMIN_AUTO_CREATED');
+      console.log(`[AUTH_STORE] [SUCCESS] Compte admin-root initialisé.`);
     }
   } catch (error: any) {
-    console.warn('[AUTH_SEED] Background seeding skip:', error.message);
+    console.warn('[AUTH_STORE] [BYPASS] Background seeding ignoré:', error.message);
   }
 }
 
@@ -65,51 +65,52 @@ export type AuthResult = {
 
 export async function authenticateUser(email: string, password: string): Promise<AuthResult> {
   const normalizedEmail = email.toLowerCase();
+  console.log(`[AUTH_STORE] [INIT] Tentative de vérification pour : ${normalizedEmail}`);
   
-  // Tenter le seeding en arrière-plan sans bloquer la requête
-  ensureAdminSeeded().catch(() => {});
+  await ensureAdminSeeded().catch(() => {});
 
   try {
+    console.log(`[AUTH_STORE] [STEP] Recherche utilisateur dans Neon SQL...`);
     const user = await prisma.user.findUnique({
       where: { email: normalizedEmail },
     });
 
     if (!user) {
-      authAudit.warn('SIGNIN_FAILED_USER_NOT_FOUND', { email: normalizedEmail });
+      console.warn(`[AUTH_STORE] [REJECT] Utilisateur inconnu : ${normalizedEmail}`);
       return { success: false, error: 'INVALID_CREDENTIALS' };
     }
 
+    console.log(`[AUTH_STORE] [STEP] Vérification du hash password...`);
     const passwordMatch = await bcrypt.compare(password, user.password);
 
     if (!passwordMatch) {
-      authAudit.warn('SIGNIN_FAILED_WRONG_PASSWORD', { email: normalizedEmail });
+      console.warn(`[AUTH_STORE] [REJECT] Mot de passe incorrect pour : ${normalizedEmail}`);
       return { success: false, error: 'INVALID_CREDENTIALS' };
     }
 
-    // Protection admin root ou règle d'approbation
-    const isAdmin = normalizedEmail === 'admin@visionode.local' || user.role === 'admin';
-
-    if (!user.approved && !isAdmin) {
-      authAudit.warn('SIGNIN_FAILED_NOT_APPROVED', { userId: user.id, email: normalizedEmail });
+    if (!user.approved && user.role !== 'admin') {
+      console.warn(`[AUTH_STORE] [REJECT] Compte non approuvé : ${user.id}`);
       return { success: false, error: 'NOT_APPROVED' };
     }
 
+    console.log(`[AUTH_STORE] [SUCCESS] Accréditation confirmée pour : ${user.id} (${user.role})`);
     return { success: true, user: mapToAuthUser(user) };
   } catch (error: any) {
-    authAudit.error('AUTH_STORE_DB_ERROR', { error: error.message });
+    console.error(`[AUTH_STORE] [ERROR] Échec liaison Neon :`, error.message);
     return { success: false, error: 'DB_ERROR' };
   }
 }
 
 export async function addPendingUser(firstName: string, lastName: string, password: string, role?: string) {
-  const normalizedFirst = normalizeName(firstName);
-  const normalizedLast = normalizeName(lastName);
-  const roleValue = String(role ?? 'user').trim().toLowerCase();
-  const email = `${normalizedFirst}.${normalizedLast}@visionode.local`;
+  const email = `${firstName.toLowerCase()}.${lastName.toLowerCase()}@visionode.local`;
+  console.log(`[AUTH_STORE] [INIT] Enregistrement d'une demande d'accès : ${email}`);
 
   try {
     const existing = await prisma.user.findUnique({ where: { email } });
-    if (existing) return null;
+    if (existing) {
+      console.warn(`[AUTH_STORE] [REJECT] Demande existante ou doublon : ${email}`);
+      return null;
+    }
 
     const hashedPassword = await bcrypt.hash(password.trim(), 12);
     const newUser = await prisma.user.create({
@@ -118,21 +119,22 @@ export async function addPendingUser(firstName: string, lastName: string, passwo
         lastName: lastName.trim(),
         password: hashedPassword,
         email,
-        role: roleValue as any,
+        role: (role || 'user') as any,
         approved: false,
       }
     });
 
+    console.log(`[AUTH_STORE] [SUCCESS] Demande sauvegardée : ${newUser.id}`);
     return mapToAuthUser(newUser);
-  } catch (error) {
+  } catch (error: any) {
+    console.error(`[AUTH_STORE] [ERROR] Échec création demande :`, error.message);
     return null;
   }
 }
 
 export async function listPendingUsers() {
   try {
-    const users = await prisma.user.findMany({ where: { approved: false } });
-    return users.map(mapToAuthUser);
+    return (await prisma.user.findMany({ where: { approved: false } })).map(mapToAuthUser);
   } catch {
     return [];
   }
@@ -140,10 +142,12 @@ export async function listPendingUsers() {
 
 export async function approveUser(userId: string) {
   try {
+    console.log(`[AUTH_STORE] [STEP] Approbation utilisateur : ${userId}`);
     const updated = await prisma.user.update({
       where: { id: userId },
       data: { approved: true }
     });
+    console.log(`[AUTH_STORE] [SUCCESS] Utilisateur approuvé.`);
     return mapToAuthUser(updated);
   } catch {
     return null;
@@ -152,7 +156,9 @@ export async function approveUser(userId: string) {
 
 export async function rejectUser(userId: string) {
   try {
+    console.log(`[AUTH_STORE] [STEP] Rejet et suppression utilisateur : ${userId}`);
     await prisma.user.delete({ where: { id: userId } });
+    console.log(`[AUTH_STORE] [SUCCESS] Dossier utilisateur purgé.`);
     return true;
   } catch {
     return null;
@@ -161,8 +167,7 @@ export async function rejectUser(userId: string) {
 
 export async function getAllUsers() {
   try {
-    const users = await prisma.user.findMany();
-    return users.map(mapToAuthUser);
+    return (await prisma.user.findMany()).map(mapToAuthUser);
   } catch {
     return [];
   }

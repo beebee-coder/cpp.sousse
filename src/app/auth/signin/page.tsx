@@ -1,7 +1,7 @@
 
 "use client";
 
-import { Suspense, useState } from 'react';
+import { Suspense, useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { AlertCircle, Loader2, Database } from 'lucide-react';
@@ -21,6 +21,9 @@ function SignInForm() {
     setError(null);
     setLoading(true);
 
+    const ts = new Date().toLocaleTimeString();
+    console.log(`🔐 [AUTH_FRONT] [INIT] [${ts}] Soumission des identifiants...`);
+
     try {
       const response = await fetch('/api/auth/signin', {
         method: 'POST',
@@ -31,9 +34,8 @@ function SignInForm() {
       const contentType = response.headers.get('content-type') || '';
       
       if (!contentType.includes('application/json')) {
-        const text = await response.text();
-        console.error('Réponse non-JSON du serveur:', text);
-        setError(`Erreur Serveur (HTTP ${response.status}). Le serveur a renvoyé un format invalide.`);
+        console.error(`🔐 [AUTH_FRONT] [ERROR] Réponse non-JSON du serveur.`);
+        setError(`Erreur Serveur (HTTP ${response.status}).`);
         setLoading(false);
         return;
       }
@@ -42,15 +44,18 @@ function SignInForm() {
       setLoading(false);
 
       if (!response.ok || !data.success) {
+        console.warn(`🔐 [AUTH_FRONT] [REJECT] Échec authentification : ${data.message}`);
         setError(data.message || `Erreur ${response.status}`);
         return;
       }
 
+      console.log(`🔐 [AUTH_FRONT] [SUCCESS] Accès autorisé. Redirection vers : ${callbackUrl}`);
       router.push(callbackUrl);
       router.refresh();
     } catch (e: any) {
+      console.error(`🔐 [AUTH_FRONT] [FATAL] Panique liaison :`, e.message);
       setLoading(false);
-      setError('Échec de liaison : Le serveur ne répond pas ou la base de données est hors-ligne.');
+      setError('Échec de liaison : Le serveur ne répond pas.');
     }
   };
 
