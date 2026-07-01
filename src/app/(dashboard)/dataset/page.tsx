@@ -1,10 +1,9 @@
-
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
 import { 
   Database, Plus, Loader2, Trash2, 
-  Zap, CheckCircle2, Layers, ShieldAlert,
+  Zap, Layers, ShieldAlert,
   Info, Camera, Video, AlertTriangle, Activity, Settings2,
   ListChecks, ShieldCheck, MessageSquare, BookOpen,
   Filter, Globe, Lock, Save, ChevronRight, Mic, MicOff
@@ -20,6 +19,7 @@ import { DashboardSidebar } from '@/components/dashboard/Sidebar';
 import { useVoice } from '@/hooks/use-voice';
 import { cn } from '@/lib/utils';
 import { useRouter } from 'next/navigation';
+import { ProcedureStep } from '@/lib/procedures/types';
 
 export default function DatasetPage() {
   const { toast } = useToast();
@@ -34,7 +34,7 @@ export default function DatasetPage() {
   const [category, setCategory] = useState('OPERATION');
   const [department, setDepartment] = useState('PRODUCTION');
   const [criticality, setCriticality] = useState('MEDIUM');
-  const [procSteps, setProcSteps] = useState<any[]>([]);
+  const [procSteps, setProcSteps] = useState<ProcedureStep[]>([]);
 
   // --- STATE Q/R Sémantique ---
   const [qaTitle, setQaTitle] = useState('');
@@ -45,8 +45,9 @@ export default function DatasetPage() {
 
   useEffect(() => { 
     setMounted(true); 
-    setProcSteps([{ 
+    const initialStep: ProcedureStep = { 
       id: `step-${Date.now()}`, 
+      order: 1,
       title: '', 
       subtitle: '', 
       description: '',
@@ -56,10 +57,18 @@ export default function DatasetPage() {
         instruction: '',
         ui: { component: 'action_button', label: 'CONFIRMER', icon: 'check_circle' }
       },
-      validation: { conditions: [], successExpression: 'status == OK', timeout: { value: 300, unit: 'seconds', action: 'warn' } },
+      validation: { 
+        conditions: [], 
+        successExpression: 'status == OK', 
+        timeout: { value: 300, unit: 'seconds', action: 'warn' } 
+      },
       alarms: [],
-      media: {}
-    }]);
+      fallbacks: [],
+      media: {},
+      notes: [],
+      dependencies: { prerequisites: [], dependsOn: [], requiresConfirmation: true }
+    };
+    setProcSteps([initialStep]);
   }, []);
 
   // --- MOTEUR VOCAL POUR DICTÉE ---
@@ -70,8 +79,10 @@ export default function DatasetPage() {
       if (activeVoiceField?.startsWith('step-desc-')) {
         const index = parseInt(activeVoiceField.split('-')[2]);
         const n = [...procSteps];
-        n[index].description = text;
-        setProcSteps(n);
+        if (n[index]) {
+          n[index].description = text;
+          setProcSteps(n);
+        }
       }
     },
     autoRestart: true
@@ -103,7 +114,19 @@ export default function DatasetPage() {
     try {
       const payload = {
         title: procTitle,
-        metadata: { title: procTitle, code: procCode, category, department, criticality, version: "1.0.0" },
+        metadata: { 
+          title: procTitle, 
+          code: procCode || `PROC-${Date.now()}`, 
+          category, 
+          department, 
+          criticality, 
+          version: "1.0.0",
+          createdAt: new Date().toISOString(),
+          lastUpdated: new Date().toISOString(),
+          tags: [],
+          language: 'fr-FR',
+          author: { id: 'admin', name: 'Admin', role: 'admin', department: 'IT' }
+        },
         prerequisites: { description: "Audit des conditions réelles", items: [] },
         steps: procSteps.map((s, i) => ({ ...s, order: i + 1 })),
       };
@@ -300,11 +323,19 @@ export default function DatasetPage() {
                             <div className="grid grid-cols-2 gap-3">
                                <div className="space-y-1">
                                   <span className="text-[8px] font-bold uppercase text-muted-foreground">Type d'Action</span>
-                                  <select className="w-full h-8 bg-black/40 border border-border rounded text-[9px] font-bold uppercase">
-                                     <option>CONFIRMATION</option>
-                                     <option>COMMANDE</option>
-                                     <option>VALVE / VANNE</option>
-                                     <option>ATTENTE</option>
+                                  <select 
+                                    className="w-full h-8 bg-black/40 border border-border rounded text-[9px] font-bold uppercase outline-none"
+                                    value={step.action.type}
+                                    onChange={e => { 
+                                      const n = [...procSteps]; 
+                                      n[index].action.type = e.target.value as any; 
+                                      setProcSteps(n); 
+                                    }}
+                                  >
+                                     <option value="confirmation">CONFIRMATION</option>
+                                     <option value="command">COMMANDE</option>
+                                     <option value="valve_operation">VALVE / VANNE</option>
+                                     <option value="wait">ATTENTE</option>
                                   </select>
                                </div>
                                <div className="space-y-1">
@@ -321,7 +352,28 @@ export default function DatasetPage() {
                         </div>
                       </Card>
                     ))}
-                    <Button type="button" variant="outline" onClick={() => setProcSteps([...procSteps, { id: `step-${Date.now()}`, title: '', description: '', action: { type: 'confirmation', ui: { label: 'CONFIRM' } }, validation: { conditions: [], timeout: { value: 300 } } }])} className="w-full border-dashed border-primary/20 h-16 text-[10px] uppercase font-bold hover:bg-primary/5 transition-all">
+                    <Button 
+                      type="button" 
+                      variant="outline" 
+                      onClick={() => {
+                        const newStep: ProcedureStep = { 
+                          id: `step-${Date.now()}`, 
+                          order: procSteps.length + 1,
+                          title: '', 
+                          description: '', 
+                          action: { type: 'confirmation', instruction: '', ui: { component: 'action_button', label: 'CONFIRM' } }, 
+                          validation: { conditions: [], successExpression: 'status == OK', timeout: { value: 300, unit: 'seconds', action: 'warn' } },
+                          alarms: [],
+                          fallbacks: [],
+                          duration: { value: 60, unit: 'seconds', display: '1 min', type: 'fixed' },
+                          media: {},
+                          notes: [],
+                          dependencies: { prerequisites: [], dependsOn: [], requiresConfirmation: true }
+                        };
+                        setProcSteps([...procSteps, newStep]);
+                      }} 
+                      className="w-full border-dashed border-primary/20 h-16 text-[10px] uppercase font-bold hover:bg-primary/5 transition-all"
+                    >
                       <Plus className="w-4 h-4 mr-2 text-primary" /> Ajouter Séquence Opérationnelle
                     </Button>
                     <Button type="submit" disabled={isUploading} className="w-full h-16 bg-primary text-primary-foreground font-headline font-bold text-sm uppercase shadow-2xl">

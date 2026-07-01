@@ -25,8 +25,8 @@ export interface ProcedureMetadata {
   }>;
   tags: string[];
   language: string;
-  forged_at?: string;
-  traceId?: string;
+  createdAt: string;
+  lastUpdated: string;
   description?: string;
 }
 

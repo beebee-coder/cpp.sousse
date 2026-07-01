@@ -1,4 +1,4 @@
-import { FullProcedure, ExecutionStatus, ProcedureStep, StepAction, StepValidation } from '../types';
+import { FullProcedure, ExecutionStatus, ProcedureStep } from '../types';
 
 /**
  * @fileOverview Moteur d'exécution des procédures industrielles [EXEC_ENGINE].
@@ -16,6 +16,17 @@ export interface ExecutionState {
   activeAlarms: string[];
 }
 
+export type InternalExecutionStatus = 
+  | 'IDLE' 
+  | 'PREREQUISITES_CHECK' 
+  | 'RUNNING' 
+  | 'PAUSED' 
+  | 'WAITING_CONFIRMATION' 
+  | 'ALARM' 
+  | 'COMPLETED' 
+  | 'FAILED' 
+  | 'ABORTED';
+
 export class ExecutionEngine {
   private procedure: FullProcedure;
   private state: ExecutionState;
@@ -23,8 +34,8 @@ export class ExecutionEngine {
   constructor(procedure: FullProcedure) {
     this.procedure = procedure;
     this.state = {
-      currentStepIndex: -1, // -1 means prerequisites check
-      status: 'IDLE',
+      currentStepIndex: -1, 
+      status: 'IDLE' as ExecutionStatus,
       startTime: null,
       endTime: null,
       stepStartTime: null,
@@ -35,57 +46,46 @@ export class ExecutionEngine {
     console.log(`⚙️ [EXEC_ENGINE] [INIT] Moteur chargé pour : ${procedure.code}`);
   }
 
-  /**
-   * Démarre la procédure (Phase de vérification des prérequis)
-   */
   start(): ExecutionState {
-    this.state.status = 'PREREQUISITES_CHECK';
+    this.state.status = 'PREREQUISITES_CHECK' as ExecutionStatus;
     this.state.startTime = Date.now();
     console.log(`⚙️ [EXEC_ENGINE] [STEP] Séquence démarrée. Phase : PREREQUISITES_CHECK`);
     return { ...this.state };
   }
 
-  /**
-   * Valide les prérequis et passe à la première étape [EXEC_STEP]
-   */
   confirmPrerequisites(): ExecutionState {
-    if (this.state.status !== 'PREREQUISITES_CHECK') return this.state;
+    if (this.state.status !== ('PREREQUISITES_CHECK' as ExecutionStatus)) return this.state;
     this.state.currentStepIndex = 0;
-    this.state.status = 'RUNNING';
+    this.state.status = 'RUNNING' as ExecutionStatus;
     this.state.stepStartTime = Date.now();
-    console.log(`⚙️ [EXEC_ENGINE] [STEP] Prérequis validés. Entrée Étape 1 : ${this.procedure.steps[0].title}`);
+    console.log(`⚙️ [EXEC_ENGINE] [STEP] Prérequis validés. Entrée Étape 1`);
     return { ...this.state };
   }
 
-  /**
-   * Passe à l'étape suivante après validation [EXEC_STEP]
-   */
   nextStep(): ExecutionState {
-    const currentStep = this.procedure.steps[this.state.currentStepIndex];
+    const steps = this.procedure.steps;
+    const currentStep = steps[this.state.currentStepIndex];
     if (!currentStep) return this.state;
 
     this.state.completedSteps.push(currentStep.id);
     console.log(`✅ [EXEC_STEP] [DONE] Étape validée : ${currentStep.title}`);
     
-    if (this.state.currentStepIndex < this.procedure.steps.length - 1) {
+    if (this.state.currentStepIndex < steps.length - 1) {
       this.state.currentStepIndex++;
       this.state.stepStartTime = Date.now();
-      this.state.status = 'RUNNING';
-      console.log(`⚙️ [EXEC_STEP] [NEXT] Entrée Étape ${this.state.currentStepIndex + 1} : ${this.procedure.steps[this.state.currentStepIndex].title}`);
+      this.state.status = 'RUNNING' as ExecutionStatus;
+      console.log(`⚙️ [EXEC_STEP] [NEXT] Entrée Étape ${this.state.currentStepIndex + 1}`);
     } else {
-      this.state.status = 'COMPLETED';
+      this.state.status = 'COMPLETED' as ExecutionStatus;
       this.state.endTime = Date.now();
-      console.log(`🏁 [EXEC_ENGINE] [SUCCESS] Procédure "${this.procedure.code}" terminée avec succès.`);
+      console.log(`🏁 [EXEC_ENGINE] [SUCCESS] Procédure terminée.`);
     }
 
     return { ...this.state };
   }
 
-  /**
-   * Déclenche une alarme [EXEC_ALARM]
-   */
   triggerAlarm(alarmCode: string): ExecutionState {
-    this.state.status = 'ALARM';
+    this.state.status = 'ALARM' as ExecutionStatus;
     if (!this.state.activeAlarms.includes(alarmCode)) {
       this.state.activeAlarms.push(alarmCode);
     }
@@ -93,13 +93,10 @@ export class ExecutionEngine {
     return { ...this.state };
   }
 
-  /**
-   * Résout une alarme et reprend l'exécution [EXEC_ALARM]
-   */
   resolveAlarm(alarmCode: string): ExecutionState {
     this.state.activeAlarms = this.state.activeAlarms.filter(a => a !== alarmCode);
     if (this.state.activeAlarms.length === 0) {
-      this.state.status = 'RUNNING';
+      this.state.status = 'RUNNING' as ExecutionStatus;
       console.log(`🛡️ [EXEC_ALARM] [RESOLVED] Alerte résolue : ${alarmCode}. Reprise du flux.`);
     }
     return { ...this.state };

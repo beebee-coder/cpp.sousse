@@ -1,9 +1,9 @@
-
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db/prisma-client';
 import { postgresClient } from '@/lib/db/postgres-client';
 import { getSessionFromCookie } from '@/lib/session';
 import { v4 as uuidv4 } from 'uuid';
+import { FullProcedure, ProcedureMetadata } from '@/lib/procedures/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,10 +27,10 @@ export async function POST(request: NextRequest) {
     }
 
     const title = body.title;
-    const metadata = body.metadata || {};
+    const metadata: Partial<ProcedureMetadata> = body.metadata || {};
     const code = (metadata.code || body.code || `PROC-${Date.now().toString().slice(-6)}`).toUpperCase();
 
-    // 1. ARCHIVAGE PHYSIQUE (Priorité Critique - Libère le client immédiatement)
+    // 1. ARCHIVAGE PHYSIQUE (Priorité Critique)
     console.log(`📂 [REGISTRY] [STEP] [${traceId}] Archivage dans .registry/procedures/${code.toLowerCase()}`);
     const regPath = `procedures/${code.toLowerCase()}/procedure.json`;
     
