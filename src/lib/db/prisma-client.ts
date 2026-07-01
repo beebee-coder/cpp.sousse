@@ -1,8 +1,8 @@
 import { PrismaClient } from '@prisma/client';
 
 /**
- * @fileOverview Initialisation centralisée du client Prisma.
- * Version : Singleton résilient optimisé pour Next.js (App Router).
+ * @fileOverview Client Prisma Singleton pour VisioNode.
+ * Assure la persistance Neon PostgreSQL avec une gestion de cache en développement.
  */
 
 const globalForPrisma = global as unknown as { prisma: PrismaClient };

@@ -10,7 +10,8 @@ export const dynamic = 'force-dynamic';
 
 /**
  * POST /api/procedures
- * Forge de procédure industrielle avec diagnostic d'erreur profond et auto-réparation.
+ * Forge de procédure industrielle.
+ * Gère l'auto-réparation de l'auteur système et les collisions de codes.
  */
 export async function POST(request: NextRequest) {
   const timestamp = new Date().toISOString();
@@ -19,25 +20,41 @@ export async function POST(request: NextRequest) {
   console.log(`🚀 [FORGE_API] [${traceId}] REQUÊTE_REÇUE à ${timestamp}`);
 
   try {
+    // Vérification de l'existence du client Prisma
+    if (!prisma || !prisma.user) {
+      console.error(`❌ [FORGE_API] [${traceId}] CLIENT_PRISMA_NON_INITIALISE`);
+      return NextResponse.json({ 
+        success: false, 
+        message: 'Erreur système : Le moteur de données Prisma est mal configuré.',
+        traceId 
+      }, { status: 500 });
+    }
+
     const session = await getSessionFromCookie();
     const body = await request.json().catch(() => null);
     
     if (!body || !body.title || !body.steps || !Array.isArray(body.steps)) {
-      console.error(`❌ [FORGE_API] [${traceId}] PAYLOAD_INVALIDE`);
       return NextResponse.json({ 
         success: false, 
-        message: 'Données invalides : Le titre et au moins une séquence sont requis.',
+        message: 'Données invalides : Le titre et les séquences sont requis.',
         traceId 
       }, { status: 400 });
     }
 
     const { title, steps, metadata } = body;
 
-    // 1. RÉSOLUTION DE L'AUTEUR (Assurance existence)
+    // 1. RÉSOLUTION DE L'AUTEUR (Garantie d'existence)
     let finalAuthorId = session?.user?.id;
     
-    if (!finalAuthorId) {
-      console.log(`⚠️ [FORGE_API] [${traceId}] AUTEUR_INCONNU : Accréditation via ADMIN_ROOT...`);
+    // Vérifier si l'utilisateur existe réellement en base
+    let authorExists = false;
+    if (finalAuthorId) {
+      const user = await prisma.user.findUnique({ where: { id: finalAuthorId } });
+      if (user) authorExists = true;
+    }
+
+    if (!authorExists) {
+      console.log(`⚠️ [FORGE_API] [${traceId}] AUTEUR_REQUIS : Initialisation ADMIN_ROOT...`);
       const systemAdmin = await prisma.user.upsert({
         where: { email: 'admin@visionode.local' },
         update: { approved: true },
@@ -46,87 +63,76 @@ export async function POST(request: NextRequest) {
           firstName: 'System',
           lastName: 'Administrator',
           email: 'admin@visionode.local',
-          password: 'SYSTEM_PROTECTED_ACCOUNT',
+          password: 'SYSTEM_PROTECTED',
           role: 'admin',
           approved: true
         }
       });
       finalAuthorId = systemAdmin.id;
-    } else {
-      // Vérifier si l'utilisateur de la session existe encore en DB
-      const userExists = await prisma.user.findUnique({ where: { id: finalAuthorId } });
-      if (!userExists) {
-        console.warn(`⚠️ [FORGE_API] [${traceId}] SESSION_ORPHELINE : Fallback ADMIN_ROOT...`);
-        finalAuthorId = 'admin-root';
-      }
     }
 
-    // 2. GESTION DU CODE ET UNICITÉ
+    // 2. GESTION DU CODE UNIQUE
     let code = (metadata?.code || `FORGE-${Date.now().toString().slice(-6)}`).toUpperCase();
-    const existing = await prisma.procedure.findUnique({ where: { code } });
-    if (existing) {
+    const existingCode = await prisma.procedure.findUnique({ where: { code } });
+    if (existingCode) {
       code = `${code}-${Math.floor(Math.random() * 1000)}`;
     }
 
     // 3. TRANSACTION SQL NEON
-    console.log(`💾 [FORGE_API] [${traceId}] ÉCRITURE_BDD_SQL...`);
+    console.log(`💾 [FORGE_API] [${traceId}] ÉCRITURE_BDD_SQL pour ${code}...`);
     let procedure;
     try {
       procedure = await prisma.procedure.create({
         data: {
           code,
           title: title.trim(),
-          description: body.description || metadata?.description || 'Actif généré par dictée industrielle.',
+          description: body.description || metadata?.description || 'Généré par forge industrielle.',
           category: (metadata?.category || 'OPERATION').toUpperCase(),
           department: (metadata?.department || 'PRODUCTION').toUpperCase(),
           criticality: (metadata?.criticality || 'MEDIUM').toUpperCase(),
           version: metadata?.version || '1.0.0',
           status: 'APPROVED',
-          prerequisites: (body.prerequisites || { description: "Précautions standards", items: [] }),
-          steps: steps,
-          metadata: { ...metadata, forged_at: timestamp, traceId, authorId: finalAuthorId },
+          prerequisites: (body.prerequisites || { description: "Standard", items: [] }),
+          steps: steps as any,
+          metadata: { ...metadata, forged_at: timestamp, traceId },
           authorId: finalAuthorId!
         }
       });
     } catch (sqlError: any) {
-      console.error(`❌ [FORGE_API] [${traceId}] ERREUR_PRISMA :`, sqlError.code, sqlError.message);
+      console.error(`❌ [FORGE_API] [${traceId}] ERREUR_PRISMA :`, sqlError.message);
       return NextResponse.json({ 
         success: false, 
-        error: "ÉCHEC_TRANSACTION_SQL",
-        message: sqlError.message || "Erreur d'intégrité SQL",
-        details: sqlError.meta
+        message: `Échec SQL : ${sqlError.message || 'Contrainte violée'}`,
+        traceId
       }, { status: 500 });
     }
 
-    // 4. ARCHIVAGE PHYSIQUE (Non-bloquant pour le succès SQL)
+    // 4. ARCHIVAGE PHYSIQUE (.registry/)
     try {
-      console.log(`📂 [FORGE_API] [${traceId}] ARCHIVAGE_PHYSIQUE...`);
       const regPath = `procedures/${procedure.code.toLowerCase()}/procedure.json`;
       await postgresClient.saveFile(regPath, JSON.stringify(procedure, null, 2));
+      console.log(`📂 [FORGE_API] [${traceId}] ARCHIVE_PHYSIQUE_OK`);
     } catch (e: any) {
-      console.warn(`⚠️ [FORGE_API] [${traceId}] ÉCHEC_REGISTRE : ${e.message}`);
+      console.warn(`⚠️ [FORGE_API] [${traceId}] ECHEC_ARCHIVE_PHYSIQUE: ${e.message}`);
     }
 
-    // 5. VECTORISATION IA (Asynchrone)
+    // 5. VECTORISATION IA (Background)
     procedureRAG.indexProcedure(procedure as unknown as FullProcedure).catch(err => {
-      console.error(`⚠️ [FORGE_API] [${traceId}] ERREUR_IA_RAG :`, err.message);
+      console.warn(`⚠️ [FORGE_API] [${traceId}] RAG_DELAYED: ${err.message}`);
     });
-
-    console.log(`✅ [FORGE_API] [${traceId}] FORGE_TERMINÉE_AVEC_SUCCÈS : ${procedure.id}`);
 
     return NextResponse.json({
       success: true,
       procedureId: procedure.id,
-      message: `Procédure "${procedure.title}" enregistrée et archivée avec succès.`,
+      message: `Procédure "${procedure.title}" forgée avec succès.`,
       traceId
     });
 
   } catch (error: any) {
-    console.error(`❌ [FORGE_API] [${traceId}] ERREUR_CRITIQUE_API :`, error.message);
+    console.error(`❌ [FORGE_API] [${traceId}] ERREUR_FATALE :`, error.message);
     return NextResponse.json({ 
       success: false, 
-      error: "ERREUR_FATALE_BACKEND",
-      message: error.message,
+      message: `Erreur critique : ${error.message}`,
       traceId 
     }, { status: 500 });
   }
@@ -140,6 +146,6 @@ export async function GET() {
     });
     return NextResponse.json({ success: true, procedures });
   } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return NextResponse.json({ success: false, message: error.message }, { status: 500 });
   }
 }
