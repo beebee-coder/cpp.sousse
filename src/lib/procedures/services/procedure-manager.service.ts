@@ -1,64 +1,52 @@
 import { prisma } from '@/lib/db/prisma-client';
-import { FullProcedure, ProcedureStatus, ProcedureCategory, Department, Criticality } from '../types';
+import { FullProcedure, ProcedureStatus } from '../types';
 
 /**
- * @fileOverview Service de gestion des procédures industrielles (CRUD).
+ * @fileOverview Service de gestion des procédures (CRUD) - Nomenclature Reformée.
  */
 export class ProcedureManagerService {
-  /**
-   * Crée une nouvelle procédure à partir d'un objet structuré.
-   */
-  async create(data: any) {
-    return await prisma.procedure.create({
-      data: {
-        code: data.metadata.code,
-        title: data.metadata.title,
-        description: data.metadata.description || '',
-        category: (data.metadata.category || 'OPERATION').toUpperCase() as any,
-        subcategory: data.metadata.subcategory || '',
-        department: (data.metadata.department || 'PRODUCTION').toUpperCase() as any,
-        criticality: (data.metadata.criticality || 'MEDIUM').toUpperCase() as any,
-        version: data.metadata.version || '1.0.0',
-        status: 'DRAFT',
-        prerequisites: data.prerequisites || {},
-        steps: data.steps || [],
-        parameters: data.parameters || {},
-        postExecution: data.postExecution || {},
-        metadata: data.metadata,
-        authorId: data.metadata.author.id,
-        approvers: data.metadata.approvers || [],
-      },
-    });
-  }
-
   /**
    * Récupère une procédure par son ID avec les détails de l'auteur.
    */
   async get(id: string) {
-    return await prisma.procedure.findUnique({
-      where: { id },
-      include: {
-        author: {
-          select: { firstName: true, lastName: true, role: true }
+    try {
+      const procedure = await prisma.procedure.findUnique({
+        where: { id },
+        include: {
+          author: {
+            select: { firstName: true, lastName: true, role: true }
+          }
         }
-      }
-    });
+      });
+      return procedure;
+    } catch (e) {
+      console.error(`❌ [PROC_MANAGER] Échec lecture ${id}:`, e);
+      return null;
+    }
   }
 
   /**
-   * Liste les procédures avec filtres optionnels.
+   * Liste les procédures avec filtres industriels.
    */
   async list(filters: any = {}) {
-    return await prisma.procedure.findMany({
-      where: filters,
-      orderBy: { updatedAt: 'desc' }
-    });
+    try {
+      return await prisma.procedure.findMany({
+        where: filters,
+        orderBy: { updatedAt: 'desc' },
+        include: {
+          author: { select: { firstName: true, lastName: true } }
+        }
+      });
+    } catch (e) {
+      console.error(`❌ [PROC_MANAGER] Échec listage:`, e);
+      return [];
+    }
   }
 
   /**
-   * Met à jour le statut d'une procédure (ex: DRAFT -> APPROVED).
+   * Met à jour le statut d'une procédure.
    */
-  async updateStatus(id: string, status: ProcedureStatus) {
+  async updateStatus(id: string, status: string) {
     return await prisma.procedure.update({
       where: { id },
       data: { status }
