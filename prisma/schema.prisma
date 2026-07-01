@@ -11,8 +11,8 @@ model User {
   id            String    @id @default(cuid())
   firstName     String
   lastName      String
-  email         String    @unique
   password      String
+  email         String    @unique
   role          String    @default("user")
   approved      Boolean   @default(false)
   createdAt     DateTime  @default(now())
@@ -27,22 +27,22 @@ model User {
 }
 
 model KnowledgeItem {
-  id           String    @id @default(cuid())
+  id           String   @id @default(cuid())
   userId       String
-  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type         String    // "qa" | "procedure"
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type         String   // "qa" | "text" | "manual"
   title        String
-  question     String?
-  answer       String?
-  steps        Json?
+  question     String?  @db.Text
+  answer       String?  @db.Text
+  steps        Json?    // Optional structured steps
   tags         String[]
   category     String?
-  difficulty   String    @default("medium")
-  isPublic     Boolean   @default(true)
-  syncedLocal  Boolean   @default(false)
+  difficulty   String   @default("medium")
+  isPublic     Boolean  @default(true)
+  syncedLocal  Boolean  @default(false)
   vectorId     String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   @@index([userId])
   @@index([type])
@@ -53,7 +53,7 @@ model Procedure {
   id              String           @id @default(cuid())
   code            String           @unique
   title           String
-  description     String?
+  description     String?          @db.Text
   category        String           @default("OPERATION")
   subcategory     String?
   department      String           @default("PRODUCTION")
@@ -61,25 +61,32 @@ model Procedure {
   version         String           @default("1.0.0")
   status          String           @default("DRAFT")
   
-  prerequisites   Json             // Structure Prerequisite[]
-  steps           Json             // Structure ProcedureStep[]
-  parameters      Json?            // Structure ProcedureVariable[]
-  postExecution   Json?            
-  metadata        Json             
+  // Structured Industrial Data
+  prerequisites   Json             // { description: string, items: Prerequisite[] }
+  steps           Json             // ProcedureStep[]
+  parameters      Json?            // { variables: ProcedureVariable[] }
+  postExecution   Json?            // { checks: PostExecutionCheck[], reporting: object }
   
+  // Metadata & Audit
+  metadata        Json             // Complete metadata object
   authorId        String
   author          User             @relation(fields: [authorId], references: [id])
-  approvers       Json?            
+  approvers       Json?            // Approver[]
+  
+  // Sync & RAG
+  syncedLocal     Boolean          @default(false)
+  vectorId        String?
   
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
   lastExecutedAt  DateTime?
   executionCount  Int              @default(0)
-  
+
   executions      ProcedureExecution[]
 
   @@index([code])
   @@index([category])
+  @@index([status])
   @@map("procedures")
 }
 
@@ -92,13 +99,16 @@ model ProcedureExecution {
   
   startTime       DateTime @default(now())
   endTime         DateTime?
-  status          String
+  status          String   // "RUNNING", "COMPLETED", "FAILED", "ALARM"
   currentStep     Int      @default(-1)
-  stepsStatus     Json     
-  totalDuration   Int?     
+  stepsStatus     Json     // Map of step status
+  totalDuration   Int?     // In seconds
   
-  events          Json?    
-  alarms          Json?    
+  events          Json?    // Log of events
+  alarms          Json?    // Triggered alarms
+  
+  notes           String?  @db.Text
+  signature       String?
   
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt

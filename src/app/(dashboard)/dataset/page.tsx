@@ -33,6 +33,7 @@ import { DashboardSidebar } from '@/components/dashboard/Sidebar';
 import { useVoice } from '@/hooks/use-voice';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
+import { useRouter } from 'next/navigation';
 
 interface DictationStep {
   id: string;
@@ -47,6 +48,7 @@ interface DictationStep {
 
 export default function DatasetPage() {
   const { toast } = useToast();
+  const router = useRouter();
   const [mounted, setMounted] = useState(false);
   const [mode, setMode] = useState<'qa' | 'procedure'>('procedure');
   const [isUploading, setIsUploading] = useState(false);
@@ -130,7 +132,6 @@ export default function DatasetPage() {
 
   useEffect(() => { setMounted(true); }, []);
 
-  // Logique Caméra
   const startCamera = async (type: 'image' | 'video', stepIndex: number) => {
     setCameraType(type);
     setShowCamera({ isOpen: true, stepIndex });
@@ -232,10 +233,26 @@ export default function DatasetPage() {
           order: i + 1,
           title: s.title || `Séquence ${i + 1}`,
           description: s.description || "Instruction technique",
-          duration: { value: parseInt(s.duration) || 60, unit: "seconds", display: `${s.duration}s`, type: "fixed" },
-          action: { type: "confirmation", instruction: s.description, ui: { component: "action_button", label: "Confirmer", icon: "check" } },
+          duration: { 
+            value: parseInt(s.duration) || 60, 
+            unit: "seconds", 
+            display: `${s.duration}s`, 
+            type: "fixed" 
+          },
+          action: { 
+            type: "confirmation", 
+            instruction: s.description, 
+            ui: { component: "action_button", label: "Confirmer", icon: "check" } 
+          },
           validation: {
-            conditions: s.conditions ? [{ id: `val-${i}`, description: s.conditions, type: "status", operator: "==", value: "OK", displayName: "Validation" }] : [],
+            conditions: s.conditions ? [{ 
+              id: `val-${i}`, 
+              description: s.conditions, 
+              type: "status", 
+              operator: "==", 
+              value: "OK", 
+              displayName: "Conformité" 
+            }] : [],
             successExpression: "status == OK",
             timeout: { value: 300, unit: "seconds", action: "warn" }
           },
@@ -248,15 +265,22 @@ export default function DatasetPage() {
           body: JSON.stringify({ 
             title: procTitle, 
             steps: formattedSteps,
-            metadata: { category: "MAINTENANCE", department: "PRODUCTION", criticality: "MEDIUM", version: "1.0.0" }
+            metadata: { 
+              category: "MAINTENANCE", 
+              department: "PRODUCTION", 
+              criticality: "MEDIUM", 
+              version: "1.0.0",
+              code: `DICT-${Date.now().toString().slice(-4)}`
+            }
           }),
         });
 
         const data = await res.json();
         if (data.success) {
-          toast({ title: "Procédure forgée" });
-          setProcTitle('');
-          setProcSteps([{ id: '1', title: '', duration: '60', description: '', conditions: '', alarms: '' }]);
+          toast({ title: "Procédure forgée et archivée", description: "L'actif est prêt pour la synchronisation locale." });
+          router.push('/procedures');
+        } else {
+          throw new Error(data.message || "Erreur serveur");
         }
       } catch (err: any) {
         toast({ title: "Échec de la forge", description: err.message, variant: "destructive" });
@@ -280,62 +304,91 @@ export default function DatasetPage() {
             <Button 
               variant="outline" 
               size="sm" 
-              onClick={() => isAssistantActive ? voice.stopListening() : voice.startListening()} 
-              className={cn("h-9 text-[9px] font-code uppercase", isAssistantActive && "bg-primary/20 text-primary")}
+              onClick={() => voice.isListening ? voice.stopListening() : voice.startListening()} 
+              className={cn("h-9 text-[9px] font-code uppercase", voice.isListening && "bg-red-500/10 text-red-500 border-red-500/40")}
             >
-              {isAssistantActive ? <Sparkles className="w-3.5 h-3.5 mr-2" /> : <Mic className="w-3.5 h-3.5 mr-2" />}
-              Assistant {isAssistantActive ? "ACTIF" : "VEILLE"}
+              {voice.isListening ? <Sparkles className="w-3.5 h-3.5 mr-2 animate-pulse" /> : <Mic className="w-3.5 h-3.5 mr-2" />}
+              Assistant {voice.isListening ? "ÉCOUTE" : "VEILLE"}
             </Button>
             <div className="flex bg-muted/30 p-1 rounded-sm border border-border shadow-inner">
-              <button onClick={() => setMode('qa')} className={cn("px-4 py-1 text-[9px] uppercase rounded-sm font-bold", mode === 'qa' ? "bg-primary text-primary-foreground" : "text-muted-foreground")}>FAQ</button>
-              <button onClick={() => setMode('procedure')} className={cn("px-4 py-1 text-[9px] uppercase rounded-sm font-bold", mode === 'procedure' ? "bg-secondary text-secondary-foreground" : "text-muted-foreground")}>Procédure</button>
+              <button onClick={() => setMode('qa')} className={cn("px-4 py-1 text-[9px] uppercase rounded-sm font-bold transition-all", mode === 'qa' ? "bg-primary text-primary-foreground shadow-lg" : "text-muted-foreground hover:text-foreground")}>FAQ</button>
+              <button onClick={() => setMode('procedure')} className={cn("px-4 py-1 text-[9px] uppercase rounded-sm font-bold transition-all", mode === 'procedure' ? "bg-secondary text-secondary-foreground shadow-lg" : "text-muted-foreground hover:text-foreground")}>Procédure</button>
             </div>
           </div>
         </header>
 
         <div className="flex-1 overflow-y-auto terminal-scroll p-4 lg:p-8">
           <form onSubmit={handleAddItem} className="max-w-5xl mx-auto space-y-8 pb-12">
-            <Card className="p-4 bg-primary/5 border border-primary/20 flex items-center gap-4">
+            <Card className="p-4 bg-primary/5 border border-primary/20 flex items-center gap-4 shadow-2xl">
                <Zap className="w-8 h-8 text-primary" />
-               <p className="text-[9px] font-code text-muted-foreground uppercase leading-tight">
-                 Toute entrée validée est automatiquement vectorisée pour l'IA et archivée dans le registre physique <span className="text-white font-bold">.registry/procedures/</span>.
+               <p className="text-[10px] font-code text-muted-foreground uppercase leading-tight">
+                 Toute entrée validée est automatiquement vectorisée pour l'IA et archivée dans le registre physique <span className="text-white font-bold">.registry/procedures/</span> pour la synchronisation native.
                </p>
             </Card>
 
             <div className="space-y-10">
               {mode === 'qa' ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
                   <div className="space-y-4">
-                    <Badge variant="outline" className="text-[8px] font-bold text-primary">SYMPTÔME</Badge>
-                    <Textarea value={question} onChange={(e) => setQuestion(e.target.value)} onFocus={() => setActiveUIField({ type: 'question' })} placeholder="DÉTAILLEZ L'ANOMALIE..." className="h-48 bg-black/40 font-code text-xs uppercase" />
+                    <Badge variant="outline" className="text-[8px] font-bold text-primary tracking-widest uppercase">SYMPTÔME / ANOMALIE</Badge>
+                    <Textarea 
+                      value={question} 
+                      onChange={(e) => setQuestion(e.target.value)} 
+                      onFocus={() => setActiveUIField({ type: 'question' })} 
+                      placeholder="DÉTAILLEZ L'ANOMALIE..." 
+                      className="h-64 bg-black/40 font-code text-xs uppercase border-primary/20 focus:border-primary/50" 
+                    />
                   </div>
                   <div className="space-y-4">
-                    <Badge variant="outline" className="text-[8px] font-bold text-secondary">RÉSOLUTION</Badge>
-                    <Textarea value={answer} onChange={(e) => setAnswer(e.target.value)} onFocus={() => setActiveUIField({ type: 'answer' })} placeholder="DÉTAILLEZ LA RÉSOLUTION..." className="h-48 bg-black/40 font-code text-xs uppercase" />
+                    <Badge variant="outline" className="text-[8px] font-bold text-secondary tracking-widest uppercase">RÉSOLUTION TECHNIQUE</Badge>
+                    <Textarea 
+                      value={answer} 
+                      onChange={(e) => setAnswer(e.target.value)} 
+                      onFocus={() => setActiveUIField({ type: 'answer' })} 
+                      placeholder="DÉTAILLEZ LA RÉSOLUTION..." 
+                      className="h-64 bg-black/40 font-code text-xs uppercase border-secondary/20 focus:border-secondary/50" 
+                    />
                   </div>
                 </div>
               ) : (
                 <>
-                  <div className="space-y-4">
-                    <label className="text-[10px] font-bold text-primary uppercase tracking-widest block">Titre de la procédure</label>
-                    <Input value={procTitle} onChange={(e) => setProcTitle(e.target.value)} onFocus={() => setActiveUIField({ type: 'procTitle' })} placeholder="EX: DÉMARRAGE POMPE CENTRIFUGE CRF-101..." className="bg-black/60 uppercase h-14 text-sm font-bold border-primary/30" />
+                  <div className="space-y-4 animate-in fade-in duration-500">
+                    <label className="text-[10px] font-bold text-primary uppercase tracking-widest block">Titre de la procédure industrielle</label>
+                    <Input 
+                      value={procTitle} 
+                      onChange={(e) => setProcTitle(e.target.value)} 
+                      onFocus={() => setActiveUIField({ type: 'procTitle' })} 
+                      placeholder="EX: DÉMARRAGE POMPE CENTRIFUGE CRF-101..." 
+                      className="bg-black/60 uppercase h-14 text-sm font-bold border-primary/30 shadow-xl focus:ring-1 focus:ring-primary" 
+                    />
                   </div>
 
                   <div className="space-y-6">
                     {procSteps.map((step, index) => (
-                      <Card key={index} className="p-6 border-border bg-black/30 space-y-6 group transition-all hover:border-primary/20">
+                      <Card key={index} className="p-6 border-border bg-black/30 space-y-6 group transition-all hover:border-primary/20 shadow-xl relative overflow-hidden">
+                        <div className="absolute top-0 left-0 w-1 h-full bg-secondary/30" />
+                        
                         <div className="flex justify-between items-center border-b border-border/50 pb-3">
                           <div className="flex items-center gap-3">
-                             <div className="w-6 h-6 rounded-full bg-secondary/10 border border-secondary/30 flex items-center justify-center text-[10px] font-bold text-secondary">{index + 1}</div>
-                             <span className="text-[10px] font-bold text-white uppercase tracking-wider">Séquence Technique</span>
+                             <div className="w-7 h-7 rounded-full bg-secondary/10 border border-secondary/30 flex items-center justify-center text-[11px] font-bold text-secondary font-code">{index + 1}</div>
+                             <span className="text-[10px] font-bold text-white uppercase tracking-wider">Séquence Opérationnelle</span>
                           </div>
                           <div className="flex items-center gap-4">
-                             <div className="flex items-center gap-2 bg-muted/20 px-2 py-1 rounded-sm border border-border">
+                             <div className="flex items-center gap-2 bg-muted/20 px-3 py-1 rounded-sm border border-border">
                                 <Clock className="w-3.5 h-3.5 text-muted-foreground" />
-                                <Input value={step.duration} onChange={(e) => { const n = [...procSteps]; n[index].duration = e.target.value; setProcSteps(n); }} className="h-6 w-14 text-[10px] font-code text-center bg-transparent border-none p-0 focus-visible:ring-0" />
+                                <Input 
+                                  value={step.duration} 
+                                  onChange={(e) => { const n = [...procSteps]; n[index].duration = e.target.value; setProcSteps(n); }} 
+                                  className="h-6 w-12 text-[10px] font-code text-center bg-transparent border-none p-0 focus-visible:ring-0" 
+                                />
                                 <span className="text-[9px] font-code text-muted-foreground uppercase">sec</span>
                              </div>
-                             <Button variant="ghost" size="icon" onClick={() => { const next = [...procSteps]; next.splice(index, 1); setProcSteps(next); }} className="h-8 w-8 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity">
+                             <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              onClick={() => { const next = [...procSteps]; next.splice(index, 1); setProcSteps(next); }} 
+                              className="h-8 w-8 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                             >
                                 <Trash2 className="w-3.5 h-3.5" />
                              </Button>
                           </div>
@@ -344,49 +397,90 @@ export default function DatasetPage() {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                           <div className="space-y-4">
                             <div className="space-y-1.5">
-                              <p className="text-[9px] font-bold text-muted-foreground uppercase">Intitulé de l'action</p>
-                              <Input value={step.title} onFocus={() => setActiveUIField({ type: 'stepTitle', index })} onChange={(e) => { const n = [...procSteps]; n[index].title = e.target.value; setProcSteps(n); }} className="h-10 text-[10px] uppercase font-bold bg-black/20" />
+                              <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Intitulé de l'action</p>
+                              <Input 
+                                value={step.title} 
+                                onFocus={() => setActiveUIField({ type: 'stepTitle', index })} 
+                                onChange={(e) => { const n = [...procSteps]; n[index].title = e.target.value; setProcSteps(n); }} 
+                                className="h-10 text-[10px] uppercase font-bold bg-black/20 border-border/50" 
+                              />
                             </div>
                             <div className="space-y-1.5">
-                              <p className="text-[9px] font-bold text-muted-foreground uppercase">Consigne technique</p>
-                              <Textarea value={step.description} onFocus={() => setActiveUIField({ type: 'stepDescription', index })} onChange={(e) => { const n = [...procSteps]; n[index].description = e.target.value; setProcSteps(n); }} className="h-24 text-[10px] uppercase font-code bg-black/20 resize-none" />
+                              <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Consigne technique détaillée</p>
+                              <Textarea 
+                                value={step.description} 
+                                onFocus={() => setActiveUIField({ type: 'stepDescription', index })} 
+                                onChange={(e) => { const n = [...procSteps]; n[index].description = e.target.value; setProcSteps(n); }} 
+                                className="h-32 text-[10px] uppercase font-code bg-black/20 resize-none border-border/50" 
+                              />
                             </div>
                           </div>
 
                           <div className="space-y-6">
                             <div className="grid grid-cols-2 gap-4">
                               <div className="space-y-1.5">
-                                <p className="text-[9px] font-bold text-primary uppercase">Validation</p>
-                                <Input value={step.conditions} onChange={(e) => { const n = [...procSteps]; n[index].conditions = e.target.value; setProcSteps(n); }} placeholder="EX: PRESSION > 5..." className="h-10 text-[10px] uppercase font-code bg-primary/5 border-primary/20" />
+                                <p className="text-[9px] font-bold text-primary uppercase tracking-widest">Critère Validation</p>
+                                <Input 
+                                  value={step.conditions} 
+                                  onChange={(e) => { const n = [...procSteps]; n[index].conditions = e.target.value; setProcSteps(n); }} 
+                                  placeholder="EX: PRESSION > 5 BARS" 
+                                  className="h-10 text-[10px] uppercase font-code bg-primary/5 border-primary/20" 
+                                />
                               </div>
                               <div className="space-y-1.5">
-                                <p className="text-[9px] font-bold text-destructive uppercase">Alertes</p>
-                                <Input value={step.alarms} onChange={(e) => { const n = [...procSteps]; n[index].alarms = e.target.value; setProcSteps(n); }} placeholder="EX: FUIE..." className="h-10 text-[10px] uppercase font-code bg-destructive/5 border-destructive/20" />
+                                <p className="text-[9px] font-bold text-destructive uppercase tracking-widest">Alerte Critique</p>
+                                <Input 
+                                  value={step.alarms} 
+                                  onChange={(e) => { const n = [...procSteps]; n[index].alarms = e.target.value; setProcSteps(n); }} 
+                                  placeholder="EX: FUITE DÉTECTÉE" 
+                                  className="h-10 text-[10px] uppercase font-code bg-destructive/5 border-destructive/20" 
+                                />
                               </div>
                             </div>
 
                             <div className="space-y-2">
-                              <p className="text-[9px] font-bold text-muted-foreground uppercase">Documentation Visuelle</p>
+                              <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Documentation Visuelle Réelle</p>
                               <div className="flex gap-2">
                                 {!step.media ? (
                                   <>
-                                    <Button type="button" variant="outline" size="sm" onClick={() => startCamera('image', index)} className="flex-1 h-12 text-[9px] border-dashed border-border hover:bg-primary/5 hover:border-primary/40">
-                                      <Camera className="w-4 h-4 mr-2 text-primary" /> PHOTO
+                                    <Button 
+                                      type="button" 
+                                      variant="outline" 
+                                      size="sm" 
+                                      onClick={() => startCamera('image', index)} 
+                                      className="flex-1 h-12 text-[9px] border-dashed border-border hover:bg-primary/5 hover:border-primary/40 transition-all"
+                                    >
+                                      <Camera className="w-4 h-4 mr-2 text-primary" /> PHOTO DIRECTE
                                     </Button>
-                                    <Button type="button" variant="outline" size="sm" onClick={() => startCamera('video', index)} className="flex-1 h-12 text-[9px] border-dashed border-border hover:bg-secondary/5 hover:border-secondary/40">
-                                      <VideoIcon className="w-4 h-4 mr-2 text-secondary" /> VIDÉO
+                                    <Button 
+                                      type="button" 
+                                      variant="outline" 
+                                      size="sm" 
+                                      onClick={() => startCamera('video', index)} 
+                                      className="flex-1 h-12 text-[9px] border-dashed border-border hover:bg-secondary/5 hover:border-secondary/40 transition-all"
+                                    >
+                                      <VideoIcon className="w-4 h-4 mr-2 text-secondary" /> FLUX VIDÉO
                                     </Button>
                                   </>
                                 ) : (
-                                  <div className="relative w-full aspect-video rounded-sm border border-border overflow-hidden bg-black">
+                                  <div className="relative w-full aspect-video rounded-sm border border-border overflow-hidden bg-black shadow-2xl animate-in zoom-in-95">
                                     {step.mediaType === 'image' ? (
                                       <img src={step.media} className="w-full h-full object-cover" />
                                     ) : (
                                       <video src={step.media} controls className="w-full h-full" />
                                     )}
-                                    <Button type="button" variant="destructive" size="icon" onClick={() => { const next = [...procSteps]; delete next[index].media; setProcSteps(next); }} className="absolute top-2 right-2 h-6 w-6">
-                                      <X className="w-3 h-3" />
+                                    <Button 
+                                      type="button" 
+                                      variant="destructive" 
+                                      size="icon" 
+                                      onClick={() => { const next = [...procSteps]; delete next[index].media; setProcSteps(next); }} 
+                                      className="absolute top-2 right-2 h-7 w-7 shadow-xl"
+                                    >
+                                      <X className="w-4 h-4" />
                                     </Button>
+                                    <div className="absolute bottom-2 left-2 px-2 py-0.5 bg-black/60 backdrop-blur-sm rounded-sm">
+                                       <span className="text-[8px] font-bold text-white uppercase font-code">Asset Registre Attaché</span>
+                                    </div>
                                   </div>
                                 )}
                               </div>
@@ -397,16 +491,28 @@ export default function DatasetPage() {
                     ))}
                   </div>
 
-                  <Button type="button" variant="outline" onClick={() => setProcSteps([...procSteps, { id: Date.now().toString(), title: '', duration: '60', description: '', conditions: '', alarms: '' }])} className="w-full border-dashed border-border h-12 text-[10px] uppercase font-bold hover:bg-secondary/5 transition-all">
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    onClick={() => setProcSteps([...procSteps, { id: Date.now().toString(), title: '', duration: '60', description: '', conditions: '', alarms: '' }])} 
+                    className="w-full border-dashed border-border h-14 text-[10px] uppercase font-bold hover:bg-secondary/5 transition-all shadow-sm"
+                  >
                     <Plus className="w-4 h-4 mr-2 text-secondary" /> Ajouter une séquence opérationnelle
                   </Button>
                 </>
               )}
 
               <div className="pt-10 border-t border-border/50">
-                <Button type="submit" disabled={isUploading} className={cn("w-full font-headline font-bold uppercase text-xs h-16 shadow-2xl transition-all", mode === 'qa' ? "bg-primary" : "bg-secondary")}>
+                <Button 
+                  type="submit" 
+                  disabled={isUploading} 
+                  className={cn(
+                    "w-full font-headline font-bold uppercase text-xs h-16 shadow-[0_0_30px_rgba(0,0,0,0.3)] transition-all active:scale-[0.98]", 
+                    mode === 'qa' ? "bg-primary hover:bg-primary/90" : "bg-secondary hover:bg-secondary/90"
+                  )}
+                >
                   {isUploading ? <Loader2 className="w-6 h-6 animate-spin mr-3" /> : <CheckCircle2 className="w-6 h-6 mr-3" />}
-                  {mode === 'qa' ? "Enregistrer dans la file sémantique" : "Forger la Procédure et Indexer"}
+                  {mode === 'qa' ? "Enregistrer dans la file sémantique Cloud" : "Forger la Procédure et Archiver"}
                 </Button>
               </div>
             </div>
@@ -415,32 +521,38 @@ export default function DatasetPage() {
 
         {/* Caméra Overlay */}
         {showCamera.isOpen && (
-          <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
-             <Card className="w-full max-w-3xl overflow-hidden border-primary/20 bg-black shadow-[0_0_50px_rgba(0,0,0,1)]">
+          <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 sm:p-8 animate-in fade-in duration-300">
+             <Card className="w-full max-w-4xl overflow-hidden border-primary/20 bg-black shadow-[0_0_100px_rgba(0,0,0,1)]">
                 <div className="p-4 border-b border-border flex justify-between items-center bg-card/30">
                    <div className="flex items-center gap-3">
-                      <div className="w-2 h-2 rounded-full bg-red-600 animate-pulse" />
-                      <span className="text-[10px] font-bold text-white uppercase tracking-widest">Moteur de vision direct</span>
+                      <div className="w-2.5 h-2.5 rounded-full bg-red-600 animate-pulse" />
+                      <span className="text-[10px] font-bold text-white uppercase tracking-widest font-code">Moteur de vision direct — Séquence {showCamera.stepIndex! + 1}</span>
                    </div>
-                   <Button variant="ghost" size="icon" onClick={stopCamera} className="text-muted-foreground hover:text-white"><X className="w-5 h-5" /></Button>
+                   <Button variant="ghost" size="icon" onClick={stopCamera} className="text-muted-foreground hover:text-white transition-colors"><X className="w-6 h-6" /></Button>
                 </div>
-                <div className="relative aspect-video bg-muted/10">
-                   <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+                <div className="relative aspect-video bg-muted/5 group">
+                   <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover opacity-90" />
+                   <div className="absolute inset-0 pointer-events-none border-[1px] border-primary/10 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.1)_50%)] bg-[length:100%_4px] opacity-20" />
                    {isRecording && (
-                     <div className="absolute top-4 right-4 flex items-center gap-2 bg-red-600 px-3 py-1 rounded-sm animate-pulse">
-                        <div className="w-2 h-2 bg-white rounded-full" />
-                        <span className="text-[10px] font-bold text-white uppercase font-code">REC</span>
+                     <div className="absolute top-6 right-6 flex items-center gap-3 bg-red-600 px-4 py-1.5 rounded-sm animate-pulse shadow-2xl">
+                        <div className="w-2.5 h-2.5 bg-white rounded-full" />
+                        <span className="text-[11px] font-bold text-white uppercase font-code">LIAISON_LIVE_REC</span>
                      </div>
                    )}
+                   <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="w-20 h-20 border border-primary/20 rounded-full flex items-center justify-center">
+                         <div className="w-2 h-2 bg-primary rounded-full" />
+                      </div>
+                   </div>
                 </div>
-                <div className="p-6 flex justify-center gap-6 bg-card/30">
+                <div className="p-8 flex justify-center gap-8 bg-card/30">
                    {cameraMode === 'image' ? (
-                     <Button onClick={capturePhoto} className="px-12 h-14 bg-primary text-primary-foreground font-bold uppercase shadow-xl"><Camera className="w-6 h-6 mr-3" /> CAPTURER FRAME</Button>
+                     <Button onClick={capturePhoto} className="px-16 h-16 bg-primary text-primary-foreground font-bold uppercase text-sm shadow-2xl hover:scale-105 transition-transform"><Camera className="w-7 h-7 mr-3" /> CAPTURER FRAME</Button>
                    ) : (
                      !isRecording ? (
-                        <Button onClick={startRecording} className="px-12 h-14 bg-red-600 text-white font-bold uppercase shadow-xl"><VideoIcon className="w-6 h-6 mr-3" /> LANCER ENREGISTREMENT</Button>
+                        <Button onClick={startRecording} className="px-16 h-16 bg-red-600 text-white font-bold uppercase text-sm shadow-2xl hover:bg-red-700 transition-all"><PlayCircle className="w-7 h-7 mr-3" /> LANCER ENREGISTREMENT</Button>
                      ) : (
-                        <Button onClick={stopRecording} className="px-12 h-14 bg-white text-black font-bold uppercase shadow-xl animate-pulse">STOPPER FLUX</Button>
+                        <Button onClick={stopRecording} className="px-16 h-16 bg-white text-black font-bold uppercase text-sm shadow-2xl animate-pulse hover:bg-muted transition-all">STOPPER LE FLUX</Button>
                      )
                    )}
                 </div>

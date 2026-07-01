@@ -13,7 +13,8 @@ export const dynamic = 'force-dynamic';
 export async function GET() {
   try {
     let procedures = await prisma.procedure.findMany({
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
+      include: { author: { select: { firstName: true, lastName: true } } }
     });
 
     // AMORÇAGE AUTOMATIQUE : Si vide, on injecte la vraie procédure CRF
@@ -23,7 +24,6 @@ export async function GET() {
         const fileContent = await fs.readFile(dataPath, 'utf8');
         const realProc = JSON.parse(fileContent);
 
-        // S'assurer que l'auteur admin existe
         const admin = await prisma.user.findFirst({ where: { role: 'admin' } });
         const authorId = admin?.id || 'admin-root';
 
@@ -44,18 +44,17 @@ export async function GET() {
             criticality: (realProc.metadata.criticality || 'MEDIUM').toUpperCase(),
             version: realProc.metadata.version,
             status: 'APPROVED',
-            prerequisites: realProc.prerequisites as any,
-            steps: realProc.steps as any,
-            metadata: realProc.metadata as any,
-            parameters: realProc.parameters as any,
-            postExecution: realProc.postExecution as any,
+            prerequisites: realProc.prerequisites,
+            steps: realProc.steps,
+            metadata: realProc.metadata,
+            parameters: realProc.parameters || {},
+            postExecution: realProc.postExecution || {},
             authorId: authorId,
           }
         });
 
-        // 2. Création Registre Physique (Archivage conforme)
-        const dirName = `${created.code.toLowerCase()}_master`;
-        const registryBase = path.join(process.cwd(), '.registry', 'procedures', dirName);
+        // Archivage Physique pour Sync
+        const registryBase = path.join(process.cwd(), '.registry', 'procedures', created.code.toLowerCase());
         await fs.mkdir(registryBase, { recursive: true });
         await fs.writeFile(
           path.join(registryBase, 'procedure.json'),
@@ -63,12 +62,10 @@ export async function GET() {
           'utf8'
         );
         
-        // 3. Vectorisation obligatoire
         await procedureRAG.indexProcedure(created as any);
-        
-        procedures = [created];
+        procedures = [created as any];
       } catch (seedErr: any) {
-        console.warn('[PROCEDURE_API] Échec amorçage critique CRF:', seedErr.message);
+        console.warn('[PROCEDURE_API] Échec amorçage critique:', seedErr.message);
       }
     }
 
@@ -80,45 +77,44 @@ export async function GET() {
 
 /**
  * POST /api/procedures
- * Création avec Vectorisation et Archivage Physique.
+ * Forge de procédure : DB Web + Registre Physique + Indexation RAG.
  */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { title, steps, metadata } = body;
+    const { title, steps, metadata, prerequisites, parameters, postExecution } = body;
 
-    if (!title) {
-      return NextResponse.json({ success: false, message: 'Titre requis.' }, { status: 400 });
+    if (!title || !steps) {
+      return NextResponse.json({ success: false, message: 'Données incomplètes pour la forge.' }, { status: 400 });
     }
 
-    // S'assurer que l'auteur existe
     const admin = await prisma.user.findFirst({ where: { role: 'admin' } });
     const authorId = admin?.id || 'admin-root';
-
     const code = metadata?.code || `PROC-${Date.now().toString().slice(-6)}`;
 
-    // 1. Création Database (Prisma)
+    // 1. Enregistrement Base de Données Cloud (Neon)
     const procedure = await prisma.procedure.create({
       data: {
         code,
         title,
-        description: body.description || '',
-        category: (metadata?.category || 'OPERATION').toUpperCase() as any,
-        department: (metadata?.department || 'PRODUCTION').toUpperCase() as any,
-        criticality: (metadata?.criticality || 'MEDIUM').toUpperCase() as any,
+        description: body.description || metadata?.description || '',
+        category: (metadata?.category || 'OPERATION').toUpperCase(),
+        department: (metadata?.department || 'PRODUCTION').toUpperCase(),
+        criticality: (metadata?.criticality || 'MEDIUM').toUpperCase(),
         version: metadata?.version || '1.0.0',
         status: 'APPROVED',
-        prerequisites: body.prerequisites || { items: [] },
-        steps: steps || [],
-        metadata: { ...metadata, createdAt: new Date().toISOString() } as any,
-        parameters: body.parameters || { variables: [] },
-        postExecution: body.postExecution || { checks: [] },
+        prerequisites: prerequisites || { description: "Prérequis de sécurité", items: [] },
+        steps: steps,
+        metadata: { ...metadata, authorId, createdAt: new Date().toISOString() },
+        parameters: parameters || { variables: [] },
+        postExecution: postExecution || { checks: [], reporting: { generateReport: true, reportFields: [] } },
         authorId: authorId,
+        syncedLocal: false
       }
     });
 
-    // 2. Archivage Physique (Registre)
-    const dirName = `${procedure.code.toLowerCase()}_${Date.now()}`;
+    // 2. Archivage Registre Physique (Attente de Sync)
+    const dirName = procedure.code.toLowerCase();
     const registryBase = path.join(process.cwd(), '.registry', 'procedures', dirName);
     await fs.mkdir(registryBase, { recursive: true });
     await fs.writeFile(
@@ -127,7 +123,7 @@ export async function POST(request: NextRequest) {
       'utf8'
     );
 
-    // 3. Vectorisation OBLIGATOIRE (Non-bloquante pour la réponse client si timeout)
+    // 3. Vectorisation Immédiate (Moteur de recherche IA)
     try {
       await procedureRAG.indexProcedure(procedure as any);
     } catch (ragErr: any) {
@@ -137,7 +133,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       procedureId: procedure.id,
-      message: `Procédure forgée et indexée avec succès.`
+      message: `Procédure forgée et archivée dans le registre physique.`
     });
 
   } catch (error: any) {
