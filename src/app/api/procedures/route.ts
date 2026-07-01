@@ -4,14 +4,13 @@ import { procedureRAG } from '@/lib/procedures/services/rag.service';
 import { postgresClient } from '@/lib/db/postgres-client';
 import { getSessionFromCookie } from '@/lib/session';
 import { v4 as uuidv4 } from 'uuid';
-import { FullProcedure } from '@/lib/procedures/types';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * POST /api/procedures
- * Forge de procédure industrielle avec BYPASS de résilience.
- * Priorise l'archivage physique (.registry/) sur la base SQL.
+ * Forge de procédure industrielle avec BYPASS de résilience totale.
+ * Priorise l'archivage physique (.registry/) et ignore les erreurs SQL pour garantir le succès métier.
  */
 export async function POST(request: NextRequest) {
   const timestamp = new Date().toISOString();
@@ -35,7 +34,7 @@ export async function POST(request: NextRequest) {
     let code = (metadata?.code || `FORGE-${Date.now().toString().slice(-6)}`).toUpperCase();
 
     // -------------------------------------------------------------------------
-    // ÉTAPE 1 : ARCHIVAGE PHYSIQUE (PRIORITÉ ABSOLUE)
+    // ÉTAPE 1 : ARCHIVAGE PHYSIQUE (PRIORITÉ ABSOLUE - SOURCE DE VÉRITÉ)
     // -------------------------------------------------------------------------
     let fsPath = '';
     try {
@@ -45,53 +44,50 @@ export async function POST(request: NextRequest) {
         code,
         title: title.trim(),
         steps,
-        metadata: { ...metadata, forged_at: timestamp, traceId, storage: 'PHYSICAL_ONLY' },
+        metadata: { ...metadata, forged_at: timestamp, traceId, storage: 'PHYSICAL_REGISTRY' },
         createdAt: timestamp
       };
       await postgresClient.saveFile(regPath, JSON.stringify(fileData, null, 2));
       fsPath = regPath;
       console.log(`📂 [FORGE_API] [${traceId}] ARCHIVE_PHYSIQUE_CRÉÉE: ${regPath}`);
     } catch (fsError: any) {
-      console.error(`❌ [FORGE_API] [${traceId}] ÉCHEC_ARCHIVE_PHYSIQUE:`, fsError.message);
+      console.error(`❌ [FORGE_API] [${traceId}] ÉCHEC_ARCHIVE_PHYSIQUE (CRITIQUE):`, fsError.message);
       return NextResponse.json({ success: false, message: 'Échec de l\'écriture disque.', traceId }, { status: 500 });
     }
 
     // -------------------------------------------------------------------------
-    // ÉTAPE 2 : TENTATIVE SQL (BYPASS SI PRISMA EST UNDEFINED/BROKEN)
+    // ÉTAPE 2 : TENTATIVE SYNCHRO SQL (BYPASS SI PRISMA EST INSTABLE OU UNDEFINED)
     // -------------------------------------------------------------------------
-    let sqlSuccess = false;
-    let dbError = null;
+    let sqlStatus = 'BYPASSED';
+    let dbDiagnostic = 'NONE';
 
     try {
-      if (prisma && prisma.user && prisma.procedure) {
+      // Vérification ultra-prudente du client Prisma pour éviter l'erreur "Cannot read properties of undefined"
+      const p = prisma as any;
+      if (p && p.user && p.procedure) {
         console.log(`💾 [FORGE_API] [${traceId}] TENTATIVE_SYNCHRO_SQL...`);
         
-        // Résolution auteur (Admin par défaut)
         let authorId = session?.user?.id;
         
-        // Vérifier si prisma.user existe réellement
-        const checkUser = authorId ? await prisma.user.findUnique({ where: { id: authorId } }).catch(() => null) : null;
-        
-        if (!checkUser) {
-          console.log(`⚠️ [FORGE_API] [${traceId}] UTILISATEUR_SQL_MANQUANT : Création/Récupération ADMIN_ROOT...`);
-          const admin = await prisma.user.upsert({
-            where: { email: 'admin@visionode.local' },
-            update: { approved: true },
-            create: {
-              id: 'admin-root',
-              firstName: 'System',
-              lastName: 'Administrator',
-              email: 'admin@visionode.local',
-              password: 'SYSTEM_PROTECTED',
-              role: 'admin',
-              approved: true
-            }
-          });
-          authorId = admin.id;
-        }
+        // Garantir un auteur valide via upsert
+        const systemAdmin = await p.user.upsert({
+          where: { email: 'admin@visionode.local' },
+          update: { approved: true },
+          create: {
+            id: 'admin-root',
+            firstName: 'System',
+            lastName: 'Administrator',
+            email: 'admin@visionode.local',
+            password: 'SYSTEM_PROTECTED',
+            role: 'admin',
+            approved: true
+          }
+        });
 
-        // Création Procedure
-        await prisma.procedure.create({
+        if (!authorId) authorId = systemAdmin.id;
+
+        // Création de la procédure en base
+        await p.procedure.create({
           data: {
             code,
             title: title.trim(),
@@ -104,43 +100,44 @@ export async function POST(request: NextRequest) {
             prerequisites: (body.prerequisites || { description: "Standard", items: [] }),
             steps: steps as any,
             metadata: { ...metadata, forged_at: timestamp, traceId, storage: 'HYBRID' },
-            authorId: authorId!
+            authorId: authorId
           }
         });
-        sqlSuccess = true;
+        
+        sqlStatus = 'OK';
         console.log(`✅ [FORGE_API] [${traceId}] SYNCHRO_SQL_RÉUSSIE`);
       } else {
-        dbError = "CLIENT_PRISMA_INCOMPLET_OU_NON_GÉNÉRÉ";
-        console.warn(`⚠️ [FORGE_API] [${traceId}] ${dbError} - Bypass activé.`);
+        dbDiagnostic = 'PRISMA_CLIENT_INCOMPLETE';
+        console.warn(`⚠️ [FORGE_API] [${traceId}] Bypass SQL: Client Prisma incomplet ou modèles non générés.`);
       }
     } catch (e: any) {
-      sqlSuccess = false;
-      dbError = e.message;
-      console.warn(`⚠️ [FORGE_API] [${traceId}] ÉCHEC_SQL_MAIS_BYPASS_ACTIF:`, dbError);
+      sqlStatus = 'FAILED_SILENT';
+      dbDiagnostic = e.message;
+      console.warn(`⚠️ [FORGE_API] [${traceId}] ÉCHEC_SQL_MAIS_BYPASS_ACTIF:`, dbDiagnostic);
     }
 
     // -------------------------------------------------------------------------
-    // ÉTAPE 3 : VECTORISATION RAG (BACKGROUND)
+    // ÉTAPE 3 : VECTORISATION RAG (ASYNCHRONE)
     // -------------------------------------------------------------------------
     procedureRAG.indexProcedure({ code, title, steps, metadata } as any).catch(() => {});
 
-    // RÉPONSE : Succès car le fichier physique existe
+    // RÉPONSE : Toujours succès car l'archive physique est la preuve de travail.
     return NextResponse.json({
       success: true,
-      message: sqlSuccess 
-        ? `Procédure "${title}" forgée avec succès (Hybride).` 
-        : `Procédure "${title}" forgée PHYSIQUEMENT uniquement.`,
+      message: sqlStatus === 'OK' 
+        ? `Procédure "${title}" forgée et synchronisée.` 
+        : `Procédure "${title}" archivée dans le Registre Physique.`,
       traceId,
       fsPath,
-      sqlStatus: sqlSuccess ? 'OK' : 'BYPASSED',
-      diagnostic: dbError
+      sqlStatus,
+      diagnostic: dbDiagnostic
     });
 
   } catch (error: any) {
-    console.error(`❌ [FORGE_API] [${traceId}] ERREUR_CRITIQUE:`, error.message);
+    console.error(`❌ [FORGE_API] [${traceId}] ERREUR_FATALE:`, error.message);
     return NextResponse.json({ 
       success: false, 
-      message: `Panique critique : ${error.message}`,
+      message: `Erreur fatale de forge : ${error.message}`,
       traceId 
     }, { status: 500 });
   }
@@ -151,7 +148,7 @@ export async function GET() {
     const procedures = await prisma.procedure.findMany({
       orderBy: { createdAt: 'desc' },
       include: { author: { select: { firstName: true, lastName: true } } }
-    }).catch(() => []); // Fallback vide si SQL fail
+    }).catch(() => []);
     
     return NextResponse.json({ success: true, procedures });
   } catch (error: any) {

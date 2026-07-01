@@ -56,8 +56,8 @@ export class ProcedureRAGService {
               title: procedure.title,
               content: chunks.map(c => c.content).join('\n'),
               tags: ((procedure.metadata as any)?.tags) || [],
-              category: procedure.category || 'OPERATION',
-              difficulty: procedure.criticality || 'MEDIUM',
+              category: (procedure.category as string) || 'OPERATION',
+              difficulty: (procedure.criticality as string) || 'MEDIUM',
               isPublic: true,
               createdAt: timestamp
             });
