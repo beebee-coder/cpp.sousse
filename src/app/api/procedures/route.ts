@@ -9,20 +9,20 @@ export const dynamic = 'force-dynamic';
 
 /**
  * POST /api/procedures
- * Forge de procédure industrielle avec BYPASS de résilience totale.
- * Priorise l'archivage physique (.registry/) et ignore les erreurs SQL pour garantir le succès métier.
+ * Forge de procédure industrielle avec logs structurés [FORGE_API].
  */
 export async function POST(request: NextRequest) {
   const timestamp = new Date().toISOString();
   const traceId = uuidv4().slice(0, 8);
   
-  console.log(`🚀 [FORGE_API] [${traceId}] INITIATION_FORGE...`);
+  console.log(`🚀 [FORGE_API] [INIT] [${traceId}] Réception d'une demande de forge.`);
 
   try {
     const session = await getSessionFromCookie();
     const body = await request.json().catch(() => null);
     
     if (!body || !body.title || !body.steps || !Array.isArray(body.steps)) {
+      console.error(`❌ [FORGE_API] [ERROR] [${traceId}] Payload invalide.`);
       return NextResponse.json({ 
         success: false, 
         message: 'Données invalides : Le titre et les séquences sont requis.',
@@ -34,8 +34,9 @@ export async function POST(request: NextRequest) {
     let code = (metadata?.code || `FORGE-${Date.now().toString().slice(-6)}`).toUpperCase();
 
     // -------------------------------------------------------------------------
-    // ÉTAPE 1 : ARCHIVAGE PHYSIQUE (PRIORITÉ ABSOLUE - SOURCE DE VÉRITÉ)
+    // ÉTAPE 1 : ARCHIVAGE PHYSIQUE [FORGE_FS]
     // -------------------------------------------------------------------------
+    console.log(`📂 [FORGE_FS] [STEP] [${traceId}] Tentative d'écriture dans le Registre Physique...`);
     let fsPath = '';
     try {
       const regPath = `procedures/${code.toLowerCase()}/procedure.json`;
@@ -49,27 +50,27 @@ export async function POST(request: NextRequest) {
       };
       await postgresClient.saveFile(regPath, JSON.stringify(fileData, null, 2));
       fsPath = regPath;
-      console.log(`📂 [FORGE_API] [${traceId}] ARCHIVE_PHYSIQUE_CRÉÉE: ${regPath}`);
+      console.log(`✅ [FORGE_FS] [SUCCESS] [${traceId}] Archive physique créée : ${regPath}`);
     } catch (fsError: any) {
-      console.error(`❌ [FORGE_API] [${traceId}] ÉCHEC_ARCHIVE_PHYSIQUE (CRITIQUE):`, fsError.message);
+      console.error(`❌ [FORGE_FS] [ERROR] [${traceId}] Échec critique écriture disque:`, fsError.message);
       return NextResponse.json({ success: false, message: 'Échec de l\'écriture disque.', traceId }, { status: 500 });
     }
 
     // -------------------------------------------------------------------------
-    // ÉTAPE 2 : TENTATIVE SYNCHRO SQL (BYPASS SI PRISMA EST INSTABLE OU UNDEFINED)
+    // ÉTAPE 2 : SYNCHRO SQL [FORGE_SQL]
     // -------------------------------------------------------------------------
     let sqlStatus = 'BYPASSED';
     let dbDiagnostic = 'NONE';
 
     try {
-      // Vérification ultra-prudente du client Prisma pour éviter l'erreur "Cannot read properties of undefined"
+      console.log(`💾 [FORGE_SQL] [STEP] [${traceId}] Tentative de synchronisation Neon...`);
       const p = prisma as any;
+      
       if (p && p.user && p.procedure) {
-        console.log(`💾 [FORGE_API] [${traceId}] TENTATIVE_SYNCHRO_SQL...`);
-        
         let authorId = session?.user?.id;
         
-        // Garantir un auteur valide via upsert
+        // Garantir un auteur système
+        console.log(`👤 [FORGE_SQL] [STEP] [${traceId}] Vérification de l'auteur...`);
         const systemAdmin = await p.user.upsert({
           where: { email: 'admin@visionode.local' },
           update: { approved: true },
@@ -84,9 +85,11 @@ export async function POST(request: NextRequest) {
           }
         });
 
-        if (!authorId) authorId = systemAdmin.id;
+        if (!authorId) {
+          console.log(`ℹ️ [FORGE_SQL] [INFO] [${traceId}] Session absente, utilisation de l'auteur système.`);
+          authorId = systemAdmin.id;
+        }
 
-        // Création de la procédure en base
         await p.procedure.create({
           data: {
             code,
@@ -105,28 +108,30 @@ export async function POST(request: NextRequest) {
         });
         
         sqlStatus = 'OK';
-        console.log(`✅ [FORGE_API] [${traceId}] SYNCHRO_SQL_RÉUSSIE`);
+        console.log(`✅ [FORGE_SQL] [SUCCESS] [${traceId}] Synchronisation SQL Neon réussie.`);
       } else {
         dbDiagnostic = 'PRISMA_CLIENT_INCOMPLETE';
-        console.warn(`⚠️ [FORGE_API] [${traceId}] Bypass SQL: Client Prisma incomplet ou modèles non générés.`);
+        console.warn(`⚠️ [FORGE_SQL] [BYPASS] [${traceId}] Bypass SQL: Modèles non trouvés dans le client.`);
       }
     } catch (e: any) {
       sqlStatus = 'FAILED_SILENT';
       dbDiagnostic = e.message;
-      console.warn(`⚠️ [FORGE_API] [${traceId}] ÉCHEC_SQL_MAIS_BYPASS_ACTIF:`, dbDiagnostic);
+      console.warn(`⚠️ [FORGE_SQL] [FAIL_BYPASS] [${traceId}] Échec Neon, mais continuation via Registre:`, dbDiagnostic);
     }
 
     // -------------------------------------------------------------------------
-    // ÉTAPE 3 : VECTORISATION RAG (ASYNCHRONE)
+    // ÉTAPE 3 : VECTORISATION [FORGE_RAG]
     // -------------------------------------------------------------------------
-    procedureRAG.indexProcedure({ code, title, steps, metadata } as any).catch(() => {});
+    console.log(`🧠 [FORGE_RAG] [STEP] [${traceId}] Déclenchement de la vectorisation IA...`);
+    procedureRAG.indexProcedure({ code, title, steps, metadata } as any).catch((err) => {
+      console.warn(`⚠️ [FORGE_RAG] [ERROR] [${traceId}] Vectorisation échouée :`, err.message);
+    });
 
-    // RÉPONSE : Toujours succès car l'archive physique est la preuve de travail.
     return NextResponse.json({
       success: true,
       message: sqlStatus === 'OK' 
         ? `Procédure "${title}" forgée et synchronisée.` 
-        : `Procédure "${title}" archivée dans le Registre Physique.`,
+        : `Procédure "${title}" archivée physiquement (Mode SQL Bypass).`,
       traceId,
       fsPath,
       sqlStatus,
@@ -134,16 +139,17 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error: any) {
-    console.error(`❌ [FORGE_API] [${traceId}] ERREUR_FATALE:`, error.message);
+    console.error(`❌ [FORGE_API] [FATAL] [${traceId}] Erreur imprévue:`, error.message);
     return NextResponse.json({ 
       success: false, 
-      message: `Erreur fatale de forge : ${error.message}`,
+      message: `Erreur fatale : ${error.message}`,
       traceId 
     }, { status: 500 });
   }
 }
 
 export async function GET() {
+  console.log(`🔍 [FORGE_API] [LIST] Lecture du registre complet.`);
   try {
     const procedures = await prisma.procedure.findMany({
       orderBy: { createdAt: 'desc' },

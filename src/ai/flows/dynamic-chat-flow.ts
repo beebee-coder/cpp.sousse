@@ -1,6 +1,6 @@
 /**
  * @fileOverview Flux de chat VisioNode Core V5.5.
- * Passage automatique vers les procédures dynamiques avec détection d'ID robuste.
+ * Passage automatique vers les procédures dynamiques avec logs [CHAT].
  */
 
 import Groq from 'groq-sdk';
@@ -36,6 +36,7 @@ type ChatOutput = {
 };
 
 async function expandQueryWithContext(message: string, history: ChatMessage[]): Promise<string> {
+  console.log(`🔍 [CHAT_RAG] [EXPAND] Tentative d'expansion de la requête : "${message.slice(0, 30)}..."`);
   if (history.length === 0 && message.length > 15) return message;
   try {
     const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
@@ -49,43 +50,51 @@ async function expandQueryWithContext(message: string, history: ChatMessage[]): 
       temperature: 0.1,
       max_tokens: 60
     });
-    return expansion.choices[0]?.message?.content?.trim() || message;
-  } catch (e) { return message; }
+    const result = expansion.choices[0]?.message?.content?.trim() || message;
+    console.log(`✅ [CHAT_RAG] [EXPAND] Requête reformulée : "${result}"`);
+    return result;
+  } catch (e) { 
+    console.warn(`⚠️ [CHAT_RAG] [EXPAND] Échec de l'expansion, utilisation de la requête originale.`);
+    return message; 
+  }
 }
 
 export async function dynamicChat(input: ChatInput): Promise<ChatOutput> {
+  const timestamp = new Date().toLocaleTimeString();
+  console.log(`🤖 [CHAT_LLM] [INIT] Traitement message utilisateur à ${timestamp}`);
+
   if (!input.message.trim()) throw new Error("Message vide");
   if (!process.env.GROQ_API_KEY) throw new Error("GROQ_API_KEY non configurée.");
 
   const systemState = await getSystemContextSummary();
   const expandedQuery = await expandQueryWithContext(input.message, input.history);
   
-  // Récupération RAG (Limite étendue pour capturer textes + images + procédures)
+  // Récupération RAG
+  console.log(`🔍 [CHAT_RAG] [SEARCH] Recherche dans les collections hybrides...`);
   const ragResults = await searchAcrossCollections(expandedQuery, 10);
+  console.log(`✅ [CHAT_RAG] [SEARCH] ${ragResults.length} résultats trouvés.`);
   
-  // Extraction d'un média potentiel si pertinent
   let detectedMedia: { url: string; type: 'image' | 'video' } | undefined = undefined;
-  // Extraction d'un ID de procédure pour le guide dynamique
   let detectedProcedureId: string | undefined = undefined;
   
   if (ragResults.length > 0) {
-    // Chercher une procédure en priorité (détection robuste via metadata ou ID)
     const procDoc = ragResults.find(r => r.metadata?.procedureId || r.metadata?.knowledgeId || r.id.startsWith('proc-'));
     if (procDoc) {
       detectedProcedureId = procDoc.metadata?.procedureId || procDoc.metadata?.knowledgeId || procDoc.id.replace('.json', '');
+      console.log(`🚀 [CHAT_NAV] [DETECT] Procédure identifiée : ${detectedProcedureId}`);
     }
 
-    // Chercher un média
     const mediaDoc = ragResults.find(r => r.metadata?.isMedia === true);
     if (mediaDoc && mediaDoc.metadata?.relPath) {
       try {
+        console.log(`🖼️ [CHAT_RAG] [MEDIA] Chargement de l'actif média : ${mediaDoc.metadata.relPath}`);
         const dataUri = await postgresClient.getFile(mediaDoc.metadata.relPath);
         detectedMedia = {
           url: dataUri,
           type: mediaDoc.metadata.mediaType || 'image'
         };
       } catch (e) {
-        console.warn("Échec chargement média RAG:", mediaDoc.metadata.relPath);
+        console.warn("⚠️ [CHAT_RAG] [MEDIA] Échec chargement média:", mediaDoc.metadata.relPath);
       }
     }
   }
@@ -117,6 +126,7 @@ CONSIGNES STRICTES :
       systemContent += `\n\n--- CONTEXTE RÉCUPÉRÉ (TEXTE ET MÉDIAS) ---\n${context}`;
     }
 
+    console.log(`📡 [CHAT_LLM] [STEP] Envoi au moteur Groq LPU (llama-3.3-70b)...`);
     const completion = await groq.chat.completions.create({
       messages: [
         { role: 'system', content: systemContent },
@@ -130,6 +140,7 @@ CONSIGNES STRICTES :
 
     const text = completion.choices[0]?.message?.content;
     if (text) {
+      console.log(`✅ [CHAT_LLM] [SUCCESS] Réponse générée.`);
       return { 
         text: text.trim(), 
         provider: `Groq LPU + Pro-Search V5.5`,
@@ -138,6 +149,7 @@ CONSIGNES STRICTES :
       };
     }
   } catch (err: any) {
+    console.error(`❌ [CHAT_LLM] [ERROR] Échec moteur Groq:`, err.message);
     throw new Error(`LIAISON_IA_ERREUR : ${err.message}`);
   }
 

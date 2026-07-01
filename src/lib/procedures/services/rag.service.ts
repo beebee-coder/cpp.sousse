@@ -1,5 +1,5 @@
 /**
- * @fileOverview Service RAG spécialisé pour les procédures industrielles.
+ * @fileOverview Service RAG spécialisé pour les procédures industrielles [RAG_VECTOR].
  * Version : Automatique et Obligatoire (Support Hybride Weaviate/Chroma).
  */
 
@@ -10,13 +10,12 @@ const IS_CLOUD = process.env.VERCEL === '1' || process.env.NODE_ENV === 'product
 
 export class ProcedureRAGService {
   /**
-   * Indexe une procédure de manière obligatoire.
+   * Indexe une procédure de manière obligatoire [RAG_INDEX].
    */
   async indexProcedure(procedure: FullProcedure): Promise<void> {
     const timestamp = new Date().toISOString();
-    console.log(`🧠 [RAG_SERVICE] Préparation indexation pour: ${procedure.code}`);
+    console.log(`🧠 [RAG_INDEX] [INIT] Préparation du découpage sémantique pour : ${procedure.code}`);
     
-    // Transtypage sécurisé des étapes Prisma (Json) vers notre interface locale
     const steps = (procedure.steps as unknown as ProcedureStep[]) || [];
 
     const chunks = [
@@ -43,9 +42,11 @@ export class ProcedureRAGService {
       }))
     ];
 
+    console.log(`🧠 [RAG_INDEX] [STEP] ${chunks.length} chunks générés pour vectorisation.`);
+
     try {
       if (IS_CLOUD) {
-        // En mode Cloud, on tente l'indexation Weaviate si configuré
+        console.log(`📡 [RAG_VECTOR] [CLOUD] Tentative d'indexation Weaviate Cloud...`);
         if (process.env.WEAVIATE_URL && process.env.WEAVIATE_API_KEY) {
           try {
             const { upsertKnowledgeItem } = await import('@/lib/weaviate/weaviate-knowledge');
@@ -61,29 +62,33 @@ export class ProcedureRAGService {
               isPublic: true,
               createdAt: timestamp
             });
-            console.log(`✅ [RAG_SERVICE] Vectorisé dans Weaviate Cloud.`);
+            console.log(`✅ [RAG_VECTOR] [CLOUD_SUCCESS] Procédure vectorisée dans Weaviate.`);
           } catch (e: any) {
-             console.warn("[RAG_SERVICE] Échec Weaviate Cloud:", e.message);
+             console.warn("⚠️ [RAG_VECTOR] [CLOUD_ERROR] Échec Weaviate :", e.message);
           }
         }
       } else {
-        // En mode Local, on utilise ChromaDB
+        console.log(`🧠 [RAG_VECTOR] [LOCAL] Tentative d'indexation ChromaDB local...`);
         await upsertChroma('industrial_procedures', chunks);
-        console.log(`✅ [RAG_SERVICE] Vectorisé dans ChromaDB local.`);
+        console.log(`✅ [RAG_VECTOR] [LOCAL_SUCCESS] Procédure vectorisée dans ChromaDB.`);
       }
     } catch (e: any) {
-      console.warn(`⚠️ [RAG_SERVICE] Erreur non-fatale lors de la vectorisation: ${e.message}`);
+      console.warn(`⚠️ [RAG_VECTOR] [ERROR] Erreur non-fatale lors de l'indexation: ${e.message}`);
     }
   }
 
   async findHelp(query: string, procedureId?: string): Promise<SearchResult[]> {
+    console.log(`🔍 [RAG_VECTOR] [SEARCH] Recherche sémantique d'aide pour : "${query.slice(0, 30)}..."`);
     try {
       const results = await searchAcrossCollections(query, 5);
       if (procedureId) {
-        return results.filter(r => r.metadata?.procedureId === procedureId || !r.metadata?.procedureId);
+        const filtered = results.filter(r => r.metadata?.procedureId === procedureId || !r.metadata?.procedureId);
+        console.log(`✅ [RAG_VECTOR] [SEARCH_SUCCESS] ${filtered.length} résultats pertinents trouvés.`);
+        return filtered;
       }
       return results;
     } catch (e) {
+      console.error(`❌ [RAG_VECTOR] [SEARCH_ERROR] Échec recherche aide.`);
       return [];
     }
   }

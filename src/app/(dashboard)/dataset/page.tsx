@@ -124,6 +124,7 @@ export default function DatasetPage() {
   useEffect(() => { setMounted(true); }, []);
 
   const startCamera = async (type: 'image' | 'video', stepIndex: number) => {
+    console.log(`[FORGE_FRONT] [CAMERA] Ouverture du flux : ${type} pour l'étape ${stepIndex + 1}`);
     setCameraType(type);
     setShowCamera({ isOpen: true, stepIndex });
     try {
@@ -134,6 +135,7 @@ export default function DatasetPage() {
       streamRef.current = stream;
       if (videoRef.current) videoRef.current.srcObject = stream;
     } catch (err) {
+      console.error(`[FORGE_FRONT] [CAMERA] Erreur accès matériel :`, err);
       toast({ title: "Accès Caméra Refusé", variant: "destructive" });
       setShowCamera({ isOpen: false, stepIndex: null });
     }
@@ -158,6 +160,7 @@ export default function DatasetPage() {
     next[showCamera.stepIndex].media = data;
     next[showCamera.stepIndex].mediaType = 'image';
     setProcSteps(next);
+    console.log(`[FORGE_FRONT] [CAMERA] Photo capturée pour l'étape ${showCamera.stepIndex + 1}`);
     stopCamera();
   };
 
@@ -182,11 +185,13 @@ export default function DatasetPage() {
     recorder.start();
     mediaRecorderRef.current = recorder;
     setIsRecording(true);
+    console.log(`[FORGE_FRONT] [CAMERA] Enregistrement vidéo démarré.`);
   };
 
   const stopRecording = () => {
     if (mediaRecorderRef.current) {
       mediaRecorderRef.current.stop();
+      console.log(`[FORGE_FRONT] [CAMERA] Enregistrement vidéo terminé.`);
       stopCamera();
     }
   };
@@ -195,7 +200,10 @@ export default function DatasetPage() {
     e.preventDefault();
     if (isUploading) return;
 
+    const timestamp = new Date().toLocaleTimeString();
+
     if (mode === 'qa') {
+      console.log(`[FORGE_FRONT] [INIT] Déclenchement indexation Savoir QA à ${timestamp}`);
       if (!question.trim() || !answer.trim()) {
         toast({ title: "Données incomplètes", variant: "destructive" });
         return;
@@ -209,24 +217,26 @@ export default function DatasetPage() {
         });
         const data = await res.json();
         if (res.ok && data.success) {
+          console.log(`[FORGE_FRONT] [SUCCESS] Savoir QA indexé avec succès.`);
           toast({ title: "Savoir sémantique indexé ✅" });
           setQuestion(''); setAnswer(''); setPhraseBuffers({});
         } else {
-          throw new Error(data.message || "Échec de liaison BDD");
+          throw new Error(data.message || "Erreur Backend");
         }
       } catch (err: any) {
+        console.error(`[FORGE_FRONT] [ERROR] Échec indexation QA :`, err.message);
         toast({ title: "Échec de l'indexation", description: err.message, variant: "destructive" });
       } finally { setIsUploading(false); }
     } else {
+      console.log(`[FORGE_FRONT] [INIT] Déclenchement Forge Procédure à ${timestamp}`);
       if (!procTitle.trim() || procSteps.some(s => !s.title.trim())) {
         toast({ title: "Données manquantes", description: "Titre et Séquences requis.", variant: "destructive" });
         return;
       }
       setIsUploading(true);
       
-      console.log("🚀 [FORGE_FRONT] ASSEMBLAGE_PAYLOAD_INDUSTRIEL...");
-
       try {
+        console.log(`[FORGE_FRONT] [STEP] Assemblage de l'objet industriel (${procSteps.length} étapes)...`);
         const formattedSteps = procSteps.map((s, i) => ({
           id: `step-${Date.now()}-${i}`,
           order: i + 1,
@@ -264,6 +274,7 @@ export default function DatasetPage() {
           }
         };
 
+        console.log(`[FORGE_FRONT] [STEP] Transmission vers /api/procedures...`);
         const res = await fetch('/api/procedures', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -273,36 +284,19 @@ export default function DatasetPage() {
         const data = await res.json();
         
         if (res.ok && data.success) {
-          const successMsg = data.sqlStatus === 'BYPASSED' 
-            ? "Forge réussie (Mode Registre Physique)" 
-            : "Forge réussie (Mode Hybride)";
-            
+          console.log(`[FORGE_FRONT] [SUCCESS] Forge réussie. Statut SQL: ${data.sqlStatus}. Trace: ${data.traceId}`);
           toast({ 
-            title: successMsg, 
-            description: data.message || `L'actif "${procTitle}" est archivé.` 
+            title: "Forge de l'actif réussie", 
+            description: `Trace: ${data.traceId} | Registre mis à jour.` 
           });
-          
-          if (data.sqlStatus === 'BYPASSED') {
-            console.warn("⚠️ [FORGE_FRONT] Bypass SQL détecté :", data.diagnostic);
-          }
-
           router.push('/procedures');
         } else {
-          const errorMsg = data.message || "Échec de la forge industrielle.";
-          console.error("❌ [FORGE_FRONT] REJET_BACKEND:", errorMsg);
-          toast({ 
-            title: "Échec de la Forge", 
-            description: errorMsg, 
-            variant: "destructive" 
-          });
+          console.error(`[FORGE_FRONT] [REJET] Le backend a refusé la forge :`, data.message);
+          toast({ title: "Échec de la Forge", description: data.message, variant: "destructive" });
         }
       } catch (err: any) {
-        console.error("❌ [FORGE_FRONT] ERREUR_CRITIQUE:", err.message);
-        toast({ 
-          title: "Échec critique", 
-          description: "Le centre de forge est injoignable.", 
-          variant: "destructive" 
-        });
+        console.error(`[FORGE_FRONT] [FATAL] Erreur de liaison réseau :`, err.message);
+        toast({ title: "Échec critique", description: "Liaison au centre de forge interrompue.", variant: "destructive" });
       } finally { setIsUploading(false); }
     }
   };
@@ -341,9 +335,9 @@ export default function DatasetPage() {
             <Card className="p-4 bg-primary/5 border border-primary/20 flex items-center gap-4">
                <Zap className="w-8 h-8 text-primary" />
                <div className="space-y-1">
-                 <p className="text-[10px] font-code text-white uppercase font-bold">Flux d'archivage résilient</p>
+                 <p className="text-[10px] font-code text-white uppercase font-bold">Flux d'archivage structuré</p>
                  <p className="text-[9px] font-code text-muted-foreground uppercase leading-tight">
-                   Liaison prioritaire vers Registre Physique .registry/ (Bypass SQL activé)
+                   Liaison active vers le registre physique et l'indexation sémantique Neon.
                  </p>
                </div>
             </Card>

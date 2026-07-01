@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 
 /**
- * @fileOverview Liaison physique pour le Registre local.
+ * @fileOverview Liaison physique pour le Registre local [REGISTRY_FS].
  * Utilise un dossier caché '.registry' pour éviter les rechargements Next.js intempestifs.
  */
 
@@ -11,20 +11,19 @@ const REGISTRY_ROOT = path.join(process.cwd(), '.registry');
 const ensureRegistry = () => {
   try {
     if (!fs.existsSync(REGISTRY_ROOT)) {
-      console.log("📁 [PG_CLIENT] Création racine .registry/");
+      console.log("📁 [REGISTRY_FS] [INIT] Création racine .registry/");
       fs.mkdirSync(REGISTRY_ROOT, { recursive: true });
     }
-    // Dossiers de base du registre industriel
     const dirs = ['items', 'bank', 'procedures'];
     dirs.forEach(dir => {
       const target = path.join(REGISTRY_ROOT, dir);
       if (!fs.existsSync(target)) {
-        console.log(`📁 [PG_CLIENT] Création dossier base: ${dir}`);
+        console.log(`📁 [REGISTRY_FS] [INIT] Création dossier base: ${dir}`);
         fs.mkdirSync(target, { recursive: true });
       }
     });
   } catch (e) {
-    console.error("❌ [PG_CLIENT] Erreur accès disque critique :", e);
+    console.error("❌ [REGISTRY_FS] [ERROR] Échec accès disque critique :", e);
   }
 };
 
@@ -74,9 +73,13 @@ export const postgresClient = {
 
   async getFile(relPath: string) {
     ensureRegistry();
+    console.log(`📖 [REGISTRY_FS] [READ] Lecture : ${relPath}`);
     const cleanRelPath = relPath.startsWith('/') ? relPath.substring(1) : relPath;
     const fullPath = path.join(REGISTRY_ROOT, cleanRelPath);
-    if (!fs.existsSync(fullPath)) throw new Error("FICHIER_INTROUVABLE");
+    if (!fs.existsSync(fullPath)) {
+       console.error(`❌ [REGISTRY_FS] [READ_ERROR] Introuvable : ${fullPath}`);
+       throw new Error("FICHIER_INTROUVABLE");
+    }
     
     const ext = path.extname(fullPath).toLowerCase();
     const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg'];
@@ -102,12 +105,10 @@ export const postgresClient = {
     const cleanRelPath = relPath.startsWith('/') ? relPath.substring(1) : relPath;
     const fullPath = path.join(REGISTRY_ROOT, cleanRelPath);
     const dir = path.dirname(fullPath);
-    if (!fs.existsSync(dir)) {
-      console.log(`📁 [PG_CLIENT] Création auto de répertoire: ${dir}`);
-      fs.mkdirSync(dir, { recursive: true });
-    }
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    
     fs.writeFileSync(fullPath, content, 'utf8');
-    console.log(`💾 [PG_CLIENT] Fichier écrit: ${relPath} (${content.length} octets)`);
+    console.log(`💾 [REGISTRY_FS] [WRITE] Succès : ${relPath} (${content.length} bytes)`);
   },
 
   async saveAsset(relPath: string, base64Data: string) {
@@ -120,7 +121,7 @@ export const postgresClient = {
     const base64Content = base64Data.split(';base64,').pop();
     if (base64Content) {
       fs.writeFileSync(fullPath, Buffer.from(base64Content, 'base64'));
-      console.log(`💾 [PG_CLIENT] Actif binaire écrit: ${relPath}`);
+      console.log(`💾 [REGISTRY_FS] [WRITE_ASSET] Succès binaire : ${relPath}`);
     }
   },
 
@@ -130,7 +131,7 @@ export const postgresClient = {
     const fullPath = path.join(REGISTRY_ROOT, cleanRelPath);
     if (!fs.existsSync(fullPath)) {
       fs.mkdirSync(fullPath, { recursive: true });
-      console.log(`📁 [PG_CLIENT] Répertoire créé: ${relPath}`);
+      console.log(`📁 [REGISTRY_FS] [MKDIR] Créé : ${relPath}`);
     }
   },
 
@@ -142,7 +143,7 @@ export const postgresClient = {
     const newFullPath = path.join(dir, newName);
     if (fs.existsSync(oldFullPath)) {
       fs.renameSync(oldFullPath, newFullPath);
-      console.log(`🔄 [PG_CLIENT] Renommage: ${oldPath} -> ${newName}`);
+      console.log(`🔄 [REGISTRY_FS] [RENAME] ${oldPath} -> ${newName}`);
     } else {
       throw new Error("SOURCE_INTROUVABLE");
     }
@@ -158,7 +159,7 @@ export const postgresClient = {
     const fullPath = path.join(REGISTRY_ROOT, safePath);
     if (fs.existsSync(fullPath)) {
       fs.rmSync(fullPath, { recursive: true, force: true });
-      console.log(`🗑️ [PG_CLIENT] Élément supprimé: ${relPath}`);
+      console.log(`🗑️ [REGISTRY_FS] [DELETE] Supprimé : ${relPath}`);
     }
   },
 
@@ -184,12 +185,12 @@ export const postgresClient = {
         details: parsed.details || "",
         title: parsed.title || baseName
       }, null, 2));
-      console.log(`📥 [PG_CLIENT] Cloud Item indexé: ${safeId}.json`);
+      console.log(`📥 [REGISTRY_FS] [UPSERT_CLOUD] Item indexé : ${safeId}.json`);
     });
   },
 
   async runDiagnostic() {
-    console.log("📋 [PG_CLIENT] Diagnostic du registre physique...");
+    console.log("📋 [REGISTRY_FS] [DIAGNOSTIC] Lancement de l'audit physique...");
     const report = {
       rootExists: fs.existsSync(REGISTRY_ROOT),
       subdirs: {
@@ -203,7 +204,7 @@ export const postgresClient = {
         procedures: fs.existsSync(path.join(REGISTRY_ROOT, 'procedures')) ? fs.readdirSync(path.join(REGISTRY_ROOT, 'procedures')).length : 0
       }
     };
-    console.log("✅ [PG_CLIENT] Diagnostic terminé:", JSON.stringify(report));
+    console.log("✅ [REGISTRY_FS] [DIAGNOSTIC] Audit terminé :", JSON.stringify(report));
     return report;
   }
 };
