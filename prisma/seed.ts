@@ -1,122 +1,120 @@
-import { prisma } from '../src/lib/db/prisma-client';
+import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import fs from 'fs';
+import path from 'path';
 
-const SALT_ROUNDS = 12;
+const prisma = new PrismaClient();
 
 async function main() {
-  console.log('🌱 Début du seed de la base de données...');
+  console.log('🌱 Amorçage de la base de données VisioNode...');
 
-  // --- Utilisateurs ---
-  const usersData = [
-    {
-      firstName: 'Admin',
-      lastName: 'System',
+  // 1. Création des utilisateurs de référence
+  const adminPassword = await bcrypt.hash('Admin@2024!', 12);
+  const chefPassword = await bcrypt.hash('Chef@2024!', 12);
+
+  const admin = await prisma.user.upsert({
+    where: { email: 'admin@visionode.local' },
+    update: {},
+    create: {
+      id: 'admin-root',
+      firstName: 'System',
+      lastName: 'Administrator',
       email: 'admin@visionode.local',
-      password: 'Admin@2024!',
+      password: adminPassword,
       role: 'admin',
       approved: true,
     },
-    {
+  });
+
+  const chef = await prisma.user.upsert({
+    where: { email: 'chef@visionode.local' },
+    update: {},
+    create: {
+      id: 'chef-001',
       firstName: 'Chef',
       lastName: 'Bloc A',
       email: 'chef@visionode.local',
-      password: 'Chef@2024!',
+      password: chefPassword,
       role: 'chef-de-bloc',
       approved: true,
     },
-    {
-      firstName: 'User',
-      lastName: 'Test',
-      email: 'user@visionode.local',
-      password: 'User@2024!',
-      role: 'user',
-      approved: false, // En attente d'approbation admin
-    },
-  ];
-
-  for (const u of usersData) {
-    const hashedPassword = await bcrypt.hash(u.password, SALT_ROUNDS);
-    const user = await prisma.user.upsert({
-      where: { email: u.email },
-      update: {
-        password: hashedPassword,
-        role: u.role,
-        approved: u.approved,
-      },
-      create: {
-        firstName: u.firstName,
-        lastName: u.lastName,
-        email: u.email,
-        password: hashedPassword,
-        role: u.role,
-        approved: u.approved,
-      },
-    });
-    console.log(`✅ Utilisateur créé/mis à jour : ${user.email} (${user.role})`);
-  }
-
-  // --- Récupération du chef pour associer des connaissances ---
-  const chef = await prisma.user.findUnique({
-    where: { email: 'chef@visionode.local' },
   });
 
-  if (chef) {
-    const knowledgeData = [
-      {
-        userId: chef.id,
-        type: 'qa',
-        title: 'Comment redémarrer la pompe P-102 ?',
-        question: 'Comment redémarrer la pompe P-102 en toute sécurité ?',
-        answer:
-          'Assurez-vous que la vanne V-10 est fermée. Appuyez sur le bouton vert du panneau principal, puis ouvrez la vanne V-10 progressivement à 20%.',
-        tags: ['pompe', 'sécurité', 'démarrage'],
-        category: 'Maintenance',
-        difficulty: 'medium',
-        isPublic: true,
-      },
-      {
-        userId: chef.id,
-        type: 'procedure',
-        title: "Procédure d'inspection du compresseur C-200",
-        steps: [
-          'Isoler électriquement le compresseur (Consignation).',
-          "Vérifier le niveau d'huile de lubrification.",
-          "Inspecter visuellement les courroies d'entraînement.",
-          "Nettoyer le filtre d'aspiration.",
-          'Déconsigner et faire un test de rotation à vide.',
-        ],
-        tags: ['compresseur', 'inspection', 'routine'],
-        category: 'Inspection',
-        difficulty: 'hard',
-        isPublic: true,
-      },
-    ];
+  console.log('✅ Utilisateurs créés.');
 
-    for (const k of knowledgeData) {
-      // Cherche d'abord un existant, puis crée si absent
-      const existing = await prisma.knowledgeItem.findFirst({
-        where: { title: k.title },
+  // 2. Importation de la procédure CRF réelle
+  try {
+    const crfPath = path.join(process.cwd(), 'data', 'procedure-demarrage-CRF.json');
+    if (fs.existsSync(crfPath)) {
+      const crfData = JSON.parse(fs.readFileSync(crfPath, 'utf8'));
+
+      await prisma.procedure.upsert({
+        where: { code: crfData.metadata.code },
+        update: {
+          steps: crfData.steps,
+          prerequisites: crfData.prerequisites,
+          metadata: crfData.metadata,
+        },
+        create: {
+          id: crfData._id || 'proc-crf-startup-001',
+          code: crfData.metadata.code,
+          title: crfData.metadata.title,
+          description: 'Système de Réfrigération Principal',
+          category: 'STARTUP',
+          department: 'PRODUCTION',
+          criticality: 'CRITICAL',
+          version: crfData.metadata.version,
+          status: 'APPROVED',
+          prerequisites: crfData.prerequisites,
+          steps: crfData.steps,
+          parameters: crfData.parameters,
+          postExecution: crfData.postExecution,
+          metadata: crfData.metadata,
+          authorId: admin.id,
+        },
       });
-
-      if (!existing) {
-        const item = await prisma.knowledgeItem.create({ data: k as any });
-        console.log(`✅ Connaissance créée : ${item.title} (${item.type})`);
-      } else {
-        console.log(`ℹ️  Connaissance déjà existante : ${existing.title}`);
-      }
+      console.log('✅ Procédure CRF-START-001 injectée avec succès.');
     }
+  } catch (err: any) {
+    console.warn('⚠️ Échec injection procédure CRF:', err.message);
   }
 
-  console.log('\n🌱 Seed terminé avec succès !');
-  console.log('\n📋 Comptes créés :');
-  console.log('   admin@visionode.local   / Admin@2024!   (rôle: admin)');
-  console.log('   chef@visionode.local    / Chef@2024!    (rôle: chef-de-bloc)');
-  console.log('   user@visionode.local    / User@2024!    (rôle: user, en attente)');
+  // 3. Connaissances sémantiques initiales
+  const knowledge = [
+    {
+      title: 'Sécurité POMPE CRF',
+      type: 'qa',
+      question: 'Quelles sont les EPI obligatoires pour la zone CRF ?',
+      answer: 'Casque, gants nitrile, lunettes de protection et chaussures de sécurité S3.',
+      tags: ['sécurité', 'CRF', 'EPI'],
+      category: 'Sécurité',
+    },
+    {
+      title: 'Procédure Initialisation Registre',
+      type: 'qa',
+      question: 'Comment initialiser le registre central ?',
+      answer: 'Vérifiez l\'intégrité des fichiers .json dans le dossier .registry, puis lancez la synchronisation via le panneau Cloud.',
+      tags: ['registre', 'système'],
+      category: 'Opération',
+    }
+  ];
+
+  for (const k of knowledge) {
+    await prisma.knowledgeItem.create({
+      data: {
+        ...k,
+        userId: admin.id,
+      },
+    });
+  }
+
+  console.log('✅ Base de connaissances initialisée.');
+  console.log('🚀 Système prêt pour l\'audit industriel.');
 }
 
 main()
   .catch((e) => {
-    console.error('❌ Erreur lors du seed :', e);
+    console.error('❌ Erreur critique lors du seed :', e);
     process.exit(1);
   })
   .finally(async () => {
