@@ -1,4 +1,3 @@
-
 /**
  * @fileOverview Service RAG spécialisé pour les procédures industrielles.
  * Version : Automatique et Obligatoire (Support Hybride Weaviate/Chroma).
@@ -21,7 +20,7 @@ export class ProcedureRAGService {
     const chunks = [
       {
         id: `proc-meta-${procedure.id}`,
-        content: `Procédure Industrielle: ${procedure.title} [CODE: ${procedure.code}]. Catégorie: ${procedure.metadata?.category || 'OP'}. Département: ${procedure.metadata?.department || 'PROD'}. Criticité: ${procedure.metadata?.criticality || 'MED'}.`,
+        content: `Procédure Industrielle: ${procedure.title} [CODE: ${procedure.code}]. Catégorie: ${procedure.category || 'OP'}. Département: ${procedure.department || 'PROD'}. Criticité: ${procedure.criticality || 'MED'}.`,
         metadata: { 
           procedureId: procedure.id, 
           type: 'metadata', 
@@ -44,35 +43,35 @@ export class ProcedureRAGService {
 
     try {
       if (IS_CLOUD) {
-        // Vérifier si Weaviate est configuré avant de tenter l'importation
-        if (!process.env.WEAVIATE_URL || !process.env.WEAVIATE_API_KEY) {
-          console.warn(`[RAG_CLOUD] Skip: Configuration Weaviate manquante pour ${procedure.code}`);
-          return;
+        // En mode cloud, on essaie d'indexer dans Weaviate si les clés sont là
+        if (process.env.WEAVIATE_URL && process.env.WEAVIATE_API_KEY) {
+          try {
+            const { upsertKnowledgeItem } = await import('@/lib/weaviate/weaviate-knowledge');
+            await upsertKnowledgeItem({
+              knowledgeId: procedure.id,
+              userId: procedure.authorId || 'system',
+              type: 'procedure',
+              title: procedure.title,
+              content: chunks.map(c => c.content).join('\n'),
+              tags: (procedure.metadata as any)?.tags || [],
+              category: procedure.category || 'OPERATION',
+              difficulty: procedure.criticality || 'MEDIUM',
+              isPublic: true,
+              createdAt: new Date().toISOString()
+            });
+            console.log(`📡 [RAG_CLOUD] Procédure ${procedure.code} vectorisée dans Weaviate.`);
+          } catch (weaviateErr: any) {
+            console.warn(`[RAG_CLOUD_WARN] Échec Weaviate: ${weaviateErr.message}`);
+          }
         }
-
-        // Indexation Weaviate Cloud via l'API interne pour les procédures
-        const { upsertKnowledgeItem } = await import('@/lib/weaviate/weaviate-knowledge');
-        await upsertKnowledgeItem({
-          knowledgeId: procedure.id,
-          userId: procedure.authorId || 'system',
-          type: 'procedure',
-          title: procedure.title,
-          content: chunks.map(c => c.content).join('\n'),
-          tags: (procedure.metadata as any)?.tags || [],
-          category: procedure.category || 'OPERATION',
-          difficulty: procedure.criticality || 'MEDIUM',
-          isPublic: true,
-          createdAt: new Date().toISOString()
-        });
-        console.log(`📡 [RAG_CLOUD] Procédure ${procedure.code} vectorisée dans Weaviate.`);
       } else {
-        // Indexation ChromaDB Local
+        // Indexation ChromaDB Local (obligatoire pour le mode natif)
         await upsertChroma('industrial_procedures', chunks);
         console.log(`🧠 [RAG_LOCAL] Procédure ${procedure.code} vectorisée dans ChromaDB.`);
       }
     } catch (e: any) {
       console.error(`❌ [RAG_ERROR] Échec de vectorisation pour ${procedure.code}:`, e.message);
-      // On ne jette plus l'erreur pour ne pas bloquer le flux principal
+      // On ne jette plus l'erreur pour ne pas bloquer le flux principal de forge
     }
   }
 

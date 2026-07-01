@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from 'react';
@@ -63,10 +62,10 @@ export default function DatasetPage() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
 
-  // Tampon pour la dictée
+  // Tampon pour la dictée vocale
   const [phraseBuffers, setPhraseBuffers] = useState<Record<string, string[]>>({});
   
-  // Champs
+  // Champs Formulaire
   const [question, setQuestion] = useState('');
   const [answer, setAnswer] = useState('');
   const [procTitle, setProcTitle] = useState('');
@@ -132,6 +131,7 @@ export default function DatasetPage() {
 
   useEffect(() => { setMounted(true); }, []);
 
+  // --- LOGIQUE MÉDIA ---
   const startCamera = async (type: 'image' | 'video', stepIndex: number) => {
     setCameraType(type);
     setShowCamera({ isOpen: true, stepIndex });
@@ -198,6 +198,7 @@ export default function DatasetPage() {
     }
   };
 
+  // --- SOUMISSION ---
   const handleAddItem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isUploading) return;
@@ -216,7 +217,7 @@ export default function DatasetPage() {
         });
         const data = await res.json();
         if (res.ok && data.success) {
-          toast({ title: "Savoir sémantique indexé", description: "L'entrée Q/R a été enregistrée en BDD Web." });
+          toast({ title: "Savoir sémantique indexé", description: "L'entrée Q/R a été enregistrée avec succès." });
           setQuestion(''); setAnswer(''); setPhraseBuffers({});
         } else {
           throw new Error(data.error || "Erreur de liaison BDD");
@@ -235,7 +236,7 @@ export default function DatasetPage() {
           id: `step-${Date.now()}-${i}`,
           order: i + 1,
           title: s.title,
-          description: s.description || "Consigne technique standard.",
+          description: s.description || "Instruction technique standard.",
           duration: { 
             value: parseInt(s.duration) || 60, 
             unit: "seconds", 
@@ -245,7 +246,7 @@ export default function DatasetPage() {
           action: { 
             type: "confirmation", 
             instruction: s.description, 
-            ui: { component: "action_button", label: "Valider Séquence", icon: "check" } 
+            ui: { component: "action_button", label: "Valider", icon: "check" } 
           },
           validation: {
             conditions: s.conditions ? [{ 
@@ -280,10 +281,7 @@ export default function DatasetPage() {
 
         const data = await res.json();
         if (data.success) {
-          toast({ 
-            title: "Procédure forgée et sécurisée", 
-            description: "Enregistrée en BDD Web et archivée dans le Registre." 
-          });
+          toast({ title: "Procédure forgée", description: "Enregistrée dans la base d'audit et le registre physique." });
           router.push('/procedures');
         } else {
           throw new Error(data.message || data.error || "Erreur serveur de forge");
@@ -314,9 +312,9 @@ export default function DatasetPage() {
               className={cn("h-9 text-[9px] font-code uppercase", voice.isListening && "bg-red-500/10 text-red-500 border-red-500/40")}
             >
               {voice.isListening ? <Sparkles className="w-3.5 h-3.5 mr-2 animate-pulse" /> : <Mic className="w-3.5 h-3.5 mr-2" />}
-              Assistant {voice.isListening ? "ÉCOUTE" : "VEILLE"}
+              {voice.isListening ? "Dictée Active" : "Dictée OFF"}
             </Button>
-            <div className="flex bg-muted/30 p-1 rounded-sm border border-border shadow-inner">
+            <div className="flex bg-muted/30 p-1 rounded-sm border border-border">
               <button onClick={() => setMode('qa')} className={cn("px-4 py-1 text-[9px] uppercase rounded-sm font-bold transition-all", mode === 'qa' ? "bg-primary text-primary-foreground shadow-lg" : "text-muted-foreground hover:text-foreground")}>Q/R</button>
               <button onClick={() => setMode('procedure')} className={cn("px-4 py-1 text-[9px] uppercase rounded-sm font-bold transition-all", mode === 'procedure' ? "bg-secondary text-secondary-foreground shadow-lg" : "text-muted-foreground hover:text-foreground")}>Procédure</button>
             </div>
@@ -324,13 +322,13 @@ export default function DatasetPage() {
         </header>
 
         <div className="flex-1 overflow-y-auto terminal-scroll p-4 lg:p-8">
-          <form onSubmit={handleAddItem} className="max-w-5xl mx-auto space-y-8 pb-12">
+          <form onSubmit={handleAddItem} className="max-w-5xl mx-auto space-y-8 pb-20">
             <Card className="p-4 bg-primary/5 border border-primary/20 flex items-center gap-4 shadow-2xl">
                <Zap className="w-8 h-8 text-primary" />
                <div className="space-y-1">
                  <p className="text-[10px] font-code text-white uppercase font-bold">Liaison de Données Critique</p>
                  <p className="text-[9px] font-code text-muted-foreground uppercase leading-tight">
-                   L'enregistrement est atomique : Synchronisation immédiate vers Neon (Cloud) et génération automatique du fichier Registre physique pour les terminaux hors-ligne.
+                   Chaque forge génère un fichier atomique dans le Registre Physique pour garantir la disponibilité hors-ligne.
                  </p>
                </div>
             </Card>
@@ -345,7 +343,7 @@ export default function DatasetPage() {
                       onChange={(e) => setQuestion(e.target.value)} 
                       onFocus={() => setActiveUIField({ type: 'question' })} 
                       placeholder="DÉTAILLEZ L'ANOMALIE..." 
-                      className="h-64 bg-black/40 font-code text-xs uppercase border-primary/20 focus:border-primary/50" 
+                      className="h-64 bg-black/40 font-code text-xs uppercase border-primary/20" 
                     />
                   </div>
                   <div className="space-y-4">
@@ -355,32 +353,32 @@ export default function DatasetPage() {
                       onChange={(e) => setAnswer(e.target.value)} 
                       onFocus={() => setActiveUIField({ type: 'answer' })} 
                       placeholder="DÉTAILLEZ LA RÉSOLUTION..." 
-                      className="h-64 bg-black/40 font-code text-xs uppercase border-secondary/20 focus:border-secondary/50" 
+                      className="h-64 bg-black/40 font-code text-xs uppercase border-secondary/20" 
                     />
                   </div>
                 </div>
               ) : (
                 <>
                   <div className="space-y-4 animate-in fade-in duration-500">
-                    <label className="text-[10px] font-bold text-primary uppercase tracking-widest block">Titre de la procédure industrielle</label>
+                    <label className="text-[10px] font-bold text-primary uppercase tracking-widest block">Titre de la procédure</label>
                     <Input 
                       value={procTitle} 
                       onChange={(e) => setProcTitle(e.target.value)} 
                       onFocus={() => setActiveUIField({ type: 'procTitle' })} 
-                      placeholder="EX: DÉMARRAGE POMPE CENTRIFUGE CRF-101..." 
-                      className="bg-black/60 uppercase h-14 text-sm font-bold border-primary/30 shadow-xl focus:ring-1 focus:ring-primary" 
+                      placeholder="EX: DÉMARRAGE POMPE CRF-101..." 
+                      className="bg-black/60 uppercase h-14 text-sm font-bold border-primary/30" 
                     />
                   </div>
 
                   <div className="space-y-6">
                     {procSteps.map((step, index) => (
-                      <Card key={index} className="p-6 border-border bg-black/30 space-y-6 group transition-all hover:border-primary/20 shadow-xl relative overflow-hidden">
+                      <Card key={index} className="p-6 border-border bg-black/30 space-y-6 relative overflow-hidden group">
                         <div className="absolute top-0 left-0 w-1 h-full bg-secondary/30" />
                         
                         <div className="flex justify-between items-center border-b border-border/50 pb-3">
                           <div className="flex items-center gap-3">
                              <div className="w-7 h-7 rounded-full bg-secondary/10 border border-secondary/30 flex items-center justify-center text-[11px] font-bold text-secondary font-code">{index + 1}</div>
-                             <span className="text-[10px] font-bold text-white uppercase tracking-wider">Séquence Opérationnelle</span>
+                             <span className="text-[10px] font-bold text-white uppercase tracking-wider">Séquence</span>
                           </div>
                           <div className="flex items-center gap-4">
                              <div className="flex items-center gap-2 bg-muted/20 px-3 py-1 rounded-sm border border-border">
@@ -415,7 +413,7 @@ export default function DatasetPage() {
                               />
                             </div>
                             <div className="space-y-1.5">
-                              <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Consigne technique détaillée</p>
+                              <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Description technique</p>
                               <Textarea 
                                 value={step.description} 
                                 onFocus={() => setActiveUIField({ type: 'stepDescription', index })} 
@@ -428,7 +426,7 @@ export default function DatasetPage() {
                           <div className="space-y-6">
                             <div className="grid grid-cols-2 gap-4">
                               <div className="space-y-1.5">
-                                <p className="text-[9px] font-bold text-primary uppercase tracking-widest">Critère Validation</p>
+                                <p className="text-[9px] font-bold text-primary uppercase tracking-widest">Validation</p>
                                 <Input 
                                   value={step.conditions} 
                                   onChange={(e) => { const n = [...procSteps]; n[index].conditions = e.target.value; setProcSteps(n); }} 
@@ -437,7 +435,7 @@ export default function DatasetPage() {
                                 />
                               </div>
                               <div className="space-y-1.5">
-                                <p className="text-[9px] font-bold text-destructive uppercase tracking-widest">Alerte Critique</p>
+                                <p className="text-[9px] font-bold text-destructive uppercase tracking-widest">Alerte</p>
                                 <Input 
                                   value={step.alarms} 
                                   onChange={(e) => { const n = [...procSteps]; n[index].alarms = e.target.value; setProcSteps(n); }} 
@@ -448,7 +446,7 @@ export default function DatasetPage() {
                             </div>
 
                             <div className="space-y-2">
-                              <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Preuves Visuelles Directes</p>
+                              <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Capture Multimédia</p>
                               <div className="flex gap-2">
                                 {!step.media ? (
                                   <>
@@ -457,7 +455,7 @@ export default function DatasetPage() {
                                       variant="outline" 
                                       size="sm" 
                                       onClick={() => startCamera('image', index)} 
-                                      className="flex-1 h-12 text-[9px] border-dashed border-border hover:bg-primary/5 hover:border-primary/40 transition-all"
+                                      className="flex-1 h-12 text-[9px] border-dashed border-border hover:border-primary/40"
                                     >
                                       <Camera className="w-4 h-4 mr-2 text-primary" /> PHOTO
                                     </Button>
@@ -466,13 +464,13 @@ export default function DatasetPage() {
                                       variant="outline" 
                                       size="sm" 
                                       onClick={() => startCamera('video', index)} 
-                                      className="flex-1 h-12 text-[9px] border-dashed border-border hover:bg-secondary/5 hover:border-secondary/40 transition-all"
+                                      className="flex-1 h-12 text-[9px] border-dashed border-border hover:border-secondary/40"
                                     >
                                       <VideoIcon className="w-4 h-4 mr-2 text-secondary" /> VIDÉO
                                     </Button>
                                   </>
                                 ) : (
-                                  <div className="relative w-full aspect-video rounded-sm border border-border overflow-hidden bg-black shadow-2xl animate-in zoom-in-95">
+                                  <div className="relative w-full aspect-video rounded-sm border border-border overflow-hidden bg-black shadow-2xl">
                                     {step.mediaType === 'image' ? (
                                       <img src={step.media} className="w-full h-full object-cover" />
                                     ) : (
@@ -487,9 +485,6 @@ export default function DatasetPage() {
                                     >
                                       <X className="w-4 h-4" />
                                     </Button>
-                                    <div className="absolute bottom-2 left-2 px-2 py-0.5 bg-black/60 backdrop-blur-sm rounded-sm">
-                                       <span className="text-[8px] font-bold text-white uppercase font-code">Asset Registré</span>
-                                    </div>
                                   </div>
                                 )}
                               </div>
@@ -504,7 +499,7 @@ export default function DatasetPage() {
                     type="button" 
                     variant="outline" 
                     onClick={() => setProcSteps([...procSteps, { id: Date.now().toString(), title: '', duration: '60', description: '', conditions: '', alarms: '' }])} 
-                    className="w-full border-dashed border-border h-14 text-[10px] uppercase font-bold hover:bg-secondary/5 transition-all shadow-sm"
+                    className="w-full border-dashed border-border h-14 text-[10px] uppercase font-bold hover:bg-secondary/5"
                   >
                     <Plus className="w-4 h-4 mr-2 text-secondary" /> Ajouter une séquence
                   </Button>
@@ -516,12 +511,12 @@ export default function DatasetPage() {
                   type="submit" 
                   disabled={isUploading} 
                   className={cn(
-                    "w-full font-headline font-bold uppercase text-xs h-16 shadow-[0_0_30px_rgba(0,0,0,0.3)] transition-all active:scale-[0.98]", 
+                    "w-full font-headline font-bold uppercase text-xs h-16 shadow-2xl transition-all", 
                     mode === 'qa' ? "bg-primary hover:bg-primary/90" : "bg-secondary hover:bg-secondary/90"
                   )}
                 >
                   {isUploading ? <Loader2 className="w-6 h-6 animate-spin mr-3" /> : <CheckCircle2 className="w-6 h-6 mr-3" />}
-                  {mode === 'qa' ? "Enregistrer dans la file sémantique" : "Forger la Procédure et Indexer"}
+                  {mode === 'qa' ? "Indexer dans la base RAG" : "Forger la Procédure et Indexer"}
                 </Button>
               </div>
             </div>
@@ -530,16 +525,16 @@ export default function DatasetPage() {
 
         {/* Caméra Overlay */}
         {showCamera.isOpen && (
-          <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 sm:p-8 animate-in fade-in duration-300">
-             <Card className="w-full max-w-4xl overflow-hidden border-primary/20 bg-black shadow-[0_0_100px_rgba(0,0,0,1)]">
-                <div className="p-4 border-b border-border flex justify-between items-center bg-card/30">
+          <div className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center p-4 sm:p-8 animate-in fade-in duration-300">
+             <Card className="w-full max-w-4xl overflow-hidden border-primary/20 bg-black shadow-2xl">
+                <div className="p-4 border-b border-border flex justify-between items-center">
                    <div className="flex items-center gap-3">
                       <div className="w-2.5 h-2.5 rounded-full bg-red-600 animate-pulse" />
                       <span className="text-[10px] font-bold text-white uppercase tracking-widest font-code">Capture Séquence {showCamera.stepIndex! + 1}</span>
                    </div>
-                   <Button variant="ghost" size="icon" onClick={stopCamera} className="text-muted-foreground hover:text-white transition-colors"><X className="w-6 h-6" /></Button>
+                   <Button variant="ghost" size="icon" onClick={stopCamera}><X className="w-6 h-6" /></Button>
                 </div>
-                <div className="relative aspect-video bg-muted/5 group">
+                <div className="relative aspect-video bg-muted/5">
                    <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover opacity-90" />
                    {isRecording && (
                      <div className="absolute top-6 right-6 flex items-center gap-3 bg-red-600 px-4 py-1.5 rounded-sm animate-pulse shadow-2xl">
@@ -548,7 +543,7 @@ export default function DatasetPage() {
                      </div>
                    )}
                 </div>
-                <div className="p-8 flex justify-center gap-8 bg-card/30">
+                <div className="p-8 flex justify-center gap-8">
                    {cameraMode === 'image' ? (
                      <Button onClick={capturePhoto} className="px-16 h-16 bg-primary text-primary-foreground font-bold uppercase text-sm shadow-2xl hover:scale-105 transition-transform"><Camera className="w-7 h-7 mr-3" /> CAPTURER</Button>
                    ) : (

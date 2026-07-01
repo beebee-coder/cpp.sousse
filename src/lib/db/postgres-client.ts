@@ -3,7 +3,7 @@ import path from 'path';
 
 /**
  * @fileOverview Liaison physique pour le Registre local.
- * Utilise un dossier caché '.registry' pour éviter les rechargements Next.js.
+ * Utilise un dossier caché '.registry' pour éviter les rechargements Next.js intempestifs.
  */
 
 const REGISTRY_ROOT = path.join(process.cwd(), '.registry');
@@ -22,7 +22,7 @@ const ensureRegistry = () => {
       }
     });
   } catch (e) {
-    console.error("❌ [postgresClient] Erreur accès disque :", e);
+    console.error("❌ [postgresClient] Erreur accès disque critique :", e);
   }
 };
 
@@ -102,7 +102,7 @@ export const postgresClient = {
     const dir = path.dirname(fullPath);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(fullPath, content, 'utf8');
-    console.log(`💾 [POSTGRES_CLIENT] Fichier sauvegardé : ${relPath}`);
+    console.log(`💾 [POSTGRES_CLIENT] Fichier archivé : ${relPath}`);
   },
 
   async saveAsset(relPath: string, base64Data: string) {
