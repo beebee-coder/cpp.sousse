@@ -1,3 +1,4 @@
+
 /**
  * @fileOverview Service RAG spécialisé pour les procédures industrielles.
  * Version : Automatique et Obligatoire (Support Hybride Weaviate/Chroma).
@@ -16,11 +17,11 @@ export class ProcedureRAGService {
   async indexProcedure(procedure: FullProcedure): Promise<void> {
     const timestamp = new Date().toISOString();
     
-    // Décomposition en chunks sémantiques
+    // Décomposition en chunks sémantiques pour une recherche précise
     const chunks = [
       {
         id: `proc-meta-${procedure.id}`,
-        content: `Procédure Industrielle: ${procedure.title} [CODE: ${procedure.code}]. Catégorie: ${procedure.metadata.category}. Département: ${procedure.metadata.department}. Criticité: ${procedure.metadata.criticality}.`,
+        content: `Procédure Industrielle: ${procedure.title} [CODE: ${procedure.code}]. Catégorie: ${procedure.metadata?.category || 'OP'}. Département: ${procedure.metadata?.department || 'PROD'}. Criticité: ${procedure.metadata?.criticality || 'MED'}.`,
         metadata: { 
           procedureId: procedure.id, 
           type: 'metadata', 
@@ -28,13 +29,13 @@ export class ProcedureRAGService {
           indexedAt: timestamp 
         }
       },
-      ...procedure.steps.map((step, index) => ({
+      ...((Array.isArray(procedure.steps) ? procedure.steps : []) as any[]).map((step: any, index: number) => ({
         id: `proc-step-${procedure.id}-${index}`,
-        content: `Étape ${step.order} de ${procedure.code}: ${step.title}. Description: ${step.description}. Validation: ${step.validation.successExpression}.`,
+        content: `Étape ${step.order || index + 1} de ${procedure.code}: ${step.title}. Description: ${step.description}.`,
         metadata: { 
           procedureId: procedure.id, 
           type: 'step', 
-          order: step.order, 
+          order: step.order || index + 1, 
           stepId: step.id,
           indexedAt: timestamp
         }
@@ -43,6 +44,12 @@ export class ProcedureRAGService {
 
     try {
       if (IS_CLOUD) {
+        // Vérifier si Weaviate est configuré avant de tenter l'importation
+        if (!process.env.WEAVIATE_URL || !process.env.WEAVIATE_API_KEY) {
+          console.warn(`[RAG_CLOUD] Skip: Configuration Weaviate manquante pour ${procedure.code}`);
+          return;
+        }
+
         // Indexation Weaviate Cloud via l'API interne pour les procédures
         const { upsertKnowledgeItem } = await import('@/lib/weaviate/weaviate-knowledge');
         await upsertKnowledgeItem({
@@ -51,11 +58,11 @@ export class ProcedureRAGService {
           type: 'procedure',
           title: procedure.title,
           content: chunks.map(c => c.content).join('\n'),
-          tags: procedure.metadata.tags || [],
-          category: procedure.metadata.category,
-          difficulty: procedure.metadata.criticality,
+          tags: (procedure.metadata as any)?.tags || [],
+          category: procedure.category || 'OPERATION',
+          difficulty: procedure.criticality || 'MEDIUM',
           isPublic: true,
-          createdAt: procedure.metadata.createdAt
+          createdAt: new Date().toISOString()
         });
         console.log(`📡 [RAG_CLOUD] Procédure ${procedure.code} vectorisée dans Weaviate.`);
       } else {
@@ -64,8 +71,8 @@ export class ProcedureRAGService {
         console.log(`🧠 [RAG_LOCAL] Procédure ${procedure.code} vectorisée dans ChromaDB.`);
       }
     } catch (e: any) {
-      console.error(`❌ [RAG_ERROR] Échec de vectorisation obligatoire pour ${procedure.code}:`, e.message);
-      throw new Error(`INDEXATION_FAILED: ${e.message}`);
+      console.error(`❌ [RAG_ERROR] Échec de vectorisation pour ${procedure.code}:`, e.message);
+      // On ne jette plus l'erreur pour ne pas bloquer le flux principal
     }
   }
 
@@ -73,11 +80,15 @@ export class ProcedureRAGService {
    * Recherche d'assistance contextuelle.
    */
   async findHelp(query: string, procedureId?: string): Promise<SearchResult[]> {
-    const results = await searchAcrossCollections(query, 5);
-    if (procedureId) {
-      return results.filter(r => r.metadata?.procedureId === procedureId || !r.metadata?.procedureId);
+    try {
+      const results = await searchAcrossCollections(query, 5);
+      if (procedureId) {
+        return results.filter(r => r.metadata?.procedureId === procedureId || !r.metadata?.procedureId);
+      }
+      return results;
+    } catch (e) {
+      return [];
     }
-    return results;
   }
 }
 

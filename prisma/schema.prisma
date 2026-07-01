@@ -1,3 +1,4 @@
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -8,41 +9,42 @@ datasource db {
 }
 
 model User {
-  id            String    @id @default(cuid())
-  firstName     String
-  lastName      String
-  password      String
-  email         String    @unique
-  role          String    @default("user")
-  approved      Boolean   @default(false)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  lastSyncAt    DateTime?
+  id              String           @id @default(cuid())
+  firstName       String
+  lastName        String
+  password        String
+  email           String           @unique
+  role            String           @default("user")
+  approved        Boolean          @default(false)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  lastSyncAt      DateTime?
 
-  knowledgeItems KnowledgeItem[]
-  procedures     Procedure[]
-  executions     ProcedureExecution[]
+  // Relations
+  knowledgeItems  KnowledgeItem[]
+  procedures      Procedure[]
+  executions      ProcedureExecution[]
 
   @@map("users")
 }
 
 model KnowledgeItem {
-  id           String   @id @default(cuid())
-  userId       String
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type         String   // "qa" | "text" | "manual"
-  title        String
-  question     String?  @db.Text
-  answer       String?  @db.Text
-  steps        Json?    // Optional structured steps
-  tags         String[]
-  category     String?
-  difficulty   String   @default("medium")
-  isPublic     Boolean  @default(true)
-  syncedLocal  Boolean  @default(false)
-  vectorId     String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id              String           @id @default(cuid())
+  userId          String
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type            String           // "qa" | "text"
+  title           String
+  question        String?
+  answer          String?
+  steps           Json?            // Pour stockage structuré si besoin
+  tags            String[]
+  category        String?
+  difficulty      String           @default("medium")
+  isPublic        Boolean          @default(true)
+  syncedLocal     Boolean          @default(false)
+  vectorId        String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
 
   @@index([userId])
   @@index([type])
@@ -53,7 +55,7 @@ model Procedure {
   id              String           @id @default(cuid())
   code            String           @unique
   title           String
-  description     String?          @db.Text
+  description     String?
   category        String           @default("OPERATION")
   subcategory     String?
   department      String           @default("PRODUCTION")
@@ -61,32 +63,30 @@ model Procedure {
   version         String           @default("1.0.0")
   status          String           @default("DRAFT")
   
-  // Structured Industrial Data
+  // Données structurées
   prerequisites   Json             // { description: string, items: Prerequisite[] }
   steps           Json             // ProcedureStep[]
   parameters      Json?            // { variables: ProcedureVariable[] }
-  postExecution   Json?            // { checks: PostExecutionCheck[], reporting: object }
+  postExecution   Json?            // { checks: [], reporting: {} }
   
-  // Metadata & Audit
-  metadata        Json             // Complete metadata object
+  // Métadonnées
+  metadata        Json?            // { authorId: string, tags: string[], ... }
   authorId        String
   author          User             @relation(fields: [authorId], references: [id])
   approvers       Json?            // Approver[]
   
-  // Sync & RAG
-  syncedLocal     Boolean          @default(false)
-  vectorId        String?
-  
+  // Audit
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
   lastExecutedAt  DateTime?
   executionCount  Int              @default(0)
-
+  syncedLocal     Boolean          @default(false)
+  
+  // Relations
   executions      ProcedureExecution[]
 
   @@index([code])
   @@index([category])
-  @@index([status])
   @@map("procedures")
 }
 
@@ -99,16 +99,9 @@ model ProcedureExecution {
   
   startTime       DateTime @default(now())
   endTime         DateTime?
-  status          String   // "RUNNING", "COMPLETED", "FAILED", "ALARM"
-  currentStep     Int      @default(-1)
-  stepsStatus     Json     // Map of step status
-  totalDuration   Int?     // In seconds
-  
-  events          Json?    // Log of events
-  alarms          Json?    // Triggered alarms
-  
-  notes           String?  @db.Text
-  signature       String?
+  status          String   @default("RUNNING")
+  stepsStatus     Json     // Record<stepId, status>
+  totalDuration   Int?     // En secondes
   
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt

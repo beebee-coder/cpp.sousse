@@ -1,3 +1,4 @@
+
 import { NextRequest, NextResponse } from 'next/server';
 import { promises as fs } from 'fs';
 import path from 'path';
@@ -27,8 +28,13 @@ export async function GET() {
           const fileContent = await fs.readFile(dataPath, 'utf8');
           const realProc = JSON.parse(fileContent);
 
-          const admin = await prisma.user.findFirst({ where: { role: 'admin' } });
-          const authorId = admin?.id || 'admin-root';
+          // Chercher un admin pour l'auteur
+          let author = await prisma.user.findFirst({ where: { role: 'admin' } });
+          if (!author) {
+            author = await prisma.user.findFirst(); // N'importe quel utilisateur si pas d'admin
+          }
+          
+          const authorId = author?.id || 'admin-root';
 
           const created = await prisma.procedure.upsert({
             where: { code: realProc.metadata.code },
@@ -42,25 +48,27 @@ export async function GET() {
               code: realProc.metadata.code,
               title: realProc.metadata.title,
               description: realProc.metadata.subcategory || realProc.metadata.description || '',
-              category: (realProc.metadata.category || 'OPERATION').toUpperCase() as any,
-              department: (realProc.metadata.department || 'PRODUCTION').toUpperCase() as any,
-              criticality: (realProc.metadata.criticality || 'MEDIUM').toUpperCase() as any,
-              version: realProc.metadata.version,
+              category: (realProc.metadata.category || 'OPERATION').toUpperCase(),
+              department: (realProc.metadata.department || 'PRODUCTION').toUpperCase(),
+              criticality: (realProc.metadata.criticality || 'MEDIUM').toUpperCase(),
+              version: realProc.metadata.version || "1.0.0",
               status: 'APPROVED',
-              prerequisites: realProc.prerequisites,
-              steps: realProc.steps,
-              metadata: realProc.metadata,
+              prerequisites: realProc.prerequisites || { items: [] },
+              steps: realProc.steps || [],
+              metadata: { ...realProc.metadata, authorId },
               parameters: realProc.parameters || {},
               postExecution: realProc.postExecution || {},
               authorId: authorId,
             }
           });
 
-          // Archivage Physique via postgresClient
+          // Archivage Physique
           const registryPath = `procedures/${created.code.toLowerCase()}/procedure.json`;
           await postgresClient.saveFile(registryPath, JSON.stringify(created, null, 2));
           
-          await procedureRAG.indexProcedure(created as any);
+          // Vectorisation (Optionnelle pour ne pas bloquer)
+          procedureRAG.indexProcedure(created as any).catch(e => console.warn("RAG_SEED_SKIP:", e.message));
+          
           procedures = [created as any];
         }
       } catch (seedErr: any) {
@@ -70,7 +78,7 @@ export async function GET() {
 
     return NextResponse.json({ success: true, procedures });
   } catch (error: any) {
-    return NextResponse.json({ success: false, message: 'Erreur lecture registre.' }, { status: 500 });
+    return NextResponse.json({ success: false, message: 'Erreur lecture registre.', error: error.message }, { status: 500 });
   }
 }
 
@@ -88,11 +96,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, message: 'Données incomplètes pour la forge.' }, { status: 400 });
     }
 
-    // Récupérer l'auteur depuis la session ou utiliser l'admin root par défaut
+    // Récupérer l'auteur depuis la session
     let authorId = session?.user?.id;
+    
+    // Si pas de session, on cherche l'admin système en BDD
     if (!authorId) {
       const admin = await prisma.user.findFirst({ where: { role: 'admin' } });
-      authorId = admin?.id || 'admin-root';
+      authorId = admin?.id;
+    }
+
+    // Sécurité ultime : Si pas d'auteur trouvé (BDD vide), on ne peut pas créer la procédure à cause de la FK
+    if (!authorId) {
+      return NextResponse.json({ 
+        success: false, 
+        message: 'Accréditation requise. Aucun utilisateur valide trouvé en base pour signer la procédure.' 
+      }, { status: 403 });
     }
 
     const code = metadata?.code || `PROC-${Date.now().toString().slice(-6)}`;
@@ -101,11 +119,11 @@ export async function POST(request: NextRequest) {
     const procedure = await prisma.procedure.create({
       data: {
         code,
-        title,
+        title: title.trim(),
         description: body.description || metadata?.description || '',
-        category: (metadata?.category || 'OPERATION').toUpperCase() as any,
-        department: (metadata?.department || 'PRODUCTION').toUpperCase() as any,
-        criticality: (metadata?.criticality || 'MEDIUM').toUpperCase() as any,
+        category: (metadata?.category || 'OPERATION').toUpperCase(),
+        department: (metadata?.department || 'PRODUCTION').toUpperCase(),
+        criticality: (metadata?.criticality || 'MEDIUM').toUpperCase(),
         version: metadata?.version || '1.0.0',
         status: 'APPROVED',
         prerequisites: prerequisites || { description: "Prérequis de sécurité", items: [] },
@@ -123,7 +141,7 @@ export async function POST(request: NextRequest) {
       const registryPath = `procedures/${procedure.code.toLowerCase()}/procedure.json`;
       await postgresClient.saveFile(registryPath, JSON.stringify(procedure, null, 2));
 
-      // 3. Projection sémantique pour recherche fallback
+      // Projection sémantique simplifiée pour recherche fallback hors-ligne
       await postgresClient.upsertCloudData([{
         id: procedure.id,
         projectId: 'global',
@@ -132,7 +150,8 @@ export async function POST(request: NextRequest) {
           title: procedure.title,
           label: procedure.code,
           details: procedure.description,
-          procedureId: procedure.id
+          procedureId: procedure.id,
+          type: 'procedure'
         }),
         tags: [procedure.category, procedure.code],
         createdAt: new Date()
@@ -141,21 +160,20 @@ export async function POST(request: NextRequest) {
       console.warn(`⚠️ [REGISTRY_WRITE_FAIL] ${fsErr.message}`);
     }
 
-    // 4. Vectorisation Immédiate (Moteur de recherche IA)
-    try {
-      await procedureRAG.indexProcedure(procedure as any);
-    } catch (ragErr: any) {
-      console.error(`⚠️ [RAG_FAIL] ${ragErr.message}`);
-    }
+    // 3. Vectorisation Immédiate (Moteur de recherche IA)
+    // Non-bloquant pour le succès de la forge
+    procedureRAG.indexProcedure(procedure as any).catch(ragErr => {
+      console.error(`⚠️ [RAG_FAIL] Échec indexation vectorielle: ${ragErr.message}`);
+    });
 
     return NextResponse.json({
       success: true,
       procedureId: procedure.id,
-      message: `Procédure forgée avec succès et enregistrée dans la BDD Web.`
+      message: `Procédure "${procedure.title}" forgée avec succès.`
     });
 
   } catch (error: any) {
-    console.error('[API_PROCEDURES_POST]', error);
+    console.error('[API_PROCEDURES_POST] Échec critique:', error);
     return NextResponse.json(
       { success: false, message: 'Échec de la forge.', error: error.message },
       { status: 500 }

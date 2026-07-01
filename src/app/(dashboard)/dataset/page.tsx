@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from 'react';
@@ -213,11 +214,12 @@ export default function DatasetPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ type: 'qa', title: question.slice(0, 50), question, answer }),
         });
-        if (res.ok) {
+        const data = await res.json();
+        if (res.ok && data.success) {
           toast({ title: "Savoir sémantique indexé", description: "L'entrée Q/R a été enregistrée en BDD Web." });
           setQuestion(''); setAnswer(''); setPhraseBuffers({});
         } else {
-          throw new Error("Erreur de liaison BDD");
+          throw new Error(data.error || "Erreur de liaison BDD");
         }
       } catch (err: any) {
         toast({ title: "Échec de l'indexation", description: err.message, variant: "destructive" });
@@ -280,11 +282,11 @@ export default function DatasetPage() {
         if (data.success) {
           toast({ 
             title: "Procédure forgée et sécurisée", 
-            description: "Enregistrée en BDD Web. Prête pour synchronisation locale." 
+            description: "Enregistrée en BDD Web et archivée dans le Registre." 
           });
           router.push('/procedures');
         } else {
-          throw new Error(data.message || "Erreur serveur de forge");
+          throw new Error(data.message || data.error || "Erreur serveur de forge");
         }
       } catch (err: any) {
         toast({ title: "Échec de la Forge", description: err.message, variant: "destructive" });
