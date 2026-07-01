@@ -9,47 +9,49 @@ export const dynamic = 'force-dynamic';
 
 /**
  * POST /api/procedures
- * Forge de procédure avec auto-réparation et gestion des collisions.
+ * Forge de procédure ultra-résiliente avec auto-réparation et gestion des collisions.
  */
 export async function POST(request: NextRequest) {
   const timestamp = new Date().toISOString();
   const traceId = uuidv4().slice(0, 8);
   
-  console.log(`🚀 [FORGE_API] [${traceId}] Initiation de la requête...`);
+  console.log(`🚀 [FORGE_API] [${traceId}] REQUÊTE_INITIÉE`);
 
   try {
     const session = await getSessionFromCookie();
     const body = await request.json().catch(() => null);
     
     if (!body || !body.title || !body.steps || !Array.isArray(body.steps)) {
-      console.error(`❌ [FORGE_API] [${traceId}] Payload invalide.`);
+      console.error(`❌ [FORGE_API] [${traceId}] PAYLOAD_INVALIDE`);
       return NextResponse.json({ 
         success: false, 
-        message: 'Structure invalide : Titre et Étapes requis.',
+        message: 'Structure invalide : Titre et Séquences requis.',
         traceId 
       }, { status: 400 });
     }
 
     const { title, steps, metadata } = body;
 
-    // 1. GESTION DE L'AUTEUR (Résiliente)
+    // 1. GESTION DE L'AUTEUR (Blindage et Fallback)
     let finalAuthorId: string | null = null;
     
+    // Tenter de récupérer l'auteur depuis la session
     if (session?.user?.id) {
       const userExists = await prisma.user.findUnique({ where: { id: session.user.id } });
       if (userExists) {
         finalAuthorId = session.user.id;
-        console.log(`👤 [FORGE_API] [${traceId}] Auteur session : ${finalAuthorId}`);
+        console.log(`👤 [FORGE_API] [${traceId}] AUTEUR_SESSION : ${finalAuthorId}`);
       }
     }
 
+    // Fallback automatique sur l'administrateur système si nécessaire
     if (!finalAuthorId) {
-      console.log(`⚠️ [FORGE_API] [${traceId}] Aucun auteur session. Fallback admin-root...`);
+      console.log(`⚠️ [FORGE_API] [${traceId}] AUCUN_AUTEUR_SESSION. AUTO_RÉPARATION_ADMIN...`);
       const systemAdmin = await prisma.user.upsert({
         where: { email: 'admin@visionode.local' },
         update: { approved: true },
         create: {
-          id: 'admin-root',
+          id: 'admin-root', // ID fixe pour la consistance système
           firstName: 'System',
           lastName: 'Administrator',
           email: 'admin@visionode.local',
@@ -59,6 +61,7 @@ export async function POST(request: NextRequest) {
         }
       });
       finalAuthorId = systemAdmin.id;
+      console.log(`✅ [FORGE_API] [${traceId}] AUTEUR_SYSTEME_VALIDÉ : ${finalAuthorId}`);
     }
 
     // 2. GESTION DU CODE (Collision-safe)
@@ -67,11 +70,11 @@ export async function POST(request: NextRequest) {
     if (existingProc) {
       const originalCode = code;
       code = `${code}-${Math.floor(Math.random() * 1000)}`;
-      console.log(`🔄 [FORGE_API] [${traceId}] Collision code : ${originalCode} -> ${code}`);
+      console.log(`🔄 [FORGE_API] [${traceId}] COLLISION_CODE_DÉTECTÉE : ${originalCode} -> ${code}`);
     }
 
-    // 3. ENREGISTREMENT NEON SQL
-    console.log(`💾 [FORGE_API] [${traceId}] Écriture Neon PostgreSQL...`);
+    // 3. TRANSACTION NEON SQL
+    console.log(`💾 [FORGE_API] [${traceId}] ÉCRITURE_NEON_POSTGRESQL...`);
     const procedure = await prisma.procedure.create({
       data: {
         code,
@@ -87,18 +90,18 @@ export async function POST(request: NextRequest) {
         metadata: { ...metadata, authorId: finalAuthorId, traceId, forged_at: timestamp },
         parameters: (body.parameters || { variables: [] }),
         postExecution: (body.postExecution || { checks: [], reporting: { generateReport: true, reportFields: [] } }),
-        authorId: finalAuthorId,
+        authorId: finalAuthorId!,
         syncedLocal: false
       }
     });
 
-    // 4. ARCHIVAGE PHYSIQUE
+    // 4. ARCHIVAGE PHYSIQUE DANS LE REGISTRE
     try {
-      console.log(`📂 [FORGE_API] [${traceId}] Archivage dans le Registre Physique...`);
+      console.log(`📂 [FORGE_API] [${traceId}] ARCHIVAGE_PHYSIQUE_REGISTRE...`);
       const registryPath = `procedures/${procedure.code.toLowerCase()}/procedure.json`;
       await postgresClient.saveFile(registryPath, JSON.stringify(procedure, null, 2));
 
-      // Projection sémantique pour la recherche rapide
+      // Projection sémantique pour recherche rapide hors-ligne
       const projectionPath = `items/proc_${procedure.code.toLowerCase()}.json`;
       await postgresClient.saveFile(projectionPath, JSON.stringify({
         id: procedure.id,
@@ -106,20 +109,20 @@ export async function POST(request: NextRequest) {
         type: 'procedure',
         title: procedure.title,
         label: procedure.code,
-        content: `PROCÉDURE INDUSTRIELLE: ${procedure.title}. ${steps.length} séquences.`,
+        content: `PROCÉDURE INDUSTRIELLE: ${procedure.title}. ${steps.length} séquences opérationnelles.`,
         metadata: { origin: 'FORGE_SYSTEM', code: procedure.code, traceId }
       }, null, 2));
     } catch (fsErr: any) {
-      console.warn(`⚠️ [FORGE_API] [${traceId}] Échec archivage FS (non-bloquant):`, fsErr.message);
+      console.warn(`⚠️ [FORGE_API] [${traceId}] ÉCHEC_ARCHIVAGE_FS (NON-BLOQUANT):`, fsErr.message);
     }
 
-    // 5. VECTORISATION ASYNCHRONE
-    console.log(`🧠 [FORGE_API] [${traceId}] Déclenchement vectorisation RAG...`);
+    // 5. VECTORISATION IA ASYNCHRONE
+    console.log(`🧠 [FORGE_API] [${traceId}] INDEXATION_RAG_DÉTACHÉE...`);
     procedureRAG.indexProcedure(procedure as any).catch(err => {
-       console.error(`⚠️ [FORGE_API] [${traceId}] Erreur RAG ignorée :`, err.message);
+       console.error(`⚠️ [FORGE_API] [${traceId}] ERREUR_RAG_IGNORÉE :`, err.message);
     });
 
-    console.log(`✅ [FORGE_API] [${traceId}] Forge réussie pour "${procedure.title}"`);
+    console.log(`✅ [FORGE_API] [${traceId}] FORGE_RÉUSSIE : "${procedure.title}"`);
 
     return NextResponse.json({
       success: true,
@@ -129,10 +132,16 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error: any) {
-    console.error(`❌ [FORGE_API] [${traceId}] Erreur fatale :`, error.message, error.code);
+    console.error(`❌ [FORGE_API] [${traceId}] ERREUR_CRITIQUE :`, error.message, error.code);
+    
+    // Détection spécifique des erreurs Prisma
+    let userMessage = 'Échec du service de forge industrielle.';
+    if (error.code === 'P2002') userMessage = 'Collision critique : ce code de procédure est déjà réservé.';
+    if (error.code === 'P2003') userMessage = 'Échec d\'accréditation : l\'auteur système est introuvable.';
+
     return NextResponse.json({ 
       success: false, 
-      message: 'Échec du service de forge.', 
+      message: userMessage, 
       error: error.message,
       prismaCode: error.code,
       traceId 

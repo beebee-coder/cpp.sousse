@@ -224,14 +224,14 @@ export default function DatasetPage() {
       }
       setIsUploading(true);
       
-      console.log("🚀 [FORGE_FRONT] Envoi vers API...");
+      console.log("🚀 [FORGE_FRONT] ASSEMBLAGE_PAYLOAD_INDUSTRIEL...");
 
       try {
         const formattedSteps = procSteps.map((s, i) => ({
           id: `step-${Date.now()}-${i}`,
           order: i + 1,
-          title: s.title,
-          description: s.description || "Instruction technique.",
+          title: s.title.toUpperCase(),
+          description: s.description || "Instruction technique standard.",
           duration: { value: parseInt(s.duration) || 60, unit: "seconds", display: `${s.duration}s`, type: "fixed" },
           action: { 
             type: "confirmation", 
@@ -271,26 +271,26 @@ export default function DatasetPage() {
         });
 
         const data = await res.json();
-        console.log("📥 [FORGE_FRONT] Réponse:", data);
+        console.log(`📥 [FORGE_FRONT] RÉPONSE_BACKEND [Trace: ${data.traceId}]:`, data);
 
         if (res.ok && data.success) {
           toast({ 
             title: "Forge Réussie ✅", 
-            description: `L'actif "${procTitle}" est archivé en BDD et dans le Registre. Trace: ${data.traceId}` 
+            description: `L'actif "${procTitle}" est archivé en BDD et dans le Registre.` 
           });
           router.push('/procedures');
         } else {
-          console.error("❌ [FORGE_FRONT] Échec:", data);
-          const errorMsg = data.error || data.message || "Erreur SQL ou contrainte.";
+          const errorMsg = data.message || data.error || "Échec de la transaction SQL.";
+          console.error("❌ [FORGE_FRONT] REJET_BACKEND:", data);
           toast({ 
             title: "Échec de la Forge", 
-            description: `Diagnostic: ${errorMsg} (Code: ${data.prismaCode || 'ERR'})`, 
+            description: `Raison : ${errorMsg}`, 
             variant: "destructive" 
           });
         }
       } catch (err: any) {
-        console.error("❌ [FORGE_FRONT] Erreur fatale:", err.message);
-        toast({ title: "Échec critique", description: `Liaison réseau interrompue: ${err.message}`, variant: "destructive" });
+        console.error("❌ [FORGE_FRONT] ERREUR_LIAISON_CRITIQUE:", err.message);
+        toast({ title: "Échec critique", description: "Le centre de forge est injoignable.", variant: "destructive" });
       } finally { setIsUploading(false); }
     }
   };
