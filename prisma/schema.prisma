@@ -1,9 +1,11 @@
+// schema.prisma (Standard Prisma 7 pour Neon)
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
+  url      = "" // Géré dynamiquement par l'adaptateur Neon dans src/lib/db/prisma-client.ts
 }
 
 model User {
@@ -17,6 +19,7 @@ model User {
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
   lastSyncAt      DateTime?
+  
   knowledgeItems  KnowledgeItem[]
   procedures      Procedure[]
   executions      ProcedureExecution[]
@@ -28,11 +31,11 @@ model KnowledgeItem {
   id              String   @id @default(cuid())
   userId          String
   user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type            String
+  type            String   // 'qa' ou 'document'
   title           String
   question        String?
   answer          String?
-  steps           Json?
+  steps           Json?    // Pour stocker des mini-procédures dans le RAG
   tags            String[]
   category        String?
   difficulty      String   @default("medium")
@@ -47,31 +50,36 @@ model KnowledgeItem {
 }
 
 model Procedure {
-  id              String               @id @default(cuid())
-  code            String               @unique
+  id              String   @id @default(cuid())
+  code            String   @unique
   title           String
   description     String?
-  category        String               @default("OPERATION")
+  category        String   @default("OPERATION")
   subcategory     String?
-  department      String               @default("PRODUCTION")
-  criticality     String               @default("MEDIUM")
-  version         String               @default("1.0.0")
-  status          String               @default("DRAFT")
-  prerequisites   Json
-  steps           Json
-  parameters      Json?
-  postExecution   Json?
-  metadata        Json
+  department      String   @default("PRODUCTION")
+  criticality     String   @default("MEDIUM")
+  version         String   @default("1.0.0")
+  status          String   @default("DRAFT")
+  
+  prerequisites   Json     // Standard industriel CRF
+  steps           Json     // Liste ordonnée d'étapes
+  parameters      Json?    // Variables configurables
+  postExecution   Json?    
+  metadata        Json     // Métadonnées complètes
+  
   authorId        String
-  author          User                 @relation(fields: [authorId], references: [id])
-  approvers       Json?
-  syncedLocal     Boolean              @default(false)
+  author          User     @relation(fields: [authorId], references: [id])
+  approvers       Json?    
+  
+  syncedLocal     Boolean  @default(false)
   lastExecutedAt  DateTime?
-  executionCount  Int                  @default(0)
-  avgDuration     Int?
-  successRate     Float?
-  createdAt       DateTime             @default(now())
-  updatedAt       DateTime             @updatedAt
+  executionCount  Int      @default(0)
+  avgDuration     Int?     
+  successRate     Float?   
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
   executions      ProcedureExecution[]
 
   @@index([code])
@@ -80,25 +88,28 @@ model Procedure {
 }
 
 model ProcedureExecution {
-  id              String    @id @default(cuid())
+  id              String   @id @default(cuid())
   procedureId     String
   procedure       Procedure @relation(fields: [procedureId], references: [id], onDelete: Cascade)
   operatorId      String
   operator        User      @relation(fields: [operatorId], references: [id])
-  startTime       DateTime  @default(now())
+  
+  startTime       DateTime @default(now())
   endTime         DateTime?
   status          String
-  currentStep     Int       @default(-1)
-  stepsStatus     Json
-  totalDuration   Int?
-  events          Json?
-  alarms          Json?
-  fallbacks       Json?
-  result          Json?
+  currentStep     Int      @default(-1)
+  stepsStatus     Json     
+  totalDuration   Int?     
+  
+  events          Json?    
+  alarms          Json?    
+  fallbacks       Json?    
+  result          Json?    
   notes           String?
-  signature       String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  signature       String?  
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   @@index([procedureId])
   @@index([operatorId])
