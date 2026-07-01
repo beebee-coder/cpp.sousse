@@ -3,6 +3,7 @@
 
 generator client {
   provider = "prisma-client-js"
+  previewFeatures = ["adapter-neon"]
 }
 
 datasource db {
@@ -21,31 +22,32 @@ model User {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   lastSyncAt    DateTime?
-  
+
+  // Relations
   knowledgeItems KnowledgeItem[]
-  procedures     Procedure[]     @relation("AuthoredProcedures")
+  procedures     Procedure[]
   executions     ProcedureExecution[]
 
   @@map("users")
 }
 
 model KnowledgeItem {
-  id          String   @id @default(cuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type        String   // "qa" | "procedure"
-  title       String
-  question    String?
-  answer      String?
-  steps       Json?
-  tags        String[]
-  category    String?
-  difficulty  String   @default("medium")
-  isPublic    Boolean  @default(true)
-  syncedLocal Boolean  @default(false)
-  vectorId    String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type         String   // "qa" | "procedure"
+  title        String
+  question     String?
+  answer       String?
+  steps        Json?    // Liste d'étapes simplifiées
+  tags         String[]
+  category     String?
+  difficulty   String   @default("medium")
+  isPublic     Boolean  @default(true)
+  syncedLocal  Boolean  @default(false)
+  vectorId     String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   @@index([userId])
   @@map("knowledge_items")
@@ -63,15 +65,15 @@ model Procedure {
   version         String   @default("1.0.0")
   status          String   @default("DRAFT")
   
-  prerequisites   Json
-  steps           Json
-  parameters      Json?
-  postExecution   Json?
-  metadata        Json
+  prerequisites   Json     // Structure des prérequis
+  steps           Json     // Liste complète des ProcedureStep
+  parameters      Json?    // Paramètres configurables
+  postExecution   Json?    // Checks post-exécution
+  metadata        Json     // Métadonnées système
   
   authorId        String
-  author          User     @relation("AuthoredProcedures", fields: [authorId], references: [id])
-  approvers       Json?
+  author          User     @relation(fields: [authorId], references: [id])
+  approvers       Json?    // Liste des approbateurs
   
   syncedLocal     Boolean  @default(false)
   lastExecutedAt  DateTime?
@@ -81,7 +83,8 @@ model Procedure {
   
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
-  
+
+  // Relations
   executions      ProcedureExecution[]
 
   @@index([code])
@@ -90,17 +93,17 @@ model Procedure {
 }
 
 model ProcedureExecution {
-  id              String   @id @default(cuid())
+  id              String    @id @default(cuid())
   procedureId     String
   procedure       Procedure @relation(fields: [procedureId], references: [id], onDelete: Cascade)
   operatorId      String
-  operator        User     @relation(fields: [operatorId], references: [id])
+  operator        User      @relation(fields: [operatorId], references: [id])
   
-  startTime       DateTime @default(now())
+  startTime       DateTime  @default(now())
   endTime         DateTime?
-  status          String
-  currentStep     Int      @default(-1)
-  stepsStatus     Json
+  status          String    // IDLE, RUNNING, COMPLETED, etc.
+  currentStep     Int       @default(-1)
+  stepsStatus     Json      // État de chaque étape
   totalDuration   Int?
   
   events          Json?
@@ -110,8 +113,8 @@ model ProcedureExecution {
   notes           String?
   signature       String?
   
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   @@index([procedureId])
   @@index([operatorId])

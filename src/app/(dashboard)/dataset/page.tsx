@@ -21,7 +21,8 @@ import {
   Clock,
   Zap,
   X,
-  PlayCircle
+  PlayCircle,
+  AlertCircle
 } from 'lucide-react';
 
 import { Card } from '@/components/ui/card';
@@ -223,25 +224,25 @@ export default function DatasetPage() {
       }
       setIsUploading(true);
       
-      console.log("🚀 [FORGE_FRONT] Préparation de l'envoi procédure...");
+      console.log("🚀 [FORGE_FRONT] Envoi vers API...");
 
       try {
         const formattedSteps = procSteps.map((s, i) => ({
           id: `step-${Date.now()}-${i}`,
           order: i + 1,
           title: s.title,
-          description: s.description || "Instruction opérationnelle.",
+          description: s.description || "Instruction technique.",
           duration: { value: parseInt(s.duration) || 60, unit: "seconds", display: `${s.duration}s`, type: "fixed" },
           action: { 
             type: "confirmation", 
             instruction: s.description || s.title, 
-            ui: { component: "action_button", label: "Valider", icon: "check" } 
+            ui: { component: "action_button", label: "Confirmer", icon: "check" } 
           },
           validation: {
             conditions: s.conditions ? [{ 
               id: `val-${i}`, 
               description: s.conditions, 
-              type: "status", 
+              type: "manual", 
               operator: "==", 
               value: "OK", 
               displayName: "Conformité" 
@@ -263,35 +264,32 @@ export default function DatasetPage() {
           }
         };
 
-        console.log("📡 [FORGE_FRONT] Envoi payload:", payload);
-
         const res = await fetch('/api/procedures', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         });
 
-        const textRes = await res.text();
-        console.log("📥 [FORGE_FRONT] Réponse brute serveur:", textRes);
-
-        let data;
-        try {
-          data = JSON.parse(textRes);
-        } catch (e) {
-          throw new Error("Le serveur a renvoyé un format invalide (Non-JSON).");
-        }
+        const data = await res.json();
+        console.log("📥 [FORGE_FRONT] Réponse:", data);
 
         if (res.ok && data.success) {
-          console.log("✅ [FORGE_FRONT] Forge réussie:", data);
-          toast({ title: "Forge réussie", description: `Procédure "${procTitle}" archivée.` });
+          toast({ 
+            title: "Forge Réussie ✅", 
+            description: `L'actif "${procTitle}" est archivé en BDD et dans le Registre. Trace: ${data.traceId}` 
+          });
           router.push('/procedures');
         } else {
-          console.error("❌ [FORGE_FRONT] Rejet de forge:", data.message || data.error);
-          throw new Error(data.message || data.error || "Échec de la forge industrielle.");
+          console.error("❌ [FORGE_FRONT] Échec:", data);
+          toast({ 
+            title: "Échec de la Forge", 
+            description: data.error || data.message || "Erreur SQL ou contrainte.", 
+            variant: "destructive" 
+          });
         }
       } catch (err: any) {
         console.error("❌ [FORGE_FRONT] Erreur fatale:", err.message);
-        toast({ title: "Échec de la Forge", description: err.message, variant: "destructive" });
+        toast({ title: "Échec critique", description: err.message, variant: "destructive" });
       } finally { setIsUploading(false); }
     }
   };
@@ -306,7 +304,7 @@ export default function DatasetPage() {
           <div className="flex items-center gap-4">
             <div className="lg:hidden w-10" />
             <Database className="w-4 h-4 text-primary" />
-            <span className="font-headline font-bold text-xs uppercase tracking-widest text-primary">Station de Forge Industrielle</span>
+            <span className="font-headline font-bold text-xs uppercase tracking-widest text-primary">Forge Industrielle</span>
           </div>
           <div className="flex items-center gap-4">
             <Button 
@@ -316,10 +314,10 @@ export default function DatasetPage() {
               className={cn("h-9 text-[9px] font-code uppercase", voice.isListening && "bg-red-500/10 text-red-500 border-red-500/40")}
             >
               {voice.isListening ? <Sparkles className="w-3.5 h-3.5 mr-2 animate-pulse" /> : <Mic className="w-3.5 h-3.5 mr-2" />}
-              {voice.isListening ? "Dictée Active" : "Dictée OFF"}
+              {voice.isListening ? "DICTÉE ACTIVE" : "MICRO OFF"}
             </Button>
             <div className="flex bg-muted/30 p-1 rounded-sm border border-border">
-              <button onClick={() => setMode('qa')} className={cn("px-4 py-1 text-[9px] uppercase rounded-sm font-bold transition-all", mode === 'qa' ? "bg-primary text-primary-foreground" : "text-muted-foreground")}>Q/R</button>
+              <button onClick={() => setMode('qa')} className={cn("px-4 py-1 text-[9px] uppercase rounded-sm font-bold transition-all", mode === 'qa' ? "bg-primary text-primary-foreground" : "text-muted-foreground")}>Savoir</button>
               <button onClick={() => setMode('procedure')} className={cn("px-4 py-1 text-[9px] uppercase rounded-sm font-bold transition-all", mode === 'procedure' ? "bg-secondary text-secondary-foreground" : "text-muted-foreground")}>Procédure</button>
             </div>
           </div>
@@ -327,36 +325,36 @@ export default function DatasetPage() {
 
         <div className="flex-1 overflow-y-auto terminal-scroll p-4 lg:p-8">
           <form onSubmit={handleAddItem} className="max-w-5xl mx-auto space-y-8 pb-20">
-            <Card className="p-4 bg-primary/5 border border-primary/20 flex items-center gap-4 shadow-2xl">
+            <Card className="p-4 bg-primary/5 border border-primary/20 flex items-center gap-4">
                <Zap className="w-8 h-8 text-primary" />
                <div className="space-y-1">
-                 <p className="text-[10px] font-code text-white uppercase font-bold">Liaison de Données Critique</p>
+                 <p className="text-[10px] font-code text-white uppercase font-bold">Flux d'archivage synchrone</p>
                  <p className="text-[9px] font-code text-muted-foreground uppercase leading-tight">
-                   L'enregistrement en base de données Neon et l'archivage physique (.registry/) sont effectués simultanément pour garantir l'auditabilité.
+                   Liaison active vers Neon PostgreSQL et Registre Physique .registry/
                  </p>
                </div>
             </Card>
 
             <div className="space-y-10">
               {mode === 'qa' ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in duration-500">
                   <div className="space-y-4">
-                    <Badge variant="outline" className="text-[8px] font-bold text-primary tracking-widest uppercase">SYMPTÔME / ANOMALIE</Badge>
+                    <Badge variant="outline" className="text-[8px] font-bold text-primary tracking-widest uppercase">Anomalie détectée</Badge>
                     <Textarea 
                       value={question} 
                       onChange={(e) => setQuestion(e.target.value)} 
                       onFocus={() => setActiveUIField({ type: 'question' })} 
-                      placeholder="DÉTAILLEZ L'ANOMALIE..." 
+                      placeholder="DÉCRIRE L'ANOMALIE..." 
                       className="h-64 bg-black/40 font-code text-xs uppercase border-primary/20" 
                     />
                   </div>
                   <div className="space-y-4">
-                    <Badge variant="outline" className="text-[8px] font-bold text-secondary tracking-widest uppercase">RÉSOLUTION TECHNIQUE</Badge>
+                    <Badge variant="outline" className="text-[8px] font-bold text-secondary tracking-widest uppercase">Action de résolution</Badge>
                     <Textarea 
                       value={answer} 
                       onChange={(e) => setAnswer(e.target.value)} 
                       onFocus={() => setActiveUIField({ type: 'answer' })} 
-                      placeholder="DÉTAILLEZ LA RÉSOLUTION..." 
+                      placeholder="DÉCRIRE LA RÉSOLUTION..." 
                       className="h-64 bg-black/40 font-code text-xs uppercase border-secondary/20" 
                     />
                   </div>
@@ -364,25 +362,25 @@ export default function DatasetPage() {
               ) : (
                 <>
                   <div className="space-y-4 animate-in fade-in duration-500">
-                    <label className="text-[10px] font-bold text-primary uppercase tracking-widest block">Titre de la procédure</label>
+                    <label className="text-[10px] font-bold text-primary uppercase tracking-widest block">Intitulé de la procédure</label>
                     <Input 
                       value={procTitle} 
                       onChange={(e) => setProcTitle(e.target.value)} 
                       onFocus={() => setActiveUIField({ type: 'procTitle' })} 
-                      placeholder="EX: DÉMARRAGE POMPE CRF-101..." 
+                      placeholder="EX: DÉMARRAGE POMPE CRF..." 
                       className="bg-black/60 uppercase h-14 text-sm font-bold border-primary/30" 
                     />
                   </div>
 
                   <div className="space-y-6">
                     {procSteps.map((step, index) => (
-                      <Card key={index} className="p-6 border-border bg-black/30 space-y-6 relative overflow-hidden group">
-                        <div className="absolute top-0 left-0 w-1 h-full bg-secondary/30" />
+                      <Card key={index} className="p-6 border-border bg-black/30 space-y-6 relative group">
+                        <div className="absolute top-0 left-0 w-1 h-full bg-secondary/30 group-hover:bg-secondary transition-colors" />
                         
                         <div className="flex justify-between items-center border-b border-border/50 pb-3">
                           <div className="flex items-center gap-3">
                              <div className="w-7 h-7 rounded-full bg-secondary/10 border border-secondary/30 flex items-center justify-center text-[11px] font-bold text-secondary font-code">{index + 1}</div>
-                             <span className="text-[10px] font-bold text-white uppercase tracking-wider">Séquence</span>
+                             <span className="text-[10px] font-bold text-white uppercase tracking-wider">Séquence Opérationnelle</span>
                           </div>
                           <div className="flex items-center gap-4">
                              <div className="flex items-center gap-2 bg-muted/20 px-3 py-1 rounded-sm border border-border">
@@ -398,7 +396,7 @@ export default function DatasetPage() {
                               variant="ghost" 
                               size="icon" 
                               onClick={() => { const next = [...procSteps]; next.splice(index, 1); setProcSteps(next); }} 
-                              className="h-8 w-8 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                              className="h-8 w-8 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100"
                              >
                                 <Trash2 className="w-3.5 h-3.5" />
                              </Button>
@@ -408,21 +406,21 @@ export default function DatasetPage() {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                           <div className="space-y-4">
                             <div className="space-y-1.5">
-                              <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Intitulé de l'action</p>
+                              <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Action</p>
                               <Input 
                                 value={step.title} 
                                 onFocus={() => setActiveUIField({ type: 'stepTitle', index })} 
                                 onChange={(e) => { const n = [...procSteps]; n[index].title = e.target.value; setProcSteps(n); }} 
-                                className="h-10 text-[10px] uppercase font-bold bg-black/20 border-border/50" 
+                                className="h-10 text-[10px] uppercase font-bold bg-black/20" 
                               />
                             </div>
                             <div className="space-y-1.5">
-                              <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Description technique</p>
+                              <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Instructions</p>
                               <Textarea 
                                 value={step.description} 
                                 onFocus={() => setActiveUIField({ type: 'stepDescription', index })} 
                                 onChange={(e) => { const n = [...procSteps]; n[index].description = e.target.value; setProcSteps(n); }} 
-                                className="h-32 text-[10px] uppercase font-code bg-black/20 resize-none border-border/50" 
+                                className="h-32 text-[10px] uppercase font-code bg-black/20 resize-none" 
                               />
                             </div>
                           </div>
@@ -430,7 +428,7 @@ export default function DatasetPage() {
                           <div className="space-y-6">
                             <div className="grid grid-cols-2 gap-4">
                               <div className="space-y-1.5">
-                                <p className="text-[9px] font-bold text-primary uppercase tracking-widest">Validation</p>
+                                <p className="text-[9px] font-bold text-primary uppercase tracking-widest">Vérification</p>
                                 <Input 
                                   value={step.conditions} 
                                   onChange={(e) => { const n = [...procSteps]; n[index].conditions = e.target.value; setProcSteps(n); }} 
@@ -439,7 +437,7 @@ export default function DatasetPage() {
                                 />
                               </div>
                               <div className="space-y-1.5">
-                                <p className="text-[9px] font-bold text-destructive uppercase tracking-widest">Alerte</p>
+                                <p className="text-[9px] font-bold text-destructive uppercase tracking-widest">Condition d'Alerte</p>
                                 <Input 
                                   value={step.alarms} 
                                   onChange={(e) => { const n = [...procSteps]; n[index].alarms = e.target.value; setProcSteps(n); }} 
@@ -450,7 +448,7 @@ export default function DatasetPage() {
                             </div>
 
                             <div className="space-y-2">
-                              <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Capture Multimédia</p>
+                              <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Ressource Visuelle</p>
                               <div className="flex gap-2">
                                 {!step.media ? (
                                   <>
@@ -459,7 +457,7 @@ export default function DatasetPage() {
                                       variant="outline" 
                                       size="sm" 
                                       onClick={() => startCamera('image', index)} 
-                                      className="flex-1 h-12 text-[9px] border-dashed border-border hover:border-primary/40"
+                                      className="flex-1 h-12 text-[9px] border-dashed"
                                     >
                                       <Camera className="w-4 h-4 mr-2 text-primary" /> PHOTO
                                     </Button>
@@ -468,7 +466,7 @@ export default function DatasetPage() {
                                       variant="outline" 
                                       size="sm" 
                                       onClick={() => startCamera('video', index)} 
-                                      className="flex-1 h-12 text-[9px] border-dashed border-border hover:border-secondary/40"
+                                      className="flex-1 h-12 text-[9px] border-dashed"
                                     >
                                       <VideoIcon className="w-4 h-4 mr-2 text-secondary" /> VIDÉO
                                     </Button>
@@ -485,7 +483,7 @@ export default function DatasetPage() {
                                       variant="destructive" 
                                       size="icon" 
                                       onClick={() => { const next = [...procSteps]; delete next[index].media; setProcSteps(next); }} 
-                                      className="absolute top-2 right-2 h-7 w-7 shadow-xl"
+                                      className="absolute top-2 right-2 h-7 w-7"
                                     >
                                       <X className="w-4 h-4" />
                                     </Button>
@@ -503,7 +501,7 @@ export default function DatasetPage() {
                     type="button" 
                     variant="outline" 
                     onClick={() => setProcSteps([...procSteps, { id: Date.now().toString(), title: '', duration: '60', description: '', conditions: '', alarms: '' }])} 
-                    className="w-full border-dashed border-border h-14 text-[10px] uppercase font-bold hover:bg-secondary/5"
+                    className="w-full border-dashed h-14 text-[10px] uppercase font-bold"
                   >
                     <Plus className="w-4 h-4 mr-2 text-secondary" /> Ajouter une séquence
                   </Button>
@@ -515,12 +513,12 @@ export default function DatasetPage() {
                   type="submit" 
                   disabled={isUploading} 
                   className={cn(
-                    "w-full font-headline font-bold uppercase text-xs h-16 shadow-2xl transition-all", 
+                    "w-full font-headline font-bold uppercase text-xs h-16 shadow-2xl transition-all active:scale-[0.99]", 
                     mode === 'qa' ? "bg-primary hover:bg-primary/90" : "bg-secondary hover:bg-secondary/90"
                   )}
                 >
                   {isUploading ? <Loader2 className="w-6 h-6 animate-spin mr-3" /> : <CheckCircle2 className="w-6 h-6 mr-3" />}
-                  {mode === 'qa' ? "Indexer dans la base RAG" : "Forger la Procédure et Indexer"}
+                  {mode === 'qa' ? "Indexer dans la base RAG" : "Forger l'actif et Archiver"}
                 </Button>
               </div>
             </div>
@@ -528,19 +526,19 @@ export default function DatasetPage() {
         </div>
 
         {showCamera.isOpen && (
-          <div className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center p-4 sm:p-8 animate-in fade-in duration-300">
+          <div className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center p-4">
              <Card className="w-full max-w-4xl overflow-hidden border-primary/20 bg-black shadow-2xl">
                 <div className="p-4 border-b border-border flex justify-between items-center">
                    <div className="flex items-center gap-3">
                       <div className="w-2.5 h-2.5 rounded-full bg-red-600 animate-pulse" />
-                      <span className="text-[10px] font-bold text-white uppercase tracking-widest font-code">Capture Séquence {showCamera.stepIndex! + 1}</span>
+                      <span className="text-[10px] font-bold text-white uppercase tracking-widest font-code">Capture Frame {showCamera.stepIndex! + 1}</span>
                    </div>
                    <Button variant="ghost" size="icon" onClick={stopCamera}><X className="w-6 h-6" /></Button>
                 </div>
                 <div className="relative aspect-video bg-muted/5">
                    <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover opacity-90" />
                    {isRecording && (
-                     <div className="absolute top-6 right-6 flex items-center gap-3 bg-red-600 px-4 py-1.5 rounded-sm animate-pulse shadow-2xl">
+                     <div className="absolute top-6 right-6 flex items-center gap-3 bg-red-600 px-4 py-1.5 rounded-sm animate-pulse">
                         <div className="w-2.5 h-2.5 bg-white rounded-full" />
                         <span className="text-[11px] font-bold text-white uppercase font-code">ENREGISTREMENT</span>
                      </div>
