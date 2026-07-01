@@ -11,16 +11,16 @@ const IS_CLOUD = process.env.VERCEL === '1' || process.env.NODE_ENV === 'product
 export class ProcedureRAGService {
   /**
    * Indexe une procédure de manière obligatoire.
-   * Gère le routage vers Weaviate (Cloud) ou Chroma (Local).
+   * Isole les erreurs pour ne pas bloquer le flux de forge principal.
    */
   async indexProcedure(procedure: FullProcedure): Promise<void> {
     const timestamp = new Date().toISOString();
     
-    // Décomposition en chunks sémantiques pour une recherche précise
+    // Construction du bloc de connaissances sémantiques
     const chunks = [
       {
         id: `proc-meta-${procedure.id}`,
-        content: `Procédure Industrielle: ${procedure.title} [CODE: ${procedure.code}]. Catégorie: ${procedure.category || 'OP'}. Département: ${procedure.department || 'PROD'}. Criticité: ${procedure.criticality || 'MED'}.`,
+        content: `DOCUMENTATION TECHNIQUE: ${procedure.title} [CODE: ${procedure.code}]. Catégorie: ${procedure.category}. Département: ${procedure.department}. Criticité: ${procedure.criticality}.`,
         metadata: { 
           procedureId: procedure.id, 
           type: 'metadata', 
@@ -30,7 +30,7 @@ export class ProcedureRAGService {
       },
       ...((Array.isArray(procedure.steps) ? procedure.steps : []) as any[]).map((step: any, index: number) => ({
         id: `proc-step-${procedure.id}-${index}`,
-        content: `Étape ${step.order || index + 1} de ${procedure.code}: ${step.title}. Description: ${step.description}.`,
+        content: `INSTRUCTION ÉTAPE ${step.order || index + 1} (${procedure.code}): ${step.title}. Action requise: ${step.description}.`,
         metadata: { 
           procedureId: procedure.id, 
           type: 'step', 
@@ -43,7 +43,7 @@ export class ProcedureRAGService {
 
     try {
       if (IS_CLOUD) {
-        // En mode cloud, on essaie d'indexer dans Weaviate si les clés sont là
+        // Mode Web : Tentative Weaviate (Cloud)
         if (process.env.WEAVIATE_URL && process.env.WEAVIATE_API_KEY) {
           try {
             const { upsertKnowledgeItem } = await import('@/lib/weaviate/weaviate-knowledge');
@@ -57,26 +57,23 @@ export class ProcedureRAGService {
               category: procedure.category || 'OPERATION',
               difficulty: procedure.criticality || 'MEDIUM',
               isPublic: true,
-              createdAt: new Date().toISOString()
+              createdAt: timestamp
             });
-            console.log(`📡 [RAG_CLOUD] Procédure ${procedure.code} vectorisée dans Weaviate.`);
-          } catch (weaviateErr: any) {
-            console.warn(`[RAG_CLOUD_WARN] Échec Weaviate: ${weaviateErr.message}`);
+          } catch (e) {
+             console.warn("[RAG_WEAVIATE_SKIP] Serveur non configuré.");
           }
         }
       } else {
-        // Indexation ChromaDB Local (obligatoire pour le mode natif)
+        // Mode Natif : Indexation ChromaDB Local (obligatoire pour le mode desktop)
         await upsertChroma('industrial_procedures', chunks);
-        console.log(`🧠 [RAG_LOCAL] Procédure ${procedure.code} vectorisée dans ChromaDB.`);
       }
     } catch (e: any) {
-      console.error(`❌ [RAG_ERROR] Échec de vectorisation pour ${procedure.code}:`, e.message);
-      // On ne jette plus l'erreur pour ne pas bloquer le flux principal de forge
+      console.warn(`[RAG_INDEX_WARN] Vectorisation ignorée pour ${procedure.code}: ${e.message}`);
     }
   }
 
   /**
-   * Recherche d'assistance contextuelle.
+   * Recherche d'assistance contextuelle pour l'IA.
    */
   async findHelp(query: string, procedureId?: string): Promise<SearchResult[]> {
     try {

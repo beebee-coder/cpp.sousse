@@ -1,6 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -10,23 +7,18 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ---------------------------------------------------------
-// 1. GESTION DES UTILISATEURS & ACCRÉDITATIONS
-// ---------------------------------------------------------
-
 model User {
   id              String           @id @default(cuid())
   firstName       String
   lastName        String
-  email           String           @unique
   password        String
-  role            String           @default("user") // admin, chef-de-bloc, chef-de-quart, user
+  email           String           @unique
+  role            String           @default("user")
   approved        Boolean          @default(false)
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
   lastSyncAt      DateTime?
 
-  // Relations
   knowledgeItems  KnowledgeItem[]
   procedures      Procedure[]
   executions      ProcedureExecution[]
@@ -34,9 +26,29 @@ model User {
   @@map("users")
 }
 
-// ---------------------------------------------------------
-// 2. REGISTRE DES PROCÉDURES INDUSTRIELLES
-// ---------------------------------------------------------
+model KnowledgeItem {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type            String   // "qa" | "procedure"
+  title           String
+  question        String?
+  answer          String?
+  steps           Json?
+  tags            String[]
+  category        String?
+  difficulty      String   @default("medium")
+  isPublic        Boolean  @default(true)
+  syncedLocal     Boolean  @default(false)
+  vectorId        String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([userId])
+  @@index([type])
+  @@index([syncedLocal])
+  @@map("knowledge_items")
+}
 
 model Procedure {
   id              String           @id @default(cuid())
@@ -48,58 +60,48 @@ model Procedure {
   department      String           @default("PRODUCTION")
   criticality     String           @default("MEDIUM")
   version         String           @default("1.0.0")
-  status          String           @default("APPROVED")
+  status          String           @default("DRAFT")
   
-  // Données structurées (JSON conforme au format industrial_procedure)
-  prerequisites   Json             // { description: string, items: Prerequisite[] }
-  steps           Json             // ProcedureStep[]
-  parameters      Json?            // { variables: ProcedureVariable[] }
-  postExecution   Json?            // { checks: PostExecutionCheck[], reporting: object }
-  metadata        Json?            // Métadonnées étendues (tags, author info, etc.)
-
-  // Synchronisation & RAG
-  syncedLocal     Boolean          @default(false)
-  vectorId        String?          // Référence dans Weaviate/Chroma
-
-  // Audit
+  // Données structurées industrielles
+  prerequisites   Json             // { description: string, items: Array }
+  steps           Json             // Array of ProcedureStep
+  parameters      Json?            // { variables: Array }
+  postExecution   Json?            // { checks: Array, reporting: object }
+  
+  // Métadonnées d'audit
+  metadata        Json             
   authorId        String
   author          User             @relation(fields: [authorId], references: [id])
+  approvers       Json?            
+  
+  syncedLocal     Boolean          @default(false)
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
   lastExecutedAt  DateTime?
   executionCount  Int              @default(0)
-
-  // Relations
+  
   executions      ProcedureExecution[]
+  alarms          ProcedureAlarm[]
 
   @@index([code])
   @@index([category])
-  @@index([status])
   @@map("procedures")
 }
-
-// ---------------------------------------------------------
-// 3. AUDIT D'EXÉCUTION (COCKPIT)
-// ---------------------------------------------------------
 
 model ProcedureExecution {
   id              String   @id @default(cuid())
   procedureId     String
-  procedure       Procedure @relation(fields: [procedureId], references: [id], onDelete: Cascade)
+  procedure       Procedure @relation(fields: [procedureId], references: [id])
   operatorId      String
   operator        User     @relation(fields: [operatorId], references: [id])
   
-  status          String   @default("RUNNING") // RUNNING, COMPLETED, ALARM, FAILED
-  currentStep     Int      @default(0)
-  stepsStatus     Json     // Etat de validation de chaque étape
-  totalDuration   Int?     // Secondes
-  
-  events          Json?    // Log d'audit (confirmations, alarmes)
-  notes           String?
-  signature       String?
-
   startTime       DateTime @default(now())
   endTime         DateTime?
+  status          String
+  currentStep     Int      @default(-1)
+  stepsStatus     Json     
+  totalDuration   Int?     
+  
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -108,33 +110,21 @@ model ProcedureExecution {
   @@map("procedure_executions")
 }
 
-// ---------------------------------------------------------
-// 4. BASE DE CONNAISSANCES RAG (Q/R & DOCUMENTS)
-// ---------------------------------------------------------
-
-model KnowledgeItem {
+model ProcedureAlarm {
   id              String   @id @default(cuid())
-  userId          String
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  type            String   // "qa" ou "text"
-  title           String
-  question        String?
-  answer          String?
-  content         String?  // Pour les documents longs
-  tags            String[]
-  category        String?
-  difficulty      String   @default("medium")
-  
-  isPublic        Boolean  @default(true)
-  syncedLocal     Boolean  @default(false)
-  vectorId        String?
+  procedureId     String
+  procedure       Procedure @relation(fields: [procedureId], references: [id])
+  code            String
+  type            String
+  severity        String
+  description     String
+  remedy          Json     
+  condition       String   
+  triggeredAt     DateTime?
+  resolvedAt      DateTime?
+  status          String   @default("ACTIVE")
   
   createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
 
-  @@index([userId])
-  @@index([type])
-  @@index([createdAt])
-  @@map("knowledge_items")
+  @@map("procedure_alarms")
 }
