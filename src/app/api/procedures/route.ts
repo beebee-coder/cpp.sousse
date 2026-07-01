@@ -4,6 +4,7 @@ import path from 'path';
 import { prisma } from '@/lib/db/prisma-client';
 import { procedureRAG } from '@/lib/procedures/services/rag.service';
 import { postgresClient } from '@/lib/db/postgres-client';
+import { getSessionFromCookie } from '@/lib/session';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,7 +23,7 @@ export async function GET() {
     if (procedures.length === 0) {
       try {
         const dataPath = path.join(process.cwd(), 'data', 'procedure-demarrage-CRF.json');
-        if (fs.stat(dataPath)) {
+        if (require('fs').existsSync(dataPath)) {
           const fileContent = await fs.readFile(dataPath, 'utf8');
           const realProc = JSON.parse(fileContent);
 
@@ -79,6 +80,7 @@ export async function GET() {
  */
 export async function POST(request: NextRequest) {
   try {
+    const session = await getSessionFromCookie();
     const body = await request.json();
     const { title, steps, metadata, prerequisites, parameters, postExecution } = body;
 
@@ -86,8 +88,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, message: 'Données incomplètes pour la forge.' }, { status: 400 });
     }
 
-    const admin = await prisma.user.findFirst({ where: { role: 'admin' } });
-    const authorId = admin?.id || 'admin-root';
+    // Récupérer l'auteur depuis la session ou utiliser l'admin root par défaut
+    let authorId = session?.user?.id;
+    if (!authorId) {
+      const admin = await prisma.user.findFirst({ where: { role: 'admin' } });
+      authorId = admin?.id || 'admin-root';
+    }
+
     const code = metadata?.code || `PROC-${Date.now().toString().slice(-6)}`;
 
     // 1. Enregistrement Base de Données Cloud (Neon)
@@ -112,14 +119,11 @@ export async function POST(request: NextRequest) {
     });
 
     // 2. Archivage Registre Physique via postgresClient
-    const registryPath = `procedures/${procedure.code.toLowerCase()}/procedure.json`;
-    await postgresClient.saveFile(registryPath, JSON.stringify(procedure, null, 2));
-
-    // 3. Vectorisation Immédiate (Moteur de recherche IA et Fiche Registre)
     try {
-      await procedureRAG.indexProcedure(procedure as any);
-      
-      // On crée aussi un item dans le registre 'items' pour qu'il apparaisse dans la recherche fallback
+      const registryPath = `procedures/${procedure.code.toLowerCase()}/procedure.json`;
+      await postgresClient.saveFile(registryPath, JSON.stringify(procedure, null, 2));
+
+      // 3. Projection sémantique pour recherche fallback
       await postgresClient.upsertCloudData([{
         id: procedure.id,
         projectId: 'global',
@@ -133,6 +137,13 @@ export async function POST(request: NextRequest) {
         tags: [procedure.category, procedure.code],
         createdAt: new Date()
       }]);
+    } catch (fsErr: any) {
+      console.warn(`⚠️ [REGISTRY_WRITE_FAIL] ${fsErr.message}`);
+    }
+
+    // 4. Vectorisation Immédiate (Moteur de recherche IA)
+    try {
+      await procedureRAG.indexProcedure(procedure as any);
     } catch (ragErr: any) {
       console.error(`⚠️ [RAG_FAIL] ${ragErr.message}`);
     }
@@ -140,7 +151,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       procedureId: procedure.id,
-      message: `Procédure forgée et archivée dans le registre physique.`
+      message: `Procédure forgée avec succès et enregistrée dans la BDD Web.`
     });
 
   } catch (error: any) {

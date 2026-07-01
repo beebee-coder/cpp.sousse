@@ -52,7 +52,6 @@ export default function DatasetPage() {
   const [mounted, setMounted] = useState(false);
   const [mode, setMode] = useState<'qa' | 'procedure'>('procedure');
   const [isUploading, setIsUploading] = useState(false);
-  const [isAssistantActive, setIsAssistantActive] = useState(false);
   
   // États média
   const [showCamera, setShowCamera] = useState<{ isOpen: boolean; stepIndex: number | null }>({ isOpen: false, stepIndex: null });
@@ -204,7 +203,7 @@ export default function DatasetPage() {
 
     if (mode === 'qa') {
       if (!question.trim() || !answer.trim()) {
-        toast({ title: "Champs requis", variant: "destructive" });
+        toast({ title: "Données incomplètes", description: "Veuillez renseigner le symptôme et la résolution.", variant: "destructive" });
         return;
       }
       setIsUploading(true);
@@ -215,15 +214,17 @@ export default function DatasetPage() {
           body: JSON.stringify({ type: 'qa', title: question.slice(0, 50), question, answer }),
         });
         if (res.ok) {
-          toast({ title: "Q/R enregistré et indexé" });
+          toast({ title: "Savoir sémantique indexé", description: "L'entrée Q/R a été enregistrée en BDD Web." });
           setQuestion(''); setAnswer(''); setPhraseBuffers({});
+        } else {
+          throw new Error("Erreur de liaison BDD");
         }
-      } catch {
-        toast({ title: "Échec", variant: "destructive" });
+      } catch (err: any) {
+        toast({ title: "Échec de l'indexation", description: err.message, variant: "destructive" });
       } finally { setIsUploading(false); }
     } else {
-      if (!procTitle.trim()) {
-        toast({ title: "Titre requis", variant: "destructive" });
+      if (!procTitle.trim() || procSteps.some(s => !s.title.trim())) {
+        toast({ title: "Forge interrompue", description: "Le titre et l'intitulé de chaque étape sont obligatoires.", variant: "destructive" });
         return;
       }
       setIsUploading(true);
@@ -231,8 +232,8 @@ export default function DatasetPage() {
         const formattedSteps = procSteps.map((s, i) => ({
           id: `step-${Date.now()}-${i}`,
           order: i + 1,
-          title: s.title || `Séquence ${i + 1}`,
-          description: s.description || "Instruction technique",
+          title: s.title,
+          description: s.description || "Consigne technique standard.",
           duration: { 
             value: parseInt(s.duration) || 60, 
             unit: "seconds", 
@@ -242,7 +243,7 @@ export default function DatasetPage() {
           action: { 
             type: "confirmation", 
             instruction: s.description, 
-            ui: { component: "action_button", label: "Confirmer", icon: "check" } 
+            ui: { component: "action_button", label: "Valider Séquence", icon: "check" } 
           },
           validation: {
             conditions: s.conditions ? [{ 
@@ -270,20 +271,23 @@ export default function DatasetPage() {
               department: "PRODUCTION", 
               criticality: "MEDIUM", 
               version: "1.0.0",
-              code: `DICT-${Date.now().toString().slice(-4)}`
+              code: `FORGE-${Date.now().toString().slice(-4)}`
             }
           }),
         });
 
         const data = await res.json();
         if (data.success) {
-          toast({ title: "Procédure forgée et archivée", description: "L'actif est prêt pour la synchronisation locale." });
+          toast({ 
+            title: "Procédure forgée et sécurisée", 
+            description: "Enregistrée en BDD Web. Prête pour synchronisation locale." 
+          });
           router.push('/procedures');
         } else {
-          throw new Error(data.message || "Erreur serveur");
+          throw new Error(data.message || "Erreur serveur de forge");
         }
       } catch (err: any) {
-        toast({ title: "Échec de la forge", description: err.message, variant: "destructive" });
+        toast({ title: "Échec de la Forge", description: err.message, variant: "destructive" });
       } finally { setIsUploading(false); }
     }
   };
@@ -298,7 +302,7 @@ export default function DatasetPage() {
           <div className="flex items-center gap-4">
             <div className="lg:hidden w-10" />
             <Database className="w-4 h-4 text-primary" />
-            <span className="font-headline font-bold text-xs uppercase tracking-widest text-primary">Station de Dictée Industrielle</span>
+            <span className="font-headline font-bold text-xs uppercase tracking-widest text-primary">Station de Forge Industrielle</span>
           </div>
           <div className="flex items-center gap-4">
             <Button 
@@ -311,7 +315,7 @@ export default function DatasetPage() {
               Assistant {voice.isListening ? "ÉCOUTE" : "VEILLE"}
             </Button>
             <div className="flex bg-muted/30 p-1 rounded-sm border border-border shadow-inner">
-              <button onClick={() => setMode('qa')} className={cn("px-4 py-1 text-[9px] uppercase rounded-sm font-bold transition-all", mode === 'qa' ? "bg-primary text-primary-foreground shadow-lg" : "text-muted-foreground hover:text-foreground")}>FAQ</button>
+              <button onClick={() => setMode('qa')} className={cn("px-4 py-1 text-[9px] uppercase rounded-sm font-bold transition-all", mode === 'qa' ? "bg-primary text-primary-foreground shadow-lg" : "text-muted-foreground hover:text-foreground")}>Q/R</button>
               <button onClick={() => setMode('procedure')} className={cn("px-4 py-1 text-[9px] uppercase rounded-sm font-bold transition-all", mode === 'procedure' ? "bg-secondary text-secondary-foreground shadow-lg" : "text-muted-foreground hover:text-foreground")}>Procédure</button>
             </div>
           </div>
@@ -321,9 +325,12 @@ export default function DatasetPage() {
           <form onSubmit={handleAddItem} className="max-w-5xl mx-auto space-y-8 pb-12">
             <Card className="p-4 bg-primary/5 border border-primary/20 flex items-center gap-4 shadow-2xl">
                <Zap className="w-8 h-8 text-primary" />
-               <p className="text-[10px] font-code text-muted-foreground uppercase leading-tight">
-                 Toute entrée validée est automatiquement vectorisée pour l'IA et archivée dans le registre physique <span className="text-white font-bold">.registry/procedures/</span> pour la synchronisation native.
-               </p>
+               <div className="space-y-1">
+                 <p className="text-[10px] font-code text-white uppercase font-bold">Liaison de Données Critique</p>
+                 <p className="text-[9px] font-code text-muted-foreground uppercase leading-tight">
+                   L'enregistrement est atomique : Synchronisation immédiate vers Neon (Cloud) et génération automatique du fichier Registre physique pour les terminaux hors-ligne.
+                 </p>
+               </div>
             </Card>
 
             <div className="space-y-10">
@@ -439,7 +446,7 @@ export default function DatasetPage() {
                             </div>
 
                             <div className="space-y-2">
-                              <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Documentation Visuelle Réelle</p>
+                              <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Preuves Visuelles Directes</p>
                               <div className="flex gap-2">
                                 {!step.media ? (
                                   <>
@@ -450,7 +457,7 @@ export default function DatasetPage() {
                                       onClick={() => startCamera('image', index)} 
                                       className="flex-1 h-12 text-[9px] border-dashed border-border hover:bg-primary/5 hover:border-primary/40 transition-all"
                                     >
-                                      <Camera className="w-4 h-4 mr-2 text-primary" /> PHOTO DIRECTE
+                                      <Camera className="w-4 h-4 mr-2 text-primary" /> PHOTO
                                     </Button>
                                     <Button 
                                       type="button" 
@@ -459,7 +466,7 @@ export default function DatasetPage() {
                                       onClick={() => startCamera('video', index)} 
                                       className="flex-1 h-12 text-[9px] border-dashed border-border hover:bg-secondary/5 hover:border-secondary/40 transition-all"
                                     >
-                                      <VideoIcon className="w-4 h-4 mr-2 text-secondary" /> FLUX VIDÉO
+                                      <VideoIcon className="w-4 h-4 mr-2 text-secondary" /> VIDÉO
                                     </Button>
                                   </>
                                 ) : (
@@ -479,7 +486,7 @@ export default function DatasetPage() {
                                       <X className="w-4 h-4" />
                                     </Button>
                                     <div className="absolute bottom-2 left-2 px-2 py-0.5 bg-black/60 backdrop-blur-sm rounded-sm">
-                                       <span className="text-[8px] font-bold text-white uppercase font-code">Asset Registre Attaché</span>
+                                       <span className="text-[8px] font-bold text-white uppercase font-code">Asset Registré</span>
                                     </div>
                                   </div>
                                 )}
@@ -497,7 +504,7 @@ export default function DatasetPage() {
                     onClick={() => setProcSteps([...procSteps, { id: Date.now().toString(), title: '', duration: '60', description: '', conditions: '', alarms: '' }])} 
                     className="w-full border-dashed border-border h-14 text-[10px] uppercase font-bold hover:bg-secondary/5 transition-all shadow-sm"
                   >
-                    <Plus className="w-4 h-4 mr-2 text-secondary" /> Ajouter une séquence opérationnelle
+                    <Plus className="w-4 h-4 mr-2 text-secondary" /> Ajouter une séquence
                   </Button>
                 </>
               )}
@@ -512,7 +519,7 @@ export default function DatasetPage() {
                   )}
                 >
                   {isUploading ? <Loader2 className="w-6 h-6 animate-spin mr-3" /> : <CheckCircle2 className="w-6 h-6 mr-3" />}
-                  {mode === 'qa' ? "Enregistrer dans la file sémantique Cloud" : "Forger la Procédure et Archiver"}
+                  {mode === 'qa' ? "Enregistrer dans la file sémantique" : "Forger la Procédure et Indexer"}
                 </Button>
               </div>
             </div>
@@ -526,33 +533,27 @@ export default function DatasetPage() {
                 <div className="p-4 border-b border-border flex justify-between items-center bg-card/30">
                    <div className="flex items-center gap-3">
                       <div className="w-2.5 h-2.5 rounded-full bg-red-600 animate-pulse" />
-                      <span className="text-[10px] font-bold text-white uppercase tracking-widest font-code">Moteur de vision direct — Séquence {showCamera.stepIndex! + 1}</span>
+                      <span className="text-[10px] font-bold text-white uppercase tracking-widest font-code">Capture Séquence {showCamera.stepIndex! + 1}</span>
                    </div>
                    <Button variant="ghost" size="icon" onClick={stopCamera} className="text-muted-foreground hover:text-white transition-colors"><X className="w-6 h-6" /></Button>
                 </div>
                 <div className="relative aspect-video bg-muted/5 group">
                    <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover opacity-90" />
-                   <div className="absolute inset-0 pointer-events-none border-[1px] border-primary/10 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.1)_50%)] bg-[length:100%_4px] opacity-20" />
                    {isRecording && (
                      <div className="absolute top-6 right-6 flex items-center gap-3 bg-red-600 px-4 py-1.5 rounded-sm animate-pulse shadow-2xl">
                         <div className="w-2.5 h-2.5 bg-white rounded-full" />
-                        <span className="text-[11px] font-bold text-white uppercase font-code">LIAISON_LIVE_REC</span>
+                        <span className="text-[11px] font-bold text-white uppercase font-code">ENREGISTREMENT</span>
                      </div>
                    )}
-                   <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                      <div className="w-20 h-20 border border-primary/20 rounded-full flex items-center justify-center">
-                         <div className="w-2 h-2 bg-primary rounded-full" />
-                      </div>
-                   </div>
                 </div>
                 <div className="p-8 flex justify-center gap-8 bg-card/30">
                    {cameraMode === 'image' ? (
-                     <Button onClick={capturePhoto} className="px-16 h-16 bg-primary text-primary-foreground font-bold uppercase text-sm shadow-2xl hover:scale-105 transition-transform"><Camera className="w-7 h-7 mr-3" /> CAPTURER FRAME</Button>
+                     <Button onClick={capturePhoto} className="px-16 h-16 bg-primary text-primary-foreground font-bold uppercase text-sm shadow-2xl hover:scale-105 transition-transform"><Camera className="w-7 h-7 mr-3" /> CAPTURER</Button>
                    ) : (
                      !isRecording ? (
-                        <Button onClick={startRecording} className="px-16 h-16 bg-red-600 text-white font-bold uppercase text-sm shadow-2xl hover:bg-red-700 transition-all"><PlayCircle className="w-7 h-7 mr-3" /> LANCER ENREGISTREMENT</Button>
+                        <Button onClick={startRecording} className="px-16 h-16 bg-red-600 text-white font-bold uppercase text-sm shadow-2xl hover:bg-red-700 transition-all"><PlayCircle className="w-7 h-7 mr-3" /> LANCER</Button>
                      ) : (
-                        <Button onClick={stopRecording} className="px-16 h-16 bg-white text-black font-bold uppercase text-sm shadow-2xl animate-pulse hover:bg-muted transition-all">STOPPER LE FLUX</Button>
+                        <Button onClick={stopRecording} className="px-16 h-16 bg-white text-black font-bold uppercase text-sm shadow-2xl animate-pulse hover:bg-muted transition-all">STOPPER</Button>
                      )
                    )}
                 </div>

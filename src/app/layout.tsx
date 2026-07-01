@@ -2,6 +2,7 @@ import type {Metadata} from 'next';
 import './globals.css';
 import { PlatformProvider } from '@/components/PlatformProvider';
 import { DeepLinkHandler } from '@/components/DeepLinkHandler';
+import { Toaster } from '@/components/ui/toaster';
 import { Inter, Space_Grotesk, Source_Code_Pro } from 'next/font/google';
 
 const fontInter = Inter({ 
@@ -38,6 +39,7 @@ export default function RootLayout({
         <PlatformProvider>
           <DeepLinkHandler />
           {children}
+          <Toaster />
         </PlatformProvider>
       </body>
     </html>
