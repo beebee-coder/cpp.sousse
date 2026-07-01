@@ -29,7 +29,11 @@ export async function GET() {
 
         const created = await prisma.procedure.upsert({
           where: { code: realProc.metadata.code },
-          update: {},
+          update: {
+            steps: realProc.steps,
+            prerequisites: realProc.prerequisites,
+            metadata: realProc.metadata,
+          },
           create: {
             id: realProc._id || `proc-crf-${Date.now()}`,
             code: realProc.metadata.code,
@@ -89,9 +93,7 @@ export async function POST(request: NextRequest) {
 
     // S'assurer que l'auteur existe
     const admin = await prisma.user.findFirst({ where: { role: 'admin' } });
-    if (!admin) {
-       return NextResponse.json({ success: false, message: 'Administrateur racine introuvable. Lancez le seeding.' }, { status: 500 });
-    }
+    const authorId = admin?.id || 'admin-root';
 
     const code = metadata?.code || `PROC-${Date.now().toString().slice(-6)}`;
 
@@ -101,9 +103,9 @@ export async function POST(request: NextRequest) {
         code,
         title,
         description: body.description || '',
-        category: (metadata?.category || 'OPERATION').toUpperCase(),
-        department: (metadata?.department || 'PRODUCTION').toUpperCase(),
-        criticality: (metadata?.criticality || 'MEDIUM').toUpperCase(),
+        category: (metadata?.category || 'OPERATION').toUpperCase() as any,
+        department: (metadata?.department || 'PRODUCTION').toUpperCase() as any,
+        criticality: (metadata?.criticality || 'MEDIUM').toUpperCase() as any,
         version: metadata?.version || '1.0.0',
         status: 'APPROVED',
         prerequisites: body.prerequisites || { items: [] },
@@ -111,7 +113,7 @@ export async function POST(request: NextRequest) {
         metadata: { ...metadata, createdAt: new Date().toISOString() } as any,
         parameters: body.parameters || { variables: [] },
         postExecution: body.postExecution || { checks: [] },
-        authorId: admin.id,
+        authorId: authorId,
       }
     });
 
