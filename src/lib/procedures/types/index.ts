@@ -22,8 +22,8 @@ export interface ProcedureMetadata {
   code: string;
   category: string;
   subcategory?: string;
-  department: Department;
-  criticality: Criticality;
+  department: string;
+  criticality: string;
   version: string;
   author: {
     id: string;
@@ -202,4 +202,8 @@ export interface FullProcedure {
   parameters: {
     variables: ProcedureVariable[];
   };
+  authorId?: string;
+  category?: string;
+  department?: string;
+  criticality?: string;
 }

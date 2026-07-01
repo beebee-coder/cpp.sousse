@@ -1,3 +1,5 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
 
 generator client {
   provider = "prisma-client-js"
@@ -19,6 +21,8 @@ model User {
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
   lastSyncAt      DateTime?
+  
+  // Relations
   knowledgeItems  KnowledgeItem[]
   procedures      Procedure[]
   executions      ProcedureExecution[]
@@ -49,31 +53,39 @@ model KnowledgeItem {
 }
 
 model Procedure {
-  id              String               @id @default(cuid())
-  code            String               @unique
+  id              String             @id @default(cuid())
+  code            String             @unique
   title           String
   description     String?
-  category        String               @default("OPERATION")
+  category        String             @default("OPERATION")
   subcategory     String?
-  department      String               @default("PRODUCTION")
-  criticality     String               @default("MEDIUM")
-  version         String               @default("1.0.0")
-  status          String               @default("DRAFT")
-  prerequisites   Json                 // { description: string, items: Array }
-  steps           Json                 // Array of ProcedureStep
+  department      String             @default("PRODUCTION")
+  criticality     String             @default("MEDIUM")
+  version         String             @default("1.0.0")
+  status          String             @default("DRAFT")
+  
+  // Données structurées
+  prerequisites   Json               // Format: { description: string, items: Prerequisite[] }
+  steps           Json               // Format: ProcedureStep[]
   parameters      Json?
   postExecution   Json?
-  metadata        Json
+  
+  // Métadonnées
+  metadata        Json               // Métadonnées complètes
   authorId        String
-  author          User                 @relation(fields: [authorId], references: [id])
-  approvers       Json?
-  syncedLocal     Boolean              @default(false)
+  author          User               @relation(fields: [authorId], references: [id])
+  approvers       Json?              // Liste des approbateurs
+  
+  syncedLocal     Boolean            @default(false)
   lastExecutedAt  DateTime?
-  executionCount  Int                  @default(0)
-  avgDuration     Int?
+  executionCount  Int                @default(0)
+  avgDuration     Int?               // Temps moyen en secondes
   successRate     Float?
-  createdAt       DateTime             @default(now())
-  updatedAt       DateTime             @updatedAt
+  
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  
+  // Relations
   executions      ProcedureExecution[]
 
   @@index([code])
@@ -82,25 +94,28 @@ model Procedure {
 }
 
 model ProcedureExecution {
-  id              String    @id @default(cuid())
+  id              String   @id @default(cuid())
   procedureId     String
   procedure       Procedure @relation(fields: [procedureId], references: [id], onDelete: Cascade)
   operatorId      String
-  operator        User      @relation(fields: [operatorId], references: [id])
-  startTime       DateTime  @default(now())
+  operator        User     @relation(fields: [operatorId], references: [id])
+  
+  startTime       DateTime @default(now())
   endTime         DateTime?
-  status          String
-  currentStep     Int       @default(-1)
-  stepsStatus     Json      // Map of stepId -> status
-  totalDuration   Int?
-  events          Json?
-  alarms          Json?
-  fallbacks       Json?
-  result          Json?
+  status          String   // "RUNNING" | "COMPLETED" | "FAILED"
+  currentStep     Int      @default(-1)
+  stepsStatus     Json     // État de chaque étape
+  totalDuration   Int?     // Durée totale en secondes
+  
+  events          Json?    
+  alarms          Json?    
+  fallbacks       Json?    
+  result          Json?    
   notes           String?
-  signature       String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  signature       String?  
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   @@index([procedureId])
   @@index([operatorId])

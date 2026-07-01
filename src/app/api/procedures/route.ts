@@ -1,10 +1,10 @@
-
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/db/prisma-client';
+import { prisma } from '@/lib/db/postgres-client';
 import { procedureRAG } from '@/lib/procedures/services/rag.service';
 import { postgresClient } from '@/lib/db/postgres-client';
 import { getSessionFromCookie } from '@/lib/session';
 import { v4 as uuidv4 } from 'uuid';
+import { FullProcedure } from '@/lib/procedures/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => null);
     
     if (!body || !body.title || !body.steps || !Array.isArray(body.steps)) {
-      console.error(`❌ [FORGE_API] [${traceId}] PAYLOAD_INVALIDE :`, body ? "Structure incorrecte" : "Body vide");
+      console.error(`❌ [FORGE_API] [${traceId}] PAYLOAD_INVALIDE`);
       return NextResponse.json({ 
         success: false, 
         message: 'Données invalides : Le titre et au moins une séquence sont requis.',
@@ -36,21 +36,16 @@ export async function POST(request: NextRequest) {
     // 1. RÉSOLUTION DE L'AUTEUR (Validation ou Création de secours)
     let finalAuthorId: string | null = null;
     
-    // Tenter via session
     if (session?.user?.id) {
       const user = await prisma.user.findUnique({ where: { id: session.user.id } });
-      if (user) {
-        finalAuthorId = user.id;
-        console.log(`👤 [FORGE_API] [${traceId}] AUTEUR_SESSION_OK : ${finalAuthorId}`);
-      }
+      if (user) finalAuthorId = user.id;
     }
 
-    // Fallback Admin Automatique (Garantit l'intégrité SQL)
     if (!finalAuthorId) {
-      console.log(`⚠️ [FORGE_API] [${traceId}] AUCUN_AUTEUR_VALIDE. ACTIVATION_SECOURS_ADMIN...`);
+      console.log(`⚠️ [FORGE_API] [${traceId}] ACTIVATION_SECOURS_ADMIN...`);
       const systemAdmin = await prisma.user.upsert({
         where: { email: 'admin@visionode.local' },
-        update: { approved: true }, // Assure qu'il est actif
+        update: { approved: true },
         create: {
           id: 'admin-root',
           firstName: 'System',
@@ -62,16 +57,13 @@ export async function POST(request: NextRequest) {
         }
       });
       finalAuthorId = systemAdmin.id;
-      console.log(`✅ [FORGE_API] [${traceId}] AUTEUR_SECOURS_VALIDÉ : ${finalAuthorId}`);
     }
 
-    // 2. GESTION DU CODE (Protection contre les doublons)
+    // 2. GESTION DU CODE
     let code = (metadata?.code || `FORGE-${Date.now().toString().slice(-6)}`).toUpperCase();
     const existing = await prisma.procedure.findUnique({ where: { code } });
     if (existing) {
-      const oldCode = code;
       code = `${code}-${Math.floor(Math.random() * 1000)}`;
-      console.log(`🔄 [FORGE_API] [${traceId}] COLLISION_CODE : ${oldCode} -> ${code}`);
     }
 
     // 3. TRANSACTION SQL NEON
@@ -89,33 +81,21 @@ export async function POST(request: NextRequest) {
         prerequisites: (body.prerequisites || { description: "Précautions standards", items: [] }),
         steps: steps,
         metadata: { ...metadata, forged_at: timestamp, traceId, authorId: finalAuthorId },
-        parameters: (body.parameters || { variables: [] }),
-        postExecution: (body.postExecution || { checks: [], reporting: { generateReport: true, reportFields: [] } }),
         authorId: finalAuthorId!
       }
     });
 
-    // 4. ARCHIVAGE PHYSIQUE (Fichiers Registre)
+    // 4. ARCHIVAGE PHYSIQUE
     try {
       console.log(`📂 [FORGE_API] [${traceId}] ARCHIVAGE_PHYSIQUE...`);
       const regPath = `procedures/${procedure.code.toLowerCase()}/procedure.json`;
       await postgresClient.saveFile(regPath, JSON.stringify(procedure, null, 2));
-      
-      // Projection pour recherche sémantique locale
-      await postgresClient.saveFile(`items/proc_${procedure.code.toLowerCase()}.json`, JSON.stringify({
-        id: procedure.id,
-        type: 'procedure',
-        title: procedure.title,
-        content: `PROCÉDURE: ${procedure.title} [${procedure.code}]. ${steps.length} séquences.`,
-        metadata: { origin: 'FORGE', code: procedure.code }
-      }, null, 2));
     } catch (e: any) {
-      console.warn(`⚠️ [FORGE_API] [${traceId}] ÉCHEC_REGISTRE_NON_BLOQUANT : ${e.message}`);
+      console.warn(`⚠️ [FORGE_API] [${traceId}] ÉCHEC_REGISTRE : ${e.message}`);
     }
 
     // 5. VECTORISATION IA (Asynchrone)
-    console.log(`🧠 [FORGE_API] [${traceId}] DÉCLENCHEMENT_RAG...`);
-    procedureRAG.indexProcedure(procedure as any).catch(err => {
+    procedureRAG.indexProcedure(procedure as unknown as FullProcedure).catch(err => {
       console.error(`⚠️ [FORGE_API] [${traceId}] ERREUR_IA_RAG :`, err.message);
     });
 
@@ -129,17 +109,11 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error: any) {
-    console.error(`❌ [FORGE_API] [${traceId}] ERREUR_CRITIQUE_PRISMA :`, {
-      code: error.code,
-      meta: error.meta,
-      message: error.message
-    });
-
+    console.error(`❌ [FORGE_API] [${traceId}] ERREUR_SQL :`, error.message);
     return NextResponse.json({ 
       success: false, 
       error: "ÉCHEC_TRANSACTION_SQL",
-      message: error.message || "Une erreur interne est survenue lors de l'enregistrement.",
-      prismaCode: error.code,
+      message: error.message,
       traceId 
     }, { status: 500 });
   }
