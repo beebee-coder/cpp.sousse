@@ -5,14 +5,14 @@ import ws from 'ws';
 
 /**
  * @fileOverview Client Prisma Singleton optimisé pour Prisma 7 et Neon.
- * Utilise l'adaptateur Neon pour supporter les environnements Edge/Cloud.
+ * Logs structurés [PRISMA_CLIENT].
  */
 
 const globalForPrisma = global as unknown as { prisma: PrismaClient };
 
 function createPrismaClient() {
   const ts = new Date().toLocaleTimeString();
-  console.log(`🔌 [PRISMA_CLIENT] [INIT] [${ts}] Initialisation du pilote Neon.`);
+  console.log(`🔌 [PRISMA_CLIENT] [INIT] [${ts}] Liaison Neon lancée.`);
 
   if (typeof window === 'undefined') {
     neonConfig.webSocketConstructor = ws;
@@ -20,14 +20,14 @@ function createPrismaClient() {
 
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
-    console.warn(`⚠️ [PRISMA_CLIENT] DATABASE_URL manquante. Mode dégradé.`);
+    console.warn(`⚠️ [PRISMA_CLIENT] DATABASE_URL manquante.`);
     return new PrismaClient();
   }
 
   const pool = new Pool({ connectionString });
   const adapter = new PrismaNeon(pool);
 
-  // @ts-ignore - Compatibilité typage adapter Neon/Prisma 7
+  // Prisma 7 injecte l'adaptateur directement via le constructeur
   return new PrismaClient({
     adapter,
     log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],

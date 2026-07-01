@@ -3,7 +3,7 @@ import { NextRequest } from 'next/server';
 
 const addPendingUserMock = vi.fn();
 
-vi.mock('@/lib/auth-users', () => ({
+vi.mock('@/lib/auth-store', () => ({
   addPendingUser: addPendingUserMock,
 }));
 
