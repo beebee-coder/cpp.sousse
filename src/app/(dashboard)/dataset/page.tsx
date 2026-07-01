@@ -53,7 +53,6 @@ export default function DatasetPage() {
   const [mode, setMode] = useState<'qa' | 'procedure'>('procedure');
   const [isUploading, setIsUploading] = useState(false);
   
-  // États média
   const [showCamera, setShowCamera] = useState<{ isOpen: boolean; stepIndex: number | null }>({ isOpen: false, stepIndex: null });
   const [cameraMode, setCameraType] = useState<'image' | 'video'>('image');
   const [isRecording, setIsRecording] = useState(false);
@@ -62,10 +61,7 @@ export default function DatasetPage() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
 
-  // Tampon pour la dictée vocale
   const [phraseBuffers, setPhraseBuffers] = useState<Record<string, string[]>>({});
-  
-  // Champs Formulaire
   const [question, setQuestion] = useState('');
   const [answer, setAnswer] = useState('');
   const [procTitle, setProcTitle] = useState('');
@@ -131,7 +127,6 @@ export default function DatasetPage() {
 
   useEffect(() => { setMounted(true); }, []);
 
-  // --- LOGIQUE MÉDIA ---
   const startCamera = async (type: 'image' | 'video', stepIndex: number) => {
     setCameraType(type);
     setShowCamera({ isOpen: true, stepIndex });
@@ -149,7 +144,9 @@ export default function DatasetPage() {
   };
 
   const stopCamera = () => {
-    if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(t => t.stop());
+    }
     setShowCamera({ isOpen: false, stepIndex: null });
     setIsRecording(false);
   };
@@ -198,14 +195,13 @@ export default function DatasetPage() {
     }
   };
 
-  // --- SOUMISSION ---
   const handleAddItem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isUploading) return;
 
     if (mode === 'qa') {
       if (!question.trim() || !answer.trim()) {
-        toast({ title: "Données incomplètes", description: "Veuillez renseigner le symptôme et la résolution.", variant: "destructive" });
+        toast({ title: "Données incomplètes", variant: "destructive" });
         return;
       }
       setIsUploading(true);
@@ -217,17 +213,17 @@ export default function DatasetPage() {
         });
         const data = await res.json();
         if (res.ok && data.success) {
-          toast({ title: "Savoir sémantique indexé", description: "L'entrée Q/R a été enregistrée avec succès." });
+          toast({ title: "Savoir sémantique indexé" });
           setQuestion(''); setAnswer(''); setPhraseBuffers({});
         } else {
-          throw new Error(data.error || "Erreur de liaison BDD");
+          throw new Error(data.error || "Échec liaison BDD");
         }
       } catch (err: any) {
         toast({ title: "Échec de l'indexation", description: err.message, variant: "destructive" });
       } finally { setIsUploading(false); }
     } else {
       if (!procTitle.trim() || procSteps.some(s => !s.title.trim())) {
-        toast({ title: "Forge interrompue", description: "Le titre et l'intitulé de chaque étape sont obligatoires.", variant: "destructive" });
+        toast({ title: "Forge interrompue", description: "Le titre et les étapes sont requis.", variant: "destructive" });
         return;
       }
       setIsUploading(true);
@@ -236,13 +232,8 @@ export default function DatasetPage() {
           id: `step-${Date.now()}-${i}`,
           order: i + 1,
           title: s.title,
-          description: s.description || "Instruction technique standard.",
-          duration: { 
-            value: parseInt(s.duration) || 60, 
-            unit: "seconds", 
-            display: `${s.duration}s`, 
-            type: "fixed" 
-          },
+          description: s.description || "Instruction technique.",
+          duration: { value: parseInt(s.duration) || 60, unit: "seconds", display: `${s.duration}s`, type: "fixed" },
           action: { 
             type: "confirmation", 
             instruction: s.description, 
@@ -273,18 +264,17 @@ export default function DatasetPage() {
               category: "MAINTENANCE", 
               department: "PRODUCTION", 
               criticality: "MEDIUM", 
-              version: "1.0.0",
-              code: `FORGE-${Date.now().toString().slice(-4)}`
+              version: "1.0.0"
             }
           }),
         });
 
         const data = await res.json();
         if (data.success) {
-          toast({ title: "Procédure forgée", description: "Enregistrée dans la base d'audit et le registre physique." });
+          toast({ title: "Forge réussie", description: "La procédure est enregistrée et archivée." });
           router.push('/procedures');
         } else {
-          throw new Error(data.message || data.error || "Erreur serveur de forge");
+          throw new Error(data.message || "Erreur serveur");
         }
       } catch (err: any) {
         toast({ title: "Échec de la Forge", description: err.message, variant: "destructive" });
@@ -315,8 +305,8 @@ export default function DatasetPage() {
               {voice.isListening ? "Dictée Active" : "Dictée OFF"}
             </Button>
             <div className="flex bg-muted/30 p-1 rounded-sm border border-border">
-              <button onClick={() => setMode('qa')} className={cn("px-4 py-1 text-[9px] uppercase rounded-sm font-bold transition-all", mode === 'qa' ? "bg-primary text-primary-foreground shadow-lg" : "text-muted-foreground hover:text-foreground")}>Q/R</button>
-              <button onClick={() => setMode('procedure')} className={cn("px-4 py-1 text-[9px] uppercase rounded-sm font-bold transition-all", mode === 'procedure' ? "bg-secondary text-secondary-foreground shadow-lg" : "text-muted-foreground hover:text-foreground")}>Procédure</button>
+              <button onClick={() => setMode('qa')} className={cn("px-4 py-1 text-[9px] uppercase rounded-sm font-bold transition-all", mode === 'qa' ? "bg-primary text-primary-foreground" : "text-muted-foreground")}>Q/R</button>
+              <button onClick={() => setMode('procedure')} className={cn("px-4 py-1 text-[9px] uppercase rounded-sm font-bold transition-all", mode === 'procedure' ? "bg-secondary text-secondary-foreground" : "text-muted-foreground")}>Procédure</button>
             </div>
           </div>
         </header>
@@ -328,7 +318,7 @@ export default function DatasetPage() {
                <div className="space-y-1">
                  <p className="text-[10px] font-code text-white uppercase font-bold">Liaison de Données Critique</p>
                  <p className="text-[9px] font-code text-muted-foreground uppercase leading-tight">
-                   Chaque forge génère un fichier atomique dans le Registre Physique pour garantir la disponibilité hors-ligne.
+                   L'enregistrement en base de données cloud et l'archivage physique sont effectués simultanément.
                  </p>
                </div>
             </Card>
@@ -523,7 +513,6 @@ export default function DatasetPage() {
           </form>
         </div>
 
-        {/* Caméra Overlay */}
         {showCamera.isOpen && (
           <div className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center p-4 sm:p-8 animate-in fade-in duration-300">
              <Card className="w-full max-w-4xl overflow-hidden border-primary/20 bg-black shadow-2xl">
