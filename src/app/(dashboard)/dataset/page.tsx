@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   Database, Plus, Loader2, Trash2, 
   Zap, Layers, ShieldAlert,

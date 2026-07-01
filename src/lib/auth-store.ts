@@ -1,7 +1,6 @@
-
 import { prisma } from './db/prisma-client';
 import bcrypt from 'bcryptjs';
-import type { AuthUser, UserRole } from '@/lib/auth-users';
+import type { UserRole } from '@/lib/auth-users';
 
 /**
  * Magasin d'identités avec logs structurés [AUTH_STORE].
@@ -74,4 +73,48 @@ export async function authenticateUser(email: string, password: string) {
     console.error(`❌ [AUTH_STORE] [ERROR] [${ts}] Échec liaison Neon :`, e.message);
     return { success: false, error: 'DB_ERROR' };
   }
+}
+
+export async function addPendingUser(firstName: string, lastName: string, password: string, role: string) {
+  const email = `${firstName.toLowerCase()}.${lastName.toLowerCase()}@visionode.local`;
+  const existing = await prisma.user.findUnique({ where: { email } });
+  if (existing) return null;
+
+  const hashedPassword = await bcrypt.hash(password, 12);
+  return await prisma.user.create({
+    data: {
+      firstName,
+      lastName,
+      email,
+      password: hashedPassword,
+      role,
+      approved: false,
+    }
+  });
+}
+
+export async function listPendingUsers() {
+  return await prisma.user.findMany({
+    where: { approved: false },
+    orderBy: { createdAt: 'desc' }
+  });
+}
+
+export async function approveUser(userId: string) {
+  return await prisma.user.update({
+    where: { id: userId },
+    data: { approved: true }
+  });
+}
+
+export async function rejectUser(userId: string) {
+  return await prisma.user.delete({
+    where: { id: userId }
+  });
+}
+
+export async function getAllUsers() {
+  return await prisma.user.findMany({
+    orderBy: { createdAt: 'desc' }
+  });
 }

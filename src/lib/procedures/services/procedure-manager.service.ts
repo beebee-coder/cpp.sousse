@@ -1,5 +1,4 @@
 import { prisma } from '@/lib/db/prisma-client';
-import { FullProcedure, ProcedureStatus } from '../types';
 
 /**
  * @fileOverview Service de gestion des procédures (CRUD) - Nomenclature Reformée.

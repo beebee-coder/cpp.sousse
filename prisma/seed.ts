@@ -24,7 +24,7 @@ async function main() {
     },
   });
 
-  const chef = await prisma.user.upsert({
+  await prisma.user.upsert({
     where: { email: 'chef@visionode.local' },
     update: {},
     create: {
