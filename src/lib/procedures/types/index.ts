@@ -1,6 +1,6 @@
 /**
  * @fileOverview Types et interfaces reformés pour le système VisioNode Precision.
- * Version : Nomenclature V6.0 (Prisma JSON compliant).
+ * Version : Nomenclature V6.1 (Audit Multimédia & Alarmes).
  */
 
 export interface ProcedureMetadata {
@@ -32,6 +32,19 @@ export interface StepValidationCondition {
   unit?: string;
   displayName: string;
   monitoring?: boolean;
+}
+
+export interface StepAlarm {
+  id: string;
+  code: string;
+  type: 'WARNING' | 'CRITICAL' | 'INFO';
+  severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  description: string;
+  remedy: {
+    title: string;
+    steps: string[];
+    estimatedTime: number;
+  };
 }
 
 export interface ProcedureStep {
@@ -66,6 +79,11 @@ export interface ProcedureStep {
       unit: string;
       action: 'abort' | 'warn' | 'retry';
     };
+  };
+  alarms: StepAlarm[];
+  media: {
+    image?: string;
+    video?: string;
   };
   dependencies: {
     prerequisites: string[];

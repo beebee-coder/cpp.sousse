@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { 
   Database, Plus, Loader2, Trash2, 
   Zap, CheckCircle2, Layers, ShieldAlert,
-  Info
+  Info, Camera, Video, AlertTriangle, Activity, Settings2
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -15,6 +15,21 @@ import { DashboardSidebar } from '@/components/dashboard/Sidebar';
 import { cn } from '@/lib/utils';
 import { useRouter } from 'next/navigation';
 
+interface ForgeCondition {
+  id: string;
+  displayName: string;
+  operator: string;
+  value: string;
+  unit: string;
+}
+
+interface ForgeAlarm {
+  id: string;
+  code: string;
+  severity: string;
+  description: string;
+}
+
 interface DictationStep {
   id: string;
   title: string;
@@ -23,6 +38,10 @@ interface DictationStep {
   description: string;
   actionType: 'confirmation' | 'valve_operation' | 'command' | 'wait';
   target?: string;
+  conditions: ForgeCondition[];
+  alarms: ForgeAlarm[];
+  imageUrl?: string;
+  videoUrl?: string;
 }
 
 export default function DatasetPage() {
@@ -34,7 +53,16 @@ export default function DatasetPage() {
   const [procTitle, setProcTitle] = useState('');
   const [category, setCategory] = useState('OPERATION');
   const [procSteps, setProcSteps] = useState<DictationStep[]>([
-    { id: '1', title: '', subtitle: '', duration: '60', description: '', actionType: 'confirmation' }
+    { 
+      id: '1', 
+      title: '', 
+      subtitle: '', 
+      duration: '60', 
+      description: '', 
+      actionType: 'confirmation',
+      conditions: [],
+      alarms: []
+    }
   ]);
 
   useEffect(() => { setMounted(true); }, []);
@@ -79,9 +107,24 @@ export default function DatasetPage() {
             } 
           },
           validation: { 
-            conditions: [], 
+            conditions: s.conditions.map(c => ({
+              ...c,
+              id: c.id || `cond-${Date.now()}`,
+              type: 'numeric',
+              monitoring: true
+            })), 
             successExpression: "status == OK", 
             timeout: { value: 300, unit: "seconds", action: "warn" } 
+          },
+          alarms: s.alarms.map(a => ({
+            ...a,
+            id: a.id || `alarm-${Date.now()}`,
+            type: 'CRITICAL',
+            remedy: { title: "Protocole de secours", steps: ["Arrêt d'urgence", "Vérification manuelle"], estimatedTime: 120 }
+          })),
+          media: {
+            image: s.imageUrl,
+            video: s.videoUrl
           },
           dependencies: { prerequisites: [], dependsOn: [], requiresConfirmation: true }
         })),
@@ -95,8 +138,6 @@ export default function DatasetPage() {
         }
       };
 
-      console.log(`⚒️ [FORGE_FRONT] [STEP] Payload structuré :`, payload);
-
       const res = await fetch('/api/procedures', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -106,16 +147,12 @@ export default function DatasetPage() {
       const data = await res.json();
       
       if (res.ok && data.success) {
-        console.log(`✅ [FORGE_FRONT] [SUCCESS] Forge validée. TraceId: ${data.traceId}`);
         toast({ title: "ACTIF FORGÉ AVEC SUCCÈS", description: data.message });
         router.push('/procedures');
       } else {
-        const errorMsg = data.message || "REJET_BACKEND";
-        console.error(`❌ [FORGE_FRONT] [REJET]`, data);
-        throw new Error(errorMsg);
+        throw new Error(data.message || "REJET_BACKEND");
       }
     } catch (err: any) {
-      console.error(`❌ [FORGE_FRONT] [ERROR] Échec critique :`, err.message);
       toast({ title: "ÉCHEC DE LA FORGE", description: err.message, variant: "destructive" });
     } finally {
       setIsUploading(false);
@@ -129,8 +166,22 @@ export default function DatasetPage() {
       subtitle: '',
       duration: '60', 
       description: '',
-      actionType: 'confirmation'
+      actionType: 'confirmation',
+      conditions: [],
+      alarms: []
     }]);
+  };
+
+  const addCondition = (stepIndex: number) => {
+    const next = [...procSteps];
+    next[stepIndex].conditions.push({ id: Date.now().toString(), displayName: '', operator: '>', value: '', unit: '' });
+    setProcSteps(next);
+  };
+
+  const addAlarm = (stepIndex: number) => {
+    const next = [...procSteps];
+    next[stepIndex].alarms.push({ id: Date.now().toString(), code: '', severity: 'HIGH', description: '' });
+    setProcSteps(next);
   };
 
   if (!mounted) return null;
@@ -146,7 +197,7 @@ export default function DatasetPage() {
             <span className="font-headline font-bold text-xs uppercase tracking-widest text-primary">Station de Forge Industrielle</span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-[10px] font-code text-muted-foreground uppercase px-3 py-1 border border-border rounded-sm bg-black/20">Moteur V6.0 Actif</span>
+            <span className="text-[10px] font-code text-muted-foreground uppercase px-3 py-1 border border-border rounded-sm bg-black/20">Moteur V6.1 Audit Actif</span>
           </div>
         </header>
 
@@ -223,14 +274,31 @@ export default function DatasetPage() {
                           className="h-10 text-[10px] uppercase font-bold bg-black/40 border-border/50" 
                         />
                       </div>
-                      <div>
-                        <label className="text-[8px] font-bold text-muted-foreground uppercase mb-1.5 block">Sous-Titre / Phase</label>
-                        <Input 
-                          value={step.subtitle} 
-                          onChange={(e) => { const n = [...procSteps]; n[index].subtitle = e.target.value; setProcSteps(n); }} 
-                          placeholder="PHASE (OPTIONNEL)" 
-                          className="h-10 text-[10px] uppercase bg-black/40 border-border/50" 
-                        />
+                      <div className="grid grid-cols-2 gap-3">
+                        <Button 
+                          type="button" 
+                          variant="outline" 
+                          size="sm"
+                          className={cn("h-10 text-[8px] uppercase font-bold border-border/40", step.imageUrl && "border-primary text-primary")}
+                          onClick={() => {
+                            const url = prompt("URL de l'image de référence :");
+                            if (url !== null) { const n = [...procSteps]; n[index].imageUrl = url; setProcSteps(n); }
+                          }}
+                        >
+                          <Camera className="w-3.5 h-3.5 mr-2" /> Image
+                        </Button>
+                        <Button 
+                          type="button" 
+                          variant="outline" 
+                          size="sm"
+                          className={cn("h-10 text-[8px] uppercase font-bold border-border/40", step.videoUrl && "border-secondary text-secondary")}
+                          onClick={() => {
+                            const url = prompt("URL de la vidéo de démonstration :");
+                            if (url !== null) { const n = [...procSteps]; n[index].videoUrl = url; setProcSteps(n); }
+                          }}
+                        >
+                          <Video className="w-3.5 h-3.5 mr-2" /> Vidéo
+                        </Button>
                       </div>
                     </div>
 
@@ -275,6 +343,46 @@ export default function DatasetPage() {
                           />
                         </div>
                       )}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Section Conditions */}
+                    <div className="space-y-3 p-3 bg-black/20 border border-border/30 rounded-sm">
+                      <div className="flex items-center justify-between">
+                         <h4 className="text-[8px] font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-2">
+                           <Activity className="w-3 h-3 text-primary" /> Conditions Monitoring
+                         </h4>
+                         <button type="button" onClick={() => addCondition(index)} className="text-[8px] font-bold text-primary uppercase hover:underline">+ Ajouter</button>
+                      </div>
+                      <div className="space-y-2">
+                        {step.conditions.map((cond, ci) => (
+                          <div key={cond.id} className="grid grid-cols-4 gap-2">
+                            <Input placeholder="NOM" value={cond.displayName} onChange={e => { const n = [...procSteps]; n[index].conditions[ci].displayName = e.target.value; setProcSteps(n); }} className="h-7 text-[8px] uppercase bg-black/40" />
+                            <Input placeholder="OP" value={cond.operator} onChange={e => { const n = [...procSteps]; n[index].conditions[ci].operator = e.target.value; setProcSteps(n); }} className="h-7 text-[8px] bg-black/40 text-center" />
+                            <Input placeholder="VAL" value={cond.value} onChange={e => { const n = [...procSteps]; n[index].conditions[ci].value = e.target.value; setProcSteps(n); }} className="h-7 text-[8px] bg-black/40" />
+                            <Input placeholder="UNITE" value={cond.unit} onChange={e => { const n = [...procSteps]; n[index].conditions[ci].unit = e.target.value; setProcSteps(n); }} className="h-7 text-[8px] bg-black/40" />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Section Alarmes */}
+                    <div className="space-y-3 p-3 bg-red-950/10 border border-red-900/30 rounded-sm">
+                      <div className="flex items-center justify-between">
+                         <h4 className="text-[8px] font-bold text-red-500/70 uppercase tracking-widest flex items-center gap-2">
+                           <AlertTriangle className="w-3 h-3 text-red-500" /> Protocoles Alarme
+                         </h4>
+                         <button type="button" onClick={() => addAlarm(index)} className="text-[8px] font-bold text-red-500 uppercase hover:underline">+ Ajouter</button>
+                      </div>
+                      <div className="space-y-2">
+                        {step.alarms.map((alarm, ai) => (
+                          <div key={alarm.id} className="flex gap-2">
+                            <Input placeholder="CODE" value={alarm.code} onChange={e => { const n = [...procSteps]; n[index].alarms[ai].code = e.target.value; setProcSteps(n); }} className="h-7 w-20 text-[8px] uppercase bg-black/40" />
+                            <Input placeholder="DESCRIPTION" value={alarm.description} onChange={e => { const n = [...procSteps]; n[index].alarms[ai].description = e.target.value; setProcSteps(n); }} className="h-7 flex-1 text-[8px] bg-black/40" />
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
 
