@@ -3,6 +3,7 @@
 /**
  * @fileOverview Station de Forge Industrielle V7.9.
  * Version : Concordance V6.5 (Procédures) + Interaction Vocale + Fix Badge/Hydratation.
+ * Logs : [FORGE] [REGISTRY]
  */
 
 import { useState, useEffect } from 'react';
@@ -59,7 +60,7 @@ export default function DatasetPage() {
   const [qaAnswer, setQaAnswer] = useState('');
   const [qaTags, setQaTags] = useState('');
 
-  // Stabilisation de l'hydratation
+  // Stabilisation de l'hydratation (Correction de l'erreur [object Event])
   useEffect(() => { 
     setMounted(true); 
     const initialStep: ProcedureStep = { 
