@@ -1,3 +1,4 @@
+
 import { NextRequest, NextResponse } from 'next/server';
 import { authenticateUser } from '@/lib/auth-store';
 import { createSessionCookie } from '@/lib/session';
@@ -13,7 +14,6 @@ export async function POST(request: NextRequest) {
   console.log(`🚀 [AUTH_API] [INIT] [${ts}] Réception d'une demande de liaison.`);
 
   try {
-    // Vérification de la validité du JSON entrant
     const body = await request.json().catch(() => null);
     
     if (!body) {
@@ -56,7 +56,6 @@ export async function POST(request: NextRequest) {
   } catch (err: any) {
     console.error(`❌ [AUTH_API] [FATAL] [${ts}] Panique critique :`, err.message);
     
-    // On renvoie TOUJOURS du JSON, même en cas d'erreur fatale pour éviter le bug HTML
     return NextResponse.json({ 
       success: false, 
       message: 'Erreur interne de liaison système.',
