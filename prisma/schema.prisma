@@ -1,81 +1,82 @@
-// Configuration pour Prisma 7 et adaptateur Neon
+// Configuration Prisma 7.8.0 pour VisioNode Core
+// Version : Alignée sur l'adaptateur Neon asynchrone
+
 generator client {
-  provider        = "prisma-client-js"
+  provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  // Note : La propriété 'url' est proscrite ici sous Prisma 7.
+  // Elle est pilotée par prisma.config.ts et l'adaptateur Neon.
 }
 
 model User {
-  id            String    @id @default(cuid())
-  firstName     String
-  lastName      String
-  email         String    @unique
-  password      String?
-  role          String    @default("user")
-  approved      Boolean   @default(false)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  lastSyncAt    DateTime?
-
-  knowledgeItems     KnowledgeItem[]
-  procedures         Procedure[]
-  executions         ProcedureExecution[]
+  id              String               @id @default(cuid())
+  firstName       String
+  lastName        String
+  password        String
+  email           String               @unique
+  role            String               @default("user")
+  approved        Boolean              @default(false)
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  lastSyncAt      DateTime?
+  knowledgeItems  KnowledgeItem[]
+  procedures      Procedure[]
+  executions      ProcedureExecution[]
 
   @@map("users")
 }
 
 model KnowledgeItem {
-  id           String   @id @default(cuid())
-  userId       String
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type         String   // "qa" | "document"
-  title        String
-  question     String?
-  answer       String?
-  steps        Json?
-  tags         String[]
-  category     String?
-  difficulty   String   @default("medium")
-  isPublic     Boolean  @default(true)
-  syncedLocal  Boolean  @default(false)
-  vectorId     String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type            String   // 'qa', 'doc', 'procedure'
+  title           String
+  question        String?
+  answer          String?
+  steps           Json?
+  tags            String[]
+  category        String?
+  difficulty      String   @default("medium")
+  isPublic        Boolean  @default(true)
+  syncedLocal     Boolean  @default(false)
+  vectorId        String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   @@index([userId])
   @@map("knowledge_items")
 }
 
 model Procedure {
-  id              String   @id @default(cuid())
-  code            String   @unique
+  id              String               @id @default(cuid())
+  code            String               @unique
   title           String
   description     String?
-  category        String   @default("OPERATION")
+  category        String               @default("OPERATION")
   subcategory     String?
-  department      String   @default("PRODUCTION")
-  criticality     String   @default("MEDIUM")
-  version         String   @default("1.0.0")
-  status          String   @default("DRAFT")
-  prerequisites   Json
-  steps           Json
+  department      String               @default("PRODUCTION")
+  criticality     String               @default("MEDIUM")
+  version         String               @default("1.0.0")
+  status          String               @default("DRAFT")
+  prerequisites   Json                 // Liste des prérequis structurés
+  steps           Json                 // Séquençage CRF (ProcedureStep[])
   parameters      Json?
   postExecution   Json?
   metadata        Json
   authorId        String
-  author          User     @relation(fields: [authorId], references: [id])
+  author          User                 @relation(fields: [authorId], references: [id])
   approvers       Json?
-  syncedLocal     Boolean  @default(false)
+  syncedLocal     Boolean              @default(false)
   lastExecutedAt  DateTime?
-  executionCount  Int      @default(0)
+  executionCount  Int                  @default(0)
   avgDuration     Int?
   successRate     Float?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
   executions      ProcedureExecution[]
 
   @@index([code])
@@ -105,5 +106,6 @@ model ProcedureExecution {
   updatedAt       DateTime  @updatedAt
 
   @@index([procedureId])
+  @@index([operatorId])
   @@map("procedure_executions")
 }

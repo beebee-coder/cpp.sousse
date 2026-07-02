@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * @fileOverview Station de Forge Industrielle V8.1.0.
- * Version : Concordance CRF V6.5 + Restauration Complète + Fix Sérialisation.
+ * @fileOverview Station de Forge Industrielle V8.2.0.
+ * Version : Concordance CRF V6.5 + Fix Sérialisation + Fix Hydratation.
  */
 
 import { useState, useEffect } from 'react';

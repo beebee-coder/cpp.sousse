@@ -4,12 +4,14 @@ import { authAudit } from './auth-audit';
 
 /**
  * Magasin d'identités consolidé [AUTH_STORE] pour VisioNode.
- * Version 8.1.0 : Traçabilité industrielle et gestion robuste des erreurs.
+ * Version 8.1.5 : Diagnostic Neon & Audit Trail Industriel.
  */
 
 export async function authenticateUser(email: string, password: string) {
   const ts = new Date().toLocaleTimeString();
   const normalizedEmail = email.toLowerCase().trim();
+
+  console.log(`📡 [AUTH_STORE] [INIT] [${ts}] Interrogation Prisma pour : ${normalizedEmail}`);
 
   try {
     const user = await prisma.user.findUnique({
@@ -17,26 +19,31 @@ export async function authenticateUser(email: string, password: string) {
     });
 
     if (!user) {
+      console.warn(`📡 [AUTH_STORE] [REJECT] Utilisateur inconnu.`);
       authAudit.warn('AUTH_REJECT_UNKNOWN_USER', { email: normalizedEmail });
       return { success: false, error: 'INVALID_CREDENTIALS' };
     }
 
     if (!user.password) {
+      console.warn(`📡 [AUTH_STORE] [REJECT] Compte OAuth détecté.`);
       authAudit.warn('AUTH_REJECT_NO_PASSWORD', { userId: user.id });
       return { success: false, error: 'OAUTH_ACCOUNT' };
     }
 
     const match = await bcrypt.compare(password, user.password);
     if (!match) {
+      console.warn(`📡 [AUTH_STORE] [REJECT] Mot de passe incorrect.`);
       authAudit.warn('AUTH_REJECT_BAD_PASSWORD', { userId: user.id });
       return { success: false, error: 'INVALID_CREDENTIALS' };
     }
 
     if (!user.approved && user.role !== 'admin') {
+      console.warn(`📡 [AUTH_STORE] [REJECT] Compte non approuvé.`);
       authAudit.warn('AUTH_REJECT_NOT_APPROVED', { userId: user.id });
       return { success: false, error: 'NOT_APPROVED' };
     }
 
+    console.log(`✅ [AUTH_STORE] [SUCCESS] Accréditation validée.`);
     authAudit.success('AUTH_VALIDATED', { userId: user.id, role: user.role });
     
     return { 
@@ -52,6 +59,7 @@ export async function authenticateUser(email: string, password: string) {
       }
     };
   } catch (e: any) {
+    console.error(`❌ [AUTH_STORE] [FATAL] Erreur base de données :`, e.message);
     authAudit.error('AUTH_DB_FATAL', { error: e.message, email: normalizedEmail });
     throw new Error(`DB_LIAISON_ECHEC: ${e.message}`);
   }
