@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 
 /**
  * Magasin d'identités consolidé [AUTH_STORE] pour VisioNode.
- * Version : 7.8.0 - Support Neon Serverless & Fonctions Administratives.
+ * Version : 7.8.1 - Support complet des fonctions administratives.
  */
 
 export async function authenticateUser(email: string, password: string) {
@@ -30,8 +30,8 @@ export async function authenticateUser(email: string, password: string) {
       }
     };
   } catch (e: any) {
-    console.error(`❌ [AUTH_STORE] Erreur :`, e.message);
-    return { success: false, error: 'DB_ERROR' };
+    console.error(`❌ [AUTH_STORE] [ERROR] :`, e.message);
+    throw new Error(`DB_LIAISON_ECHEC: ${e.message}`);
   }
 }
 
@@ -49,7 +49,7 @@ export async function addPendingUser(firstName: string, lastName: string, passwo
         email,
         password: hashedPassword,
         role,
-        approved: role === 'admin', // Auto-approbation si admin root
+        approved: role === 'admin',
       }
     });
   } catch (e: any) {

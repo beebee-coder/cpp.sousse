@@ -3,9 +3,10 @@ import { apiClient } from '../api-client';
 
 /**
  * @fileOverview Moteur de synchronisation atomique [SYNC_ENGINE].
- * Version : Client-Safe (Plus d'imports directs de fs/path).
- * Flux : Téléchargement Cloud -> Émission vers Registre via API -> Purge Cloud.
+ * Version : Client-Safe (Suppression définitive de l'import 'fs').
+ * Flux : Téléchargement Cloud -> Émission vers Registre via API -> Injection Chroma -> Purge Cloud.
  */
+
 export const syncEngine = {
   async getSyncState(userId: string): Promise<SyncState> {
     if (typeof window === 'undefined') return {} as SyncState;
@@ -15,7 +16,7 @@ export const syncEngine = {
         const parsed = JSON.parse(raw);
         return { ...parsed, lastSync: new Date(parsed.lastSync) };
       } catch {
-        // Fallback default
+        // Fallback
       }
     }
     return {
@@ -35,11 +36,11 @@ export const syncEngine = {
   },
 
   /**
-   * Phase d'Injection : Rapatrie les données du Web et demande au serveur local de les sécuriser.
+   * Phase d'Injection : Rapatrie les données du Web et les sécurise localement.
    */
   async downloadAndInjectPhase(userId: string, projectId: string): Promise<number> {
     const ts = new Date().toLocaleTimeString();
-    console.log(`📡 [SYNC_DOWN] [INIT] [${ts}] Début de la phase d'injection Web -> Local.`);
+    console.log(`📡 [SYNC_DOWN] [INIT] [${ts}] Début de la phase d'injection.`);
 
     const state = await this.getSyncState(userId);
     let items: any[] = [];
@@ -53,14 +54,11 @@ export const syncEngine = {
       });
       items = res.items ?? [];
     } catch (e: any) {
-      console.error(`❌ [SYNC_DOWN] [ERROR] Échec récupération Cloud :`, e.message);
+      console.error(`❌ [SYNC_DOWN] [ERROR] Échec liaison Cloud :`, e.message);
       return 0;
     }
 
-    if (items.length === 0) {
-      console.log(`ℹ️ [SYNC_DOWN] [IDLE] Aucune nouvelle donnée détectée sur le Cloud.`);
-      return 0;
-    }
+    if (items.length === 0) return 0;
 
     let successIds: string[] = [];
 
@@ -70,7 +68,7 @@ export const syncEngine = {
         const knowledgeType = item._knowledgeType || parsed.type || 'qa';
         const title = item._title || parsed.title || 'Sans titre';
 
-        // 1. Sauvegarde dans le Registre Physique via API (Pour éviter l'import 'fs' ici)
+        // 1. Sauvegarde Registre Physique via API Route
         const regPath = knowledgeType === 'procedure' 
           ? `procedures/${item.id}/procedure.json` 
           : `items/${item.id}.json`;
@@ -81,7 +79,7 @@ export const syncEngine = {
           content: JSON.stringify(parsed, null, 2)
         });
 
-        // 2. Vectorisation Locale (Via API pour éviter l'import ChromaDB ici)
+        // 2. Vectorisation Locale via API Route
         let semanticText = '';
         if (knowledgeType === 'qa') {
           semanticText = `Q: ${parsed.question}\nR: ${parsed.answer}`;
@@ -94,32 +92,25 @@ export const syncEngine = {
           documents: [{
             id: item.id,
             content: semanticText,
-            metadata: {
-              cloudId: item.id,
-              type: knowledgeType,
-              title,
-              tags: item.tags || [],
-              timestamp: Date.now()
-            }
+            metadata: { cloudId: item.id, type: knowledgeType, title, timestamp: Date.now() }
           }],
           upsert: true
         });
 
         successIds.push(item.id);
-        console.log(`✅ [SYNC_VECTOR] [DONE] Item injecté : ${item.id} (${knowledgeType})`);
+        console.log(`✅ [SYNC_VECTOR] [DONE] Item injecté : ${item.id}`);
       } catch (err: any) {
-        console.error(`❌ [SYNC_VECTOR] [FAIL] Échec injection item ${item.id} :`, err.message);
+        console.error(`❌ [SYNC_VECTOR] [FAIL] Échec item ${item.id} :`, err.message);
       }
     }
 
-    // 4. PURGE DU CLOUD (Injection confirmée)
+    // 3. Purge Cloud après injection confirmée
     if (successIds.length > 0) {
-      console.log(`🗑️ [SYNC_PURGE] [INIT] Demande de purge pour ${successIds.length} items du Cloud.`);
       try {
         await apiClient.post('/api/sync/cleanup', { ids: successIds, projectId });
         console.log(`✅ [SYNC_PURGE] [SUCCESS] Données Web nettoyées.`);
       } catch (e: any) {
-        console.warn(`⚠️ [SYNC_PURGE] [WARN] Échec du nettoyage Cloud, doublons possibles :`, e.message);
+        console.warn(`⚠️ [SYNC_PURGE] [WARN] Échec purge Cloud :`, e.message);
       }
     }
 
@@ -133,13 +124,10 @@ export const syncEngine = {
 
     try {
       const injectedCount = await this.downloadAndInjectPhase(userId, projectId);
-
       state.lastSync = new Date();
       state.status = 'idle';
-      state.pendingDownloads = 0;
       await this.saveSyncState(state);
-
-      console.log(`🏁 [SYNC_COMPLETE] Injection terminée. ${injectedCount} items transférés.`);
+      console.log(`🏁 [SYNC_COMPLETE] Injection terminée : ${injectedCount} items.`);
     } catch (e: any) {
       state.status = 'error';
       await this.saveSyncState(state);

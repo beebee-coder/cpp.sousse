@@ -59,7 +59,7 @@ export default function DatasetPage() {
   const [qaAnswer, setQaAnswer] = useState('');
   const [qaTags, setQaTags] = useState('');
 
-  // Initialisation stable pour éviter Hydration Mismatch
+  // Initialisation stable pour éviter Hydration Mismatch [object Event]
   useEffect(() => { 
     setMounted(true); 
     const initialStep: ProcedureStep = { 
