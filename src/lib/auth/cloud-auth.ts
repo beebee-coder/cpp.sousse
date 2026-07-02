@@ -1,3 +1,4 @@
+//src/lib/auth/cloud-auth.ts
 import { SessionUser } from './local-auth';
 
 export const cloudAuth = {

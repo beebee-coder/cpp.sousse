@@ -5,34 +5,25 @@ import { createSessionCookie } from '@/lib/session';
 export const dynamic = 'force-dynamic';
 
 /**
- * Route d'authentification avec traçabilité industrielle [AUTH_API].
- * Version 7.8.5 : Diagnostic complet du corps de réponse.
+ * API Route d'accréditation VisioNode V8.1.0.
+ * Traçabilité totale et retour JSON strict.
  */
 export async function POST(request: NextRequest) {
   const ts = new Date().toLocaleTimeString();
-  console.log(`🚀 [AUTH_API] [INIT] [${ts}] Réception d'une demande de liaison.`);
+  const ip = request.headers.get('x-forwarded-for') || '127.0.0.1';
 
   try {
     const body = await request.json().catch(() => null);
-    
-    if (!body) {
-      console.warn(`🚀 [AUTH_API] [REJECT] [${ts}] Payload JSON invalide ou absent.`);
-      return NextResponse.json({ success: false, message: 'Requête invalide.' }, { status: 400 });
+    if (!body || !body.email || !body.password) {
+      return NextResponse.json({ success: false, message: 'Identifiants de contrôle requis.' }, { status: 400 });
     }
 
-    const email = String(body.email || '').trim();
-    const password = String(body.password || '');
+    console.log(`🚀 [AUTH_API] [INIT] [${ts}] Demande de liaison pour ${body.email} (IP: ${ip})`);
 
-    if (!email || !password) {
-      console.warn(`🚀 [AUTH_API] [REJECT] [${ts}] Identifiants de contrôle manquants.`);
-      return NextResponse.json({ success: false, message: 'Email et mot de passe requis.' }, { status: 400 });
-    }
-
-    console.log(`🚀 [AUTH_API] [STEP] [${ts}] Interrogation du magasin : ${email}`);
-    const result = await authenticateUser(email, password);
+    const result = await authenticateUser(body.email, body.password);
 
     if (result.success && result.user) {
-      console.log(`🚀 [AUTH_API] [STEP] [${ts}] Liaison validée. Création du jeton de session.`);
+      console.log(`🚀 [AUTH_API] [STEP] Liaison validée. Création du jeton de session.`);
       
       await createSessionCookie({
         id: result.user.id,
@@ -41,20 +32,25 @@ export async function POST(request: NextRequest) {
         role: result.user.role,
       });
       
-      console.log(`✅ [AUTH_API] [SUCCESS] [${ts}] Liaison de contrôle établie pour ${result.user.id}.`);
+      console.log(`✅ [AUTH_API] [SUCCESS] Liaison de contrôle établie.`);
       return NextResponse.json({ success: true, user: result.user });
     }
 
-    const errorMsg = result.error === 'NOT_APPROVED' 
-      ? 'Compte en attente d\'approbation administrateur.' 
-      : 'Accréditation refusée (Identifiants incorrects).';
-      
-    console.warn(`🚀 [AUTH_API] [REJECT] [${ts}] Raison : ${errorMsg}`);
-    return NextResponse.json({ success: false, message: errorMsg }, { status: 401 });
+    // Gestion des rejets spécifiques
+    let status = 401;
+    let message = 'Accréditation refusée (Clé incorrecte).';
+
+    if (result.error === 'NOT_APPROVED') {
+      message = 'Compte en attente d\'approbation administrateur.';
+    } else if (result.error === 'OAUTH_ACCOUNT') {
+      message = 'Ce compte utilise une connexion tierce (OAuth).';
+    }
+
+    console.warn(`🚀 [AUTH_API] [REJECT] ${message}`);
+    return NextResponse.json({ success: false, message }, { status });
 
   } catch (err: any) {
     console.error(`❌ [AUTH_API] [FATAL] [${ts}] Panique critique :`, err.message);
-    
     return NextResponse.json({ 
       success: false, 
       message: 'Erreur interne de liaison système.',

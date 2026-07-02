@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * @fileOverview Station de Forge Industrielle V7.9.
- * Version : Concordance V6.5 (Procédures) + Interaction Vocale + Fix Sérialisation/Hydratation.
+ * @fileOverview Station de Forge Industrielle V8.1.0.
+ * Version : Concordance CRF V6.5 + Restauration Complète + Fix Sérialisation.
  */
 
 import { useState, useEffect } from 'react';
@@ -18,7 +18,8 @@ import {
   MicOff,
   Settings2, 
   FileText,
-  Layers
+  Layers,
+  ChevronRight
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -56,7 +57,7 @@ export default function DatasetPage() {
 
   useEffect(() => { 
     setMounted(true); 
-    // Initialisation sécurisée des étapes pour éviter le décalage d'hydratation
+    // Initialisation sécurisée pour éviter le mismatch d'hydratation
     const initialStep: ProcedureStep = { 
       id: `step-${Math.random().toString(36).substring(2, 9)}`, 
       order: 1,
@@ -65,7 +66,7 @@ export default function DatasetPage() {
       duration: { value: 60, unit: 'seconds', display: '1 minute', type: 'fixed' },
       action: {
         type: 'confirmation',
-        instruction: '',
+        instruction: 'Action manuelle requise',
         ui: { component: 'action_button', label: 'CONFIRMER', icon: 'check_circle' }
       },
       validation: { conditions: [], successExpression: 'status == OK', timeout: { value: 300, unit: 'seconds', action: 'warn' } },
@@ -115,7 +116,7 @@ export default function DatasetPage() {
       duration: { value: 60, unit: 'seconds', display: '1 minute', type: 'fixed' },
       action: {
         type: 'confirmation',
-        instruction: '',
+        instruction: 'Action manuelle requise',
         ui: { component: 'action_button', label: 'CONFIRMER', icon: 'check_circle' }
       },
       validation: { conditions: [], successExpression: 'status == OK', timeout: { value: 300, unit: 'seconds', action: 'warn' } },
@@ -357,6 +358,36 @@ export default function DatasetPage() {
                                 Dictée
                               </Button>
                            </div>
+                         </div>
+                         
+                         <div className="space-y-4 p-4 bg-black/20 border border-border rounded-sm">
+                            <div className="flex items-center gap-2 mb-2">
+                               <Settings2 className="w-3 h-3 text-primary" />
+                               <span className="text-[9px] font-bold text-primary uppercase">Configuration d'Action</span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                               <div className="space-y-1">
+                                  <label className="text-[8px] font-bold text-muted-foreground uppercase">Type</label>
+                                  <select 
+                                    value={step.action.type} 
+                                    onChange={e => handleUpdateStep(idx, 'action', { ...step.action, type: e.target.value })}
+                                    className="w-full bg-black border border-border rounded-sm h-8 text-[9px] font-bold uppercase px-2"
+                                  >
+                                    <option value="confirmation">CONFIRMATION</option>
+                                    <option value="valve_operation">VANNE / VALVE</option>
+                                    <option value="command">COMMANDE</option>
+                                  </select>
+                               </div>
+                               <div className="space-y-1">
+                                  <label className="text-[8px] font-bold text-muted-foreground uppercase">Délai Estimé</label>
+                                  <Input 
+                                    type="number" 
+                                    value={step.duration.value} 
+                                    onChange={e => handleUpdateStep(idx, 'duration', { ...step.duration, value: parseInt(e.target.value), display: `${e.target.value}s` })}
+                                    className="h-8 bg-black/40 font-code text-[10px]"
+                                  />
+                               </div>
+                            </div>
                          </div>
                       </div>
                     </Card>

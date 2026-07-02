@@ -1,3 +1,4 @@
+//src/lib/auth/local-auth.ts
 export interface SessionUser {
   id: string;
   email: string;
