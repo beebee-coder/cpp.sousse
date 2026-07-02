@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * @fileOverview Station de Forge Industrielle V8.3.0.
+ * @fileOverview Station de Forge Industrielle V8.5.0.
  * Version : Concordance CRF V6.5 + Fix Sérialisation + Fix Hydratation.
  */
 
@@ -54,10 +54,11 @@ export default function DatasetPage() {
   const [qaAnswer, setQaAnswer] = useState('');
   const [qaTags, setQaTags] = useState('');
 
+  // ✅ Fix Hydratation & Sérialisation : Générer l'état initial une seule fois côté client
   useEffect(() => { 
     setMounted(true); 
     const initialStep: ProcedureStep = { 
-      id: `step-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`, 
+      id: `step-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`, 
       order: 1,
       title: '', 
       description: '',
@@ -107,7 +108,7 @@ export default function DatasetPage() {
 
   const handleAddStep = () => {
     const newStep: ProcedureStep = {
-      id: `step-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+      id: `step-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       order: procSteps.length + 1,
       title: '',
       description: '',
@@ -133,7 +134,8 @@ export default function DatasetPage() {
     setProcSteps(next.map((s, i) => ({ ...s, order: i + 1 })));
   };
 
-  const handleUpdateStep = (idx: number, field: keyof ProcedureStep, value: any) => {
+  // ✅ Fix Sérialisation : Éviter d'injecter des objets Event
+  const handleUpdateStepField = (idx: number, field: keyof ProcedureStep, value: any) => {
     setProcSteps(prev => {
       const next = [...prev];
       if (next[idx]) {
@@ -316,7 +318,7 @@ export default function DatasetPage() {
                            </span>
                            <Input 
                             value={step.title} 
-                            onChange={e => handleUpdateStep(idx, 'title', e.target.value)} 
+                            onChange={e => handleUpdateStepField(idx, 'title', e.target.value)} 
                             placeholder="TITRE DE L'ACTION" 
                             className="bg-transparent border-none focus-visible:ring-0 uppercase font-headline font-bold text-xs h-8 p-0" 
                            />
@@ -338,7 +340,7 @@ export default function DatasetPage() {
                            <div className="relative">
                               <Textarea 
                                 value={step.description} 
-                                onChange={e => handleUpdateStep(idx, 'description', e.target.value)} 
+                                onChange={e => handleUpdateStepField(idx, 'description', e.target.value)} 
                                 placeholder="Détailler l'opération réelle..." 
                                 className="h-28 text-xs font-code bg-black/40 border-border/50 resize-none pr-10" 
                               />
@@ -368,7 +370,7 @@ export default function DatasetPage() {
                                   <label className="text-[8px] font-bold text-muted-foreground uppercase">Type</label>
                                   <select 
                                     value={step.action.type} 
-                                    onChange={e => handleUpdateStep(idx, 'action', { ...step.action, type: e.target.value })}
+                                    onChange={e => handleUpdateStepField(idx, 'action', { ...step.action, type: e.target.value })}
                                     className="w-full bg-black border border-border rounded-sm h-8 text-[9px] font-bold uppercase px-2"
                                   >
                                     <option value="confirmation">CONFIRMATION</option>
@@ -381,7 +383,7 @@ export default function DatasetPage() {
                                   <Input 
                                     type="number" 
                                     value={step.duration.value} 
-                                    onChange={e => handleUpdateStep(idx, 'duration', { ...step.duration, value: parseInt(e.target.value), display: `${e.target.value}s` })}
+                                    onChange={e => handleUpdateStepField(idx, 'duration', { ...step.duration, value: parseInt(e.target.value) || 0, display: `${e.target.value}s` })}
                                     className="h-8 bg-black/40 font-code text-[10px]"
                                   />
                                </div>

@@ -2,8 +2,8 @@
 import { PrismaClient } from '@prisma/client';
 
 /**
- * Singleton Prisma optimisé pour Next.js 15 et Prisma 7.
- * Gère dynamiquement la connexion sans dépendre du champ 'url' dans le schéma.
+ * Singleton Prisma optimisé pour Next.js 15 et Prisma 7.8.0.
+ * La configuration de connexion est gérée par prisma.config.ts.
  */
 
 const globalForPrisma = globalThis as unknown as {
@@ -19,7 +19,7 @@ export const prisma =
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
 
 /**
- * Diagnostic de connexion Neon/Postgres
+ * Diagnostic de connexion Neon/Postgres.
  */
 export async function checkDatabaseConnection() {
   try {
