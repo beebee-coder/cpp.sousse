@@ -1,4 +1,3 @@
-
 import { NextRequest, NextResponse } from 'next/server';
 import { authenticateUser } from '@/lib/auth-store';
 import { signIn } from '@/auth';
@@ -7,6 +6,7 @@ export const dynamic = 'force-dynamic';
 
 /**
  * Route d'authentification avec logs structurés [AUTH_API].
+ * Version 7.8.2 : Retourne du JSON systématiquement pour éviter l'erreur d'analyse JSON du front.
  */
 export async function POST(request: NextRequest) {
   const ts = new Date().toLocaleTimeString();
@@ -27,20 +27,15 @@ export async function POST(request: NextRequest) {
 
     if (result.success && result.user) {
       console.log(`🔑 [AUTH_API] [STEP] [${ts}] Création de la session sécurisée pour : ${result.user.id}`);
-      try {
-        await signIn({
-          id: result.user.id,
-          firstName: result.user.firstName,
-          lastName: result.user.lastName,
-          role: result.user.role,
-        });
-        
-        console.log(`✅ [AUTH_API] [SUCCESS] [${ts}] Liaison établie.`);
-        return NextResponse.json({ success: true, user: result.user });
-      } catch (sessionErr: any) {
-        console.error(`❌ [AUTH_API] [ERROR] [${ts}] Échec création session :`, sessionErr.message);
-        return NextResponse.json({ success: false, message: 'Erreur technique session.' }, { status: 500 });
-      }
+      await signIn({
+        id: result.user.id,
+        firstName: result.user.firstName,
+        lastName: result.user.lastName,
+        role: result.user.role,
+      });
+      
+      console.log(`✅ [AUTH_API] [SUCCESS] [${ts}] Liaison établie.`);
+      return NextResponse.json({ success: true, user: result.user });
     }
 
     const errorMsg = result.error === 'NOT_APPROVED' 
@@ -52,6 +47,10 @@ export async function POST(request: NextRequest) {
 
   } catch (err: any) {
     console.error(`❌ [AUTH_API] [FATAL] [${ts}] Panique critique :`, err.message);
-    return NextResponse.json({ success: false, message: 'Panique critique du service.' }, { status: 500 });
+    return NextResponse.json({ 
+      success: false, 
+      message: 'Panique critique du service (Vérifiez la config Prisma).',
+      error: err.message
+    }, { status: 500 });
   }
 }

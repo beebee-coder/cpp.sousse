@@ -3,7 +3,6 @@
 /**
  * @fileOverview Station de Forge Industrielle V7.9.
  * Version : Concordance V6.5 (Procédures) + Interaction Vocale + Fix Badge/Hydratation.
- * Logs : [FORGE] [REGISTRY]
  */
 
 import { useState, useEffect } from 'react';
@@ -15,7 +14,6 @@ import {
   Zap, 
   ShieldAlert, 
   BookOpen, 
-  Save, 
   Mic, 
   MicOff,
   Activity, 
@@ -60,7 +58,6 @@ export default function DatasetPage() {
   const [qaAnswer, setQaAnswer] = useState('');
   const [qaTags, setQaTags] = useState('');
 
-  // Stabilisation de l'hydratation (Correction de l'erreur [object Event])
   useEffect(() => { 
     setMounted(true); 
     const initialStep: ProcedureStep = { 
@@ -228,11 +225,6 @@ export default function DatasetPage() {
             <Database className="w-4 h-4 text-primary animate-pulse" />
             <span className="font-headline font-bold text-xs uppercase tracking-widest text-primary">Station de Forge Industrielle</span>
           </div>
-          <div className="flex items-center gap-3">
-             <div className="px-3 py-1 bg-secondary/10 border border-secondary/20 rounded-sm">
-                <span className="text-[9px] font-code text-secondary uppercase font-bold tracking-tighter">PRÊT POUR INJECTION</span>
-             </div>
-          </div>
         </header>
 
         <div className="flex-1 overflow-y-auto terminal-scroll p-4 lg:p-8">
@@ -298,18 +290,6 @@ export default function DatasetPage() {
                                 <option value="MEDIUM">MOYENNE</option>
                                 <option value="HIGH">HAUTE</option>
                                 <option value="CRITICAL">CRITIQUE</option>
-                              </select>
-                           </div>
-                           <div className="flex justify-between items-center">
-                              <span className="text-[10px] font-code uppercase text-muted-foreground">Département</span>
-                              <select 
-                                value={department} 
-                                onChange={e => setDepartment(e.target.value)} 
-                                className="bg-black border border-border rounded-sm px-2 py-1 text-[9px] font-bold uppercase"
-                              >
-                                <option value="PRODUCTION">PRODUCTION</option>
-                                <option value="MAINTENANCE">MAINTENANCE</option>
-                                <option value="SÉCURITÉ">SÉCURITÉ</option>
                               </select>
                            </div>
                         </div>
@@ -378,22 +358,6 @@ export default function DatasetPage() {
                               </Button>
                            </div>
                          </div>
-
-                         <div className="space-y-4">
-                            <div className="p-3 bg-primary/5 border border-primary/20 rounded-sm">
-                               <p className="text-[8px] font-bold text-primary uppercase mb-2 flex items-center gap-2">
-                                 <Activity className="w-3 h-3" /> Monitoring & Validation
-                               </p>
-                               <div className="flex items-center gap-3">
-                                  <select className="flex-1 bg-black border border-border rounded-sm px-2 py-1 text-[8px] font-bold uppercase text-muted-foreground">
-                                    <option>CONFIRMATION MANUELLE</option>
-                                    <option>VALEUR CAPTEUR (AUTO)</option>
-                                    <option>RECONNAISSANCE VISUELLE</option>
-                                  </select>
-                                  <ChevronRight className="w-3 h-3 text-muted-foreground" />
-                               </div>
-                            </div>
-                         </div>
                       </div>
                     </Card>
                   ))}
@@ -412,13 +376,9 @@ export default function DatasetPage() {
                   <Button 
                     type="submit" 
                     disabled={isUploading} 
-                    className="w-full h-16 bg-primary text-primary-foreground font-headline font-bold text-sm uppercase shadow-[0_0_30px_rgba(50,181,212,0.3)] transition-all active:scale-95 group"
+                    className="w-full h-16 bg-primary text-primary-foreground font-headline font-bold text-sm uppercase shadow-[0_0_30px_rgba(50,181,212,0.3)]"
                   >
-                    {isUploading ? (
-                      <Loader2 className="w-6 h-6 animate-spin mr-3" />
-                    ) : (
-                      <Sparkles className="w-6 h-6 mr-3 group-hover:animate-bounce" />
-                    )}
+                    {isUploading ? <Loader2 className="w-6 h-6 animate-spin mr-3" /> : <Zap className="w-6 h-6 mr-3" />}
                     Forger la Procédure dans le Registre
                   </Button>
                 </div>
@@ -429,52 +389,29 @@ export default function DatasetPage() {
               <form onSubmit={handleForgeQA} className="space-y-6 max-w-4xl mx-auto pb-24">
                 <Card className="p-8 border-secondary/20 bg-black/40 space-y-6 shadow-2xl">
                   <div className="flex items-center gap-3 border-b border-border/50 pb-4">
-                    <div className="w-12 h-12 rounded-sm bg-secondary/10 border border-secondary/30 flex items-center justify-center">
-                       <BookOpen className="w-6 h-6 text-secondary" />
-                    </div>
+                    <BookOpen className="w-6 h-6 text-secondary" />
                     <div>
                       <h3 className="text-xl font-headline font-bold uppercase text-white tracking-tight">Injection Sémantique</h3>
-                      <p className="text-[10px] font-code text-muted-foreground uppercase tracking-widest">Base de Connaissances Move-to-Local</p>
                     </div>
                   </div>
 
                   <div className="space-y-5">
                     <div className="space-y-2">
                        <label className="text-[9px] font-bold text-secondary uppercase tracking-widest">Titre de l'Item</label>
-                       <Input 
-                        value={qaTitle} 
-                        onChange={e => setQaTitle(e.target.value)} 
-                        placeholder="EX: CONSIGNES CRF PALIERS" 
-                        className="h-12 bg-black/60 font-bold uppercase border-secondary/20" 
-                       />
+                       <Input value={qaTitle} onChange={e => setQaTitle(e.target.value)} placeholder="EX: CONSIGNES CRF" className="h-12 bg-black/60 border-secondary/20" />
                     </div>
 
                     <div className="space-y-2">
-                       <label className="text-[9px] font-bold text-secondary uppercase tracking-widest">Question de l'Opérateur</label>
-                       <Input 
-                        value={qaQuestion} 
-                        onChange={e => setQaQuestion(e.target.value)} 
-                        placeholder="Quelle est la température maximale ?" 
-                        className="h-12 bg-black/60 border-border" 
-                       />
-                    </div>
-
-                    <div className="space-y-2">
-                       <label className="text-[9px] font-bold text-secondary uppercase tracking-widest">Réponse technique (Dictée possible)</label>
+                       <label className="text-[9px] font-bold text-secondary uppercase tracking-widest">Réponse technique</label>
                        <div className="relative">
-                          <Textarea 
-                            value={qaAnswer} 
-                            onChange={e => setQaAnswer(e.target.value)} 
-                            placeholder="Saisissez ou dictez la réponse technique..." 
-                            className="h-44 bg-black/60 border-border font-code text-sm leading-relaxed pr-10" 
-                          />
+                          <Textarea value={qaAnswer} onChange={e => setQaAnswer(e.target.value)} placeholder="Saisissez ou dictez..." className="h-44 bg-black/60 border-border font-code text-sm pr-10" />
                           <Button 
                             type="button" 
                             variant="ghost" 
                             size="sm" 
                             onClick={() => toggleDictation('qaAnswer')} 
                             className={cn(
-                              "absolute bottom-2 right-2 h-8 px-3 text-[9px] uppercase font-bold border border-border/50 shadow-lg", 
+                              "absolute bottom-2 right-2 h-8 px-3 text-[9px] uppercase font-bold border border-border/50", 
                               voice.isListening && activeVoiceField === 'qaAnswer' ? "text-red-500 bg-red-500/10 animate-pulse" : "text-secondary"
                             )}
                           >
@@ -483,38 +420,13 @@ export default function DatasetPage() {
                           </Button>
                        </div>
                     </div>
-
-                    <div className="space-y-2">
-                       <label className="text-[9px] font-bold text-secondary uppercase tracking-widest">Tags d'indexation (virgules)</label>
-                       <Input 
-                        value={qaTags} 
-                        onChange={e => setQaTags(e.target.value)} 
-                        placeholder="température, alerte, CRF" 
-                        className="h-10 bg-black/20 border-border font-code text-xs uppercase" 
-                       />
-                    </div>
                   </div>
 
-                  <Button 
-                    type="submit" 
-                    disabled={isUploading} 
-                    className="w-full h-16 bg-secondary text-secondary-foreground font-headline font-bold text-sm uppercase shadow-[0_0_30px_rgba(46,184,146,0.2)] transition-all group"
-                  >
-                    {isUploading ? (
-                      <Loader2 className="w-6 h-6 animate-spin mr-3" />
-                    ) : (
-                      <Zap className="w-6 h-6 mr-3 group-hover:scale-125 transition-transform" />
-                    )}
+                  <Button type="submit" disabled={isUploading} className="w-full h-16 bg-secondary text-secondary-foreground font-headline font-bold text-sm uppercase">
+                    {isUploading ? <Loader2 className="w-6 h-6 animate-spin mr-3" /> : <Zap className="w-6 h-6 mr-3" />}
                     Injecter dans la Mémoire Cloud
                   </Button>
                 </Card>
-
-                <div className="flex items-start gap-4 p-4 bg-secondary/5 border border-secondary/20 rounded-sm">
-                   <Info className="w-5 h-5 text-secondary shrink-0 mt-0.5" />
-                   <p className="text-[10px] font-code text-muted-foreground uppercase leading-relaxed">
-                     Les données Web sont considérées comme <span className="text-secondary font-bold">Provisoires</span>. Une fois la station locale connectée, elles seront automatiquement <span className="text-primary font-bold">Injectées</span> dans ChromaDB local et <span className="text-destructive font-bold">Purgées</span> du Cloud.
-                   </p>
-                </div>
               </form>
             </TabsContent>
           </Tabs>

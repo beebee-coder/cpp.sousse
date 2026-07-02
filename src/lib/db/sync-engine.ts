@@ -3,8 +3,7 @@ import { apiClient } from '../api-client';
 
 /**
  * @fileOverview Moteur de synchronisation atomique [SYNC_ENGINE].
- * Version : Client-Safe (Utilise les API Routes au lieu de Node.js 'fs').
- * Flux : Téléchargement Cloud -> Émission vers Registre via API -> Injection Chroma -> Purge Cloud.
+ * Version : Client-Safe (Suppression des dépendances 'fs' pour éviter l'erreur de bundle).
  */
 
 export const syncEngine = {
@@ -37,6 +36,7 @@ export const syncEngine = {
 
   /**
    * Phase d'Injection : Rapatrie les données du Web et les sécurise localement.
+   * Utilise exclusivement apiClient pour communiquer avec le registre physique.
    */
   async downloadAndInjectPhase(userId: string, projectId: string): Promise<number> {
     const ts = new Date().toLocaleTimeString();
@@ -68,7 +68,7 @@ export const syncEngine = {
         const knowledgeType = item._knowledgeType || parsed.type || 'qa';
         const title = item._title || parsed.title || 'Sans titre';
 
-        // 1. Sauvegarde Registre Physique via API Route (Client-Safe)
+        // 1. Sauvegarde Registre Physique via API Route
         const regPath = knowledgeType === 'procedure' 
           ? `procedures/${item.id}/procedure.json` 
           : `items/${item.id}.json`;
@@ -79,7 +79,7 @@ export const syncEngine = {
           content: JSON.stringify(parsed, null, 2)
         });
 
-        // 2. Vectorisation Locale via API Route (Client-Safe)
+        // 2. Vectorisation Locale via API Route
         let semanticText = '';
         if (knowledgeType === 'qa') {
           semanticText = `Q: ${parsed.question}\nR: ${parsed.answer}`;
