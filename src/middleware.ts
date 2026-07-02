@@ -1,10 +1,10 @@
-
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { getSessionFromToken } from '@/lib/session';
 
 /**
  * Middleware de surveillance industrielle avec logs structurés [AUTH].
+ * Version 7.8.5 : Diagnostic pass-through.
  */
 export async function middleware(request: NextRequest) {
   const ts = new Date().toLocaleTimeString();
@@ -26,6 +26,7 @@ export async function middleware(request: NextRequest) {
     let session = null;
     
     if (token) {
+      console.log(`🛡️ [AUTH] [STEP] [${ts}] Cookie détecté. Décodage du jeton...`);
       session = await getSessionFromToken(token).catch(() => null);
     }
 
@@ -33,26 +34,25 @@ export async function middleware(request: NextRequest) {
     const isAuthPage = pathname.startsWith('/auth');
 
     if (!user && !isAuthPage) {
-      console.log(`🛡️ [AUTH] [REJECT] [${ts}] Accès refusé à ${pathname}. Redirection vers /signin.`);
+      console.warn(`🛡️ [AUTH] [REJECT] [${ts}] Accès refusé à ${pathname}. Redirection vers /signin.`);
       const signInUrl = new URL('/auth/signin', request.url);
       return NextResponse.redirect(signInUrl);
     }
 
     if (user && isAuthPage) {
-      console.log(`🛡️ [AUTH] [STEP] [${ts}] Déjà authentifié. Saut vers dashboard.`);
+      console.log(`🛡️ [AUTH] [STEP] [${ts}] Utilisateur ${user.id} déjà authentifié. Redirection dashboard.`);
       return NextResponse.redirect(new URL('/dashboard', request.url));
     }
 
     if (user) {
-      // Log périodique pour éviter de spammer mais garder une trace
       if (!pathname.startsWith('/api')) {
-        console.log(`🛡️ [AUTH] [SUCCESS] [${ts}] Requête autorisée : ${user.id} -> ${pathname}`);
+        console.log(`🛡️ [AUTH] [SUCCESS] [${ts}] Navigation autorisée : ${user.id} -> ${pathname}`);
       }
     }
 
     return NextResponse.next();
   } catch (error: any) {
-    console.error(`🛡️ [AUTH] [ERROR] [${ts}] Panique middleware :`, error.message);
+    console.error(`🛡️ [AUTH] [ERROR] [${ts}] Panique critique middleware :`, error.message);
     return NextResponse.next();
   }
 }

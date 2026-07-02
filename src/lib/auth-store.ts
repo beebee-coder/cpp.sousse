@@ -3,21 +3,33 @@ import bcrypt from 'bcryptjs';
 
 /**
  * Magasin d'identités consolidé [AUTH_STORE] pour VisioNode.
- * Version : 7.8.3 - Correction des types et fonctions administratives complètes.
+ * Version : 7.8.5 - Traçabilité industrielle complète.
  */
 
 export async function authenticateUser(email: string, password: string) {
+  const ts = new Date().toLocaleTimeString();
+  console.log(`📡 [AUTH_STORE] [INIT] [${ts}] Vérification des accès pour : ${email}`);
+
   try {
     const user = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
-    if (!user) return { success: false, error: 'INVALID_CREDENTIALS' };
+    if (!user) {
+      console.warn(`📡 [AUTH_STORE] [REJECT] [${ts}] Utilisateur inconnu : ${email}`);
+      return { success: false, error: 'INVALID_CREDENTIALS' };
+    }
 
+    console.log(`📡 [AUTH_STORE] [STEP] [${ts}] Utilisateur trouvé. Vérification de la clé de sécurité...`);
     const match = await bcrypt.compare(password, user.password);
-    if (!match) return { success: false, error: 'INVALID_CREDENTIALS' };
+    if (!match) {
+      console.warn(`📡 [AUTH_STORE] [REJECT] [${ts}] Échec de la clé de sécurité.`);
+      return { success: false, error: 'INVALID_CREDENTIALS' };
+    }
 
     if (!user.approved && user.role !== 'admin') {
+      console.warn(`📡 [AUTH_STORE] [REJECT] [${ts}] Compte en attente d'approbation : ${user.id}`);
       return { success: false, error: 'NOT_APPROVED' };
     }
 
+    console.log(`📡 [AUTH_STORE] [SUCCESS] [${ts}] Authentification validée pour : ${user.firstName} ${user.lastName}`);
     return { 
       success: true, 
       user: {
@@ -30,12 +42,15 @@ export async function authenticateUser(email: string, password: string) {
       }
     };
   } catch (e: any) {
-    console.error(`❌ [AUTH_STORE] [ERROR] :`, e.message);
+    console.error(`❌ [AUTH_STORE] [FATAL] [${ts}] Panique DB :`, e.message);
     throw new Error(`DB_LIAISON_ECHEC: ${e.message}`);
   }
 }
 
 export async function addPendingUser(firstName: string, lastName: string, password: string, role: string) {
+  const ts = new Date().toLocaleTimeString();
+  console.log(`📡 [AUTH_STORE] [INIT] Création demande d'accès : ${firstName} ${lastName}`);
+
   try {
     const email = `${firstName.toLowerCase()}.${lastName.toLowerCase()}@visionode.local`;
     const existing = await prisma.user.findUnique({ where: { email } });
@@ -53,7 +68,7 @@ export async function addPendingUser(firstName: string, lastName: string, passwo
       }
     });
   } catch (e: any) {
-    console.error(`❌ [AUTH_STORE] addPendingUser :`, e.message);
+    console.error(`❌ [AUTH_STORE] [ERROR] addPendingUser :`, e.message);
     return null;
   }
 }

@@ -1,4 +1,3 @@
-
 "use client";
 
 import { Suspense, useState } from 'react';
@@ -31,22 +30,32 @@ function SignInForm() {
         body: JSON.stringify({ email, password }),
       });
 
-      const data = await response.json();
+      // Capture de la réponse brute pour diagnostic
+      const textResponse = await response.text();
+      let data;
+      
+      try {
+        data = JSON.parse(textResponse);
+      } catch (parseErr) {
+        console.error(`🔐 [AUTH_FRONT] [ERROR] [${ts}] Réponse non-JSON détectée. Corps :`, textResponse.slice(0, 200));
+        throw new Error("Le serveur a renvoyé un format invalide (HTML au lieu de JSON).");
+      }
+
       setLoading(false);
 
       if (!response.ok || !data.success) {
-        console.warn(`🔐 [AUTH_FRONT] [REJECT] [${ts}] Échec : ${data.message}`);
+        console.warn(`🔐 [AUTH_FRONT] [REJECT] [${ts}] Liaison refusée : ${data.message}`);
         setError(data.message || "Erreur de connexion");
         return;
       }
 
-      console.log(`🔐 [AUTH_FRONT] [SUCCESS] [${ts}] Liaison établie. Redirection...`);
+      console.log(`🔐 [AUTH_FRONT] [SUCCESS] [${ts}] Liaison établie. Redirection vers dashboard.`);
       router.push(callbackUrl);
       router.refresh();
     } catch (e: any) {
       console.error(`🔐 [AUTH_FRONT] [ERROR] [${ts}] Liaison interrompue :`, e.message);
       setLoading(false);
-      setError("Le serveur d'authentification ne répond pas.");
+      setError(e.message || "Le serveur d'authentification ne répond pas.");
     }
   };
 

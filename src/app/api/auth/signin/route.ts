@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 
 /**
  * Route d'authentification avec logs structurés [AUTH_API].
- * Version 7.8.3 : Sécurisation totale des retours JSON pour éviter l'erreur d'analyse front.
+ * Version 7.8.5 : Sécurisation totale des retours JSON.
  */
 export async function POST(request: NextRequest) {
   const ts = new Date().toLocaleTimeString();
@@ -18,15 +18,15 @@ export async function POST(request: NextRequest) {
     const password = String(body?.password ?? '');
 
     if (!email || !password) {
-      console.warn(`❌ [AUTH_API] [REJECT] [${ts}] Identifiants manquants.`);
+      console.warn(`🚀 [AUTH_API] [REJECT] [${ts}] Identifiants manquants.`);
       return NextResponse.json({ success: false, message: 'Email et mot de passe requis.' }, { status: 400 });
     }
 
-    console.log(`📡 [AUTH_API] [STEP] [${ts}] Interrogation du magasin d'identités : ${email}`);
+    console.log(`🚀 [AUTH_API] [STEP] [${ts}] Transmission au magasin d'identités : ${email}`);
     const result = await authenticateUser(email, password);
 
     if (result.success && result.user) {
-      console.log(`🔑 [AUTH_API] [STEP] [${ts}] Création de la session sécurisée pour : ${result.user.id}`);
+      console.log(`🚀 [AUTH_API] [STEP] [${ts}] Génération de la session sécurisée pour : ${result.user.id}`);
       await signIn({
         id: result.user.id,
         firstName: result.user.firstName,
@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
         role: result.user.role,
       });
       
-      console.log(`✅ [AUTH_API] [SUCCESS] [${ts}] Liaison établie.`);
+      console.log(`🚀 [AUTH_API] [SUCCESS] [${ts}] Liaison établie avec succès.`);
       return NextResponse.json({ success: true, user: result.user });
     }
 
@@ -42,14 +42,14 @@ export async function POST(request: NextRequest) {
       ? 'Compte en attente d\'approbation.' 
       : 'Identifiants incorrects.';
       
-    console.warn(`❌ [AUTH_API] [REJECT] [${ts}] Raison : ${errorMsg}`);
+    console.warn(`🚀 [AUTH_API] [REJECT] [${ts}] Raison : ${errorMsg}`);
     return NextResponse.json({ success: false, message: errorMsg }, { status: 401 });
 
   } catch (err: any) {
-    console.error(`❌ [AUTH_API] [FATAL] [${ts}] Panique critique :`, err.message);
+    console.error(`🚀 [AUTH_API] [FATAL] [${ts}] Panique critique du service :`, err.message);
     return NextResponse.json({ 
       success: false, 
-      message: 'Panique critique du service (Vérifiez la config Prisma).',
+      message: 'Erreur interne de liaison (Vérifiez la config Prisma/Neon).',
       error: err.message
     }, { status: 500 });
   }
