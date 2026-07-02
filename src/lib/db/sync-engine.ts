@@ -1,4 +1,3 @@
-
 import { SyncState } from './types';
 import { apiClient } from '../api-client';
 

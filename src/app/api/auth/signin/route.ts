@@ -1,4 +1,3 @@
-
 import { NextRequest, NextResponse } from 'next/server';
 import { authenticateUser } from '@/lib/auth-store';
 import { createSessionCookie } from '@/lib/session';

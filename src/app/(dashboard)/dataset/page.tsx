@@ -1,4 +1,3 @@
-
 "use client";
 
 /**
@@ -57,6 +56,7 @@ export default function DatasetPage() {
 
   useEffect(() => { 
     setMounted(true); 
+    // Initialisation sécurisée des étapes pour éviter le décalage d'hydratation
     const initialStep: ProcedureStep = { 
       id: `step-${Math.random().toString(36).substring(2, 9)}`, 
       order: 1,
