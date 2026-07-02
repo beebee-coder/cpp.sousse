@@ -82,7 +82,8 @@ export default function DatasetPage() {
     onResult: (text) => {
       if (activeVoiceField === 'qaAnswer') setQaAnswer(text);
       if (activeVoiceField?.startsWith('step-desc-')) {
-        const idx = parseInt(activeVoiceField.split('-')[2]);
+        const parts = activeVoiceField.split('-');
+        const idx = parseInt(parts[parts.length - 1]);
         setProcSteps(prev => {
           const next = [...prev];
           if (next[idx]) next[idx].description = text;
@@ -133,11 +134,11 @@ export default function DatasetPage() {
   };
 
   const handleUpdateStep = (idx: number, field: keyof ProcedureStep, value: any) => {
-    // Évite la sérialisation d'objets Event si l'on passe directement e
-    const safeValue = (value && typeof value === 'object' && 'target' in value) ? value.target.value : value;
     setProcSteps(prev => {
       const next = [...prev];
-      next[idx] = { ...next[idx], [field]: safeValue };
+      if (next[idx]) {
+        next[idx] = { ...next[idx], [field]: value };
+      }
       return next;
     });
   };

@@ -1,9 +1,12 @@
+// Configuration Prisma 7.8.0 pour VisioNode Control Center
 generator client {
   provider        = "prisma-client-js"
+  previewFeatures = ["relationJoins"]
 }
 
 datasource db {
   provider = "postgresql"
+  // Note: La propriété 'url' est gérée via prisma.config.ts et l'adaptateur Neon
 }
 
 model User {
@@ -17,6 +20,7 @@ model User {
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
   lastSyncAt      DateTime?
+
   knowledgeItems  KnowledgeItem[]
   procedures      Procedure[]
   executions      ProcedureExecution[]
@@ -28,7 +32,7 @@ model KnowledgeItem {
   id              String           @id @default(cuid())
   userId          String
   user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type            String
+  type            String           // 'qa', 'document', 'snippet'
   title           String
   question        String?
   answer          String?
@@ -57,19 +61,23 @@ model Procedure {
   criticality     String           @default("MEDIUM")
   version         String           @default("1.0.0")
   status          String           @default("DRAFT")
-  prerequisites   Json
-  steps           Json
+  
+  prerequisites   Json             // Structure PrerequisiteItem[]
+  steps           Json             // Structure ProcedureStep[]
   parameters      Json?
   postExecution   Json?
   metadata        Json
+  
   authorId        String
   author          User             @relation(fields: [authorId], references: [id])
   approvers       Json?
+  
   syncedLocal     Boolean          @default(false)
   lastExecutedAt  DateTime?
   executionCount  Int              @default(0)
   avgDuration     Int?
   successRate     Float?
+  
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
   executions      ProcedureExecution[]
@@ -85,18 +93,21 @@ model ProcedureExecution {
   procedure       Procedure        @relation(fields: [procedureId], references: [id], onDelete: Cascade)
   operatorId      String
   operator        User             @relation(fields: [operatorId], references: [id])
+  
   startTime       DateTime         @default(now())
   endTime         DateTime?
   status          String
   currentStep     Int              @default(-1)
   stepsStatus     Json
   totalDuration   Int?
+  
   events          Json?
   alarms          Json?
   fallbacks       Json?
   result          Json?
   notes           String?
   signature       String?
+  
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 

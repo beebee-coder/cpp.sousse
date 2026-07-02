@@ -5,6 +5,10 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { AlertCircle, Loader2, Database } from 'lucide-react';
 
+/**
+ * Station de Connexion VisioNode V7.8.5.
+ * Inclut un diagnostic de réponse pour isoler les erreurs 500 HTML.
+ */
 function SignInForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -21,7 +25,7 @@ function SignInForm() {
     setLoading(true);
 
     const ts = new Date().toLocaleTimeString();
-    console.log(`🔐 [AUTH_FRONT] [INIT] [${ts}] Tentative de connexion pour : ${email}`);
+    console.log(`🔐 [AUTH_FRONT] [INIT] [${ts}] Tentative de liaison pour : ${email}`);
 
     try {
       const response = await fetch('/api/auth/signin', {
@@ -30,32 +34,32 @@ function SignInForm() {
         body: JSON.stringify({ email, password }),
       });
 
-      // Capture de la réponse brute pour diagnostic
+      // Capture et analyse de la réponse brute
       const textResponse = await response.text();
       let data;
       
       try {
         data = JSON.parse(textResponse);
       } catch (parseErr) {
-        console.error(`🔐 [AUTH_FRONT] [ERROR] [${ts}] Réponse non-JSON détectée. Corps :`, textResponse.slice(0, 200));
-        throw new Error("Le serveur a renvoyé un format invalide (HTML au lieu de JSON).");
+        console.error(`🔐 [AUTH_FRONT] [ERROR] [${ts}] Réponse non-JSON détectée. Corps (extrait) :`, textResponse.slice(0, 200));
+        throw new Error("L'API a renvoyé un format invalide (HTML 500). Vérifiez la console serveur.");
       }
 
       setLoading(false);
 
       if (!response.ok || !data.success) {
-        console.warn(`🔐 [AUTH_FRONT] [REJECT] [${ts}] Liaison refusée : ${data.message}`);
-        setError(data.message || "Erreur de connexion");
+        console.warn(`🔐 [AUTH_FRONT] [REJECT] [${ts}] Liaison refusée par l'API : ${data.message}`);
+        setError(data.message || "Erreur d'accréditation");
         return;
       }
 
-      console.log(`🔐 [AUTH_FRONT] [SUCCESS] [${ts}] Liaison établie. Redirection vers dashboard.`);
+      console.log(`✅ [AUTH_FRONT] [SUCCESS] [${ts}] Liaison établie. Transfert vers le dashboard.`);
       router.push(callbackUrl);
       router.refresh();
     } catch (e: any) {
-      console.error(`🔐 [AUTH_FRONT] [ERROR] [${ts}] Liaison interrompue :`, e.message);
+      console.error(`❌ [AUTH_FRONT] [ERROR] [${ts}] Rupture de liaison :`, e.message);
       setLoading(false);
-      setError(e.message || "Le serveur d'authentification ne répond pas.");
+      setError(e.message || "Le centre de contrôle est injoignable.");
     }
   };
 
@@ -67,7 +71,7 @@ function SignInForm() {
              <Database className="w-5 h-5 text-primary" />
              <h1 className="text-2xl font-bold font-headline uppercase tracking-tight text-primary">VisioNode Access</h1>
           </div>
-          <p className="text-sm text-muted-foreground mt-1">Liaison de contrôle industriel hybride</p>
+          <p className="text-sm text-muted-foreground mt-1 uppercase font-code text-[10px] tracking-widest">Liaison de contrôle industriel</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -78,7 +82,7 @@ function SignInForm() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="admin@visionode.local"
-              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:ring-1 focus:ring-primary outline-none"
+              className="w-full rounded-md border border-border bg-black/40 px-3 py-2 text-sm focus:ring-1 focus:ring-primary outline-none font-code"
               required
             />
           </div>
@@ -90,30 +94,30 @@ function SignInForm() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
-              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:ring-1 focus:ring-primary outline-none"
+              className="w-full rounded-md border border-border bg-black/40 px-3 py-2 text-sm focus:ring-1 focus:ring-primary outline-none"
               required
             />
           </div>
 
           {error && (
-            <div className="flex items-start gap-3 p-3 rounded-md bg-destructive/10 border border-destructive/30 text-destructive">
+            <div className="flex items-start gap-3 p-3 rounded-md bg-destructive/10 border border-destructive/30 text-destructive animate-in fade-in zoom-in-95 duration-200">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-              <p className="text-[10px] font-code uppercase leading-tight">{error}</p>
+              <p className="text-[10px] font-code uppercase leading-tight font-bold">{error}</p>
             </div>
           )}
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full h-11 rounded-md bg-primary text-primary-foreground font-bold uppercase text-xs tracking-widest hover:bg-primary/90 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
+            className="w-full h-11 rounded-md bg-primary text-primary-foreground font-bold uppercase text-xs tracking-widest hover:bg-primary/90 disabled:opacity-50 transition-all flex items-center justify-center gap-2 shadow-lg"
           >
             {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Vérifier la Liaison"}
           </button>
         </form>
 
-        <div className="mt-8 pt-6 border-t border-border/50 text-xs text-center space-y-4">
-          <p className="text-muted-foreground">Admin : <strong>admin@visionode.local</strong> / <strong>Admin@2024!</strong></p>
-          <Link href="/auth/register" className="inline-block text-primary font-bold uppercase tracking-widest underline-offset-4 hover:underline">
+        <div className="mt-8 pt-6 border-t border-border/50 text-center space-y-4">
+          <p className="text-[9px] font-code text-muted-foreground uppercase">Station d'accès certifiée CCP</p>
+          <Link href="/auth/register" className="inline-block text-primary font-bold uppercase tracking-widest text-[10px] underline-offset-4 hover:underline">
             Demander une accréditation
           </Link>
         </div>
@@ -124,7 +128,7 @@ function SignInForm() {
 
 export default function SignInPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-background flex items-center justify-center p-6 text-xs uppercase font-code">Initialisation...</div>}>
+    <Suspense fallback={<div className="min-h-screen bg-background flex items-center justify-center p-6 text-xs uppercase font-code">Initialisation du terminal...</div>}>
       <SignInForm />
     </Suspense>
   );
