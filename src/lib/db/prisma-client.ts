@@ -1,12 +1,18 @@
 // src/lib/db/prisma-client.ts
 import { PrismaClient } from '@prisma/client';
 import { PrismaNeon } from '@prisma/adapter-neon';
-import { Pool } from '@neondatabase/serverless';
+import { Pool, neonConfig } from '@neondatabase/serverless';
+import ws from 'ws';
 
 /**
  * @fileOverview Singleton Prisma optimisé pour Prisma 7.8.0 et Neon.
  * Version : Liaison dynamique via pool serverless (P1012-safe).
  */
+
+// Configuration pour l'environnement Node.js (nécessaire pour le seed et les serveurs)
+if (typeof window === 'undefined') {
+  neonConfig.webSocketConstructor = ws;
+}
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
@@ -17,6 +23,7 @@ function createPrismaClient() {
   
   if (!connectionString) {
     console.warn("⚠️ [DATABASE] DATABASE_URL manquante. Le client Prisma s'initialisera en mode dégradé.");
+    return new PrismaClient();
   }
 
   // Configuration Neon Serverless Adapter pour Prisma 7
@@ -25,7 +32,7 @@ function createPrismaClient() {
 
   return new PrismaClient({
     adapter,
-    log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
+    log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
   });
 }
 

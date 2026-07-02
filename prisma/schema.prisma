@@ -1,87 +1,82 @@
 // prisma/schema.prisma
-
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
-  // NOTE: La propriété 'url' est gérée par prisma.config.ts dans Prisma 7.8.0
+  // url est géré dynamiquement via prisma.config.ts pour Prisma 7 (Erreur P1012-safe)
 }
 
 model User {
-  id              String           @id @default(cuid())
-  firstName       String
-  lastName        String
-  password        String
-  email           String           @unique
-  role            String           @default("user")
-  approved        Boolean          @default(false)
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
-  lastSyncAt      DateTime?
-  
-  knowledgeItems  KnowledgeItem[]
-  procedures      Procedure[]
-  executions      ProcedureExecution[]
+  id         String    @id @default(cuid())
+  firstName  String
+  lastName   String
+  password   String
+  email      String    @unique
+  role       String    @default("user")
+  approved   Boolean   @default(false)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  lastSyncAt DateTime?
+
+  knowledgeItems      KnowledgeItem[]
+  procedures          Procedure[]
+  procedureExecutions ProcedureExecution[]
 
   @@map("users")
 }
 
 model KnowledgeItem {
-  id            String    @id @default(cuid())
-  userId        String
-  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type          String    // "qa", "step", "manual"
-  title         String
-  question      String?   @db.Text
-  answer        String?   @db.Text
-  steps         Json?     // Pour les types "procedure_steps"
-  tags          String[]
-  category      String?
-  difficulty    String    @default("medium")
-  isPublic      Boolean   @default(true)
-  syncedLocal   Boolean   @default(false)
-  vectorId      String?   // Référence vers ChromaDB/Weaviate
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type        String
+  title       String
+  question    String?
+  answer      String?
+  steps       Json?
+  tags        String[]
+  category    String?
+  difficulty  String   @default("medium")
+  isPublic    Boolean  @default(true)
+  syncedLocal Boolean  @default(false)
+  vectorId    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@index([userId])
   @@map("knowledge_items")
 }
 
 model Procedure {
-  id              String           @id @default(cuid())
-  code            String           @unique
-  title           String
-  description     String?          @db.Text
-  category        String           @default("OPERATION")
-  subcategory     String?
-  department      String           @default("PRODUCTION")
-  criticality     String           @default("MEDIUM")
-  version         String           @default("1.0.0")
-  status          String           @default("DRAFT")
-  
-  prerequisites   Json             // Structure PrerequisiteItem[]
-  steps           Json             // Structure ProcedureStep[]
-  parameters      Json?            // Paramètres configurables
-  postExecution   Json?            // Post-exécution & reporting
-  metadata        Json             // Métadonnées complètes
-  
-  authorId        String
-  author          User             @relation(fields: [authorId], references: [id])
-  approvers       Json?            // Liste des approbateurs
-  
-  syncedLocal     Boolean          @default(false)
-  lastExecutedAt  DateTime?
-  executionCount  Int              @default(0)
-  avgDuration     Int?             // En secondes
-  successRate     Float?
-  
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
-  
-  executions      ProcedureExecution[]
+  id             String    @id @default(cuid())
+  code           String    @unique
+  title          String
+  description    String?
+  category       String    @default("OPERATION")
+  subcategory    String?
+  department     String    @default("PRODUCTION")
+  criticality    String    @default("MEDIUM")
+  version        String    @default("1.0.0")
+  status         String    @default("DRAFT")
+  prerequisites  Json
+  steps          Json
+  parameters     Json?
+  postExecution  Json?
+  metadata       Json
+  authorId       String
+  author         User      @relation(fields: [authorId], references: [id])
+  approvers      Json?
+  syncedLocal    Boolean   @default(false)
+  lastExecutedAt DateTime?
+  executionCount Int       @default(0)
+  avgDuration    Int?
+  successRate    Float?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  executions ProcedureExecution[]
 
   @@index([code])
   @@index([status])
@@ -89,28 +84,25 @@ model Procedure {
 }
 
 model ProcedureExecution {
-  id              String    @id @default(cuid())
-  procedureId     String
-  procedure       Procedure @relation(fields: [procedureId], references: [id], onDelete: Cascade)
-  operatorId      String
-  operator        User      @relation(fields: [operatorId], references: [id])
-  
-  startTime       DateTime  @default(now())
-  endTime         DateTime?
-  status          String    // IDLE, RUNNING, COMPLETED, ALARM, FAILED
-  currentStep     Int       @default(-1)
-  stepsStatus     Json      // Historique par étape
-  totalDuration   Int?      // En secondes
-  
-  events          Json?     // Log détaillé
-  alarms          Json?     // Alarmes déclenchées
-  fallbacks       Json?     // Fallbacks utilisés
-  result          Json?     // Résultat d'audit final
-  notes           String?   @db.Text
-  signature       String?   // Signature numérique
-  
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id            String    @id @default(cuid())
+  procedureId   String
+  procedure     Procedure @relation(fields: [procedureId], references: [id], onDelete: Cascade)
+  operatorId    String
+  operator      User      @relation(fields: [operatorId], references: [id])
+  startTime     DateTime  @default(now())
+  endTime       DateTime?
+  status        String
+  currentStep   Int       @default(-1)
+  stepsStatus   Json
+  totalDuration Int?
+  events        Json?
+  alarms        Json?
+  fallbacks     Json?
+  result        Json?
+  notes         String?
+  signature     String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   @@index([procedureId])
   @@index([operatorId])

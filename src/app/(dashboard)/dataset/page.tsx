@@ -1,9 +1,8 @@
 "use client";
 
 /**
- * @fileOverview Station de Forge Industrielle V8.6.0.
- * Version : Concordance CRF V6.5 + Fix Sérialisation + Fix Hydratation.
- * Résout l'erreur [object Event] en protégeant les onChange.
+ * @fileOverview Station de Forge Industrielle V8.7.0.
+ * Version : Concordance CRF V6.5 + Fix Sérialisation + Fix Hydratation + Fix [object Event].
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -55,7 +54,7 @@ export default function DatasetPage() {
   const [qaAnswer, setQaAnswer] = useState('');
   const [qaTags, setQaTags] = useState('');
 
-  // ✅ Fix Hydratation & Sérialisation : Générer l'état initial uniquement côté client
+  // ✅ Fix Hydratation & Sérialisation : État initial client-only
   useEffect(() => { 
     setMounted(true); 
     const initialStep: ProcedureStep = { 
@@ -135,7 +134,7 @@ export default function DatasetPage() {
     setProcSteps(next.map((s, i) => ({ ...s, order: i + 1 })));
   };
 
-  // ✅ Fix Sérialisation : Éviter d'injecter des objets Event via value
+  // ✅ Fix Sérialisation : Protection contre l'injection d'objets Event
   const handleUpdateStepField = useCallback((idx: number, field: keyof ProcedureStep, value: any) => {
     setProcSteps(prev => {
       const next = [...prev];
@@ -451,7 +450,7 @@ export default function DatasetPage() {
                             className={cn(
                               "absolute bottom-2 right-2 h-8 px-3 text-[9px] uppercase font-bold border border-border/50", 
                               voice.isListening && activeVoiceField === 'qaAnswer' ? "text-red-500 bg-red-500/10 animate-pulse" : "text-secondary"
-                            )}
+                           )}
                           >
                             {voice.isListening && activeVoiceField === 'qaAnswer' ? <MicOff className="w-3.5 h-3.5 mr-2" /> : <Mic className="w-3.5 h-3.5 mr-2" />}
                             Dictée

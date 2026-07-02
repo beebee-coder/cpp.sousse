@@ -87,23 +87,23 @@ async function main() {
     }
 
     // 4. Connaissances sémantiques par défaut
-    const knowledgeCount = await prisma.knowledgeItem.count();
-    if (knowledgeCount === 0) {
-      await prisma.knowledgeItem.create({
-        data: {
-          id: 'knowledge-initial-001',
-          userId: admin.id,
-          type: 'qa',
-          title: 'Sécurité CRF - EPI Obligatoires',
-          question: 'Quels sont les EPI obligatoires en zone CRF ?',
-          answer: 'Casque de sécurité, gants anti-coupure, lunettes de protection S3, chaussures de sécurité.',
-          tags: ['EPI', 'Sécurité', 'CRF'],
-          category: 'Sécurité',
-          isPublic: true
-        }
-      });
-      console.log('✅ [SEED] Mémoire sémantique initialisée.');
-    }
+    const initialKnowledgeId = 'knowledge-initial-001';
+    await prisma.knowledgeItem.upsert({
+      where: { id: initialKnowledgeId },
+      update: {},
+      create: {
+        id: initialKnowledgeId,
+        userId: admin.id,
+        type: 'qa',
+        title: 'Sécurité CRF - EPI Obligatoires',
+        question: 'Quels sont les EPI obligatoires en zone CRF ?',
+        answer: 'Casque de sécurité, gants anti-coupure, lunettes de protection S3, chaussures de sécurité.',
+        tags: ['EPI', 'Sécurité', 'CRF'],
+        category: 'Sécurité',
+        isPublic: true
+      }
+    });
+    console.log('✅ [SEED] Mémoire sémantique initialisée.');
 
     console.log('✨ [SEED] Opération terminée avec succès.');
 
