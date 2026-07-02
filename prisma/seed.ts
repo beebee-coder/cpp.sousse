@@ -14,12 +14,12 @@ const ADMIN_EMAIL = process.env.AUTH_ADMIN_EMAIL || 'admin@visionode.local';
 const ADMIN_PASSWORD = process.env.AUTH_ADMIN_PASSWORD || 'Admin@2024!';
 
 async function main() {
-  console.log('🌱 [SEED] Initialisation du Registre Industriel...');
+  console.log('🌱 [SEED] Initialisation du Registre Industriel VisioNode...');
 
   try {
-    // 1. Validation de la liaison
+    // 1. Validation de la liaison Neon
     await prisma.$connect();
-    console.log('🔗 [SEED] Liaison Neon établie.');
+    console.log('🔗 [SEED] Liaison Neon/Postgres établie.');
 
     // 2. Création de l'Administrateur Racine
     const hashedPassword = await bcrypt.hash(ADMIN_PASSWORD, 12);
@@ -42,35 +42,48 @@ async function main() {
     });
     console.log(`✅ [SEED] Admin configuré : ${admin.email}`);
 
-    // 3. Injection Procédure CRF de référence (depuis JSON)
-    const crfPath = path.join(process.cwd(), 'data', 'procedure-demarrage-CRF.json');
-    if (fs.existsSync(crfPath)) {
-      const crfData = JSON.parse(fs.readFileSync(crfPath, 'utf8'));
-      const procCode = crfData.metadata?.code || 'CRF-START-001';
+    // 3. Injection des Procédures de référence (depuis data/)
+    const dataDir = path.join(process.cwd(), 'data');
+    if (fs.existsSync(dataDir)) {
+      const files = fs.readdirSync(dataDir).filter(f => f.endsWith('.json'));
       
-      await prisma.procedure.upsert({
-        where: { code: procCode },
-        update: {
-          steps: crfData.steps || [],
-          prerequisites: crfData.prerequisites || {},
-          metadata: crfData.metadata || {},
-          title: crfData.metadata?.title || 'Démarrage Système CRF'
-        },
-        create: {
-          id: 'proc-crf-001',
-          code: procCode,
-          title: crfData.metadata?.title || 'Démarrage Système CRF',
-          category: 'STARTUP',
-          department: 'PRODUCTION',
-          criticality: 'CRITICAL',
-          prerequisites: crfData.prerequisites || { description: 'Audit standard', items: [] },
-          steps: crfData.steps || [],
-          metadata: crfData.metadata || {},
-          authorId: admin.id,
-          status: 'APPROVED'
+      for (const file of files) {
+        try {
+          const filePath = path.join(dataDir, file);
+          const rawData = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+          
+          if (rawData._type === 'industrial_procedure' || rawData.steps) {
+            const procCode = rawData.metadata?.code || rawData.code || `PROC-${file.replace('.json', '')}`;
+            
+            await prisma.procedure.upsert({
+              where: { code: procCode },
+              update: {
+                title: rawData.metadata?.title || rawData.title,
+                steps: rawData.steps || [],
+                prerequisites: rawData.prerequisites || { items: [] },
+                metadata: rawData.metadata || rawData,
+                status: 'APPROVED'
+              },
+              create: {
+                id: rawData._id || `proc-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+                code: procCode,
+                title: rawData.metadata?.title || rawData.title,
+                category: (rawData.metadata?.category || 'OPERATION').toUpperCase(),
+                department: (rawData.metadata?.department || 'PRODUCTION').toUpperCase(),
+                criticality: (rawData.metadata?.criticality || 'MEDIUM').toUpperCase(),
+                prerequisites: rawData.prerequisites || { description: 'Audit standard', items: [] },
+                steps: rawData.steps || [],
+                metadata: rawData.metadata || rawData,
+                authorId: admin.id,
+                status: 'APPROVED'
+              }
+            });
+            console.log(`✅ [SEED] Actif injecté : ${procCode}`);
+          }
+        } catch (e: any) {
+          console.warn(`⚠️ [SEED] Erreur sur fichier ${file} :`, e.message);
         }
-      });
-      console.log(`✅ [SEED] Actif industriel injecté : ${procCode}`);
+      }
     }
 
     // 4. Connaissances sémantiques par défaut
@@ -78,6 +91,7 @@ async function main() {
     if (knowledgeCount === 0) {
       await prisma.knowledgeItem.create({
         data: {
+          id: 'knowledge-initial-001',
           userId: admin.id,
           type: 'qa',
           title: 'Sécurité CRF - EPI Obligatoires',

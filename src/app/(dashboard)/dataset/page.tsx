@@ -1,11 +1,12 @@
 "use client";
 
 /**
- * @fileOverview Station de Forge Industrielle V8.5.0.
+ * @fileOverview Station de Forge Industrielle V8.6.0.
  * Version : Concordance CRF V6.5 + Fix Sérialisation + Fix Hydratation.
+ * Résout l'erreur [object Event] en protégeant les onChange.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { 
   Database, 
   Plus, 
@@ -54,7 +55,7 @@ export default function DatasetPage() {
   const [qaAnswer, setQaAnswer] = useState('');
   const [qaTags, setQaTags] = useState('');
 
-  // ✅ Fix Hydratation & Sérialisation : Générer l'état initial une seule fois côté client
+  // ✅ Fix Hydratation & Sérialisation : Générer l'état initial uniquement côté client
   useEffect(() => { 
     setMounted(true); 
     const initialStep: ProcedureStep = { 
@@ -134,8 +135,8 @@ export default function DatasetPage() {
     setProcSteps(next.map((s, i) => ({ ...s, order: i + 1 })));
   };
 
-  // ✅ Fix Sérialisation : Éviter d'injecter des objets Event
-  const handleUpdateStepField = (idx: number, field: keyof ProcedureStep, value: any) => {
+  // ✅ Fix Sérialisation : Éviter d'injecter des objets Event via value
+  const handleUpdateStepField = useCallback((idx: number, field: keyof ProcedureStep, value: any) => {
     setProcSteps(prev => {
       const next = [...prev];
       if (next[idx]) {
@@ -143,7 +144,7 @@ export default function DatasetPage() {
       }
       return next;
     });
-  };
+  }, []);
 
   const handleForgeProcedure = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -370,7 +371,10 @@ export default function DatasetPage() {
                                   <label className="text-[8px] font-bold text-muted-foreground uppercase">Type</label>
                                   <select 
                                     value={step.action.type} 
-                                    onChange={e => handleUpdateStepField(idx, 'action', { ...step.action, type: e.target.value })}
+                                    onChange={e => {
+                                       const val = e.target.value;
+                                       handleUpdateStepField(idx, 'action', { ...step.action, type: val });
+                                    }}
                                     className="w-full bg-black border border-border rounded-sm h-8 text-[9px] font-bold uppercase px-2"
                                   >
                                     <option value="confirmation">CONFIRMATION</option>
@@ -383,7 +387,10 @@ export default function DatasetPage() {
                                   <Input 
                                     type="number" 
                                     value={step.duration.value} 
-                                    onChange={e => handleUpdateStepField(idx, 'duration', { ...step.duration, value: parseInt(e.target.value) || 0, display: `${e.target.value}s` })}
+                                    onChange={e => {
+                                       const val = parseInt(e.target.value) || 0;
+                                       handleUpdateStepField(idx, 'duration', { ...step.duration, value: val, display: `${val}s` });
+                                    }}
                                     className="h-8 bg-black/40 font-code text-[10px]"
                                   />
                                </div>
