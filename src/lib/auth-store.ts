@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 
 /**
  * Magasin d'identités consolidé [AUTH_STORE] pour VisioNode.
- * Version : 7.8.2 - Support complet des fonctions administratives pour Prisma 7.
+ * Version : 7.8.3 - Correction des types et fonctions administratives complètes.
  */
 
 export async function authenticateUser(email: string, password: string) {

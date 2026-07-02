@@ -2,7 +2,7 @@
 
 /**
  * @fileOverview Station de Forge Industrielle V7.9.
- * Version : Concordance V6.5 (Procédures) + Interaction Vocale + Fix Badge/Hydratation.
+ * Version : Concordance V6.5 (Procédures) + Interaction Vocale + Fix Sérialisation/Hydratation.
  */
 
 import { useState, useEffect } from 'react';
@@ -16,13 +16,9 @@ import {
   BookOpen, 
   Mic, 
   MicOff,
-  Activity, 
   Settings2, 
-  Info, 
   FileText,
-  Layers,
-  ChevronRight,
-  Sparkles
+  Layers
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -137,9 +133,11 @@ export default function DatasetPage() {
   };
 
   const handleUpdateStep = (idx: number, field: keyof ProcedureStep, value: any) => {
+    // Évite la sérialisation d'objets Event si l'on passe directement e
+    const safeValue = (value && typeof value === 'object' && 'target' in value) ? value.target.value : value;
     setProcSteps(prev => {
       const next = [...prev];
-      next[idx] = { ...next[idx], [field]: value };
+      next[idx] = { ...next[idx], [field]: safeValue };
       return next;
     });
   };

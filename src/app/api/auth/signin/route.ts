@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 
 /**
  * Route d'authentification avec logs structurés [AUTH_API].
- * Version 7.8.2 : Retourne du JSON systématiquement pour éviter l'erreur d'analyse JSON du front.
+ * Version 7.8.3 : Sécurisation totale des retours JSON pour éviter l'erreur d'analyse front.
  */
 export async function POST(request: NextRequest) {
   const ts = new Date().toLocaleTimeString();

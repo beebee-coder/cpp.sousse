@@ -1,9 +1,11 @@
+// Configuration Prisma 7 pour VisioNode Core
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
+  // Note: Sous Prisma 7, l'URL est gérée exclusivement dans prisma.config.ts et injectée via l'adaptateur Neon
 }
 
 model User {
@@ -17,7 +19,6 @@ model User {
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
   lastSyncAt      DateTime?
-
   knowledgeItems  KnowledgeItem[]
   procedures      Procedure[]
   executions      ProcedureExecution[]
@@ -29,7 +30,7 @@ model KnowledgeItem {
   id              String   @id @default(cuid())
   userId          String
   user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type            String
+  type            String   // 'qa', 'doc', 'procedure'
   title           String
   question        String?
   answer          String?
@@ -81,25 +82,25 @@ model Procedure {
 }
 
 model ProcedureExecution {
-  id            String    @id @default(cuid())
-  procedureId   String
-  procedure     Procedure @relation(fields: [procedureId], references: [id], onDelete: Cascade)
-  operatorId    String
-  operator      User      @relation(fields: [operatorId], references: [id])
-  startTime     DateTime  @default(now())
-  endTime       DateTime?
-  status        String
-  currentStep   Int       @default(-1)
-  stepsStatus   Json
-  totalDuration Int?
-  events        Json?
-  alarms        Json?
-  fallbacks     Json?
-  result        Json?
-  notes         String?
-  signature     String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id              String    @id @default(cuid())
+  procedureId     String
+  procedure       Procedure @relation(fields: [procedureId], references: [id], onDelete: Cascade)
+  operatorId      String
+  operator        User      @relation(fields: [operatorId], references: [id])
+  startTime       DateTime  @default(now())
+  endTime         DateTime?
+  status          String
+  currentStep     Int       @default(-1)
+  stepsStatus     Json
+  totalDuration   Int?
+  events          Json?
+  alarms          Json?
+  fallbacks       Json?
+  result          Json?
+  notes           String?
+  signature       String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   @@index([procedureId])
   @@index([operatorId])
