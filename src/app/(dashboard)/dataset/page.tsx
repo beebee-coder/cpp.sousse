@@ -2,7 +2,7 @@
 
 /**
  * @fileOverview Station de Forge Industrielle V7.9.
- * Version : Concordance V6.5 (Procédures) + Interaction Vocale + Fix fs/Badge.
+ * Version : Concordance V6.5 (Procédures) + Interaction Vocale + Fix Badge/Hydratation.
  */
 
 import { useState, useEffect } from 'react';
@@ -59,7 +59,7 @@ export default function DatasetPage() {
   const [qaAnswer, setQaAnswer] = useState('');
   const [qaTags, setQaTags] = useState('');
 
-  // Initialisation stable pour éviter Hydration Mismatch [object Event]
+  // Stabilisation de l'hydratation
   useEffect(() => { 
     setMounted(true); 
     const initialStep: ProcedureStep = { 
@@ -203,7 +203,7 @@ export default function DatasetPage() {
       });
       
       if (res.ok) { 
-        toast({ title: "CONNAISSANCE INDEXÉE", description: "Mémoire sémantique mise à jour." }); 
+        toast({ title: "CONNAISSANCE INDEXÉE", description: "Mémoire sémantique Cloud mise à jour." }); 
         setQaTitle(''); setQaQuestion(''); setQaAnswer(''); setQaTags('');
       } else {
         throw new Error("Erreur de liaison sémantique");
@@ -229,7 +229,7 @@ export default function DatasetPage() {
           </div>
           <div className="flex items-center gap-3">
              <div className="px-3 py-1 bg-secondary/10 border border-secondary/20 rounded-sm">
-                <span className="text-[9px] font-code text-secondary uppercase font-bold tracking-tighter">Prêt pour Injection</span>
+                <span className="text-[9px] font-code text-secondary uppercase font-bold tracking-tighter">PRÊT POUR INJECTION</span>
              </div>
           </div>
         </header>
@@ -504,7 +504,7 @@ export default function DatasetPage() {
                     ) : (
                       <Zap className="w-6 h-6 mr-3 group-hover:scale-125 transition-transform" />
                     )}
-                    Injecter dans la Mémoire Cloud (Provisoire)
+                    Injecter dans la Mémoire Cloud
                   </Button>
                 </Card>
 

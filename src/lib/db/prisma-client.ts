@@ -21,14 +21,14 @@ function createPrismaClient() {
 
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
-    console.warn(`⚠️ [PRISMA_CLIENT] DATABASE_URL manquante. Fallback standard client.`);
+    console.warn(`⚠️ [PRISMA_CLIENT] DATABASE_URL manquante. Fallback client standard.`);
     return new PrismaClient();
   }
 
   const pool = new Pool({ connectionString });
   const adapter = new PrismaNeon(pool);
 
-  // Prisma 7 injecte l'adaptateur via le constructeur
+  // Pour Prisma 7, l'adaptateur est injecté via le constructeur
   return new PrismaClient({
     adapter,
     log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],

@@ -3,7 +3,7 @@ import { apiClient } from '../api-client';
 
 /**
  * @fileOverview Moteur de synchronisation atomique [SYNC_ENGINE].
- * Version : Client-Safe (Suppression définitive de l'import 'fs').
+ * Version : Client-Safe (Utilise les API Routes au lieu de Node.js 'fs').
  * Flux : Téléchargement Cloud -> Émission vers Registre via API -> Injection Chroma -> Purge Cloud.
  */
 
@@ -16,7 +16,7 @@ export const syncEngine = {
         const parsed = JSON.parse(raw);
         return { ...parsed, lastSync: new Date(parsed.lastSync) };
       } catch {
-        // Fallback
+        // Ignoré
       }
     }
     return {
@@ -68,7 +68,7 @@ export const syncEngine = {
         const knowledgeType = item._knowledgeType || parsed.type || 'qa';
         const title = item._title || parsed.title || 'Sans titre';
 
-        // 1. Sauvegarde Registre Physique via API Route
+        // 1. Sauvegarde Registre Physique via API Route (Client-Safe)
         const regPath = knowledgeType === 'procedure' 
           ? `procedures/${item.id}/procedure.json` 
           : `items/${item.id}.json`;
@@ -79,7 +79,7 @@ export const syncEngine = {
           content: JSON.stringify(parsed, null, 2)
         });
 
-        // 2. Vectorisation Locale via API Route
+        // 2. Vectorisation Locale via API Route (Client-Safe)
         let semanticText = '';
         if (knowledgeType === 'qa') {
           semanticText = `Q: ${parsed.question}\nR: ${parsed.answer}`;
@@ -98,7 +98,7 @@ export const syncEngine = {
         });
 
         successIds.push(item.id);
-        console.log(`✅ [SYNC_VECTOR] [DONE] Item injecté : ${item.id}`);
+        console.log(`✅ [SYNC_VECTOR] [DONE] Item injecté localement : ${item.id}`);
       } catch (err: any) {
         console.error(`❌ [SYNC_VECTOR] [FAIL] Échec item ${item.id} :`, err.message);
       }
@@ -108,7 +108,7 @@ export const syncEngine = {
     if (successIds.length > 0) {
       try {
         await apiClient.post('/api/sync/cleanup', { ids: successIds, projectId });
-        console.log(`✅ [SYNC_PURGE] [SUCCESS] Données Web nettoyées.`);
+        console.log(`✅ [SYNC_PURGE] [SUCCESS] Données Web purgées après transfert.`);
       } catch (e: any) {
         console.warn(`⚠️ [SYNC_PURGE] [WARN] Échec purge Cloud :`, e.message);
       }

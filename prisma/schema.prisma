@@ -1,12 +1,11 @@
-// Schema Prisma pour VisioNode Core V7.8 (Support Neon Serverless)
-
+// Configuration Prisma 7 pour VisioNode Core
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
-  // Note : L'URL est gérée dynamiquement via prisma.config.ts sous Prisma 7
+  // Note: La propriété 'url' est gérée via prisma.config.ts et l'adaptateur Neon pour Prisma 7+
 }
 
 model User {
@@ -20,9 +19,10 @@ model User {
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
   lastSyncAt      DateTime?
-  
-  procedures      Procedure[]      @relation("UserProcedures")
+
   knowledgeItems  KnowledgeItem[]
+  procedures      Procedure[]
+  executions      ProcedureExecution[]
 
   @@map("users")
 }
@@ -31,7 +31,7 @@ model KnowledgeItem {
   id              String           @id @default(cuid())
   userId          String
   user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type            String
+  type            String           // "qa", "text", "manual"
   title           String
   question        String?
   answer          String?
@@ -61,26 +61,58 @@ model Procedure {
   version         String           @default("1.0.0")
   status          String           @default("DRAFT")
   
-  prerequisites   Json
-  steps           Json
-  parameters      Json?
-  postExecution   Json?
-  metadata        Json
+  prerequisites   Json             
+  steps           Json             
+  parameters      Json?            
+  postExecution   Json?            
+  metadata        Json             
   
   authorId        String
-  author          User             @relation("UserProcedures", fields: [authorId], references: [id])
-  approvers       Json?
+  author          User             @relation(fields: [authorId], references: [id])
+  approvers       Json?            
   
   syncedLocal     Boolean          @default(false)
   lastExecutedAt  DateTime?
   executionCount  Int              @default(0)
-  avgDuration     Int?
-  successRate     Float?
+  avgDuration     Int?             
+  successRate     Float?           
   
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 
+  executions      ProcedureExecution[]
+
   @@index([code])
   @@index([status])
   @@map("procedures")
+}
+
+model ProcedureExecution {
+  id              String           @id @default(cuid())
+  procedureId     String
+  procedure       Procedure        @relation(fields: [procedureId], references: [id], onDelete: Cascade)
+  operatorId      String
+  operator        User             @relation(fields: [operatorId], references: [id])
+  
+  startTime       DateTime         @default(now())
+  endTime         DateTime?
+  status          String
+  currentStep     Int              @default(-1)
+  stepsStatus     Json             
+  totalDuration   Int?             
+  
+  events          Json?    
+  alarms          Json?    
+  fallbacks       Json?    
+  
+  result          Json?    
+  notes           String?
+  signature       String?  
+  
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([procedureId])
+  @@index([operatorId])
+  @@map("procedure_executions")
 }
