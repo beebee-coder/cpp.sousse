@@ -28,7 +28,7 @@ function createPrismaClient() {
 
   // Configuration Neon Serverless Adapter pour Prisma 7
   const pool = new Pool({ connectionString });
-  const adapter = new PrismaNeon(pool);
+  const adapter = new PrismaNeon(pool as any);
 
   return new PrismaClient({
     adapter,
