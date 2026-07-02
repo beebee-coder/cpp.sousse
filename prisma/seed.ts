@@ -1,75 +1,113 @@
+// prisma/seed.ts
+import { config } from 'dotenv';
+import { resolve } from 'path';
 import { prisma } from '../src/lib/db/prisma-client';
 import bcrypt from 'bcryptjs';
 import fs from 'fs';
 import path from 'path';
 
+// Charger explicitement les variables d'environnement
+const envPath = resolve(process.cwd(), '.env.local');
+config({ path: fs.existsSync(envPath) ? envPath : resolve(process.cwd(), '.env') });
+
+const ADMIN_EMAIL = process.env.AUTH_ADMIN_EMAIL || 'admin@visionode.local';
+const ADMIN_PASSWORD = process.env.AUTH_ADMIN_PASSWORD || 'Admin@2024!';
+
+const DEFAULT_KNOWLEDGE = [
+  {
+    title: 'Sécurité CRF - EPI Obligatoires',
+    type: 'qa',
+    question: 'Quels sont les EPI obligatoires en zone CRF ?',
+    answer: 'Casque de sécurité, gants anti-coupure, lunettes de protection S3, chaussures de sécurité.',
+    tags: ['EPI', 'Sécurité', 'CRF'],
+    category: 'Sécurité'
+  },
+  {
+    title: 'Maintenance préventive CRF',
+    type: 'guide',
+    question: 'Quand effectuer la maintenance préventive du CRF ?',
+    answer: 'Maintenance mensuelle : vérification des pressions. Trimestrielle : inspection compresseurs.',
+    tags: ['Maintenance', 'CRF'],
+    category: 'Maintenance'
+  }
+];
+
 async function main() {
   console.log('🌱 [SEED] Amorçage industriel VisioNode...');
 
-  // 1. Utilisateurs
-  const adminPassword = await bcrypt.hash('Admin@2024!', 12);
-  const admin = await prisma.user.upsert({
-    where: { email: 'admin@visionode.local' },
-    update: {},
-    create: {
-      id: 'admin-root',
-      firstName: 'System',
-      lastName: 'Administrator',
-      email: 'admin@visionode.local',
-      password: adminPassword,
-      role: 'admin',
-      approved: true,
-    },
-  });
-
-  console.log('✅ [SEED] Admin root créé.');
-
-  // 2. Procédures CRF de référence
   try {
+    // 1. Création de l'utilisateur administrateur
+    const hashedPassword = await bcrypt.hash(ADMIN_PASSWORD, 12);
+    const admin = await prisma.user.upsert({
+      where: { email: ADMIN_EMAIL },
+      update: {
+        password: hashedPassword,
+        approved: true,
+        role: 'admin'
+      },
+      create: {
+        id: 'admin-root',
+        firstName: 'System',
+        lastName: 'Administrator',
+        email: ADMIN_EMAIL,
+        password: hashedPassword,
+        role: 'admin',
+        approved: true
+      },
+    });
+    console.log(`✅ [SEED] Admin configuré : ${admin.email}`);
+
+    // 2. Injection Procédure CRF (depuis JSON si existe)
     const crfPath = path.join(process.cwd(), 'data', 'procedure-demarrage-CRF.json');
     if (fs.existsSync(crfPath)) {
       const crfData = JSON.parse(fs.readFileSync(crfPath, 'utf8'));
       await prisma.procedure.upsert({
-        where: { code: crfData.metadata.code },
+        where: { code: crfData.metadata?.code || 'CRF-START-001' },
         update: {
-          steps: crfData.steps,
-          prerequisites: crfData.prerequisites,
-          metadata: crfData.metadata,
+          steps: crfData.steps || [],
+          prerequisites: crfData.prerequisites || {},
+          metadata: crfData.metadata || {}
         },
         create: {
-          id: crfData._id || 'proc-crf-startup-001',
-          code: crfData.metadata.code,
-          title: crfData.metadata.title,
-          description: 'Système de Réfrigération Principal',
+          id: 'proc-crf-001',
+          code: crfData.metadata?.code || 'CRF-START-001',
+          title: crfData.metadata?.title || 'Démarrage Système CRF',
           category: 'STARTUP',
           department: 'PRODUCTION',
           criticality: 'CRITICAL',
-          version: crfData.metadata.version,
-          status: 'APPROVED',
-          prerequisites: crfData.prerequisites,
-          steps: crfData.steps,
-          metadata: crfData.metadata,
+          prerequisites: crfData.prerequisites || {},
+          steps: crfData.steps || [],
+          metadata: crfData.metadata || {},
           authorId: admin.id,
-        },
+          status: 'APPROVED'
+        }
       });
-      console.log(`✅ [SEED] Procédure ${crfData.metadata.code} injectée.`);
+      console.log('✅ [SEED] Procédure CRF injectée.');
     }
-  } catch (err: any) {
-    console.warn('⚠️ [SEED] Erreur injection procédures:', err.message);
+
+    // 3. Injection Connaissances
+    for (const k of DEFAULT_KNOWLEDGE) {
+      await prisma.knowledgeItem.create({
+        data: {
+          userId: admin.id,
+          type: k.type,
+          title: k.title,
+          question: k.question,
+          answer: k.answer,
+          tags: k.tags,
+          category: k.category,
+          isPublic: true
+        }
+      });
+    }
+    console.log(`✅ [SEED] ${DEFAULT_KNOWLEDGE.length} connaissances indexées.`);
+
+  } catch (error: any) {
+    console.error('❌ [SEED] Échec critique :', error.message);
+    process.exit(1);
+  } finally {
+    await prisma.$disconnect();
   }
-
-  // 3. Connaissances sémantiques
-  const knowledge = [
-    { title: 'Sécurité CRF', type: 'qa', question: 'EPI Zone CRF ?', answer: 'Casque, gants, lunettes S3.', tags: ['EPI'], category: 'Sécurité' }
-  ];
-
-  for (const k of knowledge) {
-    await prisma.knowledgeItem.create({ data: { ...k, userId: admin.id } });
-  }
-
-  console.log('✅ [SEED] Système prêt pour l\'audit.');
 }
 
-main()
-  .catch((e) => { console.error('❌ [SEED] Erreur:', e); process.exit(1); })
-  .finally(async () => { await prisma.$disconnect(); });
+main();

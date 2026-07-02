@@ -1,5 +1,4 @@
-// Configuration Prisma 7.8.0 pour VisioNode Core
-// Version : Alignée sur l'adaptateur Neon asynchrone
+// prisma/schema.prisma
 
 generator client {
   provider = "prisma-client-js"
@@ -7,8 +6,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  // Note : La propriété 'url' est proscrite ici sous Prisma 7.
-  // Elle est pilotée par prisma.config.ts et l'adaptateur Neon.
+  // NOTE: La propriété 'url' est désormais gérée par prisma.config.ts pour la compatibilité Prisma 7+
 }
 
 model User {
@@ -22,6 +20,7 @@ model User {
   createdAt       DateTime             @default(now())
   updatedAt       DateTime             @updatedAt
   lastSyncAt      DateTime?
+  
   knowledgeItems  KnowledgeItem[]
   procedures      Procedure[]
   executions      ProcedureExecution[]
@@ -30,22 +29,22 @@ model User {
 }
 
 model KnowledgeItem {
-  id              String   @id @default(cuid())
+  id              String    @id @default(cuid())
   userId          String
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type            String   // 'qa', 'doc', 'procedure'
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type            String    // 'qa', 'procedure', 'guide'
   title           String
   question        String?
   answer          String?
   steps           Json?
   tags            String[]
   category        String?
-  difficulty      String   @default("medium")
-  isPublic        Boolean  @default(true)
-  syncedLocal     Boolean  @default(false)
+  difficulty      String    @default("medium")
+  isPublic        Boolean   @default(true)
+  syncedLocal     Boolean   @default(false)
   vectorId        String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   @@index([userId])
   @@map("knowledge_items")
@@ -62,21 +61,26 @@ model Procedure {
   criticality     String               @default("MEDIUM")
   version         String               @default("1.0.0")
   status          String               @default("DRAFT")
-  prerequisites   Json                 // Liste des prérequis structurés
-  steps           Json                 // Séquençage CRF (ProcedureStep[])
+  
+  prerequisites   Json                 // Liste structurée
+  steps           Json                 // Liste structurée des étapes
   parameters      Json?
   postExecution   Json?
   metadata        Json
+  
   authorId        String
   author          User                 @relation(fields: [authorId], references: [id])
   approvers       Json?
+  
   syncedLocal     Boolean              @default(false)
   lastExecutedAt  DateTime?
   executionCount  Int                  @default(0)
   avgDuration     Int?
   successRate     Float?
+  
   createdAt       DateTime             @default(now())
   updatedAt       DateTime             @updatedAt
+  
   executions      ProcedureExecution[]
 
   @@index([code])
@@ -90,18 +94,21 @@ model ProcedureExecution {
   procedure       Procedure @relation(fields: [procedureId], references: [id], onDelete: Cascade)
   operatorId      String
   operator        User      @relation(fields: [operatorId], references: [id])
+  
   startTime       DateTime  @default(now())
   endTime         DateTime?
   status          String
   currentStep     Int       @default(-1)
   stepsStatus     Json
   totalDuration   Int?
+  
   events          Json?
   alarms          Json?
   fallbacks       Json?
   result          Json?
   notes           String?
   signature       String?
+  
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 

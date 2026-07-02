@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * @fileOverview Station de Forge Industrielle V8.2.0.
+ * @fileOverview Station de Forge Industrielle V8.3.0.
  * Version : Concordance CRF V6.5 + Fix Sérialisation + Fix Hydratation.
  */
 
@@ -18,8 +18,7 @@ import {
   MicOff,
   Settings2, 
   FileText,
-  Layers,
-  ChevronRight
+  Layers
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -57,9 +56,8 @@ export default function DatasetPage() {
 
   useEffect(() => { 
     setMounted(true); 
-    // Initialisation sécurisée pour éviter le mismatch d'hydratation
     const initialStep: ProcedureStep = { 
-      id: `step-${Math.random().toString(36).substring(2, 9)}`, 
+      id: `step-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`, 
       order: 1,
       title: '', 
       description: '',
@@ -109,7 +107,7 @@ export default function DatasetPage() {
 
   const handleAddStep = () => {
     const newStep: ProcedureStep = {
-      id: `step-${Math.random().toString(36).substring(2, 9)}`,
+      id: `step-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
       order: procSteps.length + 1,
       title: '',
       description: '',
