@@ -1,40 +1,14 @@
 // prisma/seed.ts
-import { PrismaClient } from '@prisma/client';
-import { PrismaNeon } from '@prisma/adapter-neon';
-import { Pool, neonConfig } from '@neondatabase/serverless';
-import ws from 'ws';
+import { prisma } from '../src/lib/db/prisma-client';
 import bcrypt from 'bcryptjs';
-import * as dotenv from 'dotenv';
-import * as path from 'path';
 
 /**
  * Script d'amorçage industriel VisioNode - Prisma 7.8.0 Certifié.
- * Solution d'injection directe pour résoudre l'erreur "No database host".
+ * Utilise le client singleton pour garantir la liaison Neon.
  */
-
-dotenv.config({ path: path.resolve(process.cwd(), '.env') });
-
-if (typeof window === 'undefined') {
-  neonConfig.webSocketConstructor = ws;
-}
-
 async function main() {
-  console.log('🌱 [SEED] Initialisation du Registre Industriel (Latest Prisma 7)...');
-
-  const rawUrl = process.env.DATABASE_URL;
-  if (!rawUrl) {
-    console.error('❌ [SEED] DATABASE_URL manquante.');
-    process.exit(1);
-  }
-
-  const connectionString = rawUrl.replace(/^"|"$/g, '');
-  console.log(`📡 [SEED] Liaison Neon explicite (Chaîne : ${connectionString.substring(0, 15)}...)`);
-
-  const pool = new Pool({ connectionString });
-  const adapter = new PrismaNeon(pool);
-  
-  // @ts-ignore - On force l'utilisation de l'adapter en v7
-  const prisma = new PrismaClient({ adapter });
+  const ts = new Date().toLocaleTimeString();
+  console.log(`🌱 [${ts}] [SEED] Initialisation du Registre Industriel.`);
 
   try {
     console.log('👤 [SEED] Audit de l\'administrateur root...');
@@ -87,7 +61,6 @@ async function main() {
     process.exit(1);
   } finally {
     await prisma.$disconnect();
-    await pool.end();
   }
 }
 

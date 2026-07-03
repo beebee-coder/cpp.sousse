@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * @fileOverview Station de Forge Industrielle V19.0 - Stable Prisma 7.
+ * @fileOverview Station de Forge Industrielle V20.0 - Stable Prisma 7.
  * Version : Correction définitive de la sérialisation [object Event].
  */
 
@@ -77,9 +77,9 @@ export default function DatasetPage() {
    * Empêche l'injection d'objets [Event] dans l'état JSON.
    */
   const handleUpdateStepField = useCallback((idx: number, field: string, eOrVal: any) => {
-    // Extraction robuste du texte
+    // Extraction robuste du texte : Si c'est un événement React, on prend target.value, sinon on prend la valeur brute
     const rawValue = (eOrVal && typeof eOrVal === 'object' && 'target' in eOrVal) 
-      ? eOrVal.target.value 
+      ? (eOrVal.target as HTMLInputElement | HTMLTextAreaElement).value 
       : eOrVal;
 
     setProcSteps(prev => {

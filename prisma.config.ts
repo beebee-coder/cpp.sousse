@@ -1,12 +1,13 @@
 import { defineConfig } from 'prisma/config';
 import * as dotenv from 'dotenv';
+import * as path from 'path';
 
-dotenv.config();
+// Charger explicitement l'environnement pour la CLI Prisma 7
+dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
 /**
  * Configuration Souveraine Prisma 7.8.0.
- * Centralise l'injection de DATABASE_URL pour l'adaptateur Neon.
- * Résout l'erreur P1012 (url non supportée dans schema.prisma).
+ * Résout l'erreur P1012 en centralisant la détection de DATABASE_URL.
  */
 export default defineConfig({
   schema: './prisma/schema.prisma',
@@ -14,6 +15,7 @@ export default defineConfig({
     type: 'wasm',
   },
   datasource: {
-    url: (process.env.DATABASE_URL as string)?.replace(/^"|"$/g, ''),
+    // Nettoyage de la chaîne pour éviter les erreurs de driver Neon
+    url: (process.env.DATABASE_URL || '').replace(/^"|"$/g, '').trim(),
   },
 });
