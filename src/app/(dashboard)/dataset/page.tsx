@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * @fileOverview Station de Forge Industrielle V17.2.
- * Version : Correction DÉFINITIVE de la sérialisation [object Event].
+ * @fileOverview Station de Forge Industrielle V18.0 - Stable Prisma 7.
+ * Version : Correction définitive de la sérialisation [object Event].
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -12,11 +12,9 @@ import {
   Loader2, 
   Trash2, 
   Zap, 
-  ShieldAlert, 
   BookOpen, 
   Mic, 
   MicOff,
-  Settings2, 
   FileText,
   Layers
 } from 'lucide-react';
@@ -25,7 +23,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { DashboardSidebar } from '@/components/dashboard/Sidebar';
 import { useVoice } from '@/hooks/use-voice';
@@ -40,7 +37,6 @@ export default function DatasetPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [activeTab, setActiveTab] = useState('procedure');
   
-  // --- ÉTAT PROCÉDURE ---
   const [procTitle, setProcTitle] = useState('');
   const [procCode, setProcCode] = useState('');
   const [category, setCategory] = useState('OPERATION');
@@ -48,11 +44,9 @@ export default function DatasetPage() {
   const [criticality, setCriticality] = useState('MEDIUM');
   const [procSteps, setProcSteps] = useState<ProcedureStep[]>([]);
 
-  // --- ÉTAT Q/R ---
   const [qaTitle, setQaTitle] = useState('');
   const [qaQuestion, setQaQuestion] = useState('');
   const [qaAnswer, setQaAnswer] = useState('');
-  const [qaTags, setQaTags] = useState('');
 
   useEffect(() => { 
     setMounted(true); 
@@ -83,9 +77,11 @@ export default function DatasetPage() {
    * ✅ FIX SÉRIALISATION : Extraction forcée de la valeur textuelle.
    * Empêche l'injection d'objets [Event] dans l'état JSON.
    */
-  const handleUpdateStepField = useCallback((idx: number, field: string, e: any) => {
-    // 1. Extraction robuste de la valeur (si c'est un Event, on prend target.value)
-    const rawValue = e && typeof e === 'object' && 'target' in e ? e.target.value : e;
+  const handleUpdateStepField = useCallback((idx: number, field: string, value: any) => {
+    // 1. Extraction robuste (si value est un Event, on prend target.value)
+    const rawValue = value && typeof value === 'object' && 'target' in value 
+      ? (value.target as HTMLInputElement | HTMLTextAreaElement).value 
+      : value;
 
     setProcSteps(prev => {
       const next = [...prev];
@@ -113,9 +109,7 @@ export default function DatasetPage() {
       if (activeVoiceField?.startsWith('step-desc-')) {
         const parts = activeVoiceField.split('-');
         const idx = parseInt(parts[parts.length - 1]);
-        if (!isNaN(idx)) {
-           handleUpdateStepField(idx, 'description', text);
-        }
+        if (!isNaN(idx)) handleUpdateStepField(idx, 'description', text);
       }
     },
     autoRestart: true,

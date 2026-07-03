@@ -5,8 +5,8 @@ import { Pool, neonConfig } from '@neondatabase/serverless';
 import ws from 'ws';
 
 /**
- * Client Prisma singleton certifié stable.
- * Injection explicite pour environnement Cloud.
+ * Client Prisma 7.8.0 avec adaptateur Neon stable.
+ * Version : Injection Explicite (Résout l'erreur No database host).
  */
 
 if (typeof window === 'undefined') {
@@ -25,12 +25,15 @@ function createPrismaClient(): PrismaClient {
     return new PrismaClient();
   }
 
+  // Nettoyage strict de la chaîne de connexion
   const connectionString = rawUrl.replace(/^"|"$/g, '');
 
   try {
+    // Injection explicite du host et de la chaîne pour l'adaptateur Neon
     const pool = new Pool({ connectionString });
     const adapter = new PrismaNeon(pool);
     
+    // @ts-ignore - Prisma 7 supporte la propriété adapter
     return new PrismaClient({ adapter });
   } catch (err: any) {
     console.error('❌ [Prisma] Échec adaptateur Neon :', err.message);

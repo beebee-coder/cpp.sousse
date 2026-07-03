@@ -1,7 +1,7 @@
 import { defineConfig } from 'prisma/config';
 import * as dotenv from 'dotenv';
 
-// Chargement impératif des variables d'environnement pour Prisma 7
+// Chargement impératif pour la CLI Prisma 7
 dotenv.config();
 
 /**
@@ -15,6 +15,6 @@ export default defineConfig({
     type: 'wasm',
   },
   datasource: {
-    url: process.env.DATABASE_URL as string,
+    url: (process.env.DATABASE_URL as string)?.replace(/^"|"$/g, ''),
   },
 });

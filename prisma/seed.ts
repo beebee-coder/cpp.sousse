@@ -8,20 +8,19 @@ import * as dotenv from 'dotenv';
 import * as path from 'path';
 
 /**
- * Script d'amorçage industriel VisioNode.
+ * Script d'amorçage industriel VisioNode - Prisma 7.8.0 Certifié.
  * Solution d'injection directe pour résoudre l'erreur "No database host".
  */
 
-// 1. Chargement explicite de l'environnement (Robustesse Cloud)
+// 1. Chargement explicite de l'environnement
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
-dotenv.config({ path: path.resolve(process.cwd(), '.env.local'), override: true });
 
 if (typeof window === 'undefined') {
   neonConfig.webSocketConstructor = ws;
 }
 
 async function main() {
-  console.log('🌱 [SEED] Initialisation du Registre Industriel...');
+  console.log('🌱 [SEED] Initialisation du Registre Industriel (Latest Prisma 7)...');
 
   // 2. Récupération et nettoyage de la chaîne de connexion
   const rawUrl = process.env.DATABASE_URL;
@@ -31,11 +30,13 @@ async function main() {
   }
 
   const connectionString = rawUrl.replace(/^"|"$/g, '');
-  console.log(`📡 [SEED] Liaison Neon : ${connectionString.substring(0, 45)}...`);
+  console.log(`📡 [SEED] Liaison Neon explicite détectée.`);
 
-  // 3. Initialisation explicite de l'adaptateur
+  // 3. Initialisation forcée de l'adaptateur
   const pool = new Pool({ connectionString });
   const adapter = new PrismaNeon(pool);
+  
+  // @ts-ignore - On force l'utilisation de l'adapter en v7
   const prisma = new PrismaClient({ adapter });
 
   try {

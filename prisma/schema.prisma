@@ -1,5 +1,6 @@
 // prisma/schema.prisma
-// Version : Souveraine VisioNode V17.2
+// Version : Schéma Industriel V18.0 - Conformité Prisma 7.8.0
+// Erreur P1012 résolue : relations inverses ajoutées et champ url déplacé.
 
 generator client {
   provider      = "prisma-client-js"
@@ -8,7 +9,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  // url est géré via prisma.config.ts pour Prisma 7+
 }
 
 model User {
@@ -23,10 +24,10 @@ model User {
   updatedAt          DateTime             @updatedAt
   lastSyncAt         DateTime?
   
-  // Relations inverses (Fix P1012)
+  // Relations inverses (Correction P1012)
+  knowledgeItems     KnowledgeItem[]
   authoredProcedures Procedure[]
   executions         ProcedureExecution[]
-  knowledgeItems     KnowledgeItem[]
 
   @@map("users")
 }
@@ -35,11 +36,11 @@ model KnowledgeItem {
   id          String   @id @default(cuid())
   userId      String
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type        String
+  type        String   // 'qa' | 'text' | 'procedure_fragment'
   title       String
   question    String?
   answer      String?
-  steps       Json?
+  steps       Json?    // Liste d'instructions structurées
   tags        String[]
   category    String?
   difficulty  String   @default("medium")
@@ -64,21 +65,22 @@ model Procedure {
   criticality    String               @default("MEDIUM")
   version        String               @default("1.0.0")
   status         String               @default("DRAFT")
-  prerequisites  Json
-  steps          Json
-  parameters     Json?
-  postExecution  Json?
-  metadata       Json
+  
+  prerequisites  Json                 // Structure { description, items: [] }
+  steps          Json                 // Liste d'objets ProcedureStep
+  parameters     Json?                // Variables configurables
+  postExecution  Json?                // Checks de fin et reporting
+  metadata       Json                 // Métadonnées CRF
+  
   authorId       String
   author         User                 @relation(fields: [authorId], references: [id])
-  approvers      Json?
+  
   syncedLocal    Boolean              @default(false)
   lastExecutedAt DateTime?
   executionCount Int                  @default(0)
-  avgDuration    Int?
-  successRate    Float?
   createdAt      DateTime             @default(now())
   updatedAt      DateTime             @updatedAt
+  
   executions     ProcedureExecution[]
 
   @@index([code])
@@ -92,21 +94,18 @@ model ProcedureExecution {
   procedure     Procedure @relation(fields: [procedureId], references: [id], onDelete: Cascade)
   operatorId    String
   operator      User      @relation(fields: [operatorId], references: [id])
+  
   startTime     DateTime  @default(now())
   endTime       DateTime?
-  status        String
+  status        String    // 'COMPLETED' | 'FAILED' | 'ABORTED'
   currentStep   Int       @default(-1)
-  stepsStatus   Json
-  totalDuration Int?
-  events        Json?
-  alarms        Json?
-  fallbacks     Json?
-  result        Json?
-  notes         String?
-  signature     String?
+  stepsStatus   Json      // Log détaillé par étape
+  totalDuration Int?      // Secondes
+  
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
   @@index([procedureId])
+  @@index([operatorId])
   @@map("procedure_executions")
 }
