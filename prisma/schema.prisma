@@ -1,139 +1,82 @@
 // prisma/schema.prisma
+// ============================================================
+// 🏗️ SCHEMA INDUSTRIEL VISIONODE V7.8.0
+// ============================================================
+
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
-  // ✅ url est géré via prisma.config.ts pour Prisma 7
+  // url est géré par prisma.config.ts pour l'adaptateur Neon
 }
 
-// ============================================================
-// 👤 MODÈLES D'AUTHENTIFICATION (NextAuth v4)
-// ============================================================
-
 model User {
-  id          String   @id @default(cuid())
-  firstName   String
-  lastName    String
-  email       String   @unique
-  password    String
-  role        String   @default("user")
-  approved    Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  // ✅ Relations NextAuth v4
-  accounts    Account[]
-  sessions    Session[]
-
-  // Relations métier
-  knowledgeItems KnowledgeItem[]
-  procedures     Procedure[]
-  executions     ProcedureExecution[]
+  id                String               @id @default(cuid())
+  firstName         String
+  lastName          String
+  password          String
+  email             String               @unique
+  role              String               @default("user")
+  approved          Boolean              @default(false)
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  lastSyncAt        DateTime?
+  knowledgeItems    KnowledgeItem[]
+  procedures        Procedure[]
+  executions        ProcedureExecution[]
 
   @@map("users")
 }
 
-// ✅ Modèle Account pour NextAuth v4
-model Account {
-  id                String  @id @default(cuid())
-  userId            String
-  type              String
-  provider          String
-  providerAccountId String
-  refresh_token     String? @db.Text
-  access_token      String? @db.Text
-  expires_at        Int?
-  token_type        String?
-  scope             String?
-  id_token          String? @db.Text
-  session_state     String?
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([provider, providerAccountId])
-  @@map("accounts")
-}
-
-// ✅ Modèle Session pour NextAuth v4
-model Session {
-  id           String   @id @default(cuid())
-  sessionToken String   @unique
-  userId       String
-  expires      DateTime
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@map("sessions")
-}
-
-// ✅ Modèle VerificationToken pour NextAuth v4
-model VerificationToken {
-  identifier String
-  token      String   @unique
-  expires    DateTime
-
-  @@unique([identifier, token])
-  @@map("verification_tokens")
-}
-
-// ============================================================
-// 📚 MODÈLES MÉTIER
-// ============================================================
-
 model KnowledgeItem {
-  id          String   @id @default(cuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type        String
-  title       String
-  question    String?
-  answer      String?
-  steps       Json?
-  tags        String[]
-  category    String?
-  difficulty  String   @default("medium")
-  isPublic    Boolean  @default(true)
-  syncedLocal Boolean  @default(false)
-  vectorId    String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type         String
+  title        String
+  question     String?
+  answer       String?
+  steps        Json?
+  tags         String[]
+  category     String?
+  difficulty   String   @default("medium")
+  isPublic     Boolean  @default(true)
+  syncedLocal  Boolean  @default(false)
+  vectorId     String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   @@index([userId])
   @@map("knowledge_items")
 }
 
 model Procedure {
-  id              String   @id @default(cuid())
-  code            String   @unique
+  id              String               @id @default(cuid())
+  code            String               @unique
   title           String
   description     String?
-  category        String   @default("OPERATION")
+  category        String               @default("OPERATION")
   subcategory     String?
-  department      String   @default("PRODUCTION")
-  criticality     String   @default("MEDIUM")
-  version         String   @default("1.0.0")
-  status          String   @default("DRAFT")
-  
+  department      String               @default("PRODUCTION")
+  criticality     String               @default("MEDIUM")
+  version         String               @default("1.0.0")
+  status          String               @default("DRAFT")
   prerequisites   Json
   steps           Json
   parameters      Json?
   postExecution   Json?
   metadata        Json
-  
   authorId        String
-  author          User     @relation(fields: [authorId], references: [id])
-  approvers       Json?
-  
-  syncedLocal     Boolean  @default(false)
+  author          User                 @relation(fields: [authorId], references: [id])
+  syncedLocal     Boolean              @default(false)
   lastExecutedAt  DateTime?
-  executionCount  Int      @default(0)
+  executionCount  Int                  @default(0)
   avgDuration     Int?
   successRate     Float?
-  
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
   executions      ProcedureExecution[]
 
   @@index([code])
@@ -142,30 +85,26 @@ model Procedure {
 }
 
 model ProcedureExecution {
-  id              String    @id @default(cuid())
-  procedureId     String
-  procedure       Procedure @relation(fields: [procedureId], references: [id], onDelete: Cascade)
-  operatorId      String
-  operator        User      @relation(fields: [operatorId], references: [id])
-  
-  startTime       DateTime  @default(now())
-  endTime         DateTime?
-  status          String
-  currentStep     Int       @default(-1)
-  stepsStatus     Json
-  totalDuration   Int?
-  
-  events          Json?
-  alarms          Json?
-  fallbacks       Json?
-  result          Json?
-  notes           String?
-  signature       String?
-  
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id            String    @id @default(cuid())
+  procedureId   String
+  procedure     Procedure @relation(fields: [procedureId], references: [id], onDelete: Cascade)
+  operatorId    String
+  operator      User      @relation(fields: [operatorId], references: [id])
+  startTime     DateTime  @default(now())
+  endTime       DateTime?
+  status        String
+  currentStep   Int       @default(-1)
+  stepsStatus   Json
+  totalDuration Int?
+  events        Json?
+  alarms        Json?
+  fallbacks     Json?
+  result        Json?
+  notes         String?
+  signature     String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   @@index([procedureId])
-  @@index([operatorId])
   @@map("procedure_executions")
 }

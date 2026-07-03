@@ -134,10 +134,9 @@ export default function DatasetPage() {
 
   /**
    * ✅ Fix Sérialisation : Protection contre l'injection d'objets Event.
-   * Extrait systématiquement la valeur si un objet Event est détecté.
    */
   const handleUpdateStepField = useCallback((idx: number, field: keyof ProcedureStep, value: any) => {
-    // Détection et extraction sécurisée de la valeur (si c'est un Event d'Input ou Select)
+    // Extraction sécurisée de la valeur si c'est un Event
     const safeValue = (value && typeof value === 'object' && 'target' in value) 
       ? (value.target as any).value 
       : value;
@@ -377,8 +376,7 @@ export default function DatasetPage() {
                                   <select 
                                     value={step.action.type} 
                                     onChange={e => {
-                                       const val = e.target.value;
-                                       handleUpdateStepField(idx, 'action', { ...step.action, type: val });
+                                       handleUpdateStepField(idx, 'action', { ...step.action, type: e.target.value });
                                     }}
                                     className="w-full bg-black border border-border rounded-sm h-8 text-[9px] font-bold uppercase px-2"
                                   >
