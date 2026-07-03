@@ -22,7 +22,7 @@ model User {
   updatedAt          DateTime             @updatedAt
   lastSyncAt         DateTime?
   knowledgeItems     KnowledgeItem[]
-  authoredProcedures Procedure[]
+  authoredProcedures Procedure[]          @relation("ProcedureAuthor")
   executions         ProcedureExecution[]
 
   @@map("users")
@@ -67,7 +67,7 @@ model Procedure {
   postExecution  Json?
   metadata       Json
   authorId       String
-  author         User                 @relation(fields: [authorId], references: [id])
+  author         User                 @relation("ProcedureAuthor", fields: [authorId], references: [id])
   syncedLocal    Boolean              @default(false)
   lastExecutedAt DateTime?
   executionCount Int                  @default(0)

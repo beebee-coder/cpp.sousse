@@ -20,7 +20,8 @@
     "db:push": "prisma db push",
     "db:reset": "prisma migrate reset --force",
     "db:deploy": "prisma migrate deploy",
-    "db:setup": "tsx prisma/apply-schema.ts"
+    "db:setup": "tsx prisma/apply-schema.ts",
+    "db:vector": "chroma run --host 127.0.0.1 --port 8000 --path ./data/chromadb"
   },
   "dependencies": {
     "@genkit-ai/google-genai": "^1.0.0",

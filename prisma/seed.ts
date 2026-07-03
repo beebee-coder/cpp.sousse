@@ -1,5 +1,4 @@
 
-// prisma/seed.ts - Stable Prisma 5.22.0
 import { prisma } from '../src/lib/db/prisma-client';
 import bcrypt from 'bcryptjs';
 

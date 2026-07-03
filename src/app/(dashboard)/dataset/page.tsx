@@ -2,8 +2,7 @@
 "use client";
 
 /**
- * @fileOverview Station de Forge Industrielle V24.0 - Downgrade Prisma 5 Stable.
- * Version : Correction DEFINITIVE de la sérialisation [object Event].
+ * @fileOverview Station de Forge Industrielle V24.1 - Stabilité Prisma 5 & Fix [object Event].
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -74,31 +73,19 @@ export default function DatasetPage() {
   const [activeVoiceField, setActiveVoiceField] = useState<string | null>(null);
   
   /**
-   * ✅ FIX SÉRIALISATION V24 : Neutralisation absolue de l'objet Event.
-   * Empêche l'injection de [object Event] en vérifiant si la valeur est un objet complexe.
+   * ✅ FIX ANTI-SÉRIALISATION V24.1 : Extraction de valeur pure.
+   * Élimine définitivement le bug "[object Event]" en extrayant target.value si présent.
    */
-  const handleUpdateStepField = useCallback((idx: number, field: string, eOrVal: any) => {
-    let rawValue: string = '';
-
-    // Détection explicite du type d'entrée
-    if (eOrVal && typeof eOrVal === 'object') {
-      if ('target' in eOrVal && eOrVal.target) {
-        // C'est un événement standard d'Input/Textarea/Select
-        rawValue = (eOrVal.target as any).value;
-      } else if (eOrVal.constructor && eOrVal.constructor.name === 'SyntheticBaseEvent') {
-        // C'est un événement React sans target valide accessible directement
-        return; 
-      } else {
-        // C'est probablement une valeur directe passée par un composant contrôlé (ex: Select de Radix)
-        rawValue = String(eOrVal || '');
-      }
-    } else {
-      // C'est une primitive (string, number)
-      rawValue = String(eOrVal ?? '');
+  const handleUpdateStepField = useCallback((idx: number, field: string, value: any) => {
+    let finalValue: any = value;
+    
+    // Détection de l'événement React
+    if (value && typeof value === 'object' && 'target' in value) {
+      finalValue = value.target.value;
     }
-
-    // Protection ultime : si malgré tout on a une chaîne de sérialisation d'objet, on l'ignore
-    if (rawValue === '[object Object]' || rawValue === '[object Event]') {
+    
+    // Protection ultime contre la sérialisation circulaire
+    if (typeof finalValue === 'string' && (finalValue.includes('[object Event]') || finalValue.includes('[object Object]'))) {
       return;
     }
 
@@ -109,12 +96,12 @@ export default function DatasetPage() {
       const updated = { ...next[idx] };
       
       if (field === 'action_type') {
-        updated.action = { ...updated.action, type: rawValue as any };
+        updated.action = { ...updated.action, type: finalValue as any };
       } else if (field === 'duration_value') {
-        const num = parseInt(rawValue) || 0;
+        const num = parseInt(finalValue) || 0;
         updated.duration = { ...updated.duration, value: num, display: `${num}s` };
       } else {
-        (updated as any)[field] = rawValue;
+        (updated as any)[field] = finalValue;
       }
       
       next[idx] = updated;
