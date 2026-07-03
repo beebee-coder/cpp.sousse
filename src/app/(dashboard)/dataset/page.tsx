@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * @fileOverview Station de Forge Industrielle V8.8.4.
- * Version : Correction définitive de la SÉRIALISATION [object Event] et régression Prisma.
+ * @fileOverview Station de Forge Industrielle V8.8.5.
+ * Version : Correction définitive de la SÉRIALISATION [object Event] et Tab Renaming.
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -54,7 +54,7 @@ export default function DatasetPage() {
   const [qaAnswer, setQaAnswer] = useState('');
   const [qaTags, setQaTags] = useState('');
 
-  // ✅ Fix Hydratation : État initial client-only
+  // ✅ Fix Hydratation & Sérialisation : Génération des IDs dans useEffect
   useEffect(() => { 
     setMounted(true); 
     const initialStep: ProcedureStep = { 
@@ -133,11 +133,11 @@ export default function DatasetPage() {
   };
 
   /**
-   * ✅ Fix Sérialisation : Extraction obligatoire de la valeur brute.
-   * Empêche l'injection d'objets Event dans l'état JSON.
+   * ✅ Fix Sérialisation : Extraction forcée de la valeur.
+   * Empêche absolument l'injection d'objets [object Event] dans le JSON.
    */
-  const handleUpdateStepField = useCallback((idx: number, field: keyof ProcedureStep, input: any) => {
-    // Si c'est un événement React, extraire la valeur réelle
+  const handleUpdateStepField = useCallback((idx: number, field: string, input: any) => {
+    // Si c'est un événement React, extraire la valeur brute
     const value = (input && typeof input === 'object' && 'target' in input) 
       ? (input.target as any).value 
       : input;
@@ -145,7 +145,14 @@ export default function DatasetPage() {
     setProcSteps(prev => {
       const next = [...prev];
       if (next[idx]) {
-        next[idx] = { ...next[idx], [field]: value };
+        // Gestion des champs imbriqués
+        if (field === 'action') {
+           next[idx] = { ...next[idx], action: { ...next[idx].action, ...value } };
+        } else if (field === 'duration') {
+           next[idx] = { ...next[idx], duration: { ...next[idx].duration, ...value } };
+        } else {
+           next[idx] = { ...next[idx], [field as keyof ProcedureStep]: value };
+        }
       }
       return next;
     });
@@ -324,7 +331,7 @@ export default function DatasetPage() {
                            </span>
                            <Input 
                             value={step.title} 
-                            onChange={e => handleUpdateStepField(idx, 'title', e)} 
+                            onChange={e => handleUpdateStepField(idx, 'title', e.target.value)} 
                             placeholder="TITRE DE L'ACTION" 
                             className="bg-transparent border-none focus-visible:ring-0 uppercase font-headline font-bold text-xs h-8 p-0" 
                            />
@@ -346,7 +353,7 @@ export default function DatasetPage() {
                            <div className="relative">
                               <Textarea 
                                 value={step.description} 
-                                onChange={e => handleUpdateStepField(idx, 'description', e)} 
+                                onChange={e => handleUpdateStepField(idx, 'description', e.target.value)} 
                                 placeholder="Détailler l'opération réelle..." 
                                 className="h-28 text-xs font-code bg-black/40 border-border/50 resize-none pr-10" 
                               />

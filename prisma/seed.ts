@@ -6,7 +6,7 @@ import bcrypt from 'bcryptjs';
 
 /**
  * Script d'amorçage industriel VisioNode.
- * Version : Prisma 5.22.0 + Neon Serverless.
+ * Version : Prisma 5.22.0 + Neon Serverless + Fix Types.
  */
 async function main() {
   const startTime = Date.now();
@@ -20,7 +20,10 @@ async function main() {
 
   const pool = new Pool({ connectionString });
   const adapter = new PrismaNeon(pool);
-  const prisma = new PrismaClient({ adapter });
+  
+  // Cast 'as any' car l'environnement Cloud peut avoir un délai de régénération des types Prisma 
+  // après l'ajout de previewFeatures = ["driverAdapters"]
+  const prisma = new PrismaClient({ adapter } as any);
 
   try {
     await prisma.$connect();
