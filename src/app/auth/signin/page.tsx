@@ -6,8 +6,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { AlertCircle, Loader2, Database } from 'lucide-react';
 
 /**
- * Station de Connexion VisioNode V7.8.5.
- * Inclut un diagnostic de réponse pour isoler les erreurs 500 HTML.
+ * Station de Connexion VisioNode V7.8.6 - CORRIGÉE
+ * Vérification du Content-Type avant parsing JSON
  */
 function SignInForm() {
   const router = useRouter();
@@ -30,25 +30,36 @@ function SignInForm() {
     try {
       const response = await fetch('/api/auth/signin', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Accept': 'application/json' // ✅ AJOUTÉ
+        },
         body: JSON.stringify({ email, password }),
       });
 
-      // Capture et analyse de la réponse brute
-      const textResponse = await response.text();
-      let data;
+      // ✅ VÉRIFICATION DU CONTENT-TYPE AVANT PARSING
+      const contentType = response.headers.get('content-type');
       
-      try {
-        data = JSON.parse(textResponse);
-      } catch (parseErr) {
-        console.error(`🔐 [AUTH_FRONT] [ERROR] [${ts}] Réponse non-JSON détectée. Corps (extrait) :`, textResponse.slice(0, 200));
-        throw new Error("L'API a renvoyé un format invalide (HTML 500). Vérifiez la console serveur.");
+      if (!contentType || !contentType.includes('application/json')) {
+        // Lecture du body pour diagnostic
+        const textResponse = await response.text();
+        console.error(`🔐 [AUTH_FRONT] [ERROR] [${ts}] Réponse non-JSON. Status: ${response.status}`);
+        console.error(`🔐 [AUTH_FRONT] [ERROR] Contenu (extrait):`, textResponse.slice(0, 300));
+        
+        // Si c'est une page HTML, afficher un message clair
+        if (textResponse.includes('<!DOCTYPE html>')) {
+          throw new Error(`Erreur serveur ${response.status} - L'API a renvoyé une page HTML. Vérifiez les logs du serveur.`);
+        }
+        
+        throw new Error(`Réponse non-JSON (Status: ${response.status}). Vérifiez l'API.`);
       }
 
+      // ✅ PARSING JSON SÉCURISÉ
+      const data = await response.json();
       setLoading(false);
 
       if (!response.ok || !data.success) {
-        console.warn(`🔐 [AUTH_FRONT] [REJECT] [${ts}] Liaison refusée par l'API : ${data.message}`);
+        console.warn(`🔐 [AUTH_FRONT] [REJECT] [${ts}] Liaison refusée : ${data.message}`);
         setError(data.message || "Erreur d'accréditation");
         return;
       }

@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * @fileOverview Station de Forge Industrielle V8.7.0.
- * Version : Concordance CRF V6.5 + Fix Sérialisation + Fix Hydratation + Fix [object Event].
+ * @fileOverview Station de Forge Industrielle V8.8.0.
+ * Version : Concordance CRF V6.5 + Fix Sérialisation [object Event] + Fix Hydratation.
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -85,11 +85,9 @@ export default function DatasetPage() {
       if (activeVoiceField?.startsWith('step-desc-')) {
         const parts = activeVoiceField.split('-');
         const idx = parseInt(parts[parts.length - 1]);
-        setProcSteps(prev => {
-          const next = [...prev];
-          if (next[idx]) next[idx].description = text;
-          return next;
-        });
+        if (!isNaN(idx)) {
+           handleUpdateStepField(idx, 'description', text);
+        }
       }
     },
     autoRestart: true,
@@ -134,12 +132,20 @@ export default function DatasetPage() {
     setProcSteps(next.map((s, i) => ({ ...s, order: i + 1 })));
   };
 
-  // ✅ Fix Sérialisation : Protection contre l'injection d'objets Event
+  /**
+   * ✅ Fix Sérialisation : Protection contre l'injection d'objets Event.
+   * Extrait systématiquement la valeur si un objet Event est détecté.
+   */
   const handleUpdateStepField = useCallback((idx: number, field: keyof ProcedureStep, value: any) => {
+    // Détection et extraction sécurisée de la valeur (si c'est un Event d'Input ou Select)
+    const safeValue = (value && typeof value === 'object' && 'target' in value) 
+      ? (value.target as any).value 
+      : value;
+
     setProcSteps(prev => {
       const next = [...prev];
       if (next[idx]) {
-        next[idx] = { ...next[idx], [field]: value };
+        next[idx] = { ...next[idx], [field]: safeValue };
       }
       return next;
     });
@@ -318,7 +324,7 @@ export default function DatasetPage() {
                            </span>
                            <Input 
                             value={step.title} 
-                            onChange={e => handleUpdateStepField(idx, 'title', e.target.value)} 
+                            onChange={e => handleUpdateStepField(idx, 'title', e)} 
                             placeholder="TITRE DE L'ACTION" 
                             className="bg-transparent border-none focus-visible:ring-0 uppercase font-headline font-bold text-xs h-8 p-0" 
                            />
@@ -340,7 +346,7 @@ export default function DatasetPage() {
                            <div className="relative">
                               <Textarea 
                                 value={step.description} 
-                                onChange={e => handleUpdateStepField(idx, 'description', e.target.value)} 
+                                onChange={e => handleUpdateStepField(idx, 'description', e)} 
                                 placeholder="Détailler l'opération réelle..." 
                                 className="h-28 text-xs font-code bg-black/40 border-border/50 resize-none pr-10" 
                               />

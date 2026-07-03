@@ -1,54 +1,44 @@
 // src/lib/db/prisma-client.ts
 import { PrismaClient } from '@prisma/client';
-import { PrismaNeon } from '@prisma/adapter-neon';
-import { Pool, neonConfig } from '@neondatabase/serverless';
-import ws from 'ws';
 
-/**
- * @fileOverview Singleton Prisma optimisé pour Prisma 7.8.0 et Neon.
- * Version : Liaison dynamique via pool serverless (P1012-safe).
- */
-
-// Configuration pour l'environnement Node.js (nécessaire pour le seed et les serveurs)
-if (typeof window === 'undefined') {
-  neonConfig.webSocketConstructor = ws;
-}
+// ============================================================
+// 📦 CLIENT PRISMA - VERSION PRISMA 7
+// ============================================================
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
 };
 
-function createPrismaClient() {
-  const connectionString = process.env.DATABASE_URL || '';
+// ✅ Création SIMPLE du client Prisma 7
+function createPrismaClient(): PrismaClient {
+  const url = process.env.DATABASE_URL;
   
-  if (!connectionString) {
-    console.warn("⚠️ [DATABASE] DATABASE_URL manquante. Le client Prisma s'initialisera en mode dégradé.");
-    return new PrismaClient();
+  if (!url) {
+    console.error('❌ [PRISMA] Erreur Critique : DATABASE_URL non définie dans l\'environnement.');
+    // En développement, on ne throw pas immédiatement pour permettre au build de passer
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('DATABASE_URL is not defined in production');
+    }
   }
 
-  // Configuration Neon Serverless Adapter pour Prisma 7
-  const pool = new Pool({ connectionString });
-  const adapter = new PrismaNeon(pool as any);
-
-  return new PrismaClient({
-    adapter,
-    log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
-  });
+  console.log('🔧 [PRISMA] Initialisation du client industriel...');
+  
+  // ✅ PRISMA 7 : Le client utilise la config pilotée par prisma.config.ts ou env
+  return new PrismaClient();
 }
 
+// Singleton
 export const prisma = globalForPrisma.prisma ?? createPrismaClient();
 
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
+if (process.env.NODE_ENV !== 'production') {
+  globalForPrisma.prisma = prisma;
+}
 
-/**
- * Diagnostic de connexion Neon.
- */
-export async function checkDatabaseConnection() {
-  try {
-    await prisma.$queryRaw`SELECT 1`;
-    return true;
-  } catch (e: any) {
-    console.error("❌ [DATABASE_LIAISON_ERROR] :", e.message);
-    return false;
+export default prisma;
+
+// Fonction de déconnexion
+export async function disconnectPrisma(): Promise<void> {
+  if (prisma) {
+    await prisma.$disconnect();
   }
 }

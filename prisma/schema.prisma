@@ -1,15 +1,16 @@
 // prisma/schema.prisma
-// Standard industriel VisioNode - V7.8.0 (Neon Optimized)
-
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
-  // Note: La propriété 'url' est omise ici (Erreur P1012) 
-  // car elle est injectée via le driver adapter dans prisma-client.ts
+  // ✅ url est géré via prisma.config.ts pour Prisma 7
 }
+
+// ============================================================
+// 👤 MODÈLES D'AUTHENTIFICATION (NextAuth v4)
+// ============================================================
 
 model User {
   id          String   @id @default(cuid())
@@ -21,7 +22,12 @@ model User {
   approved    Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
-  
+
+  // ✅ Relations NextAuth v4
+  accounts    Account[]
+  sessions    Session[]
+
+  // Relations métier
   knowledgeItems KnowledgeItem[]
   procedures     Procedure[]
   executions     ProcedureExecution[]
@@ -29,11 +35,57 @@ model User {
   @@map("users")
 }
 
+// ✅ Modèle Account pour NextAuth v4
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+// ✅ Modèle Session pour NextAuth v4
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+// ✅ Modèle VerificationToken pour NextAuth v4
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ============================================================
+// 📚 MODÈLES MÉTIER
+// ============================================================
+
 model KnowledgeItem {
   id          String   @id @default(cuid())
   userId      String
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type        String   // 'qa', 'manual', 'alert'
+  type        String
   title       String
   question    String?
   answer      String?

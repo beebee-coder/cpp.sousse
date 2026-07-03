@@ -6,9 +6,10 @@ export default defineConfig({
   schema: 'prisma/schema.prisma',
   migrations: {
     path: 'prisma/migrations',
+    // ✅ Ajouter la commande seed
+    seed: 'tsx prisma/seed.ts',
   },
-  // ✅ datasource accepte uniquement 'url'
   datasource: {
-    url: process.env.DATABASE_URL || '',
+    url: process.env.DATABASE_URL,
   },
 });
