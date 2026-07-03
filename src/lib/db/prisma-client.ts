@@ -26,6 +26,7 @@ function createPrismaClient(): PrismaClient {
     const pool = new Pool({ connectionString });
     const adapter = new PrismaNeon(pool);
     
+    // @ts-ignore - Prisma 5 nécessite cet adaptateur pour Neon
     return new PrismaClient({ adapter });
   } catch (err: any) {
     console.error(`❌ [${ts}] [Prisma] Échec Liaison :`, err.message);

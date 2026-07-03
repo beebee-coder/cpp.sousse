@@ -1,4 +1,4 @@
-// prisma/schema.prisma - Standard Industriel V5.22.0 (Stable)
+// prisma/schema.prisma - Version Stable V5.22.0
 
 generator client {
   provider        = "prisma-client-js"
@@ -12,19 +12,21 @@ datasource db {
 }
 
 model User {
-  id                 String               @id @default(cuid())
-  firstName          String
-  lastName           String
-  password           String
-  email              String               @unique
-  role               String               @default("user")
-  approved           Boolean              @default(false)
-  createdAt          DateTime             @default(now())
-  updatedAt          DateTime             @updatedAt
-  lastSyncAt         DateTime?
-  knowledgeItems     KnowledgeItem[]
-  authoredProcedures Procedure[]          @relation("ProcedureAuthor")
+  id          String   @id @default(cuid())
+  firstName   String
+  lastName    String
+  password    String
+  email       String   @unique
+  role        String   @default("user")
+  approved    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  lastSyncAt  DateTime?
+
+  // Relations inverses obligatoires pour Prisma 7 (et recommandées en v5)
+  authoredProcedures Procedure[]
   executions         ProcedureExecution[]
+  knowledgeItems     KnowledgeItem[]
 
   @@map("users")
 }
@@ -33,17 +35,17 @@ model KnowledgeItem {
   id          String   @id @default(cuid())
   userId      String
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type        String
+  type        String   // 'qa' | 'document' | 'procedure'
   title       String
   question    String?
   answer      String?
-  steps       Json?
+  steps       Json?    // Liste d'étapes pour les procédures
   tags        String[]
   category    String?
   difficulty  String   @default("medium")
   isPublic    Boolean  @default(true)
   syncedLocal Boolean  @default(false)
-  vectorId    String?
+  vectorId    String?  // ID dans ChromaDB/Weaviate
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -52,32 +54,40 @@ model KnowledgeItem {
 }
 
 model Procedure {
-  id             String               @id @default(cuid())
-  code           String               @unique
-  title          String
-  description    String?
-  category       String               @default("OPERATION")
-  subcategory    String?
-  department     String               @default("PRODUCTION")
-  criticality    String               @default("MEDIUM")
-  version        String               @default("1.0.0")
-  status         String               @default("DRAFT")
-  prerequisites  Json
-  steps          Json
-  parameters     Json?
-  postExecution  Json?
-  metadata       Json
-  authorId       String
-  author         User                 @relation("ProcedureAuthor", fields: [authorId], references: [id])
-  approvers      Json?
-  syncedLocal    Boolean              @default(false)
-  lastExecutedAt DateTime?
-  executionCount Int                  @default(0)
-  avgDuration    Int?
-  successRate    Float?
-  createdAt      DateTime             @default(now())
-  updatedAt      DateTime             @updatedAt
-  executions     ProcedureExecution[]
+  id              String   @id @default(cuid())
+  code            String   @unique
+  title           String
+  description     String?
+  category        String   @default("OPERATION")
+  subcategory     String?
+  department      String   @default("PRODUCTION")
+  criticality     String   @default("MEDIUM")
+  version         String   @default("1.0.0")
+  status          String   @default("DRAFT")
+  
+  // Données structurées
+  prerequisites   Json     // Structure PrerequisiteItem
+  steps           Json     // Liste de ProcedureStep
+  parameters      Json?    // Paramètres configurables
+  postExecution   Json?    // Post-exécution & Reporting
+  
+  // Métadonnées
+  metadata        Json     // ProcedureMetadata complet
+  authorId        String
+  author          User     @relation(fields: [authorId], references: [id])
+  
+  // Audit & Performance
+  syncedLocal     Boolean  @default(false)
+  lastExecutedAt  DateTime?
+  executionCount  Int      @default(0)
+  avgDuration     Int?     // Temps moyen en secondes
+  successRate     Float?   // Taux de réussite (0-1)
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  executions      ProcedureExecution[]
 
   @@index([code])
   @@index([status])
@@ -85,25 +95,32 @@ model Procedure {
 }
 
 model ProcedureExecution {
-  id            String    @id @default(cuid())
-  procedureId   String
-  procedure     Procedure @relation(fields: [procedureId], references: [id], onDelete: Cascade)
-  operatorId    String
-  operator      User      @relation(fields: [operatorId], references: [id])
-  startTime     DateTime  @default(now())
-  endTime       DateTime?
-  status        String
-  currentStep   Int       @default(-1)
-  stepsStatus   Json
-  totalDuration Int?
-  events        Json?
-  alarms        Json?
-  fallbacks     Json?
-  result        Json?
-  notes         String?
-  signature     String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id              String   @id @default(cuid())
+  procedureId     String
+  procedure       Procedure @relation(fields: [procedureId], references: [id], onDelete: Cascade)
+  operatorId      String
+  operator        User     @relation(fields: [operatorId], references: [id])
+  
+  // Exécution
+  startTime       DateTime @default(now())
+  endTime         DateTime?
+  status          String   // 'COMPLETED' | 'FAILED' | 'ABORTED'
+  currentStep     Int      @default(-1)
+  stepsStatus     Json     // Etat de chaque étape
+  totalDuration   Int?     // Durée réelle en secondes
+  
+  // Événements
+  events          Json?    // Log technique
+  alarms          Json?    // Alertes déclenchées
+  fallbacks       Json?    // Solutions de secours utilisées
+  
+  // Résultats
+  result          Json?    // Données de sortie
+  notes           String?
+  signature       String?  // Signature numérique
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   @@index([procedureId])
   @@index([operatorId])

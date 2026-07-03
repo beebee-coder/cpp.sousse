@@ -1,7 +1,7 @@
 import { prisma } from '../src/lib/db/prisma-client';
 
 async function main() {
-  console.log('🚀 Initialisation du Schéma Industriel VisioNode (Version Stable)...');
+  console.log('🚀 Initialisation du Schéma Industriel VisioNode (Version Stable V23)...');
   
   const commands = [
     // Nettoyage sécurisé

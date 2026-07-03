@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * @fileOverview Station de Forge Industrielle V22.0 - Stable Downgrade V5.
+ * @fileOverview Station de Forge Industrielle V23.0 - Downgrade Prisma 5 Stable.
  * Version : Correction définitive de la sérialisation [object Event].
  */
 
@@ -73,14 +73,18 @@ export default function DatasetPage() {
   const [activeVoiceField, setActiveVoiceField] = useState<string | null>(null);
   
   /**
-   * ✅ FIX SÉRIALISATION : Extraction immédiate de la valeur primitive.
-   * Empêche l'injection d'objets [Event] dans l'état JSON.
+   * ✅ FIX SÉRIALISATION V23 : Extraction impérative de la valeur primitive.
+   * Cette fonction empêche l'objet 'Event' d'être injecté dans l'état,
+   * résolvant définitivement l'erreur visuelle [object Event].
    */
   const handleUpdateStepField = useCallback((idx: number, field: string, eOrVal: any) => {
-    // Extraction robuste du texte : Si c'est un événement React, on prend target.value, sinon on prend la valeur brute
-    const rawValue = (eOrVal && typeof eOrVal === 'object' && 'target' in eOrVal) 
-      ? (eOrVal.target as HTMLInputElement | HTMLTextAreaElement).value 
-      : eOrVal;
+    // Extraction robuste du texte
+    let rawValue: string = '';
+    if (eOrVal && typeof eOrVal === 'object' && 'target' in eOrVal) {
+      rawValue = (eOrVal.target as any).value;
+    } else {
+      rawValue = String(eOrVal || '');
+    }
 
     setProcSteps(prev => {
       const next = [...prev];
@@ -89,7 +93,7 @@ export default function DatasetPage() {
       const updated = { ...next[idx] };
       
       if (field === 'action_type') {
-        updated.action = { ...updated.action, type: rawValue };
+        updated.action = { ...updated.action, type: rawValue as any };
       } else if (field === 'duration_value') {
         const num = parseInt(rawValue) || 0;
         updated.duration = { ...updated.duration, value: num, display: `${num}s` };
