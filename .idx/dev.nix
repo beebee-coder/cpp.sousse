@@ -7,6 +7,8 @@
   packages = [
     pkgs.nodejs_22
     pkgs.zulu
+    pkgs.nodejs_20 # ou votre version
+  pkgs.openssl   # <--- Ajoutez ceci
   ];
   # Sets environment variables in the workspace
   env = {};
