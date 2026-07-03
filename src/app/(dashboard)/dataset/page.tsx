@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * @fileOverview Station de Forge Industrielle V9.0.
- * Version : Fix définitif SÉRIALISATION [object Event] et Tab Renaming.
+ * @fileOverview Station de Forge Industrielle V9.2.
+ * Version : Fix définitif SÉRIALISATION [object Event] et Hydratation Next.js.
  * Concordance CRF V6.5 intégrale.
  */
 
@@ -20,7 +20,7 @@ import {
   Settings2, 
   FileText,
   Layers,
-  ArrowRight
+  Activity
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -133,24 +133,29 @@ export default function DatasetPage() {
    * Cette fonction garantit que seules des valeurs primitives atteignent l'état JSON.
    */
   const handleUpdateStepField = useCallback((idx: number, field: string, input: any) => {
-    // Si c'est un événement React (objet avec target.value), on extrait la valeur brute
-    let value = input;
-    if (input && typeof input === 'object' && 'target' in input && input.target) {
-      value = (input.target as any).value;
+    // Extraction sécurisée de la valeur textuelle
+    let val: any = input;
+    if (input && typeof input === 'object' && 'target' in input) {
+      val = (input.target as any).value;
     }
 
     setProcSteps(prev => {
       const next = [...prev];
-      if (next[idx]) {
-        // Mise à jour granulaire
-        if (field === 'action') {
-           next[idx] = { ...next[idx], action: { ...next[idx].action, ...value } };
-        } else if (field === 'duration') {
-           next[idx] = { ...next[idx], duration: { ...next[idx].duration, ...value } };
-        } else {
-           next[idx] = { ...next[idx], [field]: value } as any;
-        }
+      if (!next[idx]) return prev;
+
+      // Mise à jour granulaire selon le champ
+      const updated = { ...next[idx] };
+      
+      if (field === 'action_type') {
+        updated.action = { ...updated.action, type: val as any };
+      } else if (field === 'duration_value') {
+        const num = parseInt(val) || 0;
+        updated.duration = { ...updated.duration, value: num, display: `${num}s` };
+      } else {
+        (updated as any)[field] = val;
       }
+      
+      next[idx] = updated;
       return next;
     });
   }, []);
@@ -328,7 +333,7 @@ export default function DatasetPage() {
                            </span>
                            <Input 
                             value={step.title} 
-                            onChange={e => handleUpdateStepField(idx, 'title', e.target.value)} 
+                            onChange={e => handleUpdateStepField(idx, 'title', e)} 
                             placeholder="TITRE DE L'ACTION" 
                             className="bg-transparent border-none focus-visible:ring-0 uppercase font-headline font-bold text-xs h-8 p-0" 
                            />
@@ -354,7 +359,7 @@ export default function DatasetPage() {
                            <div className="relative">
                               <Textarea 
                                 value={step.description} 
-                                onChange={e => handleUpdateStepField(idx, 'description', e.target.value)} 
+                                onChange={e => handleUpdateStepField(idx, 'description', e)} 
                                 placeholder="Détailler l'opération réelle..." 
                                 className="h-28 text-xs font-code bg-black/40 border-border/50 resize-none pr-10" 
                               />
@@ -384,7 +389,7 @@ export default function DatasetPage() {
                                   <label className="text-[8px] font-bold text-muted-foreground uppercase">Type</label>
                                   <select 
                                     value={step.action.type} 
-                                    onChange={e => handleUpdateStepField(idx, 'action', { type: e.target.value })}
+                                    onChange={e => handleUpdateStepField(idx, 'action_type', e)}
                                     className="w-full bg-black border border-border rounded-sm h-8 text-[9px] font-bold uppercase px-2"
                                   >
                                     <option value="confirmation">CONFIRMATION</option>
@@ -397,10 +402,7 @@ export default function DatasetPage() {
                                   <Input 
                                     type="number" 
                                     value={step.duration.value} 
-                                    onChange={e => {
-                                       const val = parseInt(e.target.value) || 0;
-                                       handleUpdateStepField(idx, 'duration', { value: val, display: `${val}s` });
-                                    }}
+                                    onChange={e => handleUpdateStepField(idx, 'duration_value', e)}
                                     className="h-8 bg-black/40 font-code text-[10px]"
                                   />
                                </div>
