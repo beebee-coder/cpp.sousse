@@ -1,27 +1,29 @@
 // prisma/seed.ts
-import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
 import { PrismaNeon } from '@prisma/adapter-neon';
 import { Pool, neonConfig } from '@neondatabase/serverless';
 import ws from 'ws';
 import bcrypt from 'bcryptjs';
 
-// ✅ Support WebSocket pour script Node hors-ligne
+/**
+ * @fileOverview Script d'amorçage industriel VisioNode.
+ * Version : Stabilisation Prisma 7 + Liaison Neon forcée.
+ */
+
 if (typeof window === 'undefined') {
   neonConfig.webSocketConstructor = ws;
 }
 
-const connectionString = process.env.DATABASE_URL;
-
 async function main() {
-  console.log('🌱 [SEED] Initialisation du Registre Industriel (Latest Prisma 7)...');
+  console.log('🌱 [SEED] Initialisation du Registre Industriel...');
 
+  const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
-    console.error('❌ [SEED] DATABASE_URL non trouvée. Vérifiez votre fichier .env');
+    console.error('❌ [SEED] DATABASE_URL manquante dans l\'environnement.');
     process.exit(1);
   }
 
-  console.log('📡 [SEED] Diagnostic de liaison : ' + connectionString.substring(0, 40) + '...');
+  console.log(`📡 [SEED] Diagnostic de liaison : ${connectionString.substring(0, 40)}...`);
 
   const pool = new Pool({ connectionString });
   const adapter = new PrismaNeon(pool as any);
@@ -32,7 +34,7 @@ async function main() {
     console.log('👤 [SEED] Audit de l\'administrateur root...');
     const hashedAdminPassword = await bcrypt.hash('66023', 12);
     
-    await prisma.user.upsert({
+    const admin = await prisma.user.upsert({
       where: { email: 'admin@visionode.local' },
       update: { approved: true, role: 'admin' },
       create: {
@@ -45,7 +47,7 @@ async function main() {
         approved: true,
       },
     });
-    console.log('✅ [SEED] Administrateur accrédité.');
+    console.log(`✅ [SEED] Administrateur accrédité : ${admin.email}`);
 
     // 2. INJECTION DES CONNAISSANCES DE SÉCURITÉ
     console.log('📚 [SEED] Injection des référentiels sémantiques...');
@@ -67,7 +69,7 @@ async function main() {
         update: {},
         create: {
           ...item,
-          userId: 'admin-root',
+          userId: admin.id,
           isPublic: true,
         }
       });

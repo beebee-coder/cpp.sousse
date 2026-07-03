@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * @fileOverview Station de Forge Industrielle V14.0.
- * Version : Stabilisation Prisma 7 + Blindage total contre la sérialisation [object Event].
+ * @fileOverview Station de Forge Industrielle V15.0.
+ * Version : Blindage total contre la sérialisation [object Event] + Stabilité Prisma 7.
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -55,7 +55,6 @@ export default function DatasetPage() {
   const [qaAnswer, setQaAnswer] = useState('');
   const [qaTags, setQaTags] = useState('');
 
-  // Initialisation sécurisée pour Next.js 15
   useEffect(() => { 
     setMounted(true); 
     const initialStep: ProcedureStep = { 
@@ -129,22 +128,14 @@ export default function DatasetPage() {
 
   /**
    * ✅ BLINDAGE TOTAL SÉRIALISATION : 
-   * Intercepte les objets 'Event' et extrait uniquement le texte brut.
-   * Empêche définitivement l'erreur "[object Event]" dans les fichiers JSON.
+   * Cette fonction intercepte les événements de saisie et extrait UNIQUEMENT la valeur texte.
+   * Empêche l'affichage buggé [object Event] dans les fichiers JSON.
    */
-  const handleUpdateStepField = useCallback((idx: number, field: string, valueOrEvent: any) => {
-    let finalValue: any;
-
-    if (valueOrEvent && typeof valueOrEvent === 'object' && 'target' in valueOrEvent) {
-      // Cas : Input standard (HTML InputEvent)
-      finalValue = (valueOrEvent.target as HTMLInputElement).value;
-    } else if (valueOrEvent && typeof valueOrEvent === 'object' && '_reactName' in valueOrEvent) {
-      // Cas : React SyntheticEvent complexe
-      finalValue = (valueOrEvent.target as any).value;
-    } else {
-      // Cas : Valeur directe (dictée vocale ou appel manuel)
-      finalValue = valueOrEvent;
-    }
+  const handleUpdateStepField = useCallback((idx: number, field: string, value: any) => {
+    // Si la valeur est un événement React, on extrait uniquement le texte saisi
+    const finalValue = (value && typeof value === 'object' && 'target' in value) 
+      ? (value.target as HTMLInputElement).value 
+      : value;
 
     setProcSteps(prev => {
       const next = [...prev];
@@ -411,7 +402,7 @@ export default function DatasetPage() {
                                   </select>
                                </div>
                                <div className="space-y-1">
-                                  <label className="text-[8px] font-bold text-muted-foreground uppercase">Délai Estimé</label>
+                                  <label className="text-[8px] font-bold text-muted-foreground uppercase">Délai Estimé (s)</label>
                                   <Input 
                                     type="number" 
                                     value={step.duration.value} 
