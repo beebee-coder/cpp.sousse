@@ -24,7 +24,7 @@ async function main() {
   console.log('📡 [SEED] Diagnostic de liaison : ' + connectionString.substring(0, 40) + '...');
 
   const pool = new Pool({ connectionString });
-  const adapter = new PrismaNeon(pool);
+  const adapter = new PrismaNeon(pool as any);
   const prisma = new PrismaClient({ adapter: adapter as any });
 
   try {

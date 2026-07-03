@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * @fileOverview Station de Forge Industrielle V10.2.
- * Version : Fix DEFINITIF Sérialisation [object Event] & Prisma 7.
+ * @fileOverview Station de Forge Industrielle V12.5.
+ * Version : Fix DEFINITIF Sérialisation [object Event] & Prisma 7 Stable.
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -55,10 +55,11 @@ export default function DatasetPage() {
   const [qaAnswer, setQaAnswer] = useState('');
   const [qaTags, setQaTags] = useState('');
 
+  // Initialisation sécurisée (Hydratation Next.js 15)
   useEffect(() => { 
     setMounted(true); 
     const initialStep: ProcedureStep = { 
-      id: `step-${Date.now()}`, 
+      id: `step-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`, 
       order: 1,
       title: '', 
       description: '',
@@ -127,12 +128,14 @@ export default function DatasetPage() {
   };
 
   /**
-   * ✅ FIX SÉRIALISATION : Extraction forcée de la valeur.
-   * Empêche l'injection d'objets circulaires React/Event dans l'état JSON.
+   * ✅ FIX SÉRIALISATION : Extraction forcée de la valeur textuelle.
+   * Empêche l'injection d'objets circulaires React/Event dans l'état JSON,
+   * ce qui résout l'erreur "[object Event]" affichée dans l'interface.
    */
   const handleUpdateStepField = useCallback((idx: number, field: string, valueOrEvent: any) => {
+    // Si c'est un événement React, on extrait la valeur textuelle
     const finalValue = (valueOrEvent && typeof valueOrEvent === 'object' && 'target' in valueOrEvent)
-      ? valueOrEvent.target.value
+      ? (valueOrEvent.target as HTMLInputElement).value
       : valueOrEvent;
 
     setProcSteps(prev => {
@@ -169,7 +172,14 @@ export default function DatasetPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: procTitle,
-          metadata: { code: procCode, category, department, criticality, version: '1.0.0' },
+          metadata: { 
+            code: procCode, 
+            category, 
+            department, 
+            criticality, 
+            version: '1.0.0',
+            tags: ['CRF', category]
+          },
           steps: procSteps,
           prerequisites: { description: "Audit de conformité standard", items: [] }
         }),
@@ -180,7 +190,7 @@ export default function DatasetPage() {
         toast({ title: "ACTIF FORGÉ", description: `Liaison établie : ${procCode}` }); 
         router.push('/procedures'); 
       } else {
-        throw new Error(data.message || "Erreur de liaison");
+        throw new Error(data.message || data.error || "Erreur de liaison");
       }
     } catch (err: any) { 
       toast({ title: "ÉCHEC DE LA FORGE", description: err.message, variant: "destructive" }); 
@@ -267,7 +277,7 @@ export default function DatasetPage() {
                         <div className="grid grid-cols-2 gap-4">
                            <Input 
                             value={procCode} 
-                            onChange={e => setProcCode(e.target.value)} 
+                            onChange={e => setProcCode(e.target.value.toUpperCase())} 
                             placeholder="CODE_REGISTRE" 
                             className="h-10 bg-black/20 font-code uppercase text-xs" 
                            />
