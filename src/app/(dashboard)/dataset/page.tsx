@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * @fileOverview Station de Forge Industrielle V8.8.1.
- * Version : Correction critique de la SÉRIALISATION [object Event] et de l'hydratation.
+ * @fileOverview Station de Forge Industrielle V8.8.4.
+ * Version : Correction définitive de la SÉRIALISATION [object Event] et régression Prisma.
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -54,7 +54,7 @@ export default function DatasetPage() {
   const [qaAnswer, setQaAnswer] = useState('');
   const [qaTags, setQaTags] = useState('');
 
-  // ✅ Fix Hydratation : État initial client-only via useEffect
+  // ✅ Fix Hydratation : État initial client-only
   useEffect(() => { 
     setMounted(true); 
     const initialStep: ProcedureStep = { 
@@ -133,18 +133,19 @@ export default function DatasetPage() {
   };
 
   /**
-   * ✅ Fix Sérialisation : Protection contre l'injection d'objets Event.
+   * ✅ Fix Sérialisation : Extraction obligatoire de la valeur brute.
+   * Empêche l'injection d'objets Event dans l'état JSON.
    */
-  const handleUpdateStepField = useCallback((idx: number, field: keyof ProcedureStep, value: any) => {
-    // Extraction sécurisée de la valeur si c'est un Event
-    const safeValue = (value && typeof value === 'object' && 'target' in value) 
-      ? (value.target as any).value 
-      : value;
+  const handleUpdateStepField = useCallback((idx: number, field: keyof ProcedureStep, input: any) => {
+    // Si c'est un événement React, extraire la valeur réelle
+    const value = (input && typeof input === 'object' && 'target' in input) 
+      ? (input.target as any).value 
+      : input;
 
     setProcSteps(prev => {
       const next = [...prev];
       if (next[idx]) {
-        next[idx] = { ...next[idx], [field]: safeValue };
+        next[idx] = { ...next[idx], [field]: value };
       }
       return next;
     });
