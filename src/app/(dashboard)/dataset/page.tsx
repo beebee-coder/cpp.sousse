@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * @fileOverview Station de Forge Industrielle V9.8.
- * Version : Fix définitif SÉRIALISATION Prisma Latest & Hydratation Next.js 15.
+ * @fileOverview Station de Forge Industrielle V10.2.
+ * Version : Fix DEFINITIF Sérialisation [object Event] & Prisma 7.
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -55,7 +55,6 @@ export default function DatasetPage() {
   const [qaAnswer, setQaAnswer] = useState('');
   const [qaTags, setQaTags] = useState('');
 
-  // ✅ Fix Hydratation : Initialisation sécurisée au montage
   useEffect(() => { 
     setMounted(true); 
     const initialStep: ProcedureStep = { 
@@ -128,15 +127,13 @@ export default function DatasetPage() {
   };
 
   /**
-   * ✅ Fix Sérialisation : Blindage contre l'injection d'objets [object Event].
-   * On extrait explicitement la valeur pour garantir qu'aucun objet React n'atteigne l'état.
+   * ✅ FIX SÉRIALISATION : Extraction forcée de la valeur.
+   * Empêche l'injection d'objets circulaires React/Event dans l'état JSON.
    */
-  const handleUpdateStepField = useCallback((idx: number, field: string, value: any) => {
-    // Extraction sécurisée si c'est un événement React
-    let finalValue = value;
-    if (value && typeof value === 'object' && 'target' in value) {
-      finalValue = value.target.value;
-    }
+  const handleUpdateStepField = useCallback((idx: number, field: string, valueOrEvent: any) => {
+    const finalValue = (valueOrEvent && typeof valueOrEvent === 'object' && 'target' in valueOrEvent)
+      ? valueOrEvent.target.value
+      : valueOrEvent;
 
     setProcSteps(prev => {
       const next = [...prev];
@@ -331,7 +328,7 @@ export default function DatasetPage() {
                            </span>
                            <Input 
                             value={step.title} 
-                            onChange={e => handleUpdateStepField(idx, 'title', e.target.value)} 
+                            onChange={e => handleUpdateStepField(idx, 'title', e)} 
                             placeholder="TITRE DE L'ACTION" 
                             className="bg-transparent border-none focus-visible:ring-0 uppercase font-headline font-bold text-xs h-8 p-0" 
                            />
@@ -357,7 +354,7 @@ export default function DatasetPage() {
                            <div className="relative">
                               <Textarea 
                                 value={step.description} 
-                                onChange={e => handleUpdateStepField(idx, 'description', e.target.value)} 
+                                onChange={e => handleUpdateStepField(idx, 'description', e)} 
                                 placeholder="Détailler l'opération réelle..." 
                                 className="h-28 text-xs font-code bg-black/40 border-border/50 resize-none pr-10" 
                               />
@@ -387,7 +384,7 @@ export default function DatasetPage() {
                                   <label className="text-[8px] font-bold text-muted-foreground uppercase">Type</label>
                                   <select 
                                     value={step.action.type} 
-                                    onChange={e => handleUpdateStepField(idx, 'action_type', e.target.value)}
+                                    onChange={e => handleUpdateStepField(idx, 'action_type', e)}
                                     className="w-full bg-black border border-border rounded-sm h-8 text-[9px] font-bold uppercase px-2"
                                   >
                                     <option value="confirmation">CONFIRMATION</option>
@@ -400,7 +397,7 @@ export default function DatasetPage() {
                                   <Input 
                                     type="number" 
                                     value={step.duration.value} 
-                                    onChange={e => handleUpdateStepField(idx, 'duration_value', e.target.value)}
+                                    onChange={e => handleUpdateStepField(idx, 'duration_value', e)}
                                     className="h-8 bg-black/40 font-code text-[10px]"
                                   />
                                </div>

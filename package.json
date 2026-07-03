@@ -73,6 +73,7 @@
     "tailwindcss-animate": "^1.0.7",
     "uuid": "^14.0.1",
     "weaviate-client": "^3.13.1",
+    "ws": "^8.18.0",
     "zod": "^3.24.2"
   },
   "devDependencies": {
@@ -81,6 +82,7 @@
     "@types/node": "^20",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@types/ws": "^8.5.12",
     "cross-env": "^10.1.0",
     "dotenv": "^17.4.2",
     "postcss": "^8",

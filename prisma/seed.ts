@@ -14,12 +14,14 @@ if (typeof window === 'undefined') {
 const connectionString = process.env.DATABASE_URL;
 
 async function main() {
-  console.log('🌱 [SEED] Initialisation du Registre Industriel (Latest)...');
+  console.log('🌱 [SEED] Initialisation du Registre Industriel (Latest Prisma 7)...');
 
   if (!connectionString) {
     console.error('❌ [SEED] DATABASE_URL non trouvée. Vérifiez votre fichier .env');
     process.exit(1);
   }
+
+  console.log('📡 [SEED] Diagnostic de liaison : ' + connectionString.substring(0, 40) + '...');
 
   const pool = new Pool({ connectionString });
   const adapter = new PrismaNeon(pool);
