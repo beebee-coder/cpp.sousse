@@ -1,8 +1,9 @@
 "use client";
 
 /**
- * @fileOverview Station de Forge Industrielle V8.8.5.
- * Version : Correction définitive de la SÉRIALISATION [object Event] et Tab Renaming.
+ * @fileOverview Station de Forge Industrielle V9.0.
+ * Version : Fix définitif SÉRIALISATION [object Event] et Tab Renaming.
+ * Concordance CRF V6.5 intégrale.
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -18,7 +19,8 @@ import {
   MicOff,
   Settings2, 
   FileText,
-  Layers
+  Layers,
+  ArrowRight
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -54,7 +56,7 @@ export default function DatasetPage() {
   const [qaAnswer, setQaAnswer] = useState('');
   const [qaTags, setQaTags] = useState('');
 
-  // ✅ Fix Hydratation & Sérialisation : Génération des IDs dans useEffect
+  // ✅ Fix Hydratation : Initialisation sécurisée dans useEffect
   useEffect(() => { 
     setMounted(true); 
     const initialStep: ProcedureStep = { 
@@ -126,32 +128,27 @@ export default function DatasetPage() {
     setProcSteps([...procSteps, newStep]);
   };
 
-  const handleRemoveStep = (idx: number) => {
-    const next = [...procSteps];
-    next.splice(idx, 1);
-    setProcSteps(next.map((s, i) => ({ ...s, order: i + 1 })));
-  };
-
   /**
-   * ✅ Fix Sérialisation : Extraction forcée de la valeur.
-   * Empêche absolument l'injection d'objets [object Event] dans le JSON.
+   * ✅ Fix Sérialisation : Blindage contre l'injection d'objets [object Event].
+   * Cette fonction garantit que seules des valeurs primitives atteignent l'état JSON.
    */
   const handleUpdateStepField = useCallback((idx: number, field: string, input: any) => {
-    // Si c'est un événement React, extraire la valeur brute
-    const value = (input && typeof input === 'object' && 'target' in input) 
-      ? (input.target as any).value 
-      : input;
+    // Si c'est un événement React (objet avec target.value), on extrait la valeur brute
+    let value = input;
+    if (input && typeof input === 'object' && 'target' in input && input.target) {
+      value = (input.target as any).value;
+    }
 
     setProcSteps(prev => {
       const next = [...prev];
       if (next[idx]) {
-        // Gestion des champs imbriqués
+        // Mise à jour granulaire
         if (field === 'action') {
            next[idx] = { ...next[idx], action: { ...next[idx].action, ...value } };
         } else if (field === 'duration') {
            next[idx] = { ...next[idx], duration: { ...next[idx].duration, ...value } };
         } else {
-           next[idx] = { ...next[idx], [field as keyof ProcedureStep]: value };
+           next[idx] = { ...next[idx], [field]: value } as any;
         }
       }
       return next;
@@ -159,7 +156,7 @@ export default function DatasetPage() {
   }, []);
 
   const handleForgeProcedure = async (e: React.FormEvent) => {
-    e.preventDefault();
+    if (e) e.preventDefault();
     if (!procTitle || !procCode) {
       toast({ title: "CHAMPS REQUIS", description: "Titre et Code obligatoires.", variant: "destructive" });
       return;
@@ -193,7 +190,7 @@ export default function DatasetPage() {
   };
 
   const handleForgeQA = async (e: React.FormEvent) => {
-    e.preventDefault();
+    if (e) e.preventDefault();
     if (!qaTitle || !qaAnswer) {
       toast({ title: "CHAMPS REQUIS", description: "Titre et Réponse obligatoires.", variant: "destructive" });
       return;
@@ -340,7 +337,11 @@ export default function DatasetPage() {
                           type="button" 
                           variant="ghost" 
                           size="icon" 
-                          onClick={() => handleRemoveStep(idx)}
+                          onClick={() => {
+                             const next = [...procSteps];
+                             next.splice(idx, 1);
+                             setProcSteps(next.map((s, i) => ({ ...s, order: i + 1 })));
+                          }}
                           className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -383,9 +384,7 @@ export default function DatasetPage() {
                                   <label className="text-[8px] font-bold text-muted-foreground uppercase">Type</label>
                                   <select 
                                     value={step.action.type} 
-                                    onChange={e => {
-                                       handleUpdateStepField(idx, 'action', { ...step.action, type: e.target.value });
-                                    }}
+                                    onChange={e => handleUpdateStepField(idx, 'action', { type: e.target.value })}
                                     className="w-full bg-black border border-border rounded-sm h-8 text-[9px] font-bold uppercase px-2"
                                   >
                                     <option value="confirmation">CONFIRMATION</option>
@@ -400,7 +399,7 @@ export default function DatasetPage() {
                                     value={step.duration.value} 
                                     onChange={e => {
                                        const val = parseInt(e.target.value) || 0;
-                                       handleUpdateStepField(idx, 'duration', { ...step.duration, value: val, display: `${val}s` });
+                                       handleUpdateStepField(idx, 'duration', { value: val, display: `${val}s` });
                                     }}
                                     className="h-8 bg-black/40 font-code text-[10px]"
                                   />

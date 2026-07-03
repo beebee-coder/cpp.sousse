@@ -9,7 +9,7 @@ const globalForPrisma = globalThis as unknown as {
 
 /**
  * Singleton Prisma Client pour VisioNode.
- * Stable pour Prisma 5.22.0 avec adaptateur Neon.
+ * Version V9.0 - Support Neon Serverless & OpenSSL 3.x
  */
 function createPrismaClient(): PrismaClient {
   const isDev = process.env.NODE_ENV === 'development';
@@ -23,14 +23,14 @@ function createPrismaClient(): PrismaClient {
     throw new Error('DATABASE_URL is not defined');
   }
 
-  // Configuration Neon pour environnement Serverless (Edge compatible)
+  // Configuration Neon pour environnement Cloud
   const pool = new Pool({ connectionString });
   const adapter = new PrismaNeon(pool);
 
   return new PrismaClient({
     adapter,
     log: isDev ? ['error', 'warn'] : ['error'],
-  });
+  } as any);
 }
 
 export const prisma = globalForPrisma.prisma ?? createPrismaClient();

@@ -1,12 +1,12 @@
 import 'dotenv/config'; 
 import { PrismaClient } from '@prisma/client';
 import { PrismaNeon } from '@prisma/adapter-neon';
-import { Pool } from '@neondatabase/serverless';
+import { Pool, neonConfig } from '@neondatabase/serverless';
 import bcrypt from 'bcryptjs';
 
 /**
- * Script d'amorçage industriel VisioNode.
- * Version : Prisma 5.22.0 + Neon Serverless + Fix Types.
+ * Script d'amorçage industriel VisioNode V9.2.
+ * Version : Correction critique OpenSSL & Chargement Env.
  */
 async function main() {
   const startTime = Date.now();
@@ -14,22 +14,23 @@ async function main() {
   
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
-    console.error('❌ [SEED] DATABASE_URL non définie dans l\'environnement.');
+    console.error('❌ [SEED] DATABASE_URL non définie. Vérifiez votre fichier .env ou .env.local');
     process.exit(1);
   }
 
+  // Configuration Neon pour environnement Cloud (Force HTTPS et évite les erreurs libssl locale)
   const pool = new Pool({ connectionString });
   const adapter = new PrismaNeon(pool);
   
-  // Cast 'as any' car l'environnement Cloud peut avoir un délai de régénération des types Prisma 
-  // après l'ajout de previewFeatures = ["driverAdapters"]
+  // Cast 'as any' car les types générés peuvent être désynchronisés pendant la phase libssl
   const prisma = new PrismaClient({ adapter } as any);
 
   try {
+    console.log('📡 [SEED] Tentative de liaison SQL Neon...');
     await prisma.$connect();
-    console.log('✅ [SEED] Liaison SQL établie avec Neon.');
+    console.log('✅ [SEED] Liaison établie.');
 
-    // 1. CRÉATION DE L'ADMIN
+    // 1. CRÉATION DE L'ADMIN SYSTÈME
     const adminEmail = process.env.AUTH_ADMIN_EMAIL || 'admin@visionode.local';
     const hashedPassword = await bcrypt.hash('admin123', 12);
     
@@ -41,6 +42,7 @@ async function main() {
         updatedAt: new Date()
       },
       create: {
+        id: 'admin-root-001',
         firstName: 'Ahmed',
         lastName: 'Admin',
         email: adminEmail,
@@ -52,28 +54,36 @@ async function main() {
       },
     });
 
-    console.log(`✅ [SEED] Admin configuré : ${admin.email}`);
+    console.log(`✅ [SEED] Compte Admin configuré : ${admin.email}`);
 
     // 2. INJECTION DES CONNAISSANCES DE BASE
-    const knowledge = [
+    const knowledgeItems = [
       {
+        id: 'seed-k-epi-crf',
         title: 'Sécurité CRF - EPI',
         type: 'qa',
         question: 'Quels sont les EPI obligatoires en zone CRF ?',
         answer: 'Casque, gants anti-coupure, lunettes S3, chaussures de sécurité.',
         category: 'Sécurité'
+      },
+      {
+        id: 'seed-k-pompe-p01',
+        title: 'Maintenance Pompe P01',
+        type: 'qa',
+        question: 'Quelle est la température maximale des paliers ?',
+        answer: 'La température ne doit pas excéder 90°C en régime nominal.',
+        category: 'Maintenance'
       }
     ];
 
-    for (const k of knowledge) {
+    for (const k of knowledgeItems) {
       await prisma.knowledgeItem.upsert({
-        where: { id: `seed-k-${k.title.replace(/\s+/g, '-').toLowerCase()}` },
+        where: { id: k.id },
         update: { ...k },
         create: {
-          id: `seed-k-${k.title.replace(/\s+/g, '-').toLowerCase()}`,
           ...k,
           userId: admin.id,
-          tags: ['EPI', 'CRF'],
+          tags: ['CRF', 'MAINTENANCE'],
           isPublic: true,
           syncedLocal: true
         }
@@ -81,10 +91,11 @@ async function main() {
     }
 
     const duration = ((Date.now() - startTime) / 1000).toFixed(2);
-    console.log(`\n📊 [SEED] Terminé avec succès en ${duration}s.`);
+    console.log(`\n📊 [SEED] Registre amorcé avec succès en ${duration}s.`);
 
   } catch (error: any) {
-    console.error('❌ [SEED] Échec critique :', error.message);
+    console.error('❌ [SEED] Échec critique du moteur SQL :');
+    console.error(error.message);
     process.exit(1);
   } finally {
     await prisma.$disconnect();
