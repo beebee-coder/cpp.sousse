@@ -3,6 +3,9 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaNeon } from '@prisma/adapter-neon';
 import { Pool, neonConfig } from '@neondatabase/serverless';
 import ws from 'ws';
+import * as dotenv from 'dotenv';
+
+dotenv.config();
 
 /**
  * Client Prisma 7.8.0 avec adaptateur Neon stable.
@@ -25,11 +28,9 @@ function createPrismaClient(): PrismaClient {
     return new PrismaClient();
   }
 
-  // Nettoyage strict de la chaîne de connexion
   const connectionString = rawUrl.replace(/^"|"$/g, '');
 
   try {
-    // Injection explicite du host et de la chaîne pour l'adaptateur Neon
     const pool = new Pool({ connectionString });
     const adapter = new PrismaNeon(pool);
     

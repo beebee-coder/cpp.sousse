@@ -1,7 +1,6 @@
 import { defineConfig } from 'prisma/config';
 import * as dotenv from 'dotenv';
 
-// Chargement impératif pour la CLI Prisma 7
 dotenv.config();
 
 /**

@@ -12,7 +12,6 @@ import * as path from 'path';
  * Solution d'injection directe pour résoudre l'erreur "No database host".
  */
 
-// 1. Chargement explicite de l'environnement
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
 if (typeof window === 'undefined') {
@@ -22,7 +21,6 @@ if (typeof window === 'undefined') {
 async function main() {
   console.log('🌱 [SEED] Initialisation du Registre Industriel (Latest Prisma 7)...');
 
-  // 2. Récupération et nettoyage de la chaîne de connexion
   const rawUrl = process.env.DATABASE_URL;
   if (!rawUrl) {
     console.error('❌ [SEED] DATABASE_URL manquante.');
@@ -30,9 +28,8 @@ async function main() {
   }
 
   const connectionString = rawUrl.replace(/^"|"$/g, '');
-  console.log(`📡 [SEED] Liaison Neon explicite détectée.`);
+  console.log(`📡 [SEED] Liaison Neon explicite (Chaîne : ${connectionString.substring(0, 15)}...)`);
 
-  // 3. Initialisation forcée de l'adaptateur
   const pool = new Pool({ connectionString });
   const adapter = new PrismaNeon(pool);
   

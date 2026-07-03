@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * @fileOverview Station de Forge Industrielle V18.0 - Stable Prisma 7.
+ * @fileOverview Station de Forge Industrielle V19.0 - Stable Prisma 7.
  * Version : Correction définitive de la sérialisation [object Event].
  */
 
@@ -15,8 +15,7 @@ import {
   BookOpen, 
   Mic, 
   MicOff,
-  FileText,
-  Layers
+  FileText
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -74,14 +73,14 @@ export default function DatasetPage() {
   const [activeVoiceField, setActiveVoiceField] = useState<string | null>(null);
   
   /**
-   * ✅ FIX SÉRIALISATION : Extraction forcée de la valeur textuelle.
+   * ✅ FIX SÉRIALISATION : Extraction immédiate de la valeur primitive.
    * Empêche l'injection d'objets [Event] dans l'état JSON.
    */
-  const handleUpdateStepField = useCallback((idx: number, field: string, value: any) => {
-    // 1. Extraction robuste (si value est un Event, on prend target.value)
-    const rawValue = value && typeof value === 'object' && 'target' in value 
-      ? (value.target as HTMLInputElement | HTMLTextAreaElement).value 
-      : value;
+  const handleUpdateStepField = useCallback((idx: number, field: string, eOrVal: any) => {
+    // Extraction robuste du texte
+    const rawValue = (eOrVal && typeof eOrVal === 'object' && 'target' in eOrVal) 
+      ? eOrVal.target.value 
+      : eOrVal;
 
     setProcSteps(prev => {
       const next = [...prev];
