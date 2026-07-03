@@ -1,5 +1,4 @@
-
-// prisma/schema.prisma - Version 5.22.0 (Stable)
+// prisma/schema.prisma - Standard Industriel V5.22.0 (Stable)
 
 generator client {
   provider        = "prisma-client-js"
@@ -13,20 +12,19 @@ datasource db {
 }
 
 model User {
-  id                String               @id @default(cuid())
-  firstName         String
-  lastName          String
-  password          String
-  email             String               @unique
-  role              String               @default("user")
-  approved          Boolean              @default(false)
-  createdAt         DateTime             @default(now())
-  updatedAt         DateTime             @updatedAt
-  lastSyncAt        DateTime?
-  
-  knowledgeItems    KnowledgeItem[]
-  authoredProcedures Procedure[]         @relation("authored")
-  executions        ProcedureExecution[]
+  id                 String               @id @default(cuid())
+  firstName          String
+  lastName           String
+  password           String
+  email              String               @unique
+  role               String               @default("user")
+  approved           Boolean              @default(false)
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  lastSyncAt         DateTime?
+  knowledgeItems     KnowledgeItem[]
+  authoredProcedures Procedure[]          @relation("ProcedureAuthor")
+  executions         ProcedureExecution[]
 
   @@map("users")
 }
@@ -35,11 +33,11 @@ model KnowledgeItem {
   id          String   @id @default(cuid())
   userId      String
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type        String   // 'qa' | 'procedure_metadata'
+  type        String
   title       String
   question    String?
   answer      String?
-  steps       Json?    // Array of steps if type is manual_procedure
+  steps       Json?
   tags        String[]
   category    String?
   difficulty  String   @default("medium")
@@ -64,13 +62,13 @@ model Procedure {
   criticality    String               @default("MEDIUM")
   version        String               @default("1.0.0")
   status         String               @default("DRAFT")
-  prerequisites  Json                 // { description, items: [] }
-  steps          Json                 // Array of ProcedureStep
+  prerequisites  Json
+  steps          Json
   parameters     Json?
   postExecution  Json?
   metadata       Json
   authorId       String
-  author         User                 @relation("authored", fields: [authorId], references: [id])
+  author         User                 @relation("ProcedureAuthor", fields: [authorId], references: [id])
   approvers      Json?
   syncedLocal    Boolean              @default(false)
   lastExecutedAt DateTime?

@@ -1,14 +1,8 @@
-
-// src/lib/db/prisma-client.ts - Version 5.22.0 (Stable)
+// src/lib/db/prisma-client.ts - Version Stable V5.22.0
 import { PrismaClient } from '@prisma/client';
 import { PrismaNeon } from '@prisma/adapter-neon';
 import { Pool, neonConfig } from '@neondatabase/serverless';
 import ws from 'ws';
-import * as dotenv from 'dotenv';
-import * as path from 'path';
-
-// Charger l'environnement
-dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
 if (typeof window === 'undefined') {
   neonConfig.webSocketConstructor = ws;
@@ -23,16 +17,16 @@ function createPrismaClient(): PrismaClient {
   const connectionString = (process.env.DATABASE_URL || '').replace(/^"|"$/g, '').trim();
 
   if (!connectionString) {
-    console.warn(`⚠️ [${ts}] [Prisma] DATABASE_URL absente. Liaison simulée.`);
+    console.warn(`⚠️ [${ts}] [Prisma] DATABASE_URL absente. Liaison de secours.`);
     return new PrismaClient();
   }
 
   try {
-    console.log(`📡 [${ts}] [Prisma] Initialisation Adaptateur Neon V5.`);
+    console.log(`📡 [${ts}] [Prisma] Initialisation Adaptateur Neon V5 (Stable).`);
     const pool = new Pool({ connectionString });
     const adapter = new PrismaNeon(pool);
     
-    return new PrismaClient({ adapter: adapter as any });
+    return new PrismaClient({ adapter });
   } catch (err: any) {
     console.error(`❌ [${ts}] [Prisma] Échec Liaison :`, err.message);
     return new PrismaClient();

@@ -1,8 +1,7 @@
-
 "use client";
 
 /**
- * @fileOverview Station de Forge Industrielle V21.0 - Stable Downgrade V5.
+ * @fileOverview Station de Forge Industrielle V22.0 - Stable Downgrade V5.
  * Version : Correction définitive de la sérialisation [object Event].
  */
 

@@ -1,12 +1,10 @@
 import { prisma } from '../src/lib/db/prisma-client';
 
 async function main() {
-  console.log('🚀 Initialisation du Schéma Industriel VisioNode...');
+  console.log('🚀 Initialisation du Schéma Industriel VisioNode (Version Stable)...');
   
   const commands = [
     // Nettoyage sécurisé
-    `DROP TABLE IF EXISTS "procedure_documents" CASCADE`,
-    `DROP TABLE IF EXISTS "procedure_alarms" CASCADE`,
     `DROP TABLE IF EXISTS "procedure_executions" CASCADE`,
     `DROP TABLE IF EXISTS "procedures" CASCADE`,
     `DROP TABLE IF EXISTS "knowledge_items" CASCADE`,
@@ -66,7 +64,6 @@ async function main() {
         "postExecution" JSONB,
         "metadata" JSONB NOT NULL,
         "authorId" TEXT NOT NULL,
-        "approvers" JSONB,
         "syncedLocal" BOOLEAN NOT NULL DEFAULT false,
         "lastExecutedAt" TIMESTAMP(3),
         "executionCount" INTEGER NOT NULL DEFAULT 0,
