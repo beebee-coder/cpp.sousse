@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * @fileOverview Station de Forge Industrielle V16.0.
- * Version : Blindage TOTAL contre la sérialisation [object Event] + Stabilité Prisma 7.
+ * @fileOverview Station de Forge Industrielle V17.0.
+ * Version : Blindage ABSOLU contre la sérialisation [object Event] + Stabilité Prisma 7.
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -55,6 +55,7 @@ export default function DatasetPage() {
   const [qaAnswer, setQaAnswer] = useState('');
   const [qaTags, setQaTags] = useState('');
 
+  // ✅ FIX HYDRATATION : Initialisation des données dynamiques après montage
   useEffect(() => { 
     setMounted(true); 
     const initialStep: ProcedureStep = { 
@@ -79,6 +80,39 @@ export default function DatasetPage() {
   }, []);
 
   const [activeVoiceField, setActiveVoiceField] = useState<string | null>(null);
+  
+  /**
+   * ✅ FIX SÉRIALISATION : Extraction systématique de la valeur texte brute.
+   */
+  const handleUpdateStepField = useCallback((idx: number, field: string, value: any) => {
+    // Si la valeur est un événement React (Input/Textarea), on extrait UNIQUEMENT target.value
+    let finalValue = value;
+    if (value && typeof value === 'object' && 'target' in value) {
+      finalValue = (value.target as HTMLInputElement).value;
+    } else if (value && typeof value === 'object' && 'currentTarget' in value) {
+      finalValue = (value.currentTarget as HTMLInputElement).value;
+    }
+
+    setProcSteps(prev => {
+      const next = [...prev];
+      if (!next[idx]) return prev;
+
+      const updated = { ...next[idx] };
+      
+      if (field === 'action_type') {
+        updated.action = { ...updated.action, type: finalValue as any };
+      } else if (field === 'duration_value') {
+        const num = parseInt(finalValue) || 0;
+        updated.duration = { ...updated.duration, value: num, display: `${num}s` };
+      } else {
+        (updated as any)[field] = finalValue;
+      }
+      
+      next[idx] = updated;
+      return next;
+    });
+  }, []);
+
   const voice = useVoice({
     onResult: (text) => {
       if (activeVoiceField === 'qaAnswer') setQaAnswer(text);
@@ -125,38 +159,6 @@ export default function DatasetPage() {
     };
     setProcSteps([...procSteps, newStep]);
   };
-
-  /**
-   * ✅ BLINDAGE TOTAL SÉRIALISATION : 
-   * Cette fonction intercepte les événements de saisie et extrait UNIQUEMENT la valeur texte.
-   * Empêche l'affichage buggé [object Event] dans les fichiers JSON.
-   */
-  const handleUpdateStepField = useCallback((idx: number, field: string, value: any) => {
-    // Si la valeur est un événement React, on extrait uniquement le texte saisi
-    let finalValue = value;
-    if (value && typeof value === 'object' && value.target) {
-      finalValue = (value.target as HTMLInputElement).value;
-    }
-
-    setProcSteps(prev => {
-      const next = [...prev];
-      if (!next[idx]) return prev;
-
-      const updated = { ...next[idx] };
-      
-      if (field === 'action_type') {
-        updated.action = { ...updated.action, type: finalValue as any };
-      } else if (field === 'duration_value') {
-        const num = parseInt(finalValue) || 0;
-        updated.duration = { ...updated.duration, value: num, display: `${num}s` };
-      } else {
-        (updated as any)[field] = finalValue;
-      }
-      
-      next[idx] = updated;
-      return next;
-    });
-  }, []);
 
   const handleForgeProcedure = async (e: React.FormEvent) => {
     if (e) e.preventDefault();

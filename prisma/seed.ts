@@ -4,18 +4,17 @@ import { PrismaNeon } from '@prisma/adapter-neon';
 import { Pool, neonConfig } from '@neondatabase/serverless';
 import ws from 'ws';
 import bcrypt from 'bcryptjs';
+import * as dotenv from 'dotenv';
 
-/**
- * @fileOverview Script d'amorçage industriel VisioNode V16.0.
- * Version : Stabilisation Prisma 7 + Liaison Neon forcée sans url schéma.
- */
+// Chargement forcé de l'environnement
+dotenv.config();
 
 if (typeof window === 'undefined') {
   neonConfig.webSocketConstructor = ws;
 }
 
 async function main() {
-  console.log('🌱 [SEED] Initialisation du Registre Industriel (Prisma 7)...');
+  console.log('🌱 [SEED] Initialisation du Registre Industriel (Latest Prisma 7)...');
 
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
@@ -23,14 +22,13 @@ async function main() {
     process.exit(1);
   }
 
-  console.log(`📡 [SEED] Liaison établie avec le cluster Neon.`);
-
   const pool = new Pool({ connectionString });
   const adapter = new PrismaNeon(pool as any);
-  const prisma = new PrismaClient({ adapter: adapter as any });
+  
+  // Utilisation d'une instanciation robuste compatible Prisma 7
+  const prisma = new PrismaClient({ adapter: adapter as any } as any);
 
   try {
-    // 1. CRÉATION DE L'ADMIN SOUVERAIN
     console.log('👤 [SEED] Audit de l\'administrateur root...');
     const hashedAdminPassword = await bcrypt.hash('admin123', 12);
     
@@ -49,7 +47,6 @@ async function main() {
     });
     console.log(`✅ [SEED] Administrateur accrédité : ${admin.email}`);
 
-    // 2. INJECTION DES CONNAISSANCES DE SÉCURITÉ
     console.log('📚 [SEED] Injection des référentiels sémantiques...');
     const knowledgeItems = [
       {
