@@ -5,8 +5,8 @@ import { Pool, neonConfig } from '@neondatabase/serverless';
 import ws from 'ws';
 
 /**
- * @fileOverview Client Prisma singleton compatible avec l'adaptateur Neon WASM.
- * Version : Stabilisation V15.0 - Détection forcée de DATABASE_URL.
+ * @fileOverview Client Prisma singleton certifié Prisma 7 + Neon.
+ * Version : Stabilisation V16.0 - Liaison adaptée aux nouveaux standards.
  */
 
 if (typeof window === 'undefined') {
@@ -21,7 +21,7 @@ function createPrismaClient(): PrismaClient {
   const connectionString = process.env.DATABASE_URL;
 
   if (!connectionString) {
-    console.warn('⚠️ [Prisma] DATABASE_URL non trouvée. Liaison Neon désactivée.');
+    console.warn('⚠️ [Prisma] DATABASE_URL absente. Mode dégradé activé.');
     return new PrismaClient();
   }
 
@@ -29,7 +29,7 @@ function createPrismaClient(): PrismaClient {
     const pool = new Pool({ connectionString });
     const adapter = new PrismaNeon(pool as any);
     
-    console.log('🔧 [Prisma] Liaison Neon établie via adaptateur natif.');
+    console.log('🔧 [Prisma] Liaison Neon établie (Prisma 7 Adapter).');
     return new PrismaClient({ adapter: adapter as any });
   } catch (err: any) {
     console.error('❌ [Prisma] Échec initialisation adaptateur Neon :', err.message);

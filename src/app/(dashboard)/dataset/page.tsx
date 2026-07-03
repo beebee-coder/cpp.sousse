@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * @fileOverview Station de Forge Industrielle V15.0.
- * Version : Blindage total contre la sérialisation [object Event] + Stabilité Prisma 7.
+ * @fileOverview Station de Forge Industrielle V16.0.
+ * Version : Blindage TOTAL contre la sérialisation [object Event] + Stabilité Prisma 7.
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -133,9 +133,10 @@ export default function DatasetPage() {
    */
   const handleUpdateStepField = useCallback((idx: number, field: string, value: any) => {
     // Si la valeur est un événement React, on extrait uniquement le texte saisi
-    const finalValue = (value && typeof value === 'object' && 'target' in value) 
-      ? (value.target as HTMLInputElement).value 
-      : value;
+    let finalValue = value;
+    if (value && typeof value === 'object' && value.target) {
+      finalValue = (value.target as HTMLInputElement).value;
+    }
 
     setProcSteps(prev => {
       const next = [...prev];

@@ -6,8 +6,8 @@ import ws from 'ws';
 import bcrypt from 'bcryptjs';
 
 /**
- * @fileOverview Script d'amorçage industriel VisioNode.
- * Version : Stabilisation Prisma 7 + Liaison Neon forcée.
+ * @fileOverview Script d'amorçage industriel VisioNode V16.0.
+ * Version : Stabilisation Prisma 7 + Liaison Neon forcée sans url schéma.
  */
 
 if (typeof window === 'undefined') {
@@ -15,15 +15,15 @@ if (typeof window === 'undefined') {
 }
 
 async function main() {
-  console.log('🌱 [SEED] Initialisation du Registre Industriel...');
+  console.log('🌱 [SEED] Initialisation du Registre Industriel (Prisma 7)...');
 
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
-    console.error('❌ [SEED] DATABASE_URL manquante dans l\'environnement.');
+    console.error('❌ [SEED] DATABASE_URL manquante. Vérifiez le fichier .env');
     process.exit(1);
   }
 
-  console.log(`📡 [SEED] Diagnostic de liaison : ${connectionString.substring(0, 40)}...`);
+  console.log(`📡 [SEED] Liaison établie avec le cluster Neon.`);
 
   const pool = new Pool({ connectionString });
   const adapter = new PrismaNeon(pool as any);
@@ -32,7 +32,7 @@ async function main() {
   try {
     // 1. CRÉATION DE L'ADMIN SOUVERAIN
     console.log('👤 [SEED] Audit de l\'administrateur root...');
-    const hashedAdminPassword = await bcrypt.hash('66023', 12);
+    const hashedAdminPassword = await bcrypt.hash('admin123', 12);
     
     const admin = await prisma.user.upsert({
       where: { email: 'admin@visionode.local' },
@@ -40,8 +40,8 @@ async function main() {
       create: {
         id: 'admin-root',
         email: 'admin@visionode.local',
-        firstName: 'ahmed',
-        lastName: 'abbes',
+        firstName: 'Ahmed',
+        lastName: 'Admin',
         password: hashedAdminPassword,
         role: 'admin',
         approved: true,

@@ -1,53 +1,54 @@
 // prisma/schema.prisma
-// Standard de Sécurité Industriel VisioNode V15.0 (Compatible Prisma 7.8.0)
+// Architecture Industrielle VisioNode V16.0 - Conformité Prisma 7.8.0
 
 generator client {
-  provider      = "prisma-client-js"
-  binaryTargets = ["native", "debian-openssl-3.0.x"]
+  provider        = "prisma-client-js"
+  binaryTargets   = ["native", "debian-openssl-3.0.x"]
 }
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  // NOTE: La propriété 'url' est proscrite ici sous Prisma 7.
+  // Elle est gérée via prisma.config.ts
 }
 
 model User {
-  id              String               @id @default(cuid())
-  firstName       String
-  lastName        String
-  password        String
-  email           String               @unique
-  role            String               @default("user")
-  approved        Boolean              @default(false)
-  createdAt       DateTime             @default(now())
-  updatedAt       DateTime             @updatedAt
-  lastSyncAt      DateTime?
+  id                String               @id @default(cuid())
+  firstName         String
+  lastName          String
+  password          String
+  email             String               @unique
+  role              String               @default("user")
+  approved          Boolean              @default(false)
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  lastSyncAt        DateTime?
   
-  // Relations inverses obligatoires pour Prisma 7
-  authoredProcedures Procedure[]       @relation("ProcedureAuthor")
-  executions         ProcedureExecution[] @relation("OperatorExecutions")
-  knowledgeItems     KnowledgeItem[]   @relation("UserKnowledge")
+  // Relations inverses obligatoires
+  knowledgeItems    KnowledgeItem[]
+  authoredProcedures Procedure[]         @relation("ProcedureAuthor")
+  executions        ProcedureExecution[] @relation("OperatorExecutions")
 
   @@map("users")
 }
 
 model KnowledgeItem {
-  id              String   @id @default(cuid())
-  userId          String
-  user            User     @relation("UserKnowledge", fields: [userId], references: [id], onDelete: Cascade)
-  type            String   // 'qa', 'procedure', 'text'
-  title           String
-  question        String?
-  answer          String?
-  steps           Json?
-  tags            String[]
-  category        String?
-  difficulty      String   @default("medium")
-  isPublic        Boolean  @default(true)
-  syncedLocal     Boolean  @default(false)
-  vectorId        String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type         String   // 'qa', 'document', 'procedure'
+  title        String
+  question     String?
+  answer       String?
+  steps        Json?
+  tags         String[]
+  category     String?
+  difficulty   String   @default("medium")
+  isPublic     Boolean  @default(true)
+  syncedLocal  Boolean  @default(false)
+  vectorId     String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   @@index([userId])
   @@map("knowledge_items")
@@ -64,21 +65,26 @@ model Procedure {
   criticality     String               @default("MEDIUM")
   version         String               @default("1.0.0")
   status          String               @default("DRAFT")
+  
   prerequisites   Json
   steps           Json
   parameters      Json?
   postExecution   Json?
   metadata        Json
+  
   authorId        String
   author          User                 @relation("ProcedureAuthor", fields: [authorId], references: [id])
   approvers       Json?
   syncedLocal     Boolean              @default(false)
+  
   lastExecutedAt  DateTime?
   executionCount  Int                  @default(0)
   avgDuration     Int?
   successRate     Float?
+  
   createdAt       DateTime             @default(now())
   updatedAt       DateTime             @updatedAt
+  
   executions      ProcedureExecution[]
 
   @@index([code])
@@ -92,18 +98,21 @@ model ProcedureExecution {
   procedure       Procedure @relation(fields: [procedureId], references: [id], onDelete: Cascade)
   operatorId      String
   operator        User      @relation("OperatorExecutions", fields: [operatorId], references: [id])
+  
   startTime       DateTime  @default(now())
   endTime         DateTime?
   status          String
   currentStep     Int       @default(-1)
   stepsStatus     Json
   totalDuration   Int?
+  
   events          Json?
   alarms          Json?
   fallbacks       Json?
   result          Json?
   notes           String?
   signature       String?
+  
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
