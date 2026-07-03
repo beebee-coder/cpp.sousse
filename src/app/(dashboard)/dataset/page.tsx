@@ -1,9 +1,8 @@
 "use client";
 
 /**
- * @fileOverview Station de Forge Industrielle V9.2.
- * Version : Fix définitif SÉRIALISATION [object Event] et Hydratation Next.js.
- * Concordance CRF V6.5 intégrale.
+ * @fileOverview Station de Forge Industrielle V9.8.
+ * Version : Fix définitif SÉRIALISATION Prisma Latest & Hydratation Next.js 15.
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -56,11 +55,11 @@ export default function DatasetPage() {
   const [qaAnswer, setQaAnswer] = useState('');
   const [qaTags, setQaTags] = useState('');
 
-  // ✅ Fix Hydratation : Initialisation sécurisée dans useEffect
+  // ✅ Fix Hydratation : Initialisation sécurisée au montage
   useEffect(() => { 
     setMounted(true); 
     const initialStep: ProcedureStep = { 
-      id: `step-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`, 
+      id: `step-${Date.now()}`, 
       order: 1,
       title: '', 
       description: '',
@@ -130,29 +129,28 @@ export default function DatasetPage() {
 
   /**
    * ✅ Fix Sérialisation : Blindage contre l'injection d'objets [object Event].
-   * Cette fonction garantit que seules des valeurs primitives atteignent l'état JSON.
+   * On extrait explicitement la valeur pour garantir qu'aucun objet React n'atteigne l'état.
    */
-  const handleUpdateStepField = useCallback((idx: number, field: string, input: any) => {
-    // Extraction sécurisée de la valeur textuelle
-    let val: any = input;
-    if (input && typeof input === 'object' && 'target' in input) {
-      val = (input.target as any).value;
+  const handleUpdateStepField = useCallback((idx: number, field: string, value: any) => {
+    // Extraction sécurisée si c'est un événement React
+    let finalValue = value;
+    if (value && typeof value === 'object' && 'target' in value) {
+      finalValue = value.target.value;
     }
 
     setProcSteps(prev => {
       const next = [...prev];
       if (!next[idx]) return prev;
 
-      // Mise à jour granulaire selon le champ
       const updated = { ...next[idx] };
       
       if (field === 'action_type') {
-        updated.action = { ...updated.action, type: val as any };
+        updated.action = { ...updated.action, type: finalValue as any };
       } else if (field === 'duration_value') {
-        const num = parseInt(val) || 0;
+        const num = parseInt(finalValue) || 0;
         updated.duration = { ...updated.duration, value: num, display: `${num}s` };
       } else {
-        (updated as any)[field] = val;
+        (updated as any)[field] = finalValue;
       }
       
       next[idx] = updated;
@@ -333,7 +331,7 @@ export default function DatasetPage() {
                            </span>
                            <Input 
                             value={step.title} 
-                            onChange={e => handleUpdateStepField(idx, 'title', e)} 
+                            onChange={e => handleUpdateStepField(idx, 'title', e.target.value)} 
                             placeholder="TITRE DE L'ACTION" 
                             className="bg-transparent border-none focus-visible:ring-0 uppercase font-headline font-bold text-xs h-8 p-0" 
                            />
@@ -359,7 +357,7 @@ export default function DatasetPage() {
                            <div className="relative">
                               <Textarea 
                                 value={step.description} 
-                                onChange={e => handleUpdateStepField(idx, 'description', e)} 
+                                onChange={e => handleUpdateStepField(idx, 'description', e.target.value)} 
                                 placeholder="Détailler l'opération réelle..." 
                                 className="h-28 text-xs font-code bg-black/40 border-border/50 resize-none pr-10" 
                               />
@@ -389,7 +387,7 @@ export default function DatasetPage() {
                                   <label className="text-[8px] font-bold text-muted-foreground uppercase">Type</label>
                                   <select 
                                     value={step.action.type} 
-                                    onChange={e => handleUpdateStepField(idx, 'action_type', e)}
+                                    onChange={e => handleUpdateStepField(idx, 'action_type', e.target.value)}
                                     className="w-full bg-black border border-border rounded-sm h-8 text-[9px] font-bold uppercase px-2"
                                   >
                                     <option value="confirmation">CONFIRMATION</option>
@@ -402,7 +400,7 @@ export default function DatasetPage() {
                                   <Input 
                                     type="number" 
                                     value={step.duration.value} 
-                                    onChange={e => handleUpdateStepField(idx, 'duration_value', e)}
+                                    onChange={e => handleUpdateStepField(idx, 'duration_value', e.target.value)}
                                     className="h-8 bg-black/40 font-code text-[10px]"
                                   />
                                </div>

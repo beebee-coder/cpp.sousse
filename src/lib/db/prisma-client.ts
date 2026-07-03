@@ -4,7 +4,7 @@ import { PrismaNeon } from '@prisma/adapter-neon';
 import { Pool, neonConfig } from '@neondatabase/serverless';
 import ws from 'ws';
 
-// ✅ Configuration Neon pour environnements Node.js (Vercel/Cloud)
+// ✅ Configuration Neon pour Prisma 7.8.0 (Latest)
 if (typeof window === 'undefined') {
   neonConfig.webSocketConstructor = ws;
 }
@@ -24,13 +24,13 @@ function createPrismaClient(): PrismaClient {
     return new PrismaClient();
   }
 
-  // ✅ Utilisation de l'adaptateur Neon pour une liaison souveraine
+  // ✅ Utilisation de l'adaptateur Neon certifié stable
   const pool = new Pool({ connectionString });
   const adapter = new PrismaNeon(pool);
   
-  console.log('🔧 [Prisma] Liaison Neon établie via adaptateur.');
+  console.log('🔧 [Prisma] Liaison Neon établie via adaptateur natif v7.8.0.');
 
-  return new PrismaClient({ adapter });
+  return new PrismaClient({ adapter: adapter as any });
 }
 
 export const prisma = globalForPrisma.prisma ?? createPrismaClient();

@@ -42,12 +42,10 @@ export default function AdminPage() {
 
         const response = await fetch('/api/auth/admin');
         
-        // ✅ Sécurisation du parsing JSON
+        // ✅ Sécurisation du parsing JSON pour Prisma Latest
         const contentType = response.headers.get('content-type');
         if (!response.ok || !contentType?.includes('application/json')) {
-          const text = await response.text();
-          console.error("❌ [ADMIN_API] Erreur liaison :", text.slice(0, 100));
-          throw new Error(`Erreur serveur (${response.status}). Liaison base de données corrompue.`);
+          throw new Error(`Rupture de liaison API (${response.status}).`);
         }
 
         const data = await response.json();
@@ -228,52 +226,6 @@ export default function AdminPage() {
                 ))}
               </div>
             )}
-          </div>
-
-          <div className="space-y-4 pt-6">
-            <h2 className="text-[11px] font-headline font-bold uppercase tracking-widest flex items-center gap-2">
-              <CheckCircle2 className="w-3.5 h-3.5 text-secondary" />
-              Registre des Opérateurs Certifiés
-            </h2>
-
-            <div className="rounded-sm border border-border overflow-hidden bg-card/20">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left">
-                  <thead className="bg-black/40 border-b border-border">
-                    <tr>
-                      <th className="px-4 py-3 text-[9px] font-bold uppercase tracking-widest text-muted-foreground">Opérateur</th>
-                      <th className="px-4 py-3 text-[9px] font-bold uppercase tracking-widest text-muted-foreground">Accréditation</th>
-                      <th className="px-4 py-3 text-[9px] font-bold uppercase tracking-widest text-muted-foreground">Date Liaison</th>
-                      <th className="px-4 py-3 text-[9px] font-bold uppercase tracking-widest text-muted-foreground text-right">Statut</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {approved.map((user) => (
-                      <tr key={user.id} className="hover:bg-primary/5 transition-colors font-code">
-                        <td className="px-4 py-3">
-                          <p className="text-xs font-bold uppercase text-white">{user.firstName} {user.lastName}</p>
-                          <p className="text-[8px] text-muted-foreground uppercase">{user.id}</p>
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="inline-block px-1.5 py-0.5 text-[8px] font-bold uppercase rounded-sm bg-muted text-primary border border-primary/20">
-                            {user.role}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-[9px] text-muted-foreground uppercase">
-                          {new Date(user.createdAt).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: '2-digit' })}
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            <CheckCircle2 className="w-3 h-3 text-secondary" />
-                            <span className="text-[9px] font-bold text-secondary uppercase">Actif</span>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
           </div>
         </div>
       </main>

@@ -6,22 +6,24 @@ import { Pool, neonConfig } from '@neondatabase/serverless';
 import ws from 'ws';
 import bcrypt from 'bcryptjs';
 
-// Configuration WebSocket pour le script Node
-neonConfig.webSocketConstructor = ws;
+// ✅ Support WebSocket pour script Node hors-ligne
+if (typeof window === 'undefined') {
+  neonConfig.webSocketConstructor = ws;
+}
 
 const connectionString = process.env.DATABASE_URL;
 
 async function main() {
-  console.log('🌱 [SEED] Initialisation du Registre Industriel...');
+  console.log('🌱 [SEED] Initialisation du Registre Industriel (Latest)...');
 
   if (!connectionString) {
-    console.error('❌ [SEED] DATABASE_URL non trouvée dans .env');
+    console.error('❌ [SEED] DATABASE_URL non trouvée. Vérifiez votre fichier .env');
     process.exit(1);
   }
 
   const pool = new Pool({ connectionString });
   const adapter = new PrismaNeon(pool);
-  const prisma = new PrismaClient({ adapter });
+  const prisma = new PrismaClient({ adapter: adapter as any });
 
   try {
     // 1. CRÉATION DE L'ADMIN SOUVERAIN

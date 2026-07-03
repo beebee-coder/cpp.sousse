@@ -1,12 +1,15 @@
 import { defineConfig } from 'prisma/config';
 import 'dotenv/config';
 
+/**
+ * Configuration Prisma 7.8.0 Stable.
+ * Pilote l'injection de DATABASE_URL pour l'adaptateur Neon WASM.
+ */
 export default defineConfig({
   schema: 'prisma/schema.prisma',
   migrations: {
     path: 'prisma/migrations',
   },
-  // ✅ Forcer l'engine WASM - PAS de dépendance OpenSSL !
   engine: {
     type: 'wasm',
   },
