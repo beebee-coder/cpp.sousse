@@ -1,4 +1,5 @@
-// src/lib/db/prisma-client.ts - Version Stable V5.22.0
+
+// src/lib/db/prisma-client.ts - Stable Prisma 5.22.0
 import { PrismaClient } from '@prisma/client';
 import { PrismaNeon } from '@prisma/adapter-neon';
 import { Pool, neonConfig } from '@neondatabase/serverless';
@@ -26,7 +27,6 @@ function createPrismaClient(): PrismaClient {
     const pool = new Pool({ connectionString });
     const adapter = new PrismaNeon(pool);
     
-    // @ts-ignore - Prisma 5 nécessite cet adaptateur pour Neon
     return new PrismaClient({ adapter });
   } catch (err: any) {
     console.error(`❌ [${ts}] [Prisma] Échec Liaison :`, err.message);

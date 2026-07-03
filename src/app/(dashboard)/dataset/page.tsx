@@ -1,8 +1,9 @@
+
 "use client";
 
 /**
- * @fileOverview Station de Forge Industrielle V23.0 - Downgrade Prisma 5 Stable.
- * Version : Correction définitive de la sérialisation [object Event].
+ * @fileOverview Station de Forge Industrielle V24.0 - Downgrade Prisma 5 Stable.
+ * Version : Correction DEFINITIVE de la sérialisation [object Event].
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -73,17 +74,32 @@ export default function DatasetPage() {
   const [activeVoiceField, setActiveVoiceField] = useState<string | null>(null);
   
   /**
-   * ✅ FIX SÉRIALISATION V23 : Extraction impérative de la valeur primitive.
-   * Cette fonction empêche l'objet 'Event' d'être injecté dans l'état,
-   * résolvant définitivement l'erreur visuelle [object Event].
+   * ✅ FIX SÉRIALISATION V24 : Neutralisation absolue de l'objet Event.
+   * Empêche l'injection de [object Event] en vérifiant si la valeur est un objet complexe.
    */
   const handleUpdateStepField = useCallback((idx: number, field: string, eOrVal: any) => {
-    // Extraction robuste du texte
     let rawValue: string = '';
-    if (eOrVal && typeof eOrVal === 'object' && 'target' in eOrVal) {
-      rawValue = (eOrVal.target as any).value;
+
+    // Détection explicite du type d'entrée
+    if (eOrVal && typeof eOrVal === 'object') {
+      if ('target' in eOrVal && eOrVal.target) {
+        // C'est un événement standard d'Input/Textarea/Select
+        rawValue = (eOrVal.target as any).value;
+      } else if (eOrVal.constructor && eOrVal.constructor.name === 'SyntheticBaseEvent') {
+        // C'est un événement React sans target valide accessible directement
+        return; 
+      } else {
+        // C'est probablement une valeur directe passée par un composant contrôlé (ex: Select de Radix)
+        rawValue = String(eOrVal || '');
+      }
     } else {
-      rawValue = String(eOrVal || '');
+      // C'est une primitive (string, number)
+      rawValue = String(eOrVal ?? '');
+    }
+
+    // Protection ultime : si malgré tout on a une chaîne de sérialisation d'objet, on l'ignore
+    if (rawValue === '[object Object]' || rawValue === '[object Event]') {
+      return;
     }
 
     setProcSteps(prev => {

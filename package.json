@@ -19,7 +19,8 @@
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
     "db:reset": "prisma migrate reset --force",
-    "db:deploy": "prisma migrate deploy"
+    "db:deploy": "prisma migrate deploy",
+    "db:setup": "tsx prisma/apply-schema.ts"
   },
   "dependencies": {
     "@genkit-ai/google-genai": "^1.0.0",
@@ -74,7 +75,7 @@
     "tailwindcss-animate": "^1.0.7",
     "uuid": "^14.0.1",
     "weaviate-client": "^3.13.1",
-    "ws": "^8.18.0",
+    "ws": "^8.21.0",
     "zod": "^3.24.2"
   },
   "devDependencies": {
