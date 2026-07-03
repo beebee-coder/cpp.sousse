@@ -1,4 +1,5 @@
-// src/lib/db/prisma-client.ts
+
+// src/lib/db/prisma-client.ts - Version 5.22.0 (Stable)
 import { PrismaClient } from '@prisma/client';
 import { PrismaNeon } from '@prisma/adapter-neon';
 import { Pool, neonConfig } from '@neondatabase/serverless';
@@ -6,7 +7,7 @@ import ws from 'ws';
 import * as dotenv from 'dotenv';
 import * as path from 'path';
 
-// Charger l'environnement avant toute instanciation (Crucial pour Prisma 7)
+// Charger l'environnement
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
 if (typeof window === 'undefined') {
@@ -19,25 +20,19 @@ const globalForPrisma = globalThis as unknown as {
 
 function createPrismaClient(): PrismaClient {
   const ts = new Date().toLocaleTimeString();
-  const rawUrl = process.env.DATABASE_URL;
+  const connectionString = (process.env.DATABASE_URL || '').replace(/^"|"$/g, '').trim();
 
-  if (!rawUrl) {
+  if (!connectionString) {
     console.warn(`⚠️ [${ts}] [Prisma] DATABASE_URL absente. Liaison simulée.`);
     return new PrismaClient();
   }
 
-  // Nettoyage rigoureux de la chaîne (enlève guillemets et espaces)
-  const connectionString = rawUrl.replace(/^"|"$/g, '').trim();
-
   try {
-    console.log(`📡 [${ts}] [Prisma] Initialisation Adaptateur Neon WASM.`);
-    
-    // On passe explicitement la chaîne au constructeur Pool pour éviter l'erreur "No database host"
+    console.log(`📡 [${ts}] [Prisma] Initialisation Adaptateur Neon V5.`);
     const pool = new Pool({ connectionString });
     const adapter = new PrismaNeon(pool);
     
-    // @ts-ignore - Prisma 7 supporte la propriété adapter nativement
-    return new PrismaClient({ adapter });
+    return new PrismaClient({ adapter: adapter as any });
   } catch (err: any) {
     console.error(`❌ [${ts}] [Prisma] Échec Liaison :`, err.message);
     return new PrismaClient();

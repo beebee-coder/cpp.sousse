@@ -1,7 +1,8 @@
+
 "use client";
 
 /**
- * @fileOverview Station de Forge Industrielle V20.0 - Stable Prisma 7.
+ * @fileOverview Station de Forge Industrielle V21.0 - Stable Downgrade V5.
  * Version : Correction définitive de la sérialisation [object Event].
  */
 

@@ -1,19 +1,16 @@
-// prisma/seed.ts
+
+// prisma/seed.ts - Version Stable V5
 import { prisma } from '../src/lib/db/prisma-client';
 import bcrypt from 'bcryptjs';
 
-/**
- * Script d'amorçage industriel VisioNode - Prisma 7.8.0 Certifié.
- * Utilise le client singleton pour garantir la liaison Neon.
- */
 async function main() {
   const ts = new Date().toLocaleTimeString();
   console.log(`🌱 [${ts}] [SEED] Initialisation du Registre Industriel.`);
 
   try {
-    console.log('👤 [SEED] Audit de l\'administrateur root...');
     const hashedAdminPassword = await bcrypt.hash('admin123', 12);
     
+    console.log('👤 [SEED] Audit de l\'administrateur root...');
     const admin = await prisma.user.upsert({
       where: { email: 'admin@visionode.local' },
       update: { approved: true, role: 'admin' },

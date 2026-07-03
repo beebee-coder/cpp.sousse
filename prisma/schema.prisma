@@ -1,31 +1,32 @@
-// prisma/schema.prisma
+
+// prisma/schema.prisma - Version 5.22.0 (Stable)
 
 generator client {
-  provider      = "prisma-client-js"
-  binaryTargets = ["native", "debian-openssl-3.0.x"]
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+  binaryTargets   = ["native", "debian-openssl-3.0.x"]
 }
 
 datasource db {
   provider = "postgresql"
-  // Note: 'url' is now managed in prisma.config.ts for Prisma 7+
+  url      = env("DATABASE_URL")
 }
 
 model User {
-  id                 String               @id @default(cuid())
-  firstName          String
-  lastName           String
-  password           String
-  email              String               @unique
-  role               String               @default("user")
-  approved           Boolean              @default(false)
-  createdAt          DateTime             @default(now())
-  updatedAt          DateTime             @updatedAt
-  lastSyncAt         DateTime?
+  id                String               @id @default(cuid())
+  firstName         String
+  lastName          String
+  password          String
+  email             String               @unique
+  role              String               @default("user")
+  approved          Boolean              @default(false)
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  lastSyncAt        DateTime?
   
-  // Relations inverses obligatoires pour Prisma 7 (P1012)
-  authoredProcedures Procedure[]          @relation("ProcedureAuthor")
-  executions         ProcedureExecution[] @relation("OperatorExecutions")
-  knowledgeItems     KnowledgeItem[]      @relation("UserKnowledge")
+  knowledgeItems    KnowledgeItem[]
+  authoredProcedures Procedure[]         @relation("authored")
+  executions        ProcedureExecution[]
 
   @@map("users")
 }
@@ -33,12 +34,12 @@ model User {
 model KnowledgeItem {
   id          String   @id @default(cuid())
   userId      String
-  user        User     @relation("UserKnowledge", fields: [userId], references: [id], onDelete: Cascade)
-  type        String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type        String   // 'qa' | 'procedure_metadata'
   title       String
   question    String?
   answer      String?
-  steps       Json?
+  steps       Json?    // Array of steps if type is manual_procedure
   tags        String[]
   category    String?
   difficulty  String   @default("medium")
@@ -63,13 +64,13 @@ model Procedure {
   criticality    String               @default("MEDIUM")
   version        String               @default("1.0.0")
   status         String               @default("DRAFT")
-  prerequisites  Json
-  steps          Json
+  prerequisites  Json                 // { description, items: [] }
+  steps          Json                 // Array of ProcedureStep
   parameters     Json?
   postExecution  Json?
   metadata       Json
   authorId       String
-  author         User                 @relation("ProcedureAuthor", fields: [authorId], references: [id])
+  author         User                 @relation("authored", fields: [authorId], references: [id])
   approvers      Json?
   syncedLocal    Boolean              @default(false)
   lastExecutedAt DateTime?
@@ -78,10 +79,9 @@ model Procedure {
   successRate    Float?
   createdAt      DateTime             @default(now())
   updatedAt      DateTime             @updatedAt
-  executions     ProcedureExecution[] @relation("ProcedureExecutions")
+  executions     ProcedureExecution[]
 
   @@index([code])
-  @@index([category])
   @@index([status])
   @@map("procedures")
 }
@@ -89,9 +89,9 @@ model Procedure {
 model ProcedureExecution {
   id            String    @id @default(cuid())
   procedureId   String
-  procedure     Procedure @relation("ProcedureExecutions", fields: [procedureId], references: [id], onDelete: Cascade)
+  procedure     Procedure @relation(fields: [procedureId], references: [id], onDelete: Cascade)
   operatorId    String
-  operator      User      @relation("OperatorExecutions", fields: [operatorId], references: [id])
+  operator      User      @relation(fields: [operatorId], references: [id])
   startTime     DateTime  @default(now())
   endTime       DateTime?
   status        String
@@ -109,6 +109,5 @@ model ProcedureExecution {
 
   @@index([procedureId])
   @@index([operatorId])
-  @@index([status])
   @@map("procedure_executions")
 }
