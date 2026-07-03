@@ -5,8 +5,8 @@ import { Pool, neonConfig } from '@neondatabase/serverless';
 import ws from 'ws';
 
 /**
- * @fileOverview Client Prisma singleton certifié Prisma 7.8.0 + Neon.
- * Version : Stabilisation V17.0 - Liaison adaptée au moteur WASM.
+ * Client Prisma singleton certifié stable.
+ * Injection explicite pour environnement Cloud.
  */
 
 if (typeof window === 'undefined') {
@@ -18,24 +18,22 @@ const globalForPrisma = globalThis as unknown as {
 };
 
 function createPrismaClient(): PrismaClient {
-  const connectionString = process.env.DATABASE_URL;
+  const rawUrl = process.env.DATABASE_URL;
 
-  if (!connectionString) {
-    console.warn('⚠️ [Prisma] DATABASE_URL absente. Mode dégradé activé.');
+  if (!rawUrl) {
+    console.warn('⚠️ [Prisma] DATABASE_URL absente. Liaison locale simulée.');
     return new PrismaClient();
   }
 
+  const connectionString = rawUrl.replace(/^"|"$/g, '');
+
   try {
     const pool = new Pool({ connectionString });
-    const adapter = new PrismaNeon(pool as any);
+    const adapter = new PrismaNeon(pool);
     
-    console.log('🔧 [Prisma] Liaison Neon établie (Prisma 7 Native Adapter).');
-    
-    // On force le typage 'as any' pour la propriété adapter car les types générés 
-    // peuvent être déphasés par rapport à la version stable de Prisma 7.
-    return new PrismaClient({ adapter: adapter as any } as any);
+    return new PrismaClient({ adapter });
   } catch (err: any) {
-    console.error('❌ [Prisma] Échec initialisation adaptateur Neon :', err.message);
+    console.error('❌ [Prisma] Échec adaptateur Neon :', err.message);
     return new PrismaClient();
   }
 }

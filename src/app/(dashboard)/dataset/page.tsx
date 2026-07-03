@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * @fileOverview Station de Forge Industrielle V17.0.
- * Version : Blindage ABSOLU contre la sérialisation [object Event] + Stabilité Prisma 7.
+ * @fileOverview Station de Forge Industrielle V17.2.
+ * Version : Correction DÉFINITIVE de la sérialisation [object Event].
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -18,8 +18,7 @@ import {
   MicOff,
   Settings2, 
   FileText,
-  Layers,
-  Activity
+  Layers
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -55,7 +54,6 @@ export default function DatasetPage() {
   const [qaAnswer, setQaAnswer] = useState('');
   const [qaTags, setQaTags] = useState('');
 
-  // ✅ FIX HYDRATATION : Initialisation des données dynamiques après montage
   useEffect(() => { 
     setMounted(true); 
     const initialStep: ProcedureStep = { 
@@ -82,16 +80,12 @@ export default function DatasetPage() {
   const [activeVoiceField, setActiveVoiceField] = useState<string | null>(null);
   
   /**
-   * ✅ FIX SÉRIALISATION : Extraction systématique de la valeur texte brute.
+   * ✅ FIX SÉRIALISATION : Extraction forcée de la valeur textuelle.
+   * Empêche l'injection d'objets [Event] dans l'état JSON.
    */
-  const handleUpdateStepField = useCallback((idx: number, field: string, value: any) => {
-    // Si la valeur est un événement React (Input/Textarea), on extrait UNIQUEMENT target.value
-    let finalValue = value;
-    if (value && typeof value === 'object' && 'target' in value) {
-      finalValue = (value.target as HTMLInputElement).value;
-    } else if (value && typeof value === 'object' && 'currentTarget' in value) {
-      finalValue = (value.currentTarget as HTMLInputElement).value;
-    }
+  const handleUpdateStepField = useCallback((idx: number, field: string, e: any) => {
+    // 1. Extraction robuste de la valeur (si c'est un Event, on prend target.value)
+    const rawValue = e && typeof e === 'object' && 'target' in e ? e.target.value : e;
 
     setProcSteps(prev => {
       const next = [...prev];
@@ -100,12 +94,12 @@ export default function DatasetPage() {
       const updated = { ...next[idx] };
       
       if (field === 'action_type') {
-        updated.action = { ...updated.action, type: finalValue as any };
+        updated.action = { ...updated.action, type: rawValue };
       } else if (field === 'duration_value') {
-        const num = parseInt(finalValue) || 0;
+        const num = parseInt(rawValue) || 0;
         updated.duration = { ...updated.duration, value: num, display: `${num}s` };
       } else {
-        (updated as any)[field] = finalValue;
+        (updated as any)[field] = rawValue;
       }
       
       next[idx] = updated;
@@ -179,8 +173,7 @@ export default function DatasetPage() {
             category, 
             department, 
             criticality, 
-            version: '1.0.0',
-            tags: ['CRF', category]
+            version: '1.0.0'
           },
           steps: procSteps,
           prerequisites: { description: "Audit de conformité standard", items: [] }
@@ -192,45 +185,10 @@ export default function DatasetPage() {
         toast({ title: "ACTIF FORGÉ", description: `Liaison établie : ${procCode}` }); 
         router.push('/procedures'); 
       } else {
-        throw new Error(data.message || data.error || "Erreur de liaison");
+        throw new Error(data.message || "Erreur de liaison");
       }
     } catch (err: any) { 
       toast({ title: "ÉCHEC DE LA FORGE", description: err.message, variant: "destructive" }); 
-    } finally { 
-      setIsUploading(false); 
-    }
-  };
-
-  const handleForgeQA = async (e: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!qaTitle || !qaAnswer) {
-      toast({ title: "CHAMPS REQUIS", description: "Titre et Réponse obligatoires.", variant: "destructive" });
-      return;
-    }
-    setIsUploading(true);
-
-    try {
-      const res = await fetch('/api/knowledge', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'qa', 
-          title: qaTitle, 
-          question: qaQuestion, 
-          answer: qaAnswer,
-          tags: qaTags.split(',').map(t => t.trim()).filter(t => t), 
-          category: 'SÉCURITÉ'
-        }),
-      });
-      
-      if (res.ok) { 
-        toast({ title: "CONNAISSANCE INDEXÉE", description: "Mémoire sémantique Cloud mise à jour." }); 
-        setQaTitle(''); setQaQuestion(''); setQaAnswer(''); setQaTags('');
-      } else {
-        throw new Error("Erreur de liaison sémantique");
-      }
-    } catch (err: any) { 
-      toast({ title: "ÉCHEC D'INDEXATION", description: err.message, variant: "destructive" }); 
     } finally { 
       setIsUploading(false); 
     }
@@ -266,23 +224,24 @@ export default function DatasetPage() {
                 <Card className="p-6 border-primary/20 bg-black/40 space-y-6 shadow-2xl">
                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                       <div className="space-y-4">
-                        <div className="flex items-center gap-2 mb-2">
-                           <Settings2 className="w-4 h-4 text-primary" />
-                           <label className="text-[10px] font-bold text-primary uppercase tracking-widest">Identification CRF</label>
-                        </div>
+                        <label className="text-[10px] font-bold text-primary uppercase tracking-widest block">Identification CRF</label>
                         <Input 
                           value={procTitle} 
                           onChange={e => setProcTitle(e.target.value)} 
                           placeholder="TITRE DE LA PROCÉDURE" 
                           className="h-12 bg-black/40 uppercase font-headline font-bold text-sm border-primary/20" 
                         />
+                        <Input 
+                          value={procCode} 
+                          onChange={e => setProcCode(e.target.value.toUpperCase())} 
+                          placeholder="CODE_REGISTRE" 
+                          className="h-10 bg-black/20 font-code uppercase text-xs" 
+                        />
+                      </div>
+                      
+                      <div className="space-y-4">
+                        <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest block">Audit & Criticité</label>
                         <div className="grid grid-cols-2 gap-4">
-                           <Input 
-                            value={procCode} 
-                            onChange={e => setProcCode(e.target.value.toUpperCase())} 
-                            placeholder="CODE_REGISTRE" 
-                            className="h-10 bg-black/20 font-code uppercase text-xs" 
-                           />
                            <select 
                             value={category} 
                             onChange={e => setCategory(e.target.value)} 
@@ -291,48 +250,25 @@ export default function DatasetPage() {
                              <option value="OPERATION">OPÉRATION</option>
                              <option value="MAINTENANCE">MAINTENANCE</option>
                              <option value="STARTUP">DÉMARRAGE</option>
-                             <option value="EMERGENCY">URGENCE</option>
                            </select>
-                        </div>
-                      </div>
-                      
-                      <div className="space-y-4">
-                        <div className="flex items-center gap-2 mb-2">
-                           <ShieldAlert className="w-4 h-4 text-muted-foreground" />
-                           <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Audit & Criticité</label>
-                        </div>
-                        <div className="p-4 bg-muted/5 border border-border rounded-sm space-y-4">
-                           <div className="flex justify-between items-center">
-                              <span className="text-[10px] font-code uppercase text-muted-foreground">Niveau Réel</span>
-                              <select 
-                                value={criticality} 
-                                onChange={e => setCriticality(e.target.value)} 
-                                className="bg-black border border-border rounded-sm px-2 py-1 text-[9px] font-bold uppercase"
-                              >
-                                <option value="LOW">BASSE</option>
-                                <option value="MEDIUM">MOYENNE</option>
-                                <option value="HIGH">HAUTE</option>
-                                <option value="CRITICAL">CRITIQUE</option>
-                              </select>
-                           </div>
+                           <select 
+                            value={criticality} 
+                            onChange={e => setCriticality(e.target.value)} 
+                            className="h-10 bg-black border border-border rounded-sm px-3 text-[10px] font-bold uppercase"
+                           >
+                             <option value="LOW">BASSE</option>
+                             <option value="MEDIUM">MOYENNE</option>
+                             <option value="HIGH">HAUTE</option>
+                             <option value="CRITICAL">CRITIQUE</option>
+                           </select>
                         </div>
                       </div>
                    </div>
                 </Card>
 
                 <div className="space-y-6">
-                  <div className="flex items-center justify-between px-2">
-                     <div className="flex items-center gap-2">
-                        <Layers className="w-4 h-4 text-secondary" />
-                        <h3 className="text-[10px] font-bold text-secondary uppercase tracking-widest">Séquençage Opérationnel</h3>
-                     </div>
-                     <Badge variant="outline" className="text-[8px] font-code border-secondary/30 text-secondary uppercase">
-                       {procSteps.length} ÉTAPES DÉFINIES
-                     </Badge>
-                  </div>
-
                   {procSteps.map((step, idx) => (
-                    <Card key={step.id} className="p-6 border-border bg-black/20 space-y-4 relative group hover:border-primary/30 transition-all duration-300">
+                    <Card key={step.id} className="p-6 border-border bg-black/20 space-y-4">
                       <div className="flex justify-between items-center border-b border-border/50 pb-3">
                         <div className="flex items-center gap-3">
                            <span className="w-6 h-6 rounded-full bg-primary/10 border border-primary/40 flex items-center justify-center text-[10px] font-bold text-primary font-code">
@@ -354,65 +290,56 @@ export default function DatasetPage() {
                              next.splice(idx, 1);
                              setProcSteps(next.map((s, i) => ({ ...s, order: i + 1 })));
                           }}
-                          className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all"
+                          className="text-muted-foreground hover:text-destructive"
                         >
                           <Trash2 className="w-4 h-4" />
                         </Button>
                       </div>
 
                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                         <div className="space-y-2">
-                           <label className="text-[9px] font-bold text-muted-foreground uppercase">Description Technique</label>
-                           <div className="relative">
-                              <Textarea 
-                                value={step.description} 
-                                onChange={e => handleUpdateStepField(idx, 'description', e)} 
-                                placeholder="Détailler l'opération réelle..." 
-                                className="h-28 text-xs font-code bg-black/40 border-border/50 resize-none pr-10" 
-                              />
-                              <Button 
-                                type="button" 
-                                variant="ghost" 
-                                size="sm" 
-                                onClick={() => toggleDictation(`step-desc-${idx}`)} 
-                                className={cn(
-                                  "absolute bottom-2 right-2 h-7 px-2 text-[8px] uppercase font-bold border border-border/50", 
-                                  voice.isListening && activeVoiceField === `step-desc-${idx}` ? "text-red-500 bg-red-500/10 animate-pulse" : "text-primary"
-                                )}
-                              >
-                                {voice.isListening && activeVoiceField === `step-desc-${idx}` ? <MicOff className="w-3.5 h-3.5 mr-1" /> : <Mic className="w-3.5 h-3.5 mr-1" />}
-                                Dictée
-                              </Button>
-                           </div>
+                         <div className="relative">
+                            <Textarea 
+                              value={step.description} 
+                              onChange={e => handleUpdateStepField(idx, 'description', e)} 
+                              placeholder="Détailler l'opération réelle..." 
+                              className="h-28 text-xs font-code bg-black/40 border-border/50 resize-none pr-10" 
+                            />
+                            <Button 
+                              type="button" 
+                              variant="ghost" 
+                              size="sm" 
+                              onClick={() => toggleDictation(`step-desc-${idx}`)} 
+                              className={cn(
+                                "absolute bottom-2 right-2 h-7 px-2 text-[8px] uppercase font-bold", 
+                                voice.isListening && activeVoiceField === `step-desc-${idx}` ? "text-red-500 animate-pulse" : "text-primary"
+                              )}
+                            >
+                              {voice.isListening && activeVoiceField === `step-desc-${idx}` ? <MicOff className="w-3.5 h-3.5 mr-1" /> : <Mic className="w-3.5 h-3.5 mr-1" />}
+                              Dictée
+                            </Button>
                          </div>
                          
-                         <div className="space-y-4 p-4 bg-black/20 border border-border rounded-sm">
-                            <div className="flex items-center gap-2 mb-2">
-                               <Settings2 className="w-3 h-3 text-primary" />
-                               <span className="text-[9px] font-bold text-primary uppercase">Configuration d'Action</span>
+                         <div className="grid grid-cols-2 gap-4 p-4 bg-black/20 border border-border rounded-sm">
+                            <div className="space-y-1">
+                               <label className="text-[8px] font-bold text-muted-foreground uppercase">Type</label>
+                               <select 
+                                value={step.action.type} 
+                                onChange={e => handleUpdateStepField(idx, 'action_type', e)}
+                                className="w-full bg-black border border-border rounded-sm h-8 text-[9px] font-bold uppercase px-2"
+                               >
+                                 <option value="confirmation">CONFIRMATION</option>
+                                 <option value="valve_operation">VANNE / VALVE</option>
+                                 <option value="command">COMMANDE</option>
+                               </select>
                             </div>
-                            <div className="grid grid-cols-2 gap-4">
-                               <div className="space-y-1">
-                                  <label className="text-[8px] font-bold text-muted-foreground uppercase">Type</label>
-                                  <select 
-                                    value={step.action.type} 
-                                    onChange={e => handleUpdateStepField(idx, 'action_type', e)}
-                                    className="w-full bg-black border border-border rounded-sm h-8 text-[9px] font-bold uppercase px-2"
-                                  >
-                                    <option value="confirmation">CONFIRMATION</option>
-                                    <option value="valve_operation">VANNE / VALVE</option>
-                                    <option value="command">COMMANDE</option>
-                                  </select>
-                               </div>
-                               <div className="space-y-1">
-                                  <label className="text-[8px] font-bold text-muted-foreground uppercase">Délai Estimé (s)</label>
-                                  <Input 
-                                    type="number" 
-                                    value={step.duration.value} 
-                                    onChange={e => handleUpdateStepField(idx, 'duration_value', e)}
-                                    className="h-8 bg-black/40 font-code text-[10px]"
-                                  />
-                               </div>
+                            <div className="space-y-1">
+                               <label className="text-[8px] font-bold text-muted-foreground uppercase">Délai Estimé (s)</label>
+                               <Input 
+                                type="number" 
+                                value={step.duration.value} 
+                                onChange={e => handleUpdateStepField(idx, 'duration_value', e)}
+                                className="h-8 bg-black/40 font-code text-[10px]"
+                               />
                             </div>
                          </div>
                       </div>
@@ -423,68 +350,28 @@ export default function DatasetPage() {
                     type="button" 
                     variant="outline" 
                     onClick={handleAddStep} 
-                    className="w-full h-12 border-dashed border-primary/30 hover:border-primary/60 hover:bg-primary/5 uppercase text-[10px] font-bold text-primary transition-all"
+                    className="w-full h-12 border-dashed border-primary/30 hover:border-primary/60 uppercase text-[10px] font-bold text-primary"
                   >
                     <Plus className="w-4 h-4 mr-2" /> Ajouter une Action Opérationnelle
                   </Button>
                 </div>
 
-                <div className="pt-8 border-t border-border/30">
-                  <Button 
-                    type="submit" 
-                    disabled={isUploading} 
-                    className="w-full h-16 bg-primary text-primary-foreground font-headline font-bold text-sm uppercase shadow-[0_0_30px_rgba(50,181,212,0.3)]"
-                  >
-                    {isUploading ? <Loader2 className="w-6 h-6 animate-spin mr-3" /> : <Zap className="w-6 h-6 mr-3" />}
-                    Forger la Procédure dans le Registre
-                  </Button>
-                </div>
+                <Button 
+                  type="submit" 
+                  disabled={isUploading} 
+                  className="w-full h-16 bg-primary text-primary-foreground font-headline font-bold text-sm uppercase shadow-2xl"
+                >
+                  {isUploading ? <Loader2 className="w-6 h-6 animate-spin mr-3" /> : <Zap className="w-6 h-6 mr-3" />}
+                  Forger la Procédure dans le Registre
+                </Button>
               </form>
             </TabsContent>
 
-            <TabsContent value="qa" className="animate-in fade-in slide-in-from-right-4 duration-500">
-              <form onSubmit={handleForgeQA} className="space-y-6 max-w-4xl mx-auto pb-24">
-                <Card className="p-8 border-secondary/20 bg-black/40 space-y-6 shadow-2xl">
-                  <div className="flex items-center gap-3 border-b border-border/50 pb-4">
-                    <BookOpen className="w-6 h-6 text-secondary" />
-                    <div>
-                      <h3 className="text-xl font-headline font-bold uppercase text-white tracking-tight">Injection Sémantique</h3>
-                    </div>
-                  </div>
-
-                  <div className="space-y-5">
-                    <div className="space-y-2">
-                       <label className="text-[9px] font-bold text-secondary uppercase tracking-widest">Titre de l'Item</label>
-                       <Input value={qaTitle} onChange={e => setQaTitle(e.target.value)} placeholder="EX: CONSIGNES CRF" className="h-12 bg-black/60 border-secondary/20" />
-                    </div>
-
-                    <div className="space-y-2">
-                       <label className="text-[9px] font-bold text-secondary uppercase tracking-widest">Réponse technique</label>
-                       <div className="relative">
-                          <Textarea value={qaAnswer} onChange={e => setQaAnswer(e.target.value)} placeholder="Saisissez ou dictez..." className="h-44 bg-black/60 border-border font-code text-sm pr-10" />
-                          <Button 
-                            type="button" 
-                            variant="ghost" 
-                            size="sm" 
-                            onClick={() => toggleDictation('qaAnswer')} 
-                            className={cn(
-                              "absolute bottom-2 right-2 h-8 px-3 text-[9px] uppercase font-bold border border-border/50", 
-                              voice.isListening && activeVoiceField === 'qaAnswer' ? "text-red-500 bg-red-500/10 animate-pulse" : "text-secondary"
-                           )}
-                          >
-                            {voice.isListening && activeVoiceField === 'qaAnswer' ? <MicOff className="w-3.5 h-3.5 mr-2" /> : <Mic className="w-3.5 h-3.5 mr-2" />}
-                            Dictée
-                          </Button>
-                       </div>
-                    </div>
-                  </div>
-
-                  <Button type="submit" disabled={isUploading} className="w-full h-16 bg-secondary text-secondary-foreground font-headline font-bold text-sm uppercase">
-                    {isUploading ? <Loader2 className="w-6 h-6 animate-spin mr-3" /> : <Zap className="w-6 h-6 mr-3" />}
-                    Injecter dans la Mémoire Cloud
-                  </Button>
-                </Card>
-              </form>
+            <TabsContent value="qa">
+              <div className="py-20 flex flex-col items-center justify-center opacity-30">
+                 <BookOpen className="w-12 h-12 mb-4" />
+                 <p className="font-code text-sm uppercase tracking-widest">Module Q/R en maintenance de liaison.</p>
+              </div>
             </TabsContent>
           </Tabs>
         </div>

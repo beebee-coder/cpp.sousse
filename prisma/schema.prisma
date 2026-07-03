@@ -1,15 +1,14 @@
 // prisma/schema.prisma
-// Standard de Sécurité Industrielle VisioNode V17.0
+// Version : Souveraine VisioNode V17.2
 
 generator client {
   provider      = "prisma-client-js"
-  engineType    = "wasm"
   binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
 datasource db {
   provider = "postgresql"
-  // NOTE: La propriété 'url' est désormais pilotée par prisma.config.ts (Standard Prisma 7.8.0)
+  url      = env("DATABASE_URL")
 }
 
 model User {
@@ -24,10 +23,10 @@ model User {
   updatedAt          DateTime             @updatedAt
   lastSyncAt         DateTime?
   
-  // Relations inverses obligatoires pour Prisma 7 (Fix P1012)
-  knowledgeItems     KnowledgeItem[]
+  // Relations inverses (Fix P1012)
   authoredProcedures Procedure[]
   executions         ProcedureExecution[]
+  knowledgeItems     KnowledgeItem[]
 
   @@map("users")
 }
@@ -71,7 +70,7 @@ model Procedure {
   postExecution  Json?
   metadata       Json
   authorId       String
-  author         User                 @relation(fields: [authorId], references: [id], onDelete: Restrict)
+  author         User                 @relation(fields: [authorId], references: [id])
   approvers      Json?
   syncedLocal    Boolean              @default(false)
   lastExecutedAt DateTime?
@@ -92,7 +91,7 @@ model ProcedureExecution {
   procedureId   String
   procedure     Procedure @relation(fields: [procedureId], references: [id], onDelete: Cascade)
   operatorId    String
-  operator      User      @relation(fields: [operatorId], references: [id], onDelete: Restrict)
+  operator      User      @relation(fields: [operatorId], references: [id])
   startTime     DateTime  @default(now())
   endTime       DateTime?
   status        String
@@ -109,6 +108,5 @@ model ProcedureExecution {
   updatedAt     DateTime  @updatedAt
 
   @@index([procedureId])
-  @@index([operatorId])
   @@map("procedure_executions")
 }
