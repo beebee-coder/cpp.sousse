@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * @fileOverview Station de Forge Industrielle V8.8.0.
- * Version : Concordance CRF V6.5 + Fix Sérialisation [object Event] + Fix Hydratation.
+ * @fileOverview Station de Forge Industrielle V8.8.1.
+ * Version : Correction critique de la SÉRIALISATION [object Event] et de l'hydratation.
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -54,7 +54,7 @@ export default function DatasetPage() {
   const [qaAnswer, setQaAnswer] = useState('');
   const [qaTags, setQaTags] = useState('');
 
-  // ✅ Fix Hydratation & Sérialisation : État initial client-only
+  // ✅ Fix Hydratation : État initial client-only via useEffect
   useEffect(() => { 
     setMounted(true); 
     const initialStep: ProcedureStep = { 

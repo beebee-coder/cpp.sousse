@@ -5,16 +5,19 @@ const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
 };
 
+/**
+ * Singleton Prisma Client pour VisioNode.
+ * Adapté pour Prisma 7.8.0 sans propriété 'url' statique dans le schéma.
+ */
 function createPrismaClient(): PrismaClient {
-  const url = process.env.DATABASE_URL;
+  const isDev = process.env.NODE_ENV === 'development';
   
-  if (!url) {
-    console.warn('⚠️ [PRISMA] Attention : DATABASE_URL non définie. En attente de liaison...');
+  if (!process.env.DATABASE_URL && isDev) {
+    console.warn('📡 [PRISMA] [WARN] DATABASE_URL manquante. Liaison Neon différée.');
   }
 
-  // En Prisma 7, la config datasource est pilotée par prisma.config.ts
   return new PrismaClient({
-    log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
+    log: isDev ? ['error', 'warn'] : ['error'],
   });
 }
 
