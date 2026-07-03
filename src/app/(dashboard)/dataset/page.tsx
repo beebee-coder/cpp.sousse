@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * @fileOverview Station de Forge Industrielle V12.5.
- * Version : Fix DEFINITIF Sérialisation [object Event] & Prisma 7 Stable.
+ * @fileOverview Station de Forge Industrielle V14.0.
+ * Version : Stabilisation Prisma 7 + Blindage total contre la sérialisation [object Event].
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -55,7 +55,7 @@ export default function DatasetPage() {
   const [qaAnswer, setQaAnswer] = useState('');
   const [qaTags, setQaTags] = useState('');
 
-  // Initialisation sécurisée (Hydratation Next.js 15)
+  // Initialisation sécurisée pour Next.js 15
   useEffect(() => { 
     setMounted(true); 
     const initialStep: ProcedureStep = { 
@@ -128,15 +128,23 @@ export default function DatasetPage() {
   };
 
   /**
-   * ✅ FIX SÉRIALISATION : Extraction forcée de la valeur textuelle.
-   * Empêche l'injection d'objets circulaires React/Event dans l'état JSON,
-   * ce qui résout l'erreur "[object Event]" affichée dans l'interface.
+   * ✅ BLINDAGE TOTAL SÉRIALISATION : 
+   * Intercepte les objets 'Event' et extrait uniquement le texte brut.
+   * Empêche définitivement l'erreur "[object Event]" dans les fichiers JSON.
    */
   const handleUpdateStepField = useCallback((idx: number, field: string, valueOrEvent: any) => {
-    // Si c'est un événement React, on extrait la valeur textuelle
-    const finalValue = (valueOrEvent && typeof valueOrEvent === 'object' && 'target' in valueOrEvent)
-      ? (valueOrEvent.target as HTMLInputElement).value
-      : valueOrEvent;
+    let finalValue: any;
+
+    if (valueOrEvent && typeof valueOrEvent === 'object' && 'target' in valueOrEvent) {
+      // Cas : Input standard (HTML InputEvent)
+      finalValue = (valueOrEvent.target as HTMLInputElement).value;
+    } else if (valueOrEvent && typeof valueOrEvent === 'object' && '_reactName' in valueOrEvent) {
+      // Cas : React SyntheticEvent complexe
+      finalValue = (valueOrEvent.target as any).value;
+    } else {
+      // Cas : Valeur directe (dictée vocale ou appel manuel)
+      finalValue = valueOrEvent;
+    }
 
     setProcSteps(prev => {
       const next = [...prev];

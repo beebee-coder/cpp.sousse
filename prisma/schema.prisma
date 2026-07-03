@@ -1,80 +1,66 @@
-// prisma/schema.prisma
-
 generator client {
-  provider        = "prisma-client-js"
-  previewFeatures = []
-  binaryTargets   = ["native", "debian-openssl-3.0.x"]
+  provider = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
 datasource db {
   provider = "postgresql"
-  // Note : La propriété 'url' est gérée par prisma.config.ts pour Prisma 7.8.0+
+  url      = env("DATABASE_URL")
 }
 
-// ==========================================
-// MODÈLE UTILISATEURS & ACCRÉDITATION
-// ==========================================
 model User {
-  id              String               @id @default(cuid())
+  id              String      @id @default(cuid())
   firstName       String
   lastName        String
   password        String
-  email           String               @unique
-  role            String               @default("user")
-  approved        Boolean              @default(false)
-  createdAt       DateTime             @default(now())
-  updatedAt       DateTime             @updatedAt
+  email           String      @unique
+  role            String      @default("user")
+  approved        Boolean     @default(false)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
   lastSyncAt      DateTime?
   
-  // Relations inverses (Fix P1012)
+  knowledgeItems  KnowledgeItem[]
   authoredProcedures Procedure[]
-  executions         ProcedureExecution[]
-  knowledgeItems     KnowledgeItem[]
+  executions      ProcedureExecution[]
 
   @@map("users")
 }
 
-// ==========================================
-// MODÈLE CONNAISSANCES RAG
-// ==========================================
 model KnowledgeItem {
-  id              String   @id @default(cuid())
+  id              String      @id @default(cuid())
   userId          String
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type            String   // 'qa' | 'procedure_chunk' | 'document'
+  user            User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type            String      // 'qa' | 'manual' | 'note'
   title           String
   question        String?
   answer          String?
   steps           Json?
   tags            String[]
   category        String?
-  difficulty      String   @default("medium")
-  isPublic        Boolean  @default(true)
-  syncedLocal     Boolean  @default(false)
+  difficulty      String      @default("medium")
+  isPublic        Boolean     @default(true)
+  syncedLocal     Boolean     @default(false)
   vectorId        String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
 
   @@index([userId])
   @@map("knowledge_items")
 }
 
-// ==========================================
-// MOTEUR DE PROCÉDURES (STANDARD CRF)
-// ==========================================
 model Procedure {
-  id              String               @id @default(cuid())
-  code            String               @unique
+  id              String      @id @default(cuid())
+  code            String      @unique
   title           String
   description     String?
-  category        String               @default("OPERATION")
+  category        String      @default("OPERATION")
   subcategory     String?
-  department      String               @default("PRODUCTION")
-  criticality     String               @default("MEDIUM")
-  version         String               @default("1.0.0")
-  status          String               @default("DRAFT")
+  department      String      @default("PRODUCTION")
+  criticality     String      @default("MEDIUM")
+  version         String      @default("1.0.0")
+  status          String      @default("DRAFT")
   
-  // Données structurées
   prerequisites   Json
   steps           Json
   parameters      Json?
@@ -82,19 +68,18 @@ model Procedure {
   metadata        Json
   
   authorId        String
-  author          User                 @relation(fields: [authorId], references: [id])
+  author          User        @relation(fields: [authorId], references: [id])
   approvers       Json?
   
-  syncedLocal     Boolean              @default(false)
+  syncedLocal     Boolean     @default(false)
   lastExecutedAt  DateTime?
-  executionCount  Int                  @default(0)
+  executionCount  Int         @default(0)
   avgDuration     Int?
   successRate     Float?
   
-  createdAt       DateTime             @default(now())
-  updatedAt       DateTime             @updatedAt
-
-  // Relation inverse
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  
   executions      ProcedureExecution[]
 
   @@index([code])
@@ -102,20 +87,17 @@ model Procedure {
   @@map("procedures")
 }
 
-// ==========================================
-// SUIVI D'EXÉCUTION & AUDIT
-// ==========================================
 model ProcedureExecution {
-  id              String    @id @default(cuid())
+  id              String      @id @default(cuid())
   procedureId     String
-  procedure       Procedure @relation(fields: [procedureId], references: [id], onDelete: Cascade)
+  procedure       Procedure   @relation(fields: [procedureId], references: [id], onDelete: Cascade)
   operatorId      String
-  operator        User      @relation(fields: [operatorId], references: [id])
+  operator        User        @relation(fields: [operatorId], references: [id])
   
-  startTime       DateTime  @default(now())
+  startTime       DateTime    @default(now())
   endTime         DateTime?
-  status          String
-  currentStep     Int       @default(-1)
+  status          String      // 'RUNNING', 'COMPLETED', 'FAILED', 'ALARM'
+  currentStep     Int         @default(-1)
   stepsStatus     Json
   totalDuration   Int?
   
@@ -126,11 +108,10 @@ model ProcedureExecution {
   notes           String?
   signature       String?
   
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
 
   @@index([procedureId])
   @@index([operatorId])
-  @@index([status])
   @@map("procedure_executions")
 }

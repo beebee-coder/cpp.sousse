@@ -1,13 +1,13 @@
 import { defineConfig } from 'prisma/config';
 import * as dotenv from 'dotenv';
 
-// Charger explicitement les variables d'environnement
+// Charger explicitement les variables d'environnement pour le build/seed
 dotenv.config();
 
 /**
  * Configuration Prisma 7.8.0 Stable.
- * Pilote l'injection de DATABASE_URL pour l'adaptateur Neon WASM.
- * Cette configuration remplace le champ 'url' dans schema.prisma.
+ * Pilote l'injection de DATABASE_URL pour l'adaptateur Neon.
+ * Cette configuration assure la concordance avec le schéma lors de la génération.
  */
 export default defineConfig({
   schema: './prisma/schema.prisma',
