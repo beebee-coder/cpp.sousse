@@ -1,38 +1,74 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { addPendingUser } from '@/lib/auth-users';
+import { Role } from '@prisma/client';
 
-export async function POST(request: NextRequest) {
+export async function POST(req: NextRequest) {
   try {
-    const body = await request.json();
-    const firstName = String(body?.firstName ?? '').trim();
-    const lastName = String(body?.lastName ?? '').trim();
-    const password = String(body?.password ?? '').trim();
-    const role = String(body?.role ?? 'user').trim();
+    const body = await req.json();
+    const { firstName, lastName, password, role } = body;
 
+    // Validation des champs requis
     if (!firstName || !lastName || !password) {
       return NextResponse.json(
-        { success: false, message: 'Prénom, nom et mot de passe sont requis.' },
-        { status: 400 },
+        { error: 'Tous les champs sont requis' },
+        { status: 400 }
       );
     }
 
-    const created = await addPendingUser(firstName, lastName, password, role);
-    if (!created) {
+    // Valider que le rôle est valide (si fourni)
+    let validRole: Role = Role.user;
+    if (role) {
+      // Vérifier si le rôle est valide dans l'enum Role
+      const roleValues = Object.values(Role);
+      if (roleValues.includes(role as Role)) {
+        validRole = role as Role;
+      } else {
+        return NextResponse.json(
+          { error: 'Rôle invalide' },
+          { status: 400 }
+        );
+      }
+    }
+
+    const result = await addPendingUser(
+      firstName,
+      lastName,
+      password,
+      validRole
+    );
+
+    if (!result.success) {
       return NextResponse.json(
-        { success: false, message: 'Cet utilisateur existe déjà ou est déjà en attente.' },
-        { status: 409 },
+        { error: result.error },
+        { status: 400 }
+      );
+    }
+
+    // Vérifier que result.user existe avant de l'utiliser
+    if (!result.user) {
+      return NextResponse.json(
+        { error: 'Utilisateur créé mais données non disponibles' },
+        { status: 500 }
       );
     }
 
     return NextResponse.json({
       success: true,
-      message: 'Demande d’accès envoyée à l’administrateur. Veuillez attendre la validation.',
-    });
+      user: {
+        id: result.user.id,
+        firstName: result.user.firstName,
+        lastName: result.user.lastName,
+        email: result.user.email,
+        role: result.user.role,
+        approved: result.user.approved
+      }
+    }, { status: 201 });
+
   } catch (error: any) {
-    console.error('[API AUTH REGISTER] Error:', error?.message || error);
+    console.error('❌ [REGISTER] Erreur:', error.message);
     return NextResponse.json(
-      { success: false, message: 'Erreur serveur lors de l’enregistrement de la demande.' },
-      { status: 500 },
+      { error: 'Erreur interne du serveur' },
+      { status: 500 }
     );
   }
 }

@@ -1,15 +1,4 @@
-export type UserRole = 'admin' | 'chef-de-bloc' | 'chef-de-quart' | 'user';
-
-export interface AuthUser {
-  id: string;
-  firstName: string;
-  lastName: string;
-  password: string;
-  role: UserRole;
-  approved: boolean;
-  createdAt: number;
-}
-
+import { Role } from '@prisma/client';
 import {
   addPendingUser as addPendingUserStore,
   approveUser as approveUserStore,
@@ -19,11 +8,25 @@ import {
   listPendingUsers as listPendingUsersStore,
 } from '@/lib/auth-store';
 
+// Ré-exporter le type Role depuis Prisma pour assurer la cohérence
+export type UserRole = Role;
+
+export interface AuthUser {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  password: string;
+  role: Role;
+  approved: boolean;
+  createdAt: number;
+}
+
 export async function authenticateUser(email: string, password: string) {
   return authenticateUserStore(email, password);
 }
 
-export async function addPendingUser(firstName: string, lastName: string, password: string, role: string) {
+export async function addPendingUser(firstName: string, lastName: string, password: string, role: Role = Role.user) {
   return addPendingUserStore(firstName, lastName, password, role);
 }
 
@@ -43,33 +46,34 @@ export async function getAllUsers() {
   return getAllUsersStore();
 }
 
-export function canAccessRoute(role: UserRole | undefined, pathname: string) {
+export function canAccessRoute(role: Role | undefined, pathname: string) {
   if (!role) {
     return false;
   }
 
   const normalizedPath = pathname === '/' ? '/dashboard' : pathname;
 
-  if (role === 'admin') {
+  if (role === Role.admin) {
     return true;
   }
 
-  const allowedRoutes: Record<string, string[]> = {
-    'chef-de-bloc': ['/dashboard', '/chat', '/dataset', '/bank', '/conference', '/download'],
-    'chef-de-quart': ['/dashboard', '/chat', '/dataset', '/bank', '/conference', '/download'],
-    user: ['/chat', '/dataset'],
+  const allowedRoutes: Record<Role, string[]> = {
+    [Role.admin]: ['/dashboard', '/chat', '/dataset', '/bank', '/conference', '/download', '/users', '/settings'],
+    [Role.chef_de_bloc]: ['/dashboard', '/chat', '/dataset', '/bank', '/conference', '/download'],
+    [Role.chef_de_quart]: ['/dashboard', '/chat', '/dataset', '/bank', '/conference', '/download'],
+    [Role.user]: ['/chat', '/dataset'],
   };
 
   return allowedRoutes[role]?.includes(normalizedPath) ?? false;
 }
 
-export function getHomePath(role: UserRole | undefined) {
+export function getHomePath(role: Role | undefined) {
   switch (role) {
-    case 'admin':
-    case 'chef-de-bloc':
-    case 'chef-de-quart':
+    case Role.admin:
+    case Role.chef_de_bloc:
+    case Role.chef_de_quart:
       return '/dashboard';
-    case 'user':
+    case Role.user:
       return '/chat';
     default:
       return '/auth/signin';

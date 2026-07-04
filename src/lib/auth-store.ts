@@ -1,6 +1,6 @@
-// src/lib/auth-store.ts
 import { prisma } from '@/lib/db/prisma-client';
 import bcrypt from 'bcryptjs';
+import { Role } from '@prisma/client';
 
 // ============================================================
 // 🔐 AUTHENTIFICATION
@@ -49,7 +49,7 @@ export async function authenticateUser(email: string, password: string) {
       return { success: false, error: 'INVALID_CREDENTIALS' };
     }
 
-    if (!user.approved && user.role !== 'admin') {
+    if (!user.approved && user.role !== Role.admin) {
       console.warn(`⚠️ [AUTH_STORE] Compte non approuvé: ${email}`);
       return { success: false, error: 'NOT_APPROVED' };
     }
@@ -78,7 +78,7 @@ export async function authenticateUser(email: string, password: string) {
 // 👤 GESTION DES UTILISATEURS
 // ============================================================
 
-export async function addPendingUser(firstName: string, lastName: string, password: string, role: string = 'user') {
+export async function addPendingUser(firstName: string, lastName: string, password: string, role: Role = Role.user) {
   try {
     const email = `${firstName.toLowerCase()}.${lastName.toLowerCase()}@visionode.local`;
     const existing = await prisma.user.findUnique({ where: { email } });
@@ -87,14 +87,15 @@ export async function addPendingUser(firstName: string, lastName: string, passwo
     }
 
     const hashedPassword = await bcrypt.hash(password, 12);
+    
     const user = await prisma.user.create({
       data: {
         firstName,
         lastName,
         email,
         password: hashedPassword,
-        role: role || 'user',
-        approved: role === 'admin',
+        role: role,
+        approved: role === Role.admin,
         createdAt: new Date(),
         updatedAt: new Date()
       }
