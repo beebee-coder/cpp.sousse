@@ -1,10 +1,12 @@
-
 import { PrismaClient } from '@prisma/client';
 import { PrismaNeon } from '@prisma/adapter-neon';
 import { Pool, neonConfig } from '@neondatabase/serverless';
 import ws from 'ws';
 
-// ✅ Configuration WebSocket Neon pour environnement Node
+/**
+ * Configuration de l'adaptateur Neon WASM pour Prisma 5.22.0.
+ * Résout les erreurs de liaison WebSocket en environnement Node.
+ */
 if (typeof window === 'undefined') {
   neonConfig.webSocketConstructor = ws;
 }
@@ -13,12 +15,10 @@ const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
 };
 
-/**
- * Singleton Prisma 5.22.0 stabilisé pour Neon.
- */
 function createPrismaClient(): PrismaClient {
   const ts = new Date().toLocaleTimeString();
-  const connectionString = (process.env.DATABASE_URL || '').replace(/^"|"$/g, '').trim();
+  const rawUrl = process.env.DATABASE_URL || '';
+  const connectionString = rawUrl.replace(/^"|"$/g, '').trim();
 
   if (!connectionString) {
     console.warn(`⚠️ [${ts}] [Prisma] DATABASE_URL absente.`);
@@ -26,12 +26,13 @@ function createPrismaClient(): PrismaClient {
   }
 
   try {
-    console.log(`📡 [${ts}] [Prisma] Liaison Neon via Adaptateur WASM.`);
+    console.log(`📡 [${ts}] [Prisma] Liaison Adaptateur Neon V5 (Stable).`);
     const pool = new Pool({ connectionString });
     const adapter = new PrismaNeon(pool);
+    // @ts-ignore - Compatibilité Prisma 5/Adapter
     return new PrismaClient({ adapter });
   } catch (err: any) {
-    console.error(`❌ [${ts}] [Prisma] Échec Liaison :`, err.message);
+    console.error(`❌ [${ts}] [Prisma] Échec Initialisation :`, err.message);
     return new PrismaClient();
   }
 }

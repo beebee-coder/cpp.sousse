@@ -1,4 +1,3 @@
-
 import type { NextConfig } from 'next';
 
 const isDesktop = process.env.TAURI_ENV === 'true';
@@ -7,7 +6,7 @@ const isDesktop = process.env.TAURI_ENV === 'true';
 const nextConfig: NextConfig = {
   output: isDesktop ? 'export' : undefined,
   
-  // Désactivation du cache Webpack pour stabiliser l'environnement Cloud et éviter les 404 statiques
+  // Désactivation du cache Webpack pour stabiliser l'environnement Cloud
   webpack: (config, { isServer }) => {
     if (!isServer) {
       config.cache = false;
@@ -15,6 +14,7 @@ const nextConfig: NextConfig = {
     return config;
   },
 
+  // ✅ ws ajouté pour résoudre TypeError: bufferUtil.mask is not a function
   serverExternalPackages: [
     'onnxruntime-node', 
     'chromadb', 
@@ -24,7 +24,8 @@ const nextConfig: NextConfig = {
     'canvas',
     'jsdom',
     'prisma',
-    '@prisma/client'
+    '@prisma/client',
+    'ws'
   ],
   
   images: {

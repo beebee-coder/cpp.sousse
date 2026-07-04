@@ -1,93 +1,63 @@
-
-import { neon } from '@neondatabase/serverless';
+import { Pool } from '@neondatabase/serverless';
 import * as dotenv from 'dotenv';
-import * as path from 'path';
+import path from 'path';
 
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
-const connectionString = (process.env.DATABASE_URL || '').replace(/^"|"$/g, '').trim();
-
-async function applySchema() {
-  console.log('📡 [SCHEMA] Synchronisation physique Neon...');
-  
+/**
+ * Script de Réparation SQL Atomique.
+ * Injecte les colonnes manquantes (lastSyncAt) dans la base physique Neon.
+ */
+async function run() {
+  const connectionString = (process.env.DATABASE_URL || '').replace(/^"|"$/g, '').trim();
   if (!connectionString) {
-    console.error('❌ [SCHEMA] DATABASE_URL manquante.');
+    console.error('❌ DATABASE_URL manquante.');
     process.exit(1);
   }
 
-  const sql = neon(connectionString);
+  const pool = new Pool({ connectionString });
+  console.log('📡 [REPAIR] Connexion au registre Neon...');
 
   try {
-    // 1. Table des utilisateurs
-    await sql`
-      CREATE TABLE IF NOT EXISTS "users" (
-        "id" TEXT PRIMARY KEY,
-        "firstName" TEXT NOT NULL,
-        "lastName" TEXT NOT NULL,
-        "email" TEXT UNIQUE NOT NULL,
-        "password" TEXT NOT NULL,
-        "role" TEXT NOT NULL DEFAULT 'user',
-        "approved" BOOLEAN NOT NULL DEFAULT false,
-        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        "updatedAt" TIMESTAMP(3) NOT NULL,
-        "lastSyncAt" TIMESTAMP(3)
-      )
-    `;
+    // 1. Ajout sécurisé de la colonne lastSyncAt
+    await pool.query(`
+      DO $$ 
+      BEGIN 
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='lastSyncAt') THEN
+          ALTER TABLE "users" ADD COLUMN "lastSyncAt" TIMESTAMP(3);
+          RAISE NOTICE '✅ Colonne lastSyncAt ajoutée à la table users.';
+        ELSE
+          RAISE NOTICE 'ℹ️ La colonne lastSyncAt existe déjà.';
+        END IF;
+      END $$;
+    `);
 
-    // Patch : S'assurer que lastSyncAt existe si la table existait déjà
-    try {
-      await sql`ALTER TABLE "users" ADD COLUMN "lastSyncAt" TIMESTAMP(3)`;
-    } catch (e) {
-      // Colonne probablement déjà présente
-    }
-
-    // 2. Table des procédures
-    await sql`
+    // 2. Vérification de la table procedures (étapes JSON)
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS "procedures" (
         "id" TEXT PRIMARY KEY,
         "title" TEXT NOT NULL,
         "code" TEXT UNIQUE NOT NULL,
         "description" TEXT,
         "category" TEXT NOT NULL,
-        "department" TEXT,
-        "criticality" TEXT NOT NULL DEFAULT 'low',
-        "version" TEXT NOT NULL DEFAULT '1.0.0',
-        "status" TEXT NOT NULL DEFAULT 'DRAFT',
+        "criticality" TEXT DEFAULT 'NORMAL',
+        "status" TEXT DEFAULT 'DRAFT',
         "steps" JSONB NOT NULL,
         "prerequisites" JSONB,
         "authorId" TEXT NOT NULL,
-        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        "updatedAt" TIMESTAMP(3) NOT NULL,
+        "createdAt" TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP,
         "lastExecutedAt" TIMESTAMP(3),
-        "executionCount" INTEGER NOT NULL DEFAULT 0
-      )
-    `;
+        "executionCount" INTEGER DEFAULT 0
+      );
+    `);
 
-    // 3. Table des connaissances sémantiques
-    await sql`
-      CREATE TABLE IF NOT EXISTS "knowledge_items" (
-        "id" TEXT PRIMARY KEY,
-        "type" TEXT NOT NULL DEFAULT 'qa',
-        "title" TEXT NOT NULL,
-        "question" TEXT,
-        "answer" TEXT,
-        "content" TEXT,
-        "steps" JSONB,
-        "tags" TEXT[],
-        "category" TEXT,
-        "difficulty" TEXT,
-        "isPublic" BOOLEAN NOT NULL DEFAULT true,
-        "userId" TEXT NOT NULL,
-        "syncedLocal" BOOLEAN NOT NULL DEFAULT false,
-        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        "updatedAt" TIMESTAMP(3) NOT NULL
-      )
-    `;
-
-    console.log('✅ [SCHEMA] Registre SQL synchronisé.');
-  } catch (error: any) {
-    console.error('❌ [SCHEMA] Échec :', error.message);
+    console.log('✅ [REPAIR] Registre SQL stabilisé.');
+  } catch (err: any) {
+    console.error('❌ [REPAIR] Échec SQL :', err.message);
+  } finally {
+    await pool.end();
   }
 }
 
-applySchema();
+run();

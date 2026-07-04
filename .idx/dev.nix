@@ -6,6 +6,7 @@
   # Use https://search.nixos.org/packages to find packages
   packages = [
     pkgs.nodejs_22
+    pkgs.python3 
     pkgs.zulu
     pkgs.nodejs_20 # ou votre version
   pkgs.openssl   # <--- Ajoutez ceci

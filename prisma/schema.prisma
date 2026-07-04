@@ -1,8 +1,6 @@
-
 generator client {
   provider        = "prisma-client-js"
   previewFeatures = ["driverAdapters"]
-  binaryTargets   = ["native", "debian-openssl-3.0.x"]
 }
 
 datasource db {
@@ -18,84 +16,75 @@ enum Role {
 }
 
 model User {
-  id            String    @id @default(uuid())
-  firstName     String
-  lastName      String
+  id            String    @id @default(cuid())
   email         String    @unique
+  firstName     String?
+  lastName      String?
   password      String
   role          Role      @default(user)
   approved      Boolean   @default(false)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   lastSyncAt    DateTime?
-
-  // Relations bidirectionnelles
-  authoredProcedures Procedure[]      @relation("UserProcedures")
+  
+  // Relations inverses pour Prisma 5/7
+  authoredProcedures Procedure[]
   executions         ProcedureExecution[]
   knowledgeItems     KnowledgeItem[]
+
+  @@map("users")
 }
 
 model Procedure {
-  id             String   @id @default(uuid())
+  id             String    @id @default(cuid())
   title          String
-  code           String   @unique
+  code           String    @unique
   description    String?
   category       String
-  department     String?
-  criticality    String   @default("low")
-  version        String   @default("1.0.0")
-  status         String   @default("DRAFT") // DRAFT, ACTIVE, ARCHIVED
-  
-  // Contenu structuré (JSON)
-  steps          Json     // Array of steps
-  prerequisites  Json?    // Prerequisites items
-  
+  criticality    String    @default("NORMAL")
+  status         String    @default("DRAFT")
+  steps          Json      // Stockage structuré des étapes CRF
+  prerequisites  Json?
   authorId       String
-  author         User     @relation("UserProcedures", fields: [authorId], references: [id])
-  
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  author         User      @relation(fields: [authorId], references: [id])
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
   lastExecutedAt DateTime?
-  executionCount Int      @default(0)
+  executionCount Int       @default(0)
 
   executions     ProcedureExecution[]
+
+  @@map("procedures")
 }
 
 model ProcedureExecution {
-  id            String    @id @default(uuid())
+  id            String    @id @default(cuid())
   procedureId   String
   procedure     Procedure @relation(fields: [procedureId], references: [id])
   operatorId    String
   operator      User      @relation(fields: [operatorId], references: [id])
-  
   startTime     DateTime  @default(now())
   endTime       DateTime?
-  status        String    @default("IN_PROGRESS") // IN_PROGRESS, COMPLETED, FAILED, ABORTED
+  status        String    @default("IN_PROGRESS")
+  stepsStatus   Json      // État de validation de chaque étape
+  totalDuration Int?      // en secondes
   
-  // Détails d'exécution (JSON)
-  stepsStatus   Json?     // Map of step ID -> status/duration
-  totalDuration Int?      // seconds
-  
-  createdAt     DateTime  @default(now())
+  @@map("procedure_executions")
 }
 
 model KnowledgeItem {
-  id          String   @id @default(uuid())
-  type        String   @default("qa") // qa, manual, technical_note
-  title       String
-  question    String?
-  answer      String?
-  content     String?  // Contenu libre ou brut
-  steps       Json?    // Si c'est une mini-procédure
-  tags        String[]
-  category    String?
-  difficulty  String?
-  isPublic    Boolean  @default(true)
-  
-  userId      String
-  user        User     @relation(fields: [userId], references: [id])
-  
-  syncedLocal Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id        String   @id @default(cuid())
+  title     String
+  type      String   // 'document', 'qa', 'snippet'
+  content   String?
+  question  String?
+  answer    String?
+  tags      String[]
+  category  String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("knowledge_items")
 }
