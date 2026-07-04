@@ -10,100 +10,92 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model User {
-  id                 String               @id @default(cuid())
-  firstName          String
-  lastName           String
-  password           String
-  email              String               @unique
-  role               String               @default("user")
-  approved           Boolean              @default(false)
-  createdAt          DateTime             @default(now())
-  updatedAt          DateTime             @updatedAt
-  lastSyncAt         DateTime?
-  knowledgeItems     KnowledgeItem[]
-  authoredProcedures Procedure[]
-  executions         ProcedureExecution[]
-
-  @@map("users")
+enum Role {
+  admin
+  chef_de_bloc
+  chef_de_quart
+  user
 }
 
-model KnowledgeItem {
-  id          String   @id @default(cuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type        String
-  title       String
-  question    String?
-  answer      String?
-  steps       Json?
-  tags        String[]
-  category    String?
-  difficulty  String   @default("medium")
-  isPublic    Boolean  @default(true)
-  syncedLocal Boolean  @default(false)
-  vectorId    String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+model User {
+  id            String    @id @default(uuid())
+  firstName     String
+  lastName      String
+  email         String    @unique
+  password      String
+  role          Role      @default(user)
+  approved      Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  lastSyncAt    DateTime?
 
-  @@index([userId])
-  @@map("knowledge_items")
+  // Relations bidirectionnelles
+  authoredProcedures Procedure[]      @relation("UserProcedures")
+  executions         ProcedureExecution[]
+  knowledgeItems     KnowledgeItem[]
 }
 
 model Procedure {
-  id             String               @id @default(cuid())
-  code           String               @unique
+  id             String   @id @default(uuid())
   title          String
+  code           String   @unique
   description    String?
-  category       String               @default("OPERATION")
-  subcategory    String?
-  department     String               @default("PRODUCTION")
-  criticality    String               @default("MEDIUM")
-  version        String               @default("1.0.0")
-  status         String               @default("DRAFT")
-  prerequisites  Json
-  steps          Json
-  parameters     Json?
-  postExecution  Json?
-  metadata       Json
+  category       String
+  department     String?
+  criticality    String   @default("low")
+  version        String   @default("1.0.0")
+  status         String   @default("DRAFT") // DRAFT, ACTIVE, ARCHIVED
+  
+  // Contenu structuré (JSON)
+  steps          Json     // Array of steps
+  prerequisites  Json?    // Prerequisites items
+  
   authorId       String
-  author         User                 @relation(fields: [authorId], references: [id])
-  syncedLocal    Boolean              @default(false)
+  author         User     @relation("UserProcedures", fields: [authorId], references: [id])
+  
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
   lastExecutedAt DateTime?
-  executionCount Int                  @default(0)
-  avgDuration    Int?
-  successRate    Float?
-  createdAt      DateTime             @default(now())
-  updatedAt      DateTime             @updatedAt
-  executions     ProcedureExecution[]
+  executionCount Int      @default(0)
 
-  @@index([code])
-  @@index([status])
-  @@map("procedures")
+  executions     ProcedureExecution[]
 }
 
 model ProcedureExecution {
-  id            String    @id @default(cuid())
+  id            String    @id @default(uuid())
   procedureId   String
-  procedure     Procedure @relation(fields: [procedureId], references: [id], onDelete: Cascade)
+  procedure     Procedure @relation(fields: [procedureId], references: [id])
   operatorId    String
   operator      User      @relation(fields: [operatorId], references: [id])
+  
   startTime     DateTime  @default(now())
   endTime       DateTime?
-  status        String
-  currentStep   Int       @default(-1)
-  stepsStatus   Json
-  totalDuration Int?
-  events        Json?
-  alarms        Json?
-  fallbacks     Json?
-  result        Json?
-  notes         String?
-  signature     String?
+  status        String    @default("IN_PROGRESS") // IN_PROGRESS, COMPLETED, FAILED, ABORTED
+  
+  // Détails d'exécution (JSON)
+  stepsStatus   Json?     // Map of step ID -> status/duration
+  totalDuration Int?      // seconds
+  
   createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+}
 
-  @@index([procedureId])
-  @@index([operatorId])
-  @@map("procedure_executions")
+model KnowledgeItem {
+  id          String   @id @default(uuid())
+  type        String   @default("qa") // qa, manual, technical_note
+  title       String
+  question    String?
+  answer      String?
+  content     String?  // Contenu libre ou brut
+  steps       Json?    // Si c'est une mini-procédure
+  tags        String[]
+  category    String?
+  difficulty  String?
+  isPublic    Boolean  @default(true)
+  
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  
+  syncedLocal Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }

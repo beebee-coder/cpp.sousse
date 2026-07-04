@@ -2,9 +2,13 @@
 import { prisma } from '../src/lib/db/prisma-client';
 import bcrypt from 'bcryptjs';
 
+/**
+ * Script d'amorçage industriel (V25.0).
+ * Identifiants root : admin@visionode.local / admin123
+ */
 async function main() {
   const ts = new Date().toLocaleTimeString();
-  console.log(`🌱 [${ts}] [SEED] Initialisation du Registre Industriel.`);
+  console.log(`🌱 [${ts}] [SEED] Initialisation du Registre.`);
 
   try {
     const hashedAdminPassword = await bcrypt.hash('admin123', 12);
@@ -21,6 +25,7 @@ async function main() {
         updatedAt: new Date()
       },
       create: {
+        id: 'admin-root-001',
         email: 'admin@visionode.local',
         firstName: 'Ahmed',
         lastName: 'Admin',
@@ -34,7 +39,6 @@ async function main() {
 
     console.log(`✅ [SEED] Admin configuré : ${admin.email}`);
 
-    // Seed Knowledge Items
     console.log('📚 [SEED] Injection des connaissances de base...');
     const knowledge = [
       {
@@ -59,7 +63,7 @@ async function main() {
       });
     }
 
-    console.log('✅ [SEED] Terminé avec succès.');
+    console.log('✅ [SEED] Registre initialisé avec succès.');
   } catch (err: any) {
     console.error('❌ [SEED] Échec critique :', err.message);
     process.exit(1);
