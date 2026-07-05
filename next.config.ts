@@ -8,9 +8,30 @@ const nextConfig: NextConfig = {
   output: isDesktop ? 'export' : undefined,
   
   // Désactivation du cache Webpack pour stabiliser l'environnement Cloud
-  webpack: (config, { isServer }) => {
+  webpack: (config: any, context: any) => {
+    const { isServer, isTurbopack } = context;
     if (!isServer) {
       config.cache = false;
+    }
+    if (!isTurbopack) {
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        fs: false,
+        net: false,
+        tls: false,
+        http2: false,
+        dns: false,
+      };
+      if (!isServer) {
+        config.externals = [...(config.externals || []), ...[
+          'chromadb',
+          'weaviate-client',
+          '@grpc/grpc-js',
+          'nice-grpc',
+          '@neondatabase/serverless',
+          '@prisma/adapter-neon',
+        ]];
+      }
     }
     return config;
   },
@@ -21,6 +42,8 @@ const nextConfig: NextConfig = {
     'chromadb', 
     'groq-sdk',
     'weaviate-client',
+    '@grpc/grpc-js',
+    'nice-grpc',
     'sharp',
     'canvas',
     'jsdom',
