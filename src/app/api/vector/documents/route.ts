@@ -1,6 +1,6 @@
 
 import { createHybridRoute } from '@/lib/api-route-creator';
-import { addDocuments, upsertDocuments } from '@/lib/chroma';
+import { upsertDocuments } from '@/lib/chroma';
 
 export const POST = createHybridRoute<{ collection: string; documents: any[]; upsert?: boolean }, any>({
   name: 'VECTOR_DOCUMENTS_POST',
@@ -23,7 +23,7 @@ export const POST = createHybridRoute<{ collection: string; documents: any[]; up
       if (upsert) {
         await upsertDocuments(collection, documents);
       } else {
-        await addDocuments(collection, documents);
+        await upsertDocuments(collection, documents);
       }
       return {
         success: true,

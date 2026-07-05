@@ -186,6 +186,10 @@ export class LocalEmbeddingFunction {
   }
 }
 
+export function getLocalEmbedder() {
+  return new LocalEmbeddingFunction();
+}
+
 let _chromaClient: any = null;
 export async function getChromaClient(): Promise<any> {
   if (IS_CLOUD) return null;

@@ -6,11 +6,11 @@
  * ✅ Premier appel : télécharge le modèle (~25 MB) une seule fois
  */
 import {
-  addDocuments,
+  upsertDocuments,
   semanticSearch,
   getOrCreateCollection,
   deleteCollection,
-  getLocalEmbedder,
+  LocalEmbeddingFunction,
   type DocumentToAdd,
 } from './chroma';
 
@@ -50,7 +50,7 @@ const SAMPLE_DOCUMENTS: DocumentToAdd[] = [
 const COLLECTION_NAME = 'demo_semantique';
 
 export async function runChromaDemo() {
-  const embedder = getLocalEmbedder();
+  const embedder = new LocalEmbeddingFunction();
 
   console.log('══════════════════════════════════════════════════════════');
   console.log('  🚀 ChromaDB + Embeddings locaux (all-MiniLM-L6-v2)');
@@ -70,7 +70,7 @@ export async function runChromaDemo() {
   // ÉTAPE 2 — Vectoriser et stocker
   console.log(`📥 ÉTAPE 2 : Vectorisation de ${SAMPLE_DOCUMENTS.length} documents...`);
   console.log('   ⏳ (Chargement du modèle au premier appel...)\n');
-  await addDocuments(COLLECTION_NAME, SAMPLE_DOCUMENTS, embedder);
+  await upsertDocuments(COLLECTION_NAME, SAMPLE_DOCUMENTS);
   console.log(`   ✅ ${SAMPLE_DOCUMENTS.length} documents vectorisés et stockés.\n`);
 
   // ÉTAPE 3 — Recherche générale
