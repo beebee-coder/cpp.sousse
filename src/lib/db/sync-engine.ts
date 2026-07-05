@@ -68,6 +68,8 @@ export const syncEngine = {
         const knowledgeType = item._knowledgeType || parsed.type || 'qa';
         const title = item._title || parsed.title || 'Sans titre';
 
+        const fileName = `${knowledgeType}_${item.id}.json`;
+
         // 1. Sauvegarde Registre Physique via API Route
         const regPath = knowledgeType === 'procedure' 
           ? `procedures/${item.id}/procedure.json` 
@@ -79,7 +81,18 @@ export const syncEngine = {
           content: JSON.stringify(parsed, null, 2)
         });
 
-        // 2. Vectorisation Locale via API Route
+        // 2. Injection dans INDEX_CHROMA via LocalDB avec gestion des doublons
+        await apiClient.post('/api/local-db', {
+          fileName,
+          content: JSON.stringify(parsed, null, 2),
+          metadata: {
+            knowledgeType,
+            cloudId: item.id,
+            tags: item.tags || [title]
+          }
+        });
+
+        // 3. Vectorisation Locale via API Route
         let semanticText = '';
         if (knowledgeType === 'qa') {
           semanticText = `Q: ${parsed.question}\nR: ${parsed.answer}`;
@@ -98,9 +111,9 @@ export const syncEngine = {
         });
 
         successIds.push(item.id);
-        console.log(`✅ [SYNC_VECTOR] [DONE] Item injecté localement : ${item.id}`);
+        console.log(`✅ [SYNC_LOCAL_DB] [DONE] Item injecté dans INDEX_CHROMA : ${fileName}`);
       } catch (err: any) {
-        console.error(`❌ [SYNC_VECTOR] [FAIL] Échec item ${item.id} :`, err.message);
+        console.error(`❌ [SYNC_LOCAL_DB] [FAIL] Échec item ${item.id} :`, err.message);
       }
     }
 

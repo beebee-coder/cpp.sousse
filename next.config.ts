@@ -1,3 +1,4 @@
+// next.config.ts
 import type { NextConfig } from 'next';
 
 const isDesktop = process.env.TAURI_ENV === 'true';
@@ -36,7 +37,7 @@ const nextConfig: NextConfig = {
   },
   
   typescript: { ignoreBuildErrors: true },
-  eslint: { ignoreDuringBuilds: true },
+  // ⚠️ eslint: { ignoreDuringBuilds: true }  // SUPPRIMÉ - à placer ailleurs
 };
 
 export default nextConfig;

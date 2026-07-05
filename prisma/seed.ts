@@ -1,19 +1,20 @@
-
-import { prisma } from '../src/lib/db/prisma-client';
+import dotenv from 'dotenv';
+import path from 'path';
+dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 import bcrypt from 'bcryptjs';
 
-/**
- * Script d'amorçage industriel (V25.0).
- * Identifiants root : admin@visionode.local / admin123
- */
+let prisma: any;
+
 async function main() {
+  const { prisma: p } = await import('../src/lib/db/prisma-client');
+  prisma = p;
   const ts = new Date().toLocaleTimeString();
   console.log(`🌱 [${ts}] [SEED] Initialisation du Registre.`);
 
   try {
     const hashedAdminPassword = await bcrypt.hash('admin123', 12);
 
-    console.log('👤 [SEED] Audit de l\'administrateur root...');
+    console.log("👤 [SEED] Audit de l'administrateur root...");
     const admin = await prisma.user.upsert({
       where: { email: 'admin@visionode.local' },
       update: {

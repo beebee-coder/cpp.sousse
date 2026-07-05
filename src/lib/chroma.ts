@@ -27,8 +27,10 @@ export interface SearchResult {
   score: number;
 }
 
-const REGISTRY_ITEMS_DIR = path.join(process.cwd(), '.registry', 'items');
-const REGISTRY_BANK_DIR = path.join(process.cwd(), '.registry', 'bank');
+const REGISTRY_ROOT = path.join(process.cwd(), '.registry');
+const REGISTRY_ITEMS_DIR = path.join(REGISTRY_ROOT, 'items');
+const REGISTRY_BANK_DIR = path.join(REGISTRY_ROOT, 'bank');
+const INDEX_CHROMA_DIR = path.join(REGISTRY_ROOT, 'INDEX_CHROMA');
 const CHROMA_DATA_DIR = path.join(process.cwd(), '.data', 'chromadb');
 
 const IS_CLOUD = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
@@ -39,6 +41,7 @@ export async function getSystemContextSummary() {
   const summary = {
     ragDocuments: 0,
     bankAssets: 0,
+    localDBFiles: 0,
     mode: IS_CLOUD ? 'CLOUD_DISTRIBUÉ' : 'STATION_LOCALE_FORGE',
   };
   try {
@@ -47,6 +50,10 @@ export async function getSystemContextSummary() {
     }
     if (fs.existsSync(REGISTRY_BANK_DIR)) {
       summary.bankAssets = fs.readdirSync(REGISTRY_BANK_DIR).length;
+    }
+    if (fs.existsSync(INDEX_CHROMA_DIR)) {
+      const files = fs.readdirSync(INDEX_CHROMA_DIR, { recursive: true, withFileTypes: false }) as string[];
+      summary.localDBFiles = files.filter(f => f.endsWith('.json')).length;
     }
   } catch (e) {}
   return summary;
@@ -121,6 +128,49 @@ export function fallbackSemanticSearch(query: string, nResults = 5, componentFil
             metadata: { ...data, origin: 'PHY_BANK', relPath: data.path, isMedia: true, mediaType: data.type },
             distance: 0,
             score: Math.min(score / 150, 1)
+          });
+        }
+      }
+    } catch (e) {}
+  }
+
+  if (fs.existsSync(INDEX_CHROMA_DIR)) {
+    try {
+      const scanForJson = (dir: string, baseRel: string) => {
+        let jsonFiles: string[] = [];
+        const items = fs.readdirSync(dir, { withFileTypes: true });
+        for (const item of items) {
+          const abs = path.join(dir, item.name);
+          const rel = path.posix.join(baseRel, item.name).replace(/\\/g, '/');
+          if (item.isDirectory()) {
+            jsonFiles = jsonFiles.concat(scanForJson(abs, rel));
+          } else if (item.name.endsWith('.json')) {
+            jsonFiles.push(rel);
+          }
+        }
+        return jsonFiles;
+      };
+
+      const jsonFiles = scanForJson(INDEX_CHROMA_DIR, 'INDEX_CHROMA');
+      for (const relFile of jsonFiles) {
+        const fullPath = path.join(REGISTRY_ROOT, relFile);
+        const content = fs.readFileSync(fullPath, 'utf8');
+        let score = 0;
+        if (content.toLowerCase().includes(lowerQuery)) score += 60;
+        queryTokens.forEach(token => { if (content.toLowerCase().includes(token)) score += 10; });
+
+        if (score > 5) {
+          const knowledgeType = relFile.includes('procedure') ? 'procedure' : 'qa';
+          results.push({
+            id: relFile,
+            document: `[LOCAL_DB]: ${path.basename(relFile)}\n${content.slice(0, 500)}`,
+            metadata: {
+              origin: 'LOCAL_DB_INDEX',
+              relPath: relFile,
+              type: knowledgeType
+            },
+            distance: 0,
+            score: Math.min(score / 100, 0.95)
           });
         }
       }

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { DashboardSidebar } from '@/components/dashboard/Sidebar';
-import { 
+import {
   Folder, 
   Database, 
   RefreshCw,
@@ -18,7 +18,8 @@ import {
   FilePlus,
   Type,
   Loader2,
-  ImageIcon
+  ImageIcon,
+  Boxes
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -43,13 +44,19 @@ interface FSNode {
   count?: number;
   children?: FSNode[];
   isOpen?: boolean;
+  size?: number;
+  timestamp?: number;
+  metadata?: {
+    knowledgeType?: string;
+    cloudId?: string;
+  };
 }
 
 export default function BDDPage() {
   const { toast } = useToast();
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
-  const [mode, setMode] = useState<'chroma' | 'web'>('web');
+  const [mode, setMode] = useState<'web' | 'chroma' | 'locale'>('web');
   const [tree, setTree] = useState<FSNode[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   
@@ -126,7 +133,7 @@ export default function BDDPage() {
           name: `${c.name.toUpperCase()} (${c.count || 0})`,
           type: 'collection' as const
         }));
-        setTree([{ id: 'root-chroma', name: 'INDEX_CHROMA', type: 'folder', isOpen: true, children: chromaNodes }]);
+        setTree([{ id: 'root-chroma', name: 'VECTEURS CHROMADB', type: 'folder', isOpen: true, children: chromaNodes }]);
       }
     } catch (e) {
       setTree([]);
@@ -135,18 +142,42 @@ export default function BDDPage() {
     }
   }, []);
 
+  const refreshLocalDB = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const res = await apiClient.get<any>('/api/local-db');
+      if (res && res.success && Array.isArray(res.tree)) {
+        setTree(prev => mergeTreeState(prev, res.tree));
+      } else {
+        setTree([]);
+      }
+    } catch (e) {
+      setTree([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [mergeTreeState]);
+
   useEffect(() => {
     if (mounted) {
       if (mode === 'web') refreshRegistry(true);
-      else refreshChroma();
+      else if (mode === 'chroma') refreshChroma();
+      else if (mode === 'locale') {
+        apiClient.get('/api/local-db').then(() => refreshLocalDB()).catch(() => refreshLocalDB());
+      }
     }
-  }, [mode, mounted, refreshRegistry, refreshChroma]);
+  }, [mode, mounted, refreshRegistry, refreshChroma, refreshLocalDB]);
 
   const handleFileClick = async (node: FSNode) => {
     if (node.id === selectedFile) return;
     if (node.type === 'file') {
       try {
-        const res = await apiClient.get<any>(`/api/registry?path=${encodeURIComponent(node.id)}`);
+        let res;
+        if (mode === 'locale') {
+          res = await apiClient.get<any>(`/api/local-db?path=${encodeURIComponent(node.id)}`);
+        } else {
+          res = await apiClient.get<any>(`/api/registry?path=${encodeURIComponent(node.id)}`);
+        }
         if (res.success) {
           setSelectedFile(node.id);
           setFileContent(res.content);
@@ -156,7 +187,8 @@ export default function BDDPage() {
         }
       } catch (e: any) {
         toast({ title: "Fichier indisponible", description: "Il a peut-être été supprimé.", variant: "destructive" });
-        await refreshRegistry();
+        if (mode === 'locale') refreshLocalDB();
+        else refreshRegistry();
       }
     }
   };
@@ -174,24 +206,26 @@ export default function BDDPage() {
         }));
     };
     
-    // Mise à jour optimiste instantanée
     setTree(prev => removeFromTree(prev));
     
-    // Si on supprime le fichier actuellement ouvert ou son parent
     if (selectedFile === id || (selectedFile && selectedFile.startsWith(id + '/'))) {
       setSelectedFile(null);
       setFileContent('');
     }
 
     try {
-      const res = await apiClient.delete<any>(`/api/registry?path=${encodeURIComponent(id)}`);
+      let res;
+      if (mode === 'locale') {
+        res = await apiClient.delete<any>(`/api/local-db?path=${encodeURIComponent(id)}`);
+      } else {
+        res = await apiClient.delete<any>(`/api/registry?path=${encodeURIComponent(id)}`);
+      }
       if (res.success) {
         toast({ title: "Élément supprimé du disque" });
       } else {
         throw new Error(res.error || "Erreur serveur");
       }
     } catch (error: any) {
-      // Rollback en cas d'échec
       setTree(previousTree);
       toast({ 
         title: "Échec de suppression physique", 
@@ -204,11 +238,13 @@ export default function BDDPage() {
   const saveFileChanges = async () => {
     if (!selectedFile) return;
     try {
-      const res = await apiClient.put('/api/registry', { path: selectedFile, content: fileContent });
+      const endpoint = mode === 'locale' ? '/api/local-db' : '/api/registry';
+      const res = await apiClient.put(endpoint, { path: selectedFile, content: fileContent });
       if (res.success) {
         setIsEditing(false);
         toast({ title: "Modification sauvegardée" });
-        await refreshRegistry();
+        if (mode === 'locale') refreshLocalDB();
+        else refreshRegistry();
       }
     } catch (e: any) {
       toast({ title: "Erreur sauvegarde", variant: "destructive" });
@@ -220,12 +256,18 @@ export default function BDDPage() {
     const path = newModal.parent ? `${newModal.parent}/${newName}` : newName;
     const finalPath = newModal.type === 'file' && !path.endsWith('.json') ? `${path}.json` : path;
     try {
-      const res = await apiClient.post('/api/registry', { path: finalPath, type: newModal.type, content: '{}' });
+      const endpoint = mode === 'locale' ? '/api/local-db' : '/api/registry';
+      const res = await apiClient.post(endpoint, { 
+        path: finalPath, 
+        type: newModal.type, 
+        content: '{}' 
+      });
       if (res.success) {
         setNewModal({ ...newModal, isOpen: false });
         setNewName('');
         toast({ title: "Création réussie" });
-        await refreshRegistry();
+        if (mode === 'locale') refreshLocalDB();
+        else refreshRegistry();
       }
     } catch (e: any) {
       toast({ title: "Erreur", description: e.message, variant: "destructive" });
@@ -273,12 +315,15 @@ export default function BDDPage() {
                 {node.isOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
               </div>
             ) : <div className="w-4 shrink-0" />}
-            {node.type === 'folder' ? <Folder className="w-3.5 h-3.5 text-primary" /> : <FileJson className="w-3.5 h-3.5 text-muted-foreground" />}
+            {node.type === 'folder' ? <Folder className="w-3.5 h-3.5 text-primary" /> :
+             node.type === 'collection' ? <Boxes className="w-3.5 h-3.5 text-accent" /> :
+             <FileJson className="w-3.5 h-3.5 text-muted-foreground" />}
             <span className="text-[10px] font-code uppercase truncate">{node.name}</span>
+            {node.size && <span className="text-[9px] text-muted-foreground/60 font-code">{(node.size / 1024).toFixed(1)}KB</span>}
           </div>
-          {mode === 'web' && (
+          {(mode === 'web' || mode === 'locale') && (
             <div className="hidden group-hover:flex items-center gap-0.5 ml-2">
-              {node.type === 'folder' && <button onClick={(e) => { e.stopPropagation(); setNewModal({ isOpen: true, type: 'file', parent: node.id }); }} title="Nouveau fichier"><FilePlus className="w-3 h-3 hover:text-primary" /></button>}
+              <button onClick={(e) => { e.stopPropagation(); setNewModal({ isOpen: true, type: 'file', parent: node.id }); }} title="Nouveau fichier"><FilePlus className="w-3 h-3 hover:text-primary" /></button>
               <button onClick={(e) => { e.stopPropagation(); setRenameModal({ isOpen: true, path: node.id, oldName: node.name, type: node.type as any }); setRenameValue(node.name); }} title="Renommer"><Type className="w-3 h-3 hover:text-secondary" /></button>
               <button onClick={(e) => { e.stopPropagation(); deleteItem(node.id); }} title="Supprimer radicalement"><Trash2 className="w-3 h-3 hover:text-destructive" /></button>
             </div>
@@ -300,9 +345,8 @@ export default function BDDPage() {
         <header className="h-16 border-b border-border bg-card/30 flex items-center justify-between px-6 shrink-0">
           <div className="flex items-center gap-2">
             <HardDrive className="w-4 h-4 text-primary" />
-            <span className="font-headline font-bold text-xs uppercase tracking-widest text-primary">Gestionnaire d'Actifs Physique</span>
-          </div>
-          <div className="flex items-center gap-4">
+          <span className="font-headline font-bold text-xs uppercase tracking-widest text-primary">Gestionnaire d'Actifs Physique</span>
+          <div className="flex items-center gap-2">
             <Button 
               size="sm" 
               variant="secondary" 
@@ -314,17 +358,27 @@ export default function BDDPage() {
             <div className="flex bg-muted/30 p-1 rounded-sm border border-border">
               <button onClick={() => setMode('web')} className={cn("px-3 py-1 text-[10px] font-code uppercase rounded-sm", mode === 'web' ? "bg-primary text-primary-foreground font-bold" : "text-muted-foreground")}>Registre</button>
               <button onClick={() => setMode('chroma')} className={cn("px-3 py-1 text-[10px] font-code uppercase rounded-sm", mode === 'chroma' ? "bg-secondary text-secondary-foreground font-bold" : "text-muted-foreground")}>Vecteurs</button>
+              <button onClick={() => setMode('locale')} className={cn("px-3 py-1 text-[10px] font-code uppercase rounded-sm", mode === 'locale' ? "bg-accent text-accent-foreground font-bold" : "text-muted-foreground")}>Locale</button>
             </div>
+          </div>
           </div>
         </header>
 
         <div className="flex-1 p-4 lg:p-6 overflow-hidden flex flex-col lg:flex-row gap-6">
           <Card className="w-full lg:w-80 flex flex-col bg-black/40 border-border overflow-hidden shrink-0">
             <div className="p-3 border-b border-border bg-card/50 flex items-center justify-between">
-              <span className="text-[10px] font-bold uppercase text-muted-foreground">Arborescence</span>
+              <span className="text-[10px] font-bold uppercase text-muted-foreground">
+                {mode === 'web' && 'Registre'}
+                {mode === 'chroma' && 'Vecteurs ChromaDB'}
+                {mode === 'locale' && 'BDD Locale'}
+              </span>
               <div className="flex gap-1">
                 {mode === 'web' && <button onClick={() => setNewModal({ isOpen: true, type: 'folder', parent: null })}><FolderPlus className="w-4 h-4 hover:text-primary" /></button>}
-                <button onClick={() => mode === 'web' ? refreshRegistry() : refreshChroma()}><RefreshCw className={cn("w-3.5 h-3.5", isLoading && "animate-spin")} /></button>
+                <button onClick={() => {
+                  if (mode === 'web') refreshRegistry();
+                  else if (mode === 'chroma') refreshChroma();
+                  else refreshLocalDB();
+                }}><RefreshCw className={cn("w-3.5 h-3.5", isLoading && "animate-spin")} /></button>
               </div>
             </div>
             <div className="flex-1 overflow-auto p-2 terminal-scroll">{renderTree(tree)}</div>

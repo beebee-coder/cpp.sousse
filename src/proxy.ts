@@ -6,7 +6,7 @@ import { getSessionFromToken } from '@/lib/session';
  * Middleware de Sécurité VisioNode V8.1.0.
  * Basé sur le système JWT souverain (compatible Web & Tauri Deep-Links).
  */
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const ts = new Date().toLocaleTimeString();
   const { pathname } = request.nextUrl;
 
@@ -18,7 +18,9 @@ export async function middleware(request: NextRequest) {
     '/favicon.ico',
     '/images',
     '/installers',
-    '/api/download'
+    '/api/download',
+    '/api/local-db',
+    '/api/registry'
   ];
 
   if (publicPaths.some(path => pathname.startsWith(path))) {
@@ -46,6 +48,3 @@ export async function middleware(request: NextRequest) {
   return NextResponse.next();
 }
 
-export const config = {
-  matcher: ['/((?!api|_next/static|_next/image|favicon.ico).*)']
-};
