@@ -80,21 +80,21 @@ export default function ProcedureGuidePage({ params }: { params: Promise<{ id: s
     <div className="flex flex-col lg:flex-row h-screen bg-transparent overflow-hidden">
       <DashboardSidebar />
       <main className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
-        <header className="h-16 border-b border-border bg-card/30 flex items-center justify-between px-4 lg:px-6 shrink-0 z-20">
-          <div className="flex items-center gap-4">
+        <header className="border-b border-border bg-card/30 flex flex-wrap items-center justify-between gap-2 px-4 lg:px-6 py-3 lg:py-0 min-h-16 shrink-0 z-20">
+          <div className="flex items-center gap-4 min-w-0">
             <div className="lg:hidden w-10" />
-            <Button variant="ghost" size="icon" onClick={() => router.push('/procedures')} className="h-8 w-8 text-muted-foreground hover:text-white">
+            <Button variant="ghost" size="icon" onClick={() => router.push('/procedures')} className="h-8 w-8 text-muted-foreground hover:text-white shrink-0">
               <ArrowLeft className="w-4 h-4" />
             </Button>
-            <div className="flex flex-col">
+            <div className="flex flex-col min-w-0">
               <span className="text-[10px] font-bold text-primary uppercase tracking-[0.2em] leading-tight">Guide IA</span>
-              <h1 className="text-xs font-headline font-bold uppercase tracking-tight truncate max-w-[300px] lg:max-w-[500px]">
+              <h1 className="text-xs font-headline font-bold uppercase tracking-tight truncate max-w-[60vw] sm:max-w-[300px] lg:max-w-[500px]">
                 {procedure.metadata.title}
               </h1>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 shrink-0">
             <Badge variant="outline" className="text-[8px] font-code border-primary/40 text-primary uppercase">
               {procedure.metadata.code}
             </Badge>

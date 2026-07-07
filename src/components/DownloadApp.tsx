@@ -118,7 +118,7 @@ export function DownloadApp() {
   const isUnknown = os === 'unknown';
 
   const renderDownloadBtns = () => (
-    <div className="grid grid-cols-2 gap-4 w-full max-w-sm">
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full max-w-sm">
       <Button
         variant="outline"
         className="font-headline font-bold uppercase text-xs h-10 border-border"
@@ -139,9 +139,9 @@ export function DownloadApp() {
   );
 
   return (
-    <div className="space-y-8 pb-12">
+    <div className="space-y-8 pb-12 px-4 sm:px-6">
       {/* Hero 3D */}
-      <div className="relative overflow-hidden rounded-2xl glass-panel p-8 sm:p-10 text-center animate-fade-up">
+      <div className="relative overflow-hidden rounded-2xl glass-panel p-8 sm:p-10 text-center animate-fade-up animated-border scanline-overlay">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,hsl(var(--primary)/0.18),transparent_60%)] pointer-events-none" />
         <div className="relative flex flex-col items-center gap-5">
           <div className="glow-ring rounded-2xl p-2 animate-float">

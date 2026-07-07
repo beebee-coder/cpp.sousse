@@ -10,7 +10,6 @@ import {
   ArrowLeft,
   AlertTriangle,
   Info,
-  Clock,
   ShieldCheck,
   Play,
   RotateCcw,
@@ -24,6 +23,7 @@ import {
   ChevronUp
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { TimerRing } from '@/components/ui/timer-ring';
 
 export interface ProcedureStep {
   id: string;
@@ -378,12 +378,6 @@ export function ProcedureGuide({ procedure, onComplete }: ProcedureGuideProps) {
     speak("Alerte résolue. Reprise de la procédure.");
   };
 
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
   const formatDuration = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -622,18 +616,19 @@ export function ProcedureGuide({ procedure, onComplete }: ProcedureGuideProps) {
               </div>
 
               <div className="flex items-center gap-4">
-                {/* Timer */}
-                <div className={cn(
-                  "px-4 py-2 rounded-sm border font-code font-bold text-sm transition-all",
-                  status === 'completed' ? "bg-secondary/10 border-secondary/40 text-secondary" :
-                    status === 'aborted' ? "bg-destructive/10 border-destructive/40 text-destructive" :
-                      warningTime ? "bg-orange-500/10 border-orange-500/40 text-orange-500 animate-pulse" :
-                        elapsed > currentStep.duration.value ? "bg-destructive/10 border-destructive/40 text-destructive" :
-                          "bg-muted/20 border-border"
-                )}>
-                  <Clock className="w-3.5 h-3.5 inline mr-2" />
-                  {formatTime(elapsed)} / {currentStep.duration.display}
-                </div>
+                {/* Timer circulaire animé */}
+                <TimerRing
+                  elapsed={elapsed}
+                  total={currentStep.duration.value}
+                  display={currentStep.duration.display}
+                  state={
+                    status === 'aborted' || elapsed > currentStep.duration.value
+                      ? 'danger'
+                      : warningTime
+                      ? 'warning'
+                      : 'normal'
+                  }
+                />
 
                 {/* Voice Toggle */}
                 <Button

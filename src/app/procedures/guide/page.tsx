@@ -203,12 +203,13 @@ export default function ProcedureGuideListPage() {
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-                {filtered.map((proc) => {
+                {filtered.map((proc, idx) => {
                   const crit = getCriticalityConfig(proc.criticality);
                   return (
                     <Card
                       key={proc.id}
-                      className="relative p-5 border-primary/15 bg-card/40 hover:border-secondary/50 hover:bg-card/60 transition-all group cursor-pointer overflow-hidden"
+                      style={{ animationDelay: `${idx * 60}ms` }}
+                      className="relative p-5 border-primary/15 bg-card/40 hover:border-secondary/50 hover:bg-card/60 transition-all group cursor-pointer overflow-hidden animate-fade-up"
                       onClick={() => router.push(`/procedures/guide/${proc.code || proc.id}`)}
                     >
                       {/* Glow accent */}

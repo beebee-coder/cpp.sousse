@@ -106,17 +106,18 @@ export default function ProceduresListPage() {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-              {filteredProcedures.map((proc) => {
-                const stepsCount = (proc.steps as unknown as ProcedureStep[])?.length || 0;
-                return (
-                  <TiltCard
-                    className="rounded-xl"
-                    onClick={() => router.push(`/procedures/${proc.id}/execute`)}
-                  >
-                  <Card
-                    key={proc.id}
-                    glass
-                    className="p-5 border-primary/20 hover:border-primary/50 transition-all group cursor-pointer h-full"
+                  {filteredProcedures.map((proc, i) => {
+                    const stepsCount = (proc.steps as unknown as ProcedureStep[])?.length || 0;
+                    return (
+                      <TiltCard
+                        className="rounded-xl"
+                        onClick={() => router.push(`/procedures/${proc.id}/execute`)}
+                      >
+                      <Card
+                        key={proc.id}
+                        glass
+                        style={{ animationDelay: `${i * 70}ms` }}
+                        className="p-5 border-primary/20 hover:border-primary/50 transition-all group cursor-pointer h-full animate-fade-up"
                   >
                     <div className="flex justify-between items-start mb-4">
                       <Badge variant="outline" className="text-[8px] font-code border-primary/40 text-primary uppercase bg-primary/5">

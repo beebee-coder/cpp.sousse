@@ -1,7 +1,9 @@
 export const dynamic = 'force-dynamic';
 export const revalidate = false;
+import fs from 'fs';
+import path from 'path';
 import { createHybridRoute } from '@/lib/api-route-creator';
-import { localDB } from '@/lib/db/local-db';
+import { localDB, LOCAL_DB_ROOT } from '@/lib/db/local-db';
 
 
 /**
@@ -42,9 +44,26 @@ export const GET = createHybridRoute<any, any>({
 });
 
 export const POST = createHybridRoute<any, any>({
-  name: 'LOCAL_DB_INJECT',
+  name: 'LOCAL_DB_POST',
   webHandler: async (req, body) => {
-    const { fileName, content, metadata } = body;
+    const { fileName, content, metadata, path: targetPath, type } = body;
+
+    if (targetPath && type) {
+      const fullPath = path.join(LOCAL_DB_ROOT, targetPath);
+      if (type === 'folder') {
+        fs.mkdirSync(fullPath, { recursive: true });
+        return { success: true, path: targetPath };
+      }
+      if (type === 'file' && content !== undefined) {
+        const dir = path.dirname(fullPath);
+        if (!fs.existsSync(dir)) {
+          fs.mkdirSync(dir, { recursive: true });
+        }
+        fs.writeFileSync(fullPath, content, 'utf8');
+        return { success: true, path: targetPath };
+      }
+      return { success: false, error: 'PARAM_INVALID' };
+    }
 
     if (!fileName || content === undefined) {
       return { success: false, error: 'PARAM_MISSING: fileName et content requis' };
@@ -52,6 +71,22 @@ export const POST = createHybridRoute<any, any>({
 
     try {
       const result = await localDB.injectFile(fileName, content, metadata);
+      return result;
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  }
+});
+
+export const PUT = createHybridRoute<any, any>({
+  name: 'LOCAL_DB_PUT',
+  webHandler: async (req, body) => {
+    const { path: filePath, content } = body;
+    if (!filePath || content === undefined) {
+      return { success: false, error: 'PARAM_MISSING: path et content requis' };
+    }
+    try {
+      const result = await localDB.writeFile(filePath, content);
       return result;
     } catch (e: any) {
       return { success: false, error: e.message };

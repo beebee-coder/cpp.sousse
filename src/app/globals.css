@@ -157,18 +157,55 @@
 .logo3d-top    { transform: rotateX(90deg)  translateZ(var(--s)); }
 .logo3d-bottom { transform: rotateX(-90deg) translateZ(var(--s)); }
 
-/* Effet shimmer réutilisable */
-.shimmer-line {
+/* Bordure dégradée animée (flow) */
+.animated-border {
   position: relative;
-  overflow: hidden;
+  isolation: isolate;
 }
-.shimmer-line::after {
+.animated-border::before {
   content: "";
   position: absolute;
   inset: 0;
-  transform: translateX(-100%);
-  background: linear-gradient(90deg, transparent, hsl(var(--primary) / 0.18), transparent);
-  animation: shimmer 2.4s infinite;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    120deg,
+    hsl(var(--primary) / 0) 0%,
+    hsl(var(--primary) / 0.85) 25%,
+    hsl(var(--secondary) / 0.7) 50%,
+    hsl(var(--primary) / 0.85) 75%,
+    hsl(var(--primary) / 0) 100%
+  );
+  background-size: 300% 300%;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: border-flow 6s ease infinite;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Balayage lumineux (scanline) pour les en-têtes / cartes vedettes */
+.scanline-overlay {
+  position: relative;
+  overflow: hidden;
+}
+.scanline-overlay::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 40%;
+  background: linear-gradient(to bottom, transparent, hsl(var(--primary) / 0.12), transparent);
+  animation: scanline 3.5s linear infinite;
+  pointer-events: none;
+}
+
+/* Entrée échelonnée (stagger) */
+.stagger > * {
+  opacity: 0;
+  animation: fade-up 0.6s cubic-bezier(0.22,1,0.36,1) forwards;
 }
 
 /* Respect des préférences d'accessibilité */
@@ -181,8 +218,13 @@
   .animate-spin-slow,
   .animate-grid-pan,
   .animate-rotate-3d,
-  .animate-pulse-glow {
+  .animate-pulse-glow,
+  .animate-border-flow,
+  .animate-scanline,
+  .animate-pulse-ring,
+  .stagger > * {
     animation: none !important;
   }
+  .stagger > * { opacity: 1 !important; }
   .ambient-grid { transform: translateX(-50%) perspective(620px) rotateX(62deg); }
 }

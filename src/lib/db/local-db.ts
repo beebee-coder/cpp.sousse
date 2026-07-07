@@ -14,7 +14,11 @@ import path from 'path';
 const LOCAL_DB_ROOT = path.join(process.cwd(), '.local-db');
 const INDEX_CHROMA_DIR = path.join(LOCAL_DB_ROOT, 'INDEX_CHROMA');
 const CENTRALE_DIR = path.join(LOCAL_DB_ROOT, 'Centrale');
+const GROUPES_DIR = path.join(LOCAL_DB_ROOT, 'Groupes');
+const ALARMES_DIR = path.join(LOCAL_DB_ROOT, 'Alarmes');
 const MANIFEST_FILE = path.join(LOCAL_DB_ROOT, 'local-db-manifest.json');
+
+export { LOCAL_DB_ROOT };
 
 interface LocalDBManifestEntry {
   id: string;
@@ -54,7 +58,7 @@ const ensureLocalDB = () => {
     if (!fs.existsSync(LOCAL_DB_ROOT)) {
       fs.mkdirSync(LOCAL_DB_ROOT, { recursive: true });
     }
-    [INDEX_CHROMA_DIR, CENTRALE_DIR].forEach(dir => {
+    [INDEX_CHROMA_DIR, CENTRALE_DIR, GROUPES_DIR, ALARMES_DIR].forEach(dir => {
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
       }
@@ -136,6 +140,8 @@ export const localDB = {
 
     const indexChromaTree: FSNode[] = scanDirectory(INDEX_CHROMA_DIR, 'INDEX_CHROMA');
     const centraleTree: FSNode[] = scanDirectory(CENTRALE_DIR, 'Centrale');
+    const groupesTree: FSNode[] = scanDirectory(GROUPES_DIR, 'Groupes');
+    const alarmesTree: FSNode[] = scanDirectory(ALARMES_DIR, 'Alarmes');
 
     const rootNodes: FSNode[] = [];
 
@@ -155,6 +161,24 @@ export const localDB = {
       isOpen: false,
       children: centraleTree,
       metadata: { knowledgeType: 'centrale' }
+    });
+
+    rootNodes.push({
+      id: 'Groupes',
+      name: 'Groupes',
+      type: 'folder',
+      isOpen: false,
+      children: groupesTree,
+      metadata: { knowledgeType: 'groupes' }
+    });
+
+    rootNodes.push({
+      id: 'Alarmes',
+      name: 'Alarmes',
+      type: 'folder',
+      isOpen: false,
+      children: alarmesTree,
+      metadata: { knowledgeType: 'alarmes' }
     });
 
     return rootNodes;
@@ -317,6 +341,22 @@ export const localDB = {
 
     console.log(`🗑️ [LOCAL_DB] [DELETE] ${relativePath}`);
     return true;
+  },
+
+  /**
+   * Écrit le contenu d'un fichier dans la BDD locale (PUT).
+   */
+  async writeFile(relativePath: string, content: string): Promise<{ success: boolean; path: string }> {
+    ensureLocalDB();
+    const fullPath = path.join(LOCAL_DB_ROOT, relativePath);
+    const dir = path.dirname(fullPath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(fullPath, content, 'utf8');
+    const targetPath = path.relative(LOCAL_DB_ROOT, fullPath).replace(/\\/g, '/');
+    console.log(`✏️ [LOCAL_DB] [WRITE] ${targetPath}`);
+    return { success: true, path: targetPath };
   },
 
   /**
