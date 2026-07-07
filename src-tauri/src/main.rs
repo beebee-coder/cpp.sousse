@@ -18,6 +18,29 @@ struct ChatOutput {
 }
 
 use tauri::Manager;
+use tauri_plugin_sql::{Builder, Migrations, Migration, MigrationKind};
+
+// Migrations SQL embarquées (compilées dans le binaire) :
+// la DB SQLite locale est créée ET pré-remplie au premier lancement,
+// sans aucune commande de la part de l'utilisateur final.
+const LOCAL_DB_URL: &str = "sqlite:visionode.sqlite";
+
+fn local_migrations() -> Migrations {
+    Migrations::new(vec![
+        Migration {
+            version: 1,
+            description: "schema initial",
+            sql: include_str!("../migrations/0001_init.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 2,
+            description: "seed baseline (admin + connaissances)",
+            sql: include_str!("../migrations/0002_seed.sql"),
+            kind: MigrationKind::Up,
+        },
+    ])
+}
 
 #[tauri::command]
 async fn chat_with_ia(
@@ -110,6 +133,11 @@ async fn chat_with_ia(
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_deep_link::init())
+        .plugin(
+            Builder::default()
+                .add_migrations(LOCAL_DB_URL, local_migrations())
+                .build(),
+        )
         .invoke_handler(tauri::generate_handler![chat_with_ia])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

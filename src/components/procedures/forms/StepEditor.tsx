@@ -13,17 +13,31 @@ import {
   ShieldAlert,
   Layers,
   Settings2,
-  Activity,
-  Info
+  Activity
 } from 'lucide-react';
 import { ProcedureStep } from '@/lib/procedures/types';
+
+type StepField = 'title' | 'description' | 'subtitle' | 'duration' | 'actionType' | 'actionTarget' | 'actionLabel';
 
 interface StepEditorProps {
   steps: ProcedureStep[];
   onChange: (steps: any[]) => void;
+  activeStepIndex?: number;
+  activeStepField?: StepField;
+  onFieldFocus?: (stepIndex: number, field: StepField) => void;
+  applyVoiceValue?: (stepIndex: number, field: StepField, text: string) => void;
+  clearVoiceField?: (stepIndex: number, field: StepField) => void;
 }
 
-export function StepEditor({ steps, onChange }: StepEditorProps) {
+export function StepEditor({ 
+  steps, 
+  onChange, 
+  activeStepIndex = 0, 
+  activeStepField = 'title',
+  onFieldFocus,
+  applyVoiceValue,
+  clearVoiceField
+}: StepEditorProps) {
   const addStep = () => {
     const newStep: any = {
       id: `step-${Date.now()}`,
@@ -55,6 +69,14 @@ export function StepEditor({ steps, onChange }: StepEditorProps) {
     onChange(next);
   };
 
+  const isActive = (stepIndex: number, field: StepField) => {
+    return stepIndex === activeStepIndex && activeStepField === field;
+  };
+
+  const borderClass = (stepIndex: number, field: StepField) => {
+    return isActive(stepIndex, field) ? 'border-primary' : 'border-border';
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between px-2">
@@ -71,7 +93,7 @@ export function StepEditor({ steps, onChange }: StepEditorProps) {
 
       <div className="space-y-6">
         {steps.map((step, index) => (
-          <Card key={step.id} className="border-border bg-card/20 overflow-hidden group shadow-xl">
+          <Card key={step.id} className={`border bg-card/20 overflow-hidden group shadow-xl ${isActive(index, 'title') || isActive(index, 'description') || isActive(index, 'subtitle') || isActive(index, 'actionType') || isActive(index, 'actionTarget') || isActive(index, 'actionLabel') || isActive(index, 'duration') ? 'border-primary/60' : 'border-border'}`}>
             {/* Header d'étape */}
             <div className="p-3 border-b border-border bg-black/40 flex items-center justify-between">
               <div className="flex items-center gap-3 flex-1">
@@ -82,8 +104,9 @@ export function StepEditor({ steps, onChange }: StepEditorProps) {
                 <Input 
                   value={step.title}
                   onChange={(e) => updateStep(index, { title: e.target.value })}
+                  onFocus={() => { onFieldFocus?.(index, 'title'); }}
                   placeholder="TITRE DE L'ACTION (EX: MISE SOUS TENSION)"
-                  className="h-8 bg-transparent border-none focus-visible:ring-0 font-headline font-bold uppercase text-xs w-full max-w-md"
+                  className={`h-8 bg-transparent border-none focus-visible:ring-0 font-headline font-bold uppercase text-xs w-full max-w-md ${isActive(index, 'title') ? 'text-primary' : ''}`}
                 />
               </div>
               <div className="flex items-center gap-4">
@@ -92,7 +115,8 @@ export function StepEditor({ steps, onChange }: StepEditorProps) {
                   <Input 
                     value={step.duration.value}
                     onChange={(e) => updateStep(index, { duration: { ...step.duration, value: parseInt(e.target.value) || 0, display: `${e.target.value}s` } })}
-                    className="w-10 h-6 bg-transparent border-none p-0 text-center text-[10px] font-code text-primary"
+                    onFocus={() => onFieldFocus?.(index, 'duration')}
+                    className={`w-10 h-6 bg-transparent border-none p-0 text-center text-[10px] font-code ${isActive(index, 'duration') ? 'text-primary' : 'text-primary'}`}
                   />
                   <span className="text-[8px] font-bold text-muted-foreground uppercase">SEC</span>
                 </div>
@@ -112,7 +136,8 @@ export function StepEditor({ steps, onChange }: StepEditorProps) {
                      <Textarea 
                        value={step.description}
                        onChange={(e) => updateStep(index, { description: e.target.value })}
-                       className="bg-black/40 border-border font-code text-[11px] h-24 resize-none"
+                       onFocus={() => onFieldFocus?.(index, 'description')}
+                       className={`bg-black/40 font-code text-[11px] h-24 resize-none ${isActive(index, 'description') ? 'border-primary' : 'border-border'}`}
                        placeholder="DÉTAILLER L'OPÉRATION TECHNIQUE POUR L'OPÉRATEUR..."
                      />
                    </div>
@@ -121,7 +146,8 @@ export function StepEditor({ steps, onChange }: StepEditorProps) {
                      <Input 
                        value={step.subtitle || ''}
                        onChange={(e) => updateStep(index, { subtitle: e.target.value })}
-                       className="bg-black/40 border-border font-code text-[10px] uppercase h-9"
+                       onFocus={() => onFieldFocus?.(index, 'subtitle')}
+                       className={`bg-black/40 border font-code text-[10px] uppercase h-9 ${isActive(index, 'subtitle') ? 'border-primary' : 'border-border'}`}
                        placeholder="EX: ÉQUILIBRAGE DES PRESSIONS"
                      />
                    </div>
@@ -141,7 +167,7 @@ export function StepEditor({ steps, onChange }: StepEditorProps) {
                         value={step.action.type} 
                         onValueChange={(val) => updateStep(index, { action: { ...step.action, type: val as any } })}
                       >
-                        <SelectTrigger className="h-8 bg-black/40 text-[9px] uppercase font-bold border-primary/20">
+                        <SelectTrigger className={`h-8 bg-black/40 text-[9px] uppercase font-bold ${isActive(index, 'actionType') ? 'border-primary' : 'border-primary/20'}`}>
                           <SelectValue placeholder="Action" />
                         </SelectTrigger>
                         <SelectContent className="bg-background border-border">
@@ -160,7 +186,8 @@ export function StepEditor({ steps, onChange }: StepEditorProps) {
                           type="number"
                           value={step.action.target || 0}
                           onChange={(e) => updateStep(index, { action: { ...step.action, target: parseInt(e.target.value) || 0 } })}
-                          className="h-8 bg-black/60 border-primary/40 text-center font-code text-xs text-primary"
+                          onFocus={() => onFieldFocus?.(index, 'actionTarget')}
+                          className={`h-8 bg-black/60 text-center font-code text-xs ${isActive(index, 'actionTarget') ? 'border-primary text-primary' : 'border-primary/40 text-primary'}`}
                         />
                       </div>
                     )}
@@ -171,7 +198,8 @@ export function StepEditor({ steps, onChange }: StepEditorProps) {
                     <Input 
                       value={step.action.ui.label}
                       onChange={(e) => updateStep(index, { action: { ...step.action, ui: { ...step.action.ui, label: e.target.value } } })}
-                      className="h-8 bg-black/40 border-border text-[9px] uppercase font-bold"
+                      onFocus={() => onFieldFocus?.(index, 'actionLabel')}
+                      className={`h-8 bg-black/40 text-[9px] uppercase font-bold ${isActive(index, 'actionLabel') ? 'border-primary' : 'border-border'}`}
                       placeholder="CONFIRMER"
                     />
                   </div>
@@ -190,10 +218,6 @@ export function StepEditor({ steps, onChange }: StepEditorProps) {
                     <span className="text-[9px] font-bold text-destructive uppercase">Alarme : Non configurée</span>
                   </div>
                 </div>
-                
-                <Button variant="ghost" size="sm" className="h-7 text-[8px] font-bold uppercase tracking-tighter hover:bg-primary/5">
-                   <Plus className="w-3 h-3 mr-1" /> Ajouter une condition de monitoring
-                </Button>
               </div>
             </div>
           </Card>

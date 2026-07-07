@@ -84,6 +84,7 @@
     ".next",
     "src-tauri/target",
     "scratch",
-    "src/lib/__tests__"
+    "src/lib/__tests__",
+    "src/lib/db/__tests__"
   ]
 }

@@ -4,7 +4,7 @@
   "identifier": "com.visionode.precision.engine",
   "build": {
     "beforeDevCommand": "npm run dev",
-    "devUrl": "http://localhost:9002",
+    "devUrl": "http://localhost:3000",
     "beforeBuildCommand": "npm run build:tauri",
     "frontendDist": "../out"
   },

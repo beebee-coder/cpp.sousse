@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+export const revalidate = false;
 import { NextRequest, NextResponse } from 'next/server';
 import { addPendingUser } from '@/lib/auth-users';
 import { Role } from '@prisma/client';

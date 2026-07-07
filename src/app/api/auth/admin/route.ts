@@ -1,7 +1,8 @@
+export const dynamic = 'force-dynamic';
+export const revalidate = false;
+
 import { NextRequest, NextResponse } from 'next/server';
 import { approveUser, rejectUser, getAllUsers, listPendingUsers } from '@/lib/auth-users';
-
-export const dynamic = 'force-dynamic';
 
 export async function GET() {
   const pending = await listPendingUsers();

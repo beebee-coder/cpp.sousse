@@ -1,8 +1,9 @@
+export const dynamic = 'force-dynamic';
+export const revalidate = false;
+
 import { createHybridRoute } from '@/lib/api-route-creator';
 import { procedureManager } from '@/lib/procedures/services/procedure-manager.service';
 import { prisma } from '@/lib/db/prisma-client';
-
-export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/procedures/[id]

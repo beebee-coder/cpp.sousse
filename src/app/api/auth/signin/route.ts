@@ -1,11 +1,19 @@
+export const dynamic = 'force-dynamic';
+
 import { NextRequest, NextResponse } from 'next/server';
 import { authenticateUser } from '@/lib/auth-store';
 import { createSessionCookie } from '@/lib/session';
+import { corsPreflight, withCors } from '@/lib/cors';
 
-export const dynamic = 'force-dynamic';
+// Authentification : toujours dynamique (cookies + DB).
+
+export async function OPTIONS(request: NextRequest) {
+  return corsPreflight(request.headers.get('origin'));
+}
 
 export async function POST(request: NextRequest) {
   const ts = new Date().toLocaleTimeString();
+  const origin = request.headers.get('origin');
 
   try {
     const body = await request.json();
@@ -14,9 +22,12 @@ export async function POST(request: NextRequest) {
 
     if (!body || !body.email || !body.password) {
       console.warn(`⚠️ [AUTH_API] Requête malformée`);
-      return NextResponse.json(
-        { success: false, message: 'Identifiants requis.' },
-        { status: 400 }
+      return withCors(
+        NextResponse.json(
+          { success: false, message: 'Identifiants requis.' },
+          { status: 400 }
+        ),
+        origin
       );
     }
 
@@ -30,29 +41,36 @@ export async function POST(request: NextRequest) {
       
       await createSessionCookie({
         id: result.user.id,
-        firstName: result.user.firstName,
-        lastName: result.user.lastName,
+        firstName: result.user.firstName ?? "",
+        lastName: result.user.lastName ?? "",
         role: result.user.role,
       });
       
-      return NextResponse.json({ 
-        success: true, 
-        user: result.user 
-      });
+      return withCors(
+        NextResponse.json({ success: true, user: result.user }),
+        origin
+      );
     }
 
     console.log(`❌ [AUTH_API] Échec: ${result.error}`);
-    return NextResponse.json(
-      { success: false, message: result.error || 'Identifiants incorrects.' },
-      { status: 401 }
+    return withCors(
+      NextResponse.json(
+        { success: false, message: result.error || 'Identifiants incorrects.' },
+        { status: 401 }
+      ),
+      origin
     );
 
-  } catch (err: any) {
+  } catch (error: unknown) {
+    const err = error as Error;
     console.error(`❌ [AUTH_API] Erreur:`, err.message);
     console.error(`📄 Stack:`, err.stack);
-    return NextResponse.json(
-      { success: false, message: 'Erreur interne du serveur.' },
-      { status: 500 }
+    return withCors(
+      NextResponse.json(
+        { success: false, message: 'Erreur interne du serveur.' },
+        { status: 500 }
+      ),
+      origin
     );
   }
 }

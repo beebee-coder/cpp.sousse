@@ -12,7 +12,8 @@ import {
   FileJson,
   ArrowLeft,
   CheckCircle2,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Upload
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -42,9 +43,23 @@ export default function BankPage() {
   const [isSaving, setIsSyncing] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const isVideo = file.type.startsWith('video/');
+    setMode(isVideo ? 'video' : 'image');
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setCapturedData(reader.result as string);
+      stopCamera();
+    };
+    reader.readAsDataURL(file);
+  };
 
   useEffect(() => {
     setMounted(true);
@@ -203,14 +218,24 @@ export default function BankPage() {
                   <button onClick={() => setMode('video')} className={cn("px-4 py-2 text-[10px] font-bold uppercase rounded-sm transition-all", mode === 'video' ? "bg-secondary text-secondary-foreground shadow-lg" : "text-muted-foreground hover:text-foreground")}>Vidéo</button>
                 </div>
                 {mode === 'image' ? (
-                  <Button onClick={takePhoto} className="px-8 bg-primary text-primary-foreground font-bold uppercase text-[10px] h-10 shadow-xl">
-                    <Camera className="w-4 h-4 mr-2" /> Capturer
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button onClick={takePhoto} className="px-8 bg-primary text-primary-foreground font-bold uppercase text-[10px] h-10 shadow-xl">
+                      <Camera className="w-4 h-4 mr-2" /> Capturer
+                    </Button>
+                    <Button onClick={() => fileInputRef.current?.click()} className="px-6 bg-secondary text-secondary-foreground font-bold uppercase text-[10px] h-10 shadow-xl">
+                      <Upload className="w-4 h-4 mr-2" /> Upload
+                    </Button>
+                  </div>
                 ) : (
                   !isCapturing ? (
-                    <Button onClick={startRecording} className="px-8 bg-red-600 text-white font-bold uppercase text-[10px] h-10 shadow-xl">
-                      <VideoIcon className="w-4 h-4 mr-2" /> Enregistrer
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button onClick={startRecording} className="px-8 bg-red-600 text-white font-bold uppercase text-[10px] h-10 shadow-xl">
+                        <VideoIcon className="w-4 h-4 mr-2" /> Enregistrer
+                      </Button>
+                      <Button onClick={() => fileInputRef.current?.click()} className="px-6 bg-secondary text-secondary-foreground font-bold uppercase text-[10px] h-10 shadow-xl">
+                        <Upload className="w-4 h-4 mr-2" /> Upload
+                      </Button>
+                    </div>
                   ) : (
                     <Button onClick={stopRecording} className="px-8 bg-white text-black font-bold uppercase text-[10px] h-10 shadow-xl animate-pulse">
                       Stopper
@@ -219,6 +244,13 @@ export default function BankPage() {
                 )}
               </div>
             )}
+            <input 
+              type="file" 
+              ref={fileInputRef} 
+              onChange={handleFileUpload} 
+              accept="image/*,video/*" 
+              className="hidden" 
+            />
           </div>
 
           {/* Form Zone */}

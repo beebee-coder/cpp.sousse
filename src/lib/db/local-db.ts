@@ -86,43 +86,6 @@ const generateId = () => {
   return `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 };
 
-/**
- * Résout le chemin cible pour un fichier injecté dans INDEX_CHROMA.
- *
- * Règles de duplication :
- * - 1er fichier nommé "X.ext"       → INDEX_CHROMA/X.ext
- * - 2e fichier nommé "X.ext"        → dossier INDEX_CHROMA/X.ext/ créé,
- *                                      déplacement du 1er en 1_X.ext,
- *                                      sauvegarde du 2e en 2_X.ext
- * - Nième fichier nommé "X.ext"     → INDEX_CHROMA/X.ext/N_X.ext
- */
-const resolveTargetPath = (fileName: string): string => {
-  const basePath = path.join(INDEX_CHROMA_DIR, fileName);
-
-  if (!fs.existsSync(basePath)) {
-    return path.posix.join('INDEX_CHROMA', fileName).replace(/\\/g, '/');
-  }
-
-  const stats = fs.statSync(basePath);
-  if (stats.isFile()) {
-    const folderPath = path.join(INDEX_CHROMA_DIR, fileName);
-    if (!fs.existsSync(folderPath)) {
-      fs.mkdirSync(folderPath, { recursive: true });
-    }
-    const firstIndexed = path.join(folderPath, `1_${fileName}`);
-    fs.renameSync(basePath, firstIndexed);
-  }
-
-  const folderPath = path.join(INDEX_CHROMA_DIR, fileName);
-  if (!fs.existsSync(folderPath)) {
-    fs.mkdirSync(folderPath, { recursive: true });
-  }
-
-  const existingFiles = fs.readdirSync(folderPath).filter(f => f.endsWith(path.extname(fileName)));
-  const nextIndex = existingFiles.length + 1;
-  return path.posix.join('INDEX_CHROMA', fileName, `${nextIndex}_${fileName}`).replace(/\\/g, '/');
-};
-
 export const localDB = {
   /**
    * Retourne l'arborescence complète de la BDD locale.
@@ -199,16 +162,87 @@ export const localDB = {
     knowledgeType?: string;
     cloudId?: string;
     tags?: string[];
-  }): Promise<{ success: boolean; path: string; isDuplicate: boolean }> {
+  }, targetDir?: string): Promise<{ success: boolean; path: string; isDuplicate: boolean }> {
     ensureLocalDB();
 
-    const targetPath = resolveTargetPath(fileName);
-    const fullPath = path.join(LOCAL_DB_ROOT, targetPath);
-    const dir = path.dirname(fullPath);
+    const baseDir = targetDir
+      ? (path.isAbsolute(targetDir) ? targetDir : path.join(INDEX_CHROMA_DIR, targetDir))
+      : INDEX_CHROMA_DIR;
+    const fullBasePath = path.join(baseDir, fileName);
 
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
+    if (!fs.existsSync(fullBasePath)) {
+      const fullPath = path.join(baseDir, fileName);
+      const targetPath = path.relative(LOCAL_DB_ROOT, fullPath).replace(/\\/g, '/');
+      const dir = path.dirname(fullPath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+
+      if (content.startsWith('data:')) {
+        const base64Data = content.split(',')[1];
+        fs.writeFileSync(fullPath, Buffer.from(base64Data), 'base64');
+      } else {
+        fs.writeFileSync(fullPath, content, 'utf8');
+      }
+
+      const stats = fs.statSync(fullPath);
+      const manifest = loadManifest();
+
+      manifest.files.push({
+        id: generateId(),
+        originalName: fileName,
+        resolvedPath: targetPath,
+        type: path.extname(fileName).slice(1) || 'unknown',
+        knowledgeType: metadata?.knowledgeType,
+        cloudId: metadata?.cloudId,
+        timestamp: Date.now(),
+        size: stats.size,
+        tags: metadata?.tags
+      });
+
+      saveManifest(manifest);
+
+      console.log(`✅ [LOCAL_DB] [INJECT] ${fileName} → ${targetPath}`);
+      return { success: true, path: targetPath, isDuplicate: false };
     }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // GESTION DES DOUBLONS
+    // Si un fichier de même nom existe déjà dans le répertoire cible :
+    //
+    //  1ère collision → transform en répertoire :
+    //     baseDir/fileName              (fichier existant)
+    //     baseDir/fileName/1_fileName   (version initiale déplacée)
+    //     baseDir/fileName/2_fileName   (nouvelle version)
+    //
+    //  Nième collision (le répertoire existe déjà) :
+    //     baseDir/fileName/N_fileName   (version ajoutée)
+    // ────────────────────────────────────────────────────────────────────────
+
+    const pathStat = fs.statSync(fullBasePath);
+
+    if (pathStat.isFile()) {
+      // Première collision : convertir le fichier seul en répertoire versionné
+      const folderPath = path.join(baseDir, fileName);
+      fs.mkdirSync(folderPath, { recursive: true });
+      // Déplacer l'existant comme version 1
+      fs.renameSync(fullBasePath, path.join(folderPath, `1_${fileName}`));
+      console.log(`📁 [LOCAL_DB] [DUPLICATE] Dossier versionné créé : ${fileName}/`);
+    }
+    // Après la création du dossier (ou s'il existait déjà), injecter la nouvelle version
+    const folderPath = path.join(baseDir, fileName);
+    if (!fs.existsSync(folderPath)) {
+      fs.mkdirSync(folderPath, { recursive: true });
+    }
+
+    // Compter toutes les versions déjà présentes (avec ou sans extension)
+    const existingVersions = fs.readdirSync(folderPath).filter(f => {
+      const match = f.match(/^(\d+)_.+$/);
+      return match !== null;
+    });
+    const nextIndex = existingVersions.length + 1;
+    const fullPath = path.join(folderPath, `${nextIndex}_${fileName}`);
+    const targetPath = path.relative(LOCAL_DB_ROOT, fullPath).replace(/\\/g, '/');
 
     if (content.startsWith('data:')) {
       const base64Data = content.split(',')[1];
@@ -217,7 +251,7 @@ export const localDB = {
       fs.writeFileSync(fullPath, content, 'utf8');
     }
 
-    const stats = fs.statSync(fullPath);
+    const fileStats = fs.statSync(fullPath);
     const manifest = loadManifest();
 
     manifest.files.push({
@@ -228,17 +262,15 @@ export const localDB = {
       knowledgeType: metadata?.knowledgeType,
       cloudId: metadata?.cloudId,
       timestamp: Date.now(),
-      size: stats.size,
+      size: fileStats.size,
       tags: metadata?.tags
     });
 
     saveManifest(manifest);
 
-    const isDuplicate = targetPath.includes(path.join(fileName, '/'));
+    console.log(`🔁 [LOCAL_DB] [DUPLICATE] ${fileName} → ${targetPath} (version ${nextIndex})`);
 
-    console.log(`✅ [LOCAL_DB] [INJECT] ${fileName} → ${targetPath}${isDuplicate ? ' (doublon géré)' : ''}`);
-
-    return { success: true, path: targetPath, isDuplicate };
+    return { success: true, path: targetPath, isDuplicate: true };
   },
 
   /**
@@ -331,5 +363,37 @@ export const localDB = {
   async initialize(): Promise<void> {
     ensureLocalDB();
     console.log('✅ [LOCAL_DB] Structure initialisée.');
+  },
+
+  /**
+   * Crée récursivement dans INDEX_CHROMA le squelette de répertoires du Registre.
+   * Préserve la structure architecturale exacte (même arborescence de sous-dossiers).
+   * Les répertoires vides sont créés et prêts à recevoir les fichiers lors de la sync.
+   */
+  async mirrorRegistryStructure(): Promise<{ mirrored: string[] }> {
+    ensureLocalDB();
+    const REGISTRY_ROOT = path.join(process.cwd(), '.registry');
+    const mirrored: string[] = [];
+
+    const mirror = (dir: string) => {
+      if (!fs.existsSync(dir)) return;
+      const items = fs.readdirSync(dir, { withFileTypes: true });
+      for (const item of items) {
+        if (item.isDirectory()) {
+          const relPath = path.relative(REGISTRY_ROOT, path.join(dir, item.name)).replace(/\\/g, '/');
+          const mirrorPath = path.join(INDEX_CHROMA_DIR, relPath);
+          if (!fs.existsSync(mirrorPath)) {
+            fs.mkdirSync(mirrorPath, { recursive: true });
+            mirrored.push(`INDEX_CHROMA/${relPath}`);
+            console.log(`📁 [LOCAL_DB] [MIRROR] Créé : INDEX_CHROMA/${relPath}`);
+          }
+          mirror(path.join(dir, item.name));
+        }
+      }
+    };
+
+    mirror(REGISTRY_ROOT);
+    return { mirrored };
   }
 };
+

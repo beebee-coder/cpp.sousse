@@ -1,13 +1,10 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { 
-  LayoutDashboard, 
-  Terminal, 
-  Database, 
+import {
+  LayoutDashboard,
+  Database,
   Monitor,
-  Camera,
-  MessageSquare,
   Cpu,
   ShieldCheck,
   Rocket,
@@ -31,7 +28,6 @@ import { Button } from '@/components/ui/button';
 const allNavItems = [
   { icon: LayoutDashboard, label: 'Tableau de Bord', href: '/dashboard' },
   { icon: ShieldCheck, label: 'Console Admin', href: '/admin' },
-  { icon: MessageSquare, label: 'Chat Neural', href: '/chat' },
   { icon: Database, label: 'Base RAG', href: '/dataset' },
   { icon: HardDrive, label: 'Explorateur BDD', href: '/bdd' },
   { icon: ImageIcon, label: "Banque d'images", href: '/bank' },
@@ -60,7 +56,7 @@ function SidebarContent({ pathname, isDesktop, isReady, onNavigate }: SidebarCon
       return !['/bdd', '/pipeline', '/admin'].includes(item.href);
     }
 
-    return ['/chat', '/dataset'].includes(item.href);
+    return ['/dataset'].includes(item.href);
   });
 
   useEffect(() => {

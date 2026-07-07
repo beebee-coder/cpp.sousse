@@ -1,0 +1,13 @@
+{
+  "knowledgeId": "seed-k-epi-crf",
+  "type": "qa",
+  "title": "Sécurité CRF - EPI Obligatoires",
+  "question": "Quels sont les EPI obligatoires en zone CRF ?",
+  "answer": "Casque de sécurité, gants anti-coupure, lunettes de protection S3, chaussures de sécurité.",
+  "tags": [
+    "EPI",
+    "Sécurité",
+    "CRF"
+  ],
+  "category": "Sécurité"
+}

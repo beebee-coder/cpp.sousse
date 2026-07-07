@@ -19,7 +19,10 @@ import {
   Type,
   Loader2,
   ImageIcon,
-  Boxes
+  Boxes,
+  ArrowLeft,
+  MessageSquare,
+  FileText
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -288,6 +291,21 @@ export default function BDDPage() {
     }
   };
 
+  const handleClearRegistre = useCallback(async () => {
+    if (!confirm('Purger les répertoires BANK, ITEMS et PROCEDURES du REGISTRE ? Cette action est irréversible.')) return;
+    try {
+      const res = await apiClient.post('/api/rag-base', { action: 'clear-registre' });
+      if ((res as any).success) {
+        toast({ title: 'REGISTRE purgé', description: 'Les répertoires BANK, ITEMS et PROCEDURES ont été vidés.' });
+        refreshRegistry();
+      } else {
+        throw new Error((res as any).error || 'Erreur inconnue');
+      }
+    } catch (e: any) {
+      toast({ title: 'Erreur purge', description: e.message, variant: 'destructive' });
+    }
+  }, [toast, refreshRegistry]);
+
   const toggleFolder = (id: string) => {
     setTree(prev => {
       const update = (nodes: FSNode[]): FSNode[] => nodes.map(n => 
@@ -344,9 +362,50 @@ export default function BDDPage() {
       <main className="flex-1 flex flex-col min-w-0 h-full">
         <header className="h-16 border-b border-border bg-card/30 flex items-center justify-between px-6 shrink-0">
           <div className="flex items-center gap-2">
+            <Button variant="ghost" size="icon" onClick={() => router.back()} className="h-8 w-8 text-muted-foreground hover:text-white">
+              <ArrowLeft className="w-4 h-4" />
+            </Button>
             <HardDrive className="w-4 h-4 text-primary" />
-          <span className="font-headline font-bold text-xs uppercase tracking-widest text-primary">Gestionnaire d'Actifs Physique</span>
+            <span className="font-headline font-bold text-xs uppercase tracking-widest text-primary">STATION DE FORGE RAG</span>
+          </div>
+          <div className="flex bg-muted/40 p-0.5 rounded border border-border/40 font-code text-[10px] gap-0.5 shrink-0 mx-4">
+            <Button
+              size="sm"
+              variant={mode === 'web' ? 'default' : 'ghost'}
+              onClick={() => setMode('web')}
+              className={cn("h-7 px-3 text-[9px] font-bold uppercase", mode === 'web' ? "bg-primary text-primary-foreground hover:bg-primary/95" : "text-muted-foreground hover:text-white hover:bg-white/5")}
+            >
+              BDD Web (Registre)
+            </Button>
+            <Button
+              size="sm"
+              variant={mode === 'locale' ? 'default' : 'ghost'}
+              onClick={() => setMode('locale')}
+              className={cn("h-7 px-3 text-[9px] font-bold uppercase", mode === 'locale' ? "bg-primary text-primary-foreground hover:bg-primary/95" : "text-muted-foreground hover:text-white hover:bg-white/5")}
+            >
+              BDD Locale
+            </Button>
+            <Button
+              size="sm"
+              variant={mode === 'chroma' ? 'default' : 'ghost'}
+              onClick={() => setMode('chroma')}
+              className={cn("h-7 px-3 text-[9px] font-bold uppercase", mode === 'chroma' ? "bg-primary text-primary-foreground hover:bg-primary/95" : "text-muted-foreground hover:text-white hover:bg-white/5")}
+            >
+              ChromaDB
+            </Button>
+          </div>
           <div className="flex items-center gap-2">
+            {mode === 'web' && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleClearRegistre}
+                className="h-8 text-[10px] uppercase font-bold border-destructive/30 text-destructive hover:bg-destructive/10 gap-2"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Purger REGISTRE
+              </Button>
+            )}
             <Button 
               size="sm" 
               variant="secondary" 
@@ -355,12 +414,6 @@ export default function BDDPage() {
             >
               <ImageIcon className="w-3.5 h-3.5 mr-2" /> Banque d'images
             </Button>
-            <div className="flex bg-muted/30 p-1 rounded-sm border border-border">
-              <button onClick={() => setMode('web')} className={cn("px-3 py-1 text-[10px] font-code uppercase rounded-sm", mode === 'web' ? "bg-primary text-primary-foreground font-bold" : "text-muted-foreground")}>Registre</button>
-              <button onClick={() => setMode('chroma')} className={cn("px-3 py-1 text-[10px] font-code uppercase rounded-sm", mode === 'chroma' ? "bg-secondary text-secondary-foreground font-bold" : "text-muted-foreground")}>Vecteurs</button>
-              <button onClick={() => setMode('locale')} className={cn("px-3 py-1 text-[10px] font-code uppercase rounded-sm", mode === 'locale' ? "bg-accent text-accent-foreground font-bold" : "text-muted-foreground")}>Locale</button>
-            </div>
-          </div>
           </div>
         </header>
 

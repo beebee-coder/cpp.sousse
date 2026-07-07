@@ -130,5 +130,55 @@ export const postgresClient = {
 
   async saveAsset(relPath: string, dataUri: string) {
     await this.saveFile(relPath, dataUri);
+  },
+
+  async runDiagnostic() {
+    return [
+      `[DIAGNOSTIC] ${new Date().toISOString()}`,
+      `Registry root exists: ${fs.existsSync(REGISTRY_ROOT)}`,
+      `Registry root path: ${REGISTRY_ROOT}`,
+    ];
+  },
+
+  async getCloudData(projectId: string) {
+    const { prisma } = await import('./prisma-client');
+    return prisma.knowledgeItem.findMany({
+      orderBy: { createdAt: 'desc' }
+    });
+  },
+
+  async upsertCloudData(items: any[]) {
+    const { prisma } = await import('./prisma-client');
+    for (const item of items) {
+      const contentStr = typeof item.content === 'string' ? item.content : JSON.stringify(item.content);
+      let parsed: any = {};
+      try {
+        parsed = typeof item.content === 'string' ? JSON.parse(item.content) : item.content;
+      } catch (e) {}
+
+      await prisma.knowledgeItem.upsert({
+        where: { id: item.id },
+        update: {
+          title: item.title || parsed?.title || 'Sans titre',
+          type: item.type || parsed?.type || 'document',
+          content: contentStr,
+          question: item.question || parsed?.question || null,
+          answer: item.answer || parsed?.answer || null,
+          tags: item.tags || parsed?.tags || [],
+          category: item.category || parsed?.category || null,
+        },
+        create: {
+          id: item.id,
+          title: item.title || parsed?.title || 'Sans titre',
+          type: item.type || parsed?.type || 'document',
+          content: contentStr,
+          question: item.question || parsed?.question || null,
+          answer: item.answer || parsed?.answer || null,
+          tags: item.tags || parsed?.tags || [],
+          category: item.category || parsed?.category || null,
+          userId: item.userId || 'admin-root',
+        }
+      });
+    }
   }
 };

@@ -4,6 +4,7 @@ import { ProcedureStep } from '@/lib/procedures/types';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
+import { Badge } from '@/components/ui/badge';
 import { 
   ArrowRight, 
   AlertTriangle, 
@@ -15,7 +16,7 @@ import {
   CheckCircle2,
   Settings2
 } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { cn } from '@/lib/utils';
 
 interface StepGuideProps {
@@ -31,6 +32,7 @@ export function StepGuide({ step, onNext, onAlarm, onResolve, isAlarm, startTime
   const [elapsed, setElapsed] = useState(0);
   const duration = step.duration.value;
   const progress = Math.min(100, (elapsed / duration) * 100);
+  const warnedRef = useRef(false);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -39,12 +41,30 @@ export function StepGuide({ step, onNext, onAlarm, onResolve, isAlarm, startTime
     return () => clearInterval(timer);
   }, [startTime]);
 
-  // Déclenchement automatique d'alarme si timeout (si configuré dans le JSON)
   useEffect(() => {
     if (elapsed > step.validation.timeout.value && !isAlarm) {
       // onAlarm('TIMEOUT_EXCEEDED');
     }
   }, [elapsed, step, isAlarm, onAlarm]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+    if (warnedRef.current) return;
+
+    const preWarningAlarm = step.alarms?.find(a => a.type === 'warning' && typeof a.triggerBeforeEnd === 'number');
+    if (!preWarningAlarm || typeof preWarningAlarm.triggerBeforeEnd !== 'number') return;
+
+    const remaining = duration - elapsed;
+    if (remaining <= preWarningAlarm.triggerBeforeEnd && !isAlarm) {
+      warnedRef.current = true;
+
+      const utterance = new SpeechSynthesisUtterance('Attention, phase bientôt finie.');
+      utterance.lang = 'fr-FR';
+      utterance.rate = 1.0;
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(utterance);
+    }
+  }, [elapsed, duration, step.alarms, isAlarm]);
 
   return (
     <Card className={cn(

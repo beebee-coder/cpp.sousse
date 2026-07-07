@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+export const revalidate = false;
 import { NextRequest, NextResponse } from 'next/server';
 import { getSessionFromCookie } from '@/lib/session';
 import { SignJWT } from 'jose';

@@ -1,6 +1,6 @@
-import { prisma } from '@/lib/db/prisma-client';
 import bcrypt from 'bcryptjs';
 import { Role } from '@prisma/client';
+import { getPrisma } from '@/lib/db';
 
 // ============================================================
 // 🔐 AUTHENTIFICATION
@@ -9,6 +9,7 @@ import { Role } from '@prisma/client';
 export async function authenticateUser(email: string, password: string) {
   const ts = new Date().toLocaleTimeString();
   const normalizedEmail = email.toLowerCase().trim();
+  const prisma = await getPrisma();
 
   console.log(`📡 [AUTH_STORE] [${ts}] Tentative pour: ${normalizedEmail}`);
 
@@ -79,6 +80,7 @@ export async function authenticateUser(email: string, password: string) {
 // ============================================================
 
 export async function addPendingUser(firstName: string, lastName: string, password: string, role: Role = Role.user) {
+  const prisma = await getPrisma();
   try {
     const email = `${firstName.toLowerCase()}.${lastName.toLowerCase()}@visionode.local`;
     const existing = await prisma.user.findUnique({ where: { email } });
@@ -109,6 +111,7 @@ export async function addPendingUser(firstName: string, lastName: string, passwo
 }
 
 export async function listPendingUsers() {
+  const prisma = await getPrisma();
   try {
     const users = await prisma.user.findMany({
       where: { approved: false },
@@ -122,6 +125,7 @@ export async function listPendingUsers() {
 }
 
 export async function approveUser(userId: string) {
+  const prisma = await getPrisma();
   try {
     const user = await prisma.user.update({
       where: { id: userId },
@@ -135,6 +139,7 @@ export async function approveUser(userId: string) {
 }
 
 export async function rejectUser(userId: string) {
+  const prisma = await getPrisma();
   try {
     await prisma.user.delete({ where: { id: userId } });
     return { success: true };
@@ -145,6 +150,7 @@ export async function rejectUser(userId: string) {
 }
 
 export async function getAllUsers() {
+  const prisma = await getPrisma();
   try {
     const users = await prisma.user.findMany({
       orderBy: { createdAt: 'desc' }

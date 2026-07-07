@@ -1,8 +1,9 @@
+export const dynamic = 'force-dynamic';
+export const revalidate = false;
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db/prisma-client';
 import { getSessionFromCookie } from '@/lib/session';
 
-export const dynamic = 'force-dynamic';
 
 /**
  * @fileOverview API de Gestion des Connaissances Sémantiques [KNOWLEDGE_API].
@@ -27,7 +28,8 @@ export async function GET(request: NextRequest) {
     });
 
     return NextResponse.json({ success: true, items });
-  } catch (err: any) {
+  } catch (error: unknown) {
+    const err = error as Error;
     console.error(`❌ [KNOWLEDGE_API] [ERROR] Échec lecture :`, err.message);
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
@@ -42,7 +44,7 @@ export async function POST(request: NextRequest) {
     if (!session) return NextResponse.json({ success: false, error: 'NON_AUTHENTIFIÉ' }, { status: 401 });
 
     const body = await request.json();
-    const { type, title, question, answer, tags, category, isPublic } = body;
+    const { type, title, question, answer, tags, category } = body;
 
     if (!title || !type) {
       return NextResponse.json({ success: false, error: 'TITRE_ET_TYPE_REQUIS' }, { status: 400 });
@@ -57,7 +59,6 @@ export async function POST(request: NextRequest) {
         answer: answer?.trim() || null,
         tags: Array.isArray(tags) ? tags : [],
         category: category || 'General',
-        isPublic: isPublic !== undefined ? isPublic : true,
       }
     });
 
@@ -66,8 +67,10 @@ export async function POST(request: NextRequest) {
     // Optionnel : Déclencher ici la vectorisation Chroma/Weaviate asynchrone
     
     return NextResponse.json({ success: true, item });
-  } catch (err: any) {
+  } catch (error: unknown) {
+    const err = error as Error;
     console.error(`❌ [KNOWLEDGE_API] [ERROR] Échec injection :`, err.message);
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
 }
+

@@ -58,10 +58,10 @@ export function canAccessRoute(role: Role | undefined, pathname: string) {
   }
 
   const allowedRoutes: Record<Role, string[]> = {
-    [Role.admin]: ['/dashboard', '/chat', '/dataset', '/bank', '/conference', '/download', '/users', '/settings'],
-    [Role.chef_de_bloc]: ['/dashboard', '/chat', '/dataset', '/bank', '/conference', '/download'],
-    [Role.chef_de_quart]: ['/dashboard', '/chat', '/dataset', '/bank', '/conference', '/download'],
-    [Role.user]: ['/chat', '/dataset'],
+    [Role.admin]: ['/dashboard', '/dataset', '/bank', '/conference', '/download', '/users', '/settings'],
+    [Role.chef_de_bloc]: ['/dashboard', '/dataset', '/bank', '/conference', '/download'],
+    [Role.chef_de_quart]: ['/dashboard', '/dataset', '/bank', '/conference', '/download'],
+    [Role.user]: ['/dataset'],
   };
 
   return allowedRoutes[role]?.includes(normalizedPath) ?? false;
@@ -74,7 +74,7 @@ export function getHomePath(role: Role | undefined) {
     case Role.chef_de_quart:
       return '/dashboard';
     case Role.user:
-      return '/chat';
+      return '/dataset';
     default:
       return '/auth/signin';
   }

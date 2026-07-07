@@ -3,6 +3,8 @@
  * Version : Nomenclature V6.5 (Concordance Template JSON).
  */
 
+import { JsonValue, ProcedureFallback, PostExecutionCheck, PostExecutionReporting } from '@/types/common';
+
 export interface ProcedureMetadata {
   title: string;
   code: string;
@@ -78,6 +80,7 @@ export interface StepAlarm {
     contact: string;
     message: string;
   };
+  triggerBeforeEnd?: number;
 }
 
 export interface ProcedureStep {
@@ -103,7 +106,7 @@ export interface ProcedureStep {
     operation?: 'open' | 'close' | 'adjust';
     target?: number;
     speed?: 'rapid' | 'progressive' | 'slow';
-    parameters?: Record<string, any>;
+    parameters?: Record<string, JsonValue>;
     ui: {
       component: string;
       label: string;
@@ -124,7 +127,7 @@ export interface ProcedureStep {
     };
   };
   alarms: StepAlarm[];
-  fallbacks: any[];
+  fallbacks: ProcedureFallback[];
   media: {
     image?: { url: string; caption?: string; alt?: string };
     diagram?: { url: string; caption?: string };
@@ -158,7 +161,7 @@ export interface FullProcedure {
     variables: Array<{
       id: string;
       name: string;
-      value: any;
+      value: string | number | boolean;
       unit?: string;
       type: string;
       min?: number;
@@ -167,8 +170,8 @@ export interface FullProcedure {
     }>;
   };
   postExecution?: {
-    checks: any[];
-    reporting: any;
+    checks: PostExecutionCheck[];
+    reporting: PostExecutionReporting;
   };
   metadata: ProcedureMetadata;
   authorId?: string;
@@ -180,3 +183,14 @@ export interface FullProcedure {
     role?: string;
   };
 }
+
+export type ExecutionStatus = 
+  | 'IDLE' 
+  | 'PREREQUISITES_CHECK' 
+  | 'RUNNING' 
+  | 'PAUSED' 
+  | 'WAITING_CONFIRMATION' 
+  | 'ALARM' 
+  | 'COMPLETED' 
+  | 'FAILED' 
+  | 'ABORTED';

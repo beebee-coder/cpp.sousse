@@ -1,5 +1,21 @@
 {
-  "files": [],
-  "lastSync": "1970-01-01T00:00:00.000Z",
+  "files": [
+    {
+      "id": "1783349929494_2xlkbb0",
+      "originalName": "qa_seed-k-epi-crf.json",
+      "resolvedPath": "INDEX_CHROMA/items/qa_seed-k-epi-crf.json",
+      "type": "json",
+      "knowledgeType": "qa",
+      "cloudId": "seed-k-epi-crf",
+      "timestamp": 1783349929494,
+      "size": 358,
+      "tags": [
+        "EPI",
+        "Sécurité",
+        "CRF"
+      ]
+    }
+  ],
+  "lastSync": "2026-07-06T14:58:49.494Z",
   "version": "1.0.0"
 }

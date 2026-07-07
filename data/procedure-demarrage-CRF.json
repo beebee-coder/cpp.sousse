@@ -20,8 +20,8 @@
       "approvers": [
         {
           "id": "user-supervisor-001",
-          "name": "Jean Dupont",
-          "role": "supervisor",
+          "name": "ahmed abbes",
+          "role": "chef de bloc",
           "approvalDate": "2025-01-15T10:00:00Z"
         }
       ],
@@ -39,12 +39,12 @@
           "description": "Niveau du bassin d'aspiration supérieur à -5,00 m",
           "condition": "level > -5.00",
           "expectedState": "OK",
-          "verificationType": "automatic",
-          "sensorRef": "B3-CRF-LSL-101",
+          "verificationType": "manual",
           "displayName": "Niveau bassin d'aspiration",
           "unit": "m",
           "threshold": -5.00,
-          "operator": ">"
+          "operator": ">",
+          "manualCheckInstruction": "Veuillez vérifier visuellement le niveau du bassin d'aspiration et confirmer qu'il est supérieur à moins cinq mètres"
         },
         {
           "id": "pr-002",
@@ -53,27 +53,27 @@
           "expectedState": "OK",
           "verificationType": "manual",
           "displayName": "État unité hydraulique",
-          "manualCheckInstruction": "Vérifier que l'unité hydraulique 001 GO est en fonctionnement"
+          "manualCheckInstruction": "Veuillez vérifier que l'unité hydraulique 001 GO est opérationnelle et confirmer son état"
         },
         {
           "id": "pr-003",
           "description": "Vanne d'aspiration manuelle ouverte",
           "condition": "valve_aspiration == OPEN",
           "expectedState": "OK",
-          "verificationType": "automatic",
-          "sensorRef": "ZSH-101",
+          "verificationType": "manual",
           "displayName": "Position vanne aspiration",
-          "expectedPosition": "OPEN"
+          "expectedPosition": "OPEN",
+          "manualCheckInstruction": "Veuillez vérifier que la vanne d'aspiration manuelle est ouverte et confirmer sa position"
         },
         {
           "id": "pr-004",
           "description": "Vanne clapet de refoulement initialement fermée",
           "condition": "valve_discharge == CLOSED",
           "expectedState": "OK",
-          "verificationType": "automatic",
-          "sensorRef": "UV-101",
+          "verificationType": "manual",
           "displayName": "Position vanne refoulement",
-          "expectedPosition": "CLOSED"
+          "expectedPosition": "CLOSED",
+          "manualCheckInstruction": "Veuillez vérifier que la vanne clapet de refoulement est fermée et confirmer sa position"
         }
       ]
     },
@@ -148,7 +148,8 @@
               "ifPersistsAfter": 2,
               "contact": "supervisor",
               "message": "Perte de charge CFI persistante - Inspection requise"
-            }
+            },
+            "triggerBeforeEnd": 60
           }
         ],
         "fallbacks": [
@@ -245,6 +246,29 @@
           {
             "id": "alarm-002",
             "code": "CRF-002",
+            "type": "warning",
+            "severity": "medium",
+            "description": "Fin de la mise sous tension imminente",
+            "condition": "time_elapsed >= 5",
+            "remedy": {
+              "title": "Préparation à la fin de la mise sous tension",
+              "description": "La mise sous tension touche à sa fin, préparez-vous pour l'étape suivante",
+              "steps": [
+                "Surveiller les indicateurs de tension",
+                "Préparer les commandes pour l'étape suivante"
+              ],
+              "estimatedTime": 60
+            },
+            "escalation": {
+              "ifPersistsAfter": 1,
+              "contact": "electrical_team",
+              "message": "Fin de mise sous tension - Préparation étape suivante"
+            },
+            "triggerBeforeEnd": 5
+          },
+          {
+            "id": "alarm-002b",
+            "code": "CRF-002B",
             "type": "critical",
             "severity": "critical",
             "description": "Défaut de mise sous tension du moteur CRF",
@@ -364,6 +388,29 @@
           {
             "id": "alarm-003",
             "code": "CRF-003",
+            "type": "warning",
+            "severity": "medium",
+            "description": "Fin de l'ouverture de vanne imminente",
+            "condition": "time_elapsed >= 44",
+            "remedy": {
+              "title": "Préparation à la fin d'ouverture",
+              "description": "L'ouverture de la vanne touche à sa fin, préparez-vous pour la phase de stabilisation",
+              "steps": [
+                "Surveiller la position de la vanne",
+                "Préparer les vérifications pour la stabilisation"
+              ],
+              "estimatedTime": 60
+            },
+            "escalation": {
+              "ifPersistsAfter": 1,
+              "contact": "instrumentation_team",
+              "message": "Fin d'ouverture vanne UV-101 - Préparation stabilisation"
+            },
+            "triggerBeforeEnd": 10
+          },
+          {
+            "id": "alarm-003b",
+            "code": "CRF-003B",
             "type": "critical",
             "severity": "critical",
             "description": "Défaut d'ouverture de la vanne UV-101",
@@ -485,6 +532,30 @@
           {
             "id": "alarm-004",
             "code": "CRF-004",
+            "type": "warning",
+            "severity": "medium",
+            "description": "Fin de la stabilisation imminente",
+            "condition": "time_elapsed >= 120",
+            "remedy": {
+              "title": "Préparation à la fin de stabilisation",
+              "description": "La phase de stabilisation touche à sa fin, préparez-vous pour l'ouverture finale",
+              "steps": [
+                "Vérifier la pression dans la tuyauterie",
+                "Confirmer l'absence de coups de bélier",
+                "Préparer les commandes pour l'ouverture finale"
+              ],
+              "estimatedTime": 120
+            },
+            "escalation": {
+              "ifPersistsAfter": 1,
+              "contact": "operator",
+              "message": "Fin de stabilisation - Préparation ouverture finale"
+            },
+            "triggerBeforeEnd": 30
+          },
+          {
+            "id": "alarm-004b",
+            "code": "CRF-004B",
             "type": "critical",
             "severity": "critical",
             "description": "Pression excessive dans la tuyauterie BONNA",
@@ -648,7 +719,8 @@
                 "Tester les transmetteurs"
               ],
               "estimatedTime": 300
-            }
+            },
+            "triggerBeforeEnd": 20
           }
         ],
         "fallbacks": [],

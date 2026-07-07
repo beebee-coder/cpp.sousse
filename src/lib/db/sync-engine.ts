@@ -89,7 +89,10 @@ export const syncEngine = {
             knowledgeType,
             cloudId: item.id,
             tags: item.tags || [title]
-          }
+          },
+          targetDir: knowledgeType === 'procedure'
+            ? `procedures/${item.id}`
+            : 'items'
         });
 
         // 3. Vectorisation Locale via API Route

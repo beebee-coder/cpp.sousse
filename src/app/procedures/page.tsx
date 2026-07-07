@@ -2,16 +2,17 @@
 
 import { useState, useEffect } from 'react';
 import { DashboardSidebar } from '@/components/dashboard/Sidebar';
-import { 
-  FileText, 
-  Plus, 
-  Search, 
-  Settings2, 
+import {
+  FileText,
+  Plus,
+  Search,
+  Settings2,
   ChevronRight,
   ShieldCheck,
   Zap,
   Loader2,
-  AlertCircle
+  AlertCircle,
+  Play
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -143,12 +144,22 @@ export default function ProceduresListPage() {
                     </div>
 
                     <div className="mt-5 flex gap-2">
-                      <Button size="sm" className="flex-1 h-8 text-[9px] font-bold uppercase bg-secondary text-secondary-foreground">
-                        <Zap className="w-3 h-3 mr-2" /> Exécuter
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
-                        <ChevronRight className="w-4 h-4" />
-                      </Button>
+                       <Button
+                         size="sm"
+                         className="flex-1 h-8 text-[9px] font-bold uppercase bg-primary text-primary-foreground"
+                         onClick={(e) => {
+                           e.stopPropagation();
+                           router.push(`/procedures/guide/${proc.code || proc.id}`);
+                         }}
+                       >
+                         <Play className="w-3 h-3 mr-2" /> Guide IA
+                       </Button>
+                       <Button size="sm" className="flex-1 h-8 text-[9px] font-bold uppercase bg-secondary text-secondary-foreground" onClick={(e) => { e.stopPropagation(); router.push(`/procedures/${proc.id}/execute`); }}>
+                         <Zap className="w-3 h-3 mr-2" /> Exécuter
+                       </Button>
+                       <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" onClick={(e) => { e.stopPropagation(); router.push(`/procedures/${proc.id}/edit`); }}>
+                         <ChevronRight className="w-4 h-4" />
+                       </Button>
                     </div>
                   </Card>
                 );

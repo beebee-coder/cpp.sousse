@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+export const revalidate = false;
 
 import { NextResponse } from 'next/server';
 import { postgresClient } from '@/lib/db/postgres-client';

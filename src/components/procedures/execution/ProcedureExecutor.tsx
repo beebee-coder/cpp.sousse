@@ -17,7 +17,7 @@ import {
   MessageSquare,
   FileText
 } from 'lucide-react';
-import { FullProcedure } from '@/lib/procedures/types';
+import { FullProcedure, PrerequisiteItem } from '@/lib/procedures/types';
 import { ExecutionEngine, ExecutionState } from '@/lib/procedures/services/execution-engine.service';
 import { StepGuide } from './StepGuide';
 import { ProgressTracker } from './ProgressTracker';
@@ -38,6 +38,7 @@ export function ProcedureExecutor({ procedure }: ProcedureExecutorProps) {
   const [advice, setAdvice] = useState<AssistantAdvice | null>(null);
   const [isAssistantLoading, setIsAssistantLoading] = useState(false);
   const [report, setReport] = useState<any>(null);
+  const [currentPrerequisite, setCurrentPrerequisite] = useState<PrerequisiteItem | null>(null);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(Date.now()), 1000);
@@ -54,7 +55,6 @@ export function ProcedureExecutor({ procedure }: ProcedureExecutorProps) {
     }
   }, [state.currentStepIndex, state.status, procedure]);
 
-  const handleStart = () => setState(engine.start());
   const handleConfirmPrerequisites = () => setState(engine.confirmPrerequisites());
   const handleNext = () => {
     const nextState = engine.nextStep();
@@ -67,6 +67,32 @@ export function ProcedureExecutor({ procedure }: ProcedureExecutorProps) {
   const handleTriggerAlarm = (code: string) => setState(engine.triggerAlarm(code));
   const handleResolveAlarm = (code: string) => setState(engine.resolveAlarm(code));
 
+  const handleStart = () => {
+    const nextState = engine.start();
+    setState(nextState);
+    
+    const prerequisites = procedure.prerequisites.items;
+    if (prerequisites.length > 0) {
+      setCurrentPrerequisite(prerequisites[0]);
+    }
+  };
+
+  const handleConfirmPrerequisite = () => {
+    if (!currentPrerequisite) return;
+    
+    const nextState = engine.confirmNextPrerequisite(currentPrerequisite.id);
+    setState(nextState);
+    
+    const prerequisites = procedure.prerequisites.items;
+    const remaining = prerequisites.filter(p => !nextState.confirmedPrerequisites.includes(p.id));
+    
+    if (remaining.length > 0) {
+      setCurrentPrerequisite(remaining[0]);
+    } else {
+      setCurrentPrerequisite(null);
+    }
+  };
+
   const voice = useVoice({
     onResult: (text) => {
       const command = matchVoiceAction(text);
@@ -74,11 +100,22 @@ export function ProcedureExecutor({ procedure }: ProcedureExecutorProps) {
         if (command.action === 'START' && state.status === 'IDLE') handleStart();
         if (command.action === 'NEXT') handleNext();
         if (command.action === 'ALARM') handleTriggerAlarm('VOICE_EMERGENCY');
+        if (command.action === 'CONFIRM' && state.status === 'PREREQUISITES_CHECK') handleConfirmPrerequisite();
       }
     },
     autoRestart: true,
     lang: 'fr-FR'
   });
+
+  useEffect(() => {
+    if (state.status === 'PREREQUISITES_CHECK' && currentPrerequisite) {
+      const utterance = new SpeechSynthesisUtterance(currentPrerequisite.manualCheckInstruction || `Prérequis : ${currentPrerequisite.displayName}. Veuillez confirmer.`);
+      utterance.lang = 'fr-FR';
+      utterance.rate = 1.0;
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(utterance);
+    }
+  }, [currentPrerequisite, state.status]);
 
   const currentStep = state.currentStepIndex >= 0 ? procedure.steps[state.currentStepIndex] : null;
 
@@ -141,24 +178,50 @@ export function ProcedureExecutor({ procedure }: ProcedureExecutorProps) {
             <Card className="p-8 border-primary/20 bg-card/40 space-y-6 shadow-2xl">
               <div className="flex items-center gap-3 border-b border-border pb-4">
                 <ShieldCheck className="w-6 h-6 text-primary" />
-                <h3 className="text-xl font-headline font-bold uppercase">Audit des Prérequis réels</h3>
+                <h3 className="text-xl font-headline font-bold uppercase">Confirmation manuelle des prérequis</h3>
               </div>
-              <div className="space-y-4">
-                {procedure.prerequisites.items.map((item) => (
-                  <div key={item.id} className="flex items-center justify-between p-4 bg-black/20 rounded-sm border border-border">
-                    <div className="flex items-center gap-4">
-                      <div className="w-2 h-2 rounded-full bg-secondary shadow-[0_0_8px_rgba(46,184,146,0.5)]" />
-                      <span className="text-sm font-code uppercase">{item.displayName}</span>
+              
+              {currentPrerequisite ? (
+                <div className="space-y-6">
+                  <div className="p-6 bg-black/40 border border-primary/30 rounded-sm">
+                    <div className="flex items-center gap-3 mb-4">
+                      <span className="text-[10px] font-bold text-primary uppercase tracking-widest">
+                        Étape {state.confirmedPrerequisites.length + 1} sur {procedure.prerequisites.items.length}
+                      </span>
                     </div>
-                    <Badge variant="outline" className="text-[10px] border-secondary/30 text-secondary uppercase font-bold">CONFORME</Badge>
+                    <h4 className="text-lg font-headline font-bold uppercase mb-2">{currentPrerequisite.displayName}</h4>
+                    <p className="text-sm font-code text-muted-foreground mb-4">{currentPrerequisite.description}</p>
+                    <div className="p-4 bg-primary/5 border border-primary/20 rounded-sm">
+                      <p className="text-xs font-code text-primary">
+                        <span className="font-bold">Instruction : </span>
+                        {currentPrerequisite.manualCheckInstruction}
+                      </p>
+                    </div>
                   </div>
-                ))}
-              </div>
-              <div className="pt-6">
-                <Button onClick={handleConfirmPrerequisites} className="w-full h-12 bg-secondary text-secondary-foreground font-bold uppercase shadow-xl">
-                  Confirmer et Lancer l'Étape 1
-                </Button>
-              </div>
+                  
+                  <div className="flex gap-4">
+                    <Button 
+                      onClick={handleConfirmPrerequisite} 
+                      className="flex-1 h-12 bg-secondary text-secondary-foreground font-bold uppercase shadow-xl"
+                    >
+                      <CheckCircle2 className="w-5 h-5 mr-2" />
+                      Confirmer ce prérequis
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="p-4 bg-secondary/10 border border-secondary/30 rounded-sm">
+                    <p className="text-sm font-code text-secondary">Tous les prérequis ont été confirmés.</p>
+                  </div>
+                  <Button 
+                    onClick={handleConfirmPrerequisites} 
+                    className="w-full h-12 bg-secondary text-secondary-foreground font-bold uppercase shadow-xl"
+                  >
+                    Lancer la procédure
+                  </Button>
+                </div>
+              )}
             </Card>
           )}
 

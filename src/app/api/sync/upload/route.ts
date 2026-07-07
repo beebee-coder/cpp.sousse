@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+export const revalidate = false;
 import { createHybridRoute } from '@/lib/api-route-creator';
 import { postgresClient } from '@/lib/db/postgres-client';
 

@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+export const revalidate = false;
 
 import { createHybridRoute } from '@/lib/api-route-creator';
 import { runChromaDemo } from '@/lib/chroma-example';

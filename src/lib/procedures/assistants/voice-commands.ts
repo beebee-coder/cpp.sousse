@@ -3,14 +3,15 @@
  */
 
 export interface VoiceAction {
-  action: 'START' | 'NEXT' | 'BACK' | 'ALARM' | 'STATUS' | 'HELP';
+  action: 'START' | 'NEXT' | 'BACK' | 'ALARM' | 'STATUS' | 'HELP' | 'CONFIRM';
   keywords: string[];
   description: string;
 }
 
 export const PROCEDURE_VOICE_COMMANDS: VoiceAction[] = [
   { action: 'START', keywords: ['démarrer', 'initialiser', 'commencer', 'start'], description: 'Lance la procédure' },
-  { action: 'NEXT', keywords: ['suivant', 'étape suivante', 'validé', 'ok', 'next'], description: 'Passe à l\'étape suivante' },
+  { action: 'CONFIRM', keywords: ['confirmer', 'confirmé', 'ok', 'validé', 'confirm'], description: 'Confirme le prérequis ou l\'étape en cours' },
+  { action: 'NEXT', keywords: ['suivant', 'étape suivante', 'next'], description: 'Passe à l\'étape suivante' },
   { action: 'BACK', keywords: ['précédent', 'retour', 'back'], description: 'Revient à l\'étape précédente' },
   { action: 'ALARM', keywords: ['alerte', 'alarme', 'problème', 'danger', 'stop', 'erreur'], description: 'Déclenche une alerte' },
   { action: 'STATUS', keywords: ['statut', 'progression', 'où en sommes nous'], description: 'Donne le statut actuel' },

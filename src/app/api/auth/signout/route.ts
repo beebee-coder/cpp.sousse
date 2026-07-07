@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+export const revalidate = false;
 import { clearSessionCookie } from '@/lib/session';
 import { NextResponse } from 'next/server';
 

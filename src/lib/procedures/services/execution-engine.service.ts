@@ -14,6 +14,8 @@ export interface ExecutionState {
   elapsedTime: number;
   completedSteps: string[];
   activeAlarms: string[];
+  currentPrerequisiteIndex: number;
+  confirmedPrerequisites: string[];
 }
 
 export type InternalExecutionStatus = 
@@ -42,6 +44,8 @@ export class ExecutionEngine {
       elapsedTime: 0,
       completedSteps: [],
       activeAlarms: [],
+      currentPrerequisiteIndex: 0,
+      confirmedPrerequisites: [],
     };
     console.log(`⚙️ [EXEC_ENGINE] [INIT] Moteur chargé pour : ${procedure.code}`);
   }
@@ -55,10 +59,40 @@ export class ExecutionEngine {
 
   confirmPrerequisites(): ExecutionState {
     if (this.state.status !== ('PREREQUISITES_CHECK' as ExecutionStatus)) return this.state;
-    this.state.currentStepIndex = 0;
-    this.state.status = 'RUNNING' as ExecutionStatus;
-    this.state.stepStartTime = Date.now();
-    console.log(`⚙️ [EXEC_ENGINE] [STEP] Prérequis validés. Entrée Étape 1`);
+    
+    const prerequisites = this.procedure.prerequisites.items;
+    const remaining = prerequisites.filter(p => !this.state.confirmedPrerequisites.includes(p.id));
+    
+    if (remaining.length === 0) {
+      this.state.currentStepIndex = 0;
+      this.state.status = 'RUNNING' as ExecutionStatus;
+      this.state.stepStartTime = Date.now();
+      console.log(`⚙️ [EXEC_ENGINE] [STEP] Prérequis validés. Entrée Étape 1`);
+    }
+    
+    return { ...this.state };
+  }
+
+  confirmNextPrerequisite(prerequisiteId: string): ExecutionState {
+    if (this.state.status !== ('PREREQUISITES_CHECK' as ExecutionStatus)) return this.state;
+    
+    if (!this.state.confirmedPrerequisites.includes(prerequisiteId)) {
+      this.state.confirmedPrerequisites.push(prerequisiteId);
+      console.log(`✅ [EXEC_PREREQ] [CONFIRMED] ${prerequisiteId}`);
+    }
+    
+    const prerequisites = this.procedure.prerequisites.items;
+    const remaining = prerequisites.filter(p => !this.state.confirmedPrerequisites.includes(p.id));
+    
+    if (remaining.length === 0) {
+      this.state.currentStepIndex = 0;
+      this.state.status = 'RUNNING' as ExecutionStatus;
+      this.state.stepStartTime = Date.now();
+      console.log(`⚙️ [EXEC_ENGINE] [STEP] Prérequis validés. Entrée Étape 1`);
+    } else {
+      this.state.currentPrerequisiteIndex = prerequisites.indexOf(remaining[0]);
+    }
+    
     return { ...this.state };
   }
 

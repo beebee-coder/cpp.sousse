@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+export const revalidate = false;
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db/prisma-client';
 import { postgresClient } from '@/lib/db/postgres-client';
@@ -5,7 +7,6 @@ import { getSessionFromCookie } from '@/lib/session';
 import { v4 as uuidv4 } from 'uuid';
 import { FullProcedure, ProcedureMetadata } from '@/lib/procedures/types';
 
-export const dynamic = 'force-dynamic';
 
 /**
  * @fileOverview API de Forge Industrielle V6.7 - Concordance CRF & Réponse Rapide.
@@ -56,7 +57,8 @@ export async function POST(request: NextRequest) {
     try {
       await postgresClient.saveFile(regPath, JSON.stringify(procedureData, null, 2));
       console.log(`✅ [REGISTRY] [SUCCESS] [${traceId}] Fichier JSON créé.`);
-    } catch (e: any) {
+    } catch (error: unknown) {
+      const e = error as Error;
       console.warn(`⚠️ [REGISTRY] [ERROR] [${traceId}] Échec archivage disque :`, e.message);
     }
 
@@ -77,7 +79,6 @@ export async function POST(request: NextRequest) {
           description: body.description || metadata.description || 'Mis à jour via Station de Forge.',
           steps: procedureData.steps as any,
           prerequisites: procedureData.prerequisites as any,
-          metadata: procedureData.metadata as any,
           updatedAt: new Date(),
         },
         create: {
@@ -86,18 +87,16 @@ export async function POST(request: NextRequest) {
           title,
           description: body.description || metadata.description || 'Forgé via Station VisioNode.',
           category: (metadata.category || 'OPERATION').toUpperCase(),
-          department: (metadata.department || 'PRODUCTION').toUpperCase(),
           criticality: (metadata.criticality || 'MEDIUM').toUpperCase(),
-          version: metadata.version || '1.0.0',
           status: 'APPROVED',
           prerequisites: procedureData.prerequisites as any,
           steps: procedureData.steps as any,
-          metadata: procedureData.metadata as any,
           authorId: authorId,
         }
       });
       console.log(`✅ [FORGE] [SUCCESS] [${traceId}] Liaison SQL établie.`);
-    } catch (sqlErr: any) {
+    } catch (error: unknown) {
+      const sqlErr = error as Error;
       console.error(`🛡️ [FORGE] [BYPASS_SQL] [${traceId}] SQL non critique ignoré :`, sqlErr.message);
     }
 
@@ -108,7 +107,8 @@ export async function POST(request: NextRequest) {
       traceId 
     });
 
-  } catch (err: any) {
+  } catch (error: unknown) {
+    const err = error as Error;
     console.error(`❌ [FORGE] [FATAL] [${traceId}] Panique :`, err.message);
     return NextResponse.json({ 
       success: false, 
@@ -125,8 +125,10 @@ export async function GET() {
       include: { author: { select: { firstName: true, lastName: true } } }
     });
     return NextResponse.json({ success: true, procedures });
-  } catch (e: any) {
+  } catch (error: unknown) {
+    const e = error as Error;
     console.error(`❌ [FORGE] [READ_ERROR]`, e.message);
     return NextResponse.json({ success: false, procedures: [], message: 'Mode Registre Physique actif.' });
   }
 }
+

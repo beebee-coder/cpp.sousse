@@ -5,7 +5,7 @@ import { VisionTerminal } from '@/components/dashboard/VisionTerminal';
 import { CommandPalette } from '@/components/dashboard/CommandPalette';
 import { StatusBadge } from '@/components/dashboard/StatusBadge';
 import { SyncPanel } from '@/components/SyncPanel';
-import { Activity, Bell, User, Cpu, ShieldCheck, HeartPulse, BookOpen, MessageSquare, Users, Database } from 'lucide-react';
+import { Activity, Bell, User, Cpu, ShieldCheck, HeartPulse, BookOpen, Users, Database } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { usePlatform } from '@/components/PlatformProvider';
 import { Card } from '@/components/ui/card';
@@ -129,12 +129,7 @@ export default function DashboardPage() {
             <span className="text-primary font-bold">{knowledgeCount} items</span>
           </div>
           <a href="/dataset" className="block w-full text-center text-[10px] font-bold uppercase tracking-widest py-1.5 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors">
-            Ajouter Q/R ou Procédure →
-          </a>
-          <a href="/chat" className="block w-full text-center text-[10px] font-bold uppercase tracking-widest py-1.5 rounded bg-secondary/10 text-secondary hover:bg-secondary/20 transition-colors">
-            <span className="flex items-center justify-center gap-1">
-              <MessageSquare className="w-3 h-3" /> Chat IA →
-            </span>
+            Gérer Q/R et Procédures →
           </a>
         </div>
       );
@@ -144,9 +139,9 @@ export default function DashboardPage() {
     return (
       <div className="space-y-3">
         <p className="text-[10px] text-muted-foreground font-code">Accès rapide</p>
-        <a href="/chat" className="block w-full text-center text-[10px] font-bold uppercase tracking-widest py-2 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors border border-primary/20">
+        <a href="/dataset" className="block w-full text-center text-[10px] font-bold uppercase tracking-widest py-2 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors border border-primary/20">
           <span className="flex items-center justify-center gap-1.5">
-            <MessageSquare className="w-3.5 h-3.5" /> Démarrer un Chat IA
+            <Database className="w-3.5 h-3.5" /> Questions / Réponses
           </span>
         </a>
       </div>

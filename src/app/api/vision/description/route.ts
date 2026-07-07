@@ -1,7 +1,8 @@
+export const dynamic = 'force-dynamic';
+export const revalidate = false;
 import { createHybridRoute } from '@/lib/api-route-creator';
 import { visionAssistantDescription } from '@/ai/flows/vision-assistant-description';
 
-export const dynamic = 'force-dynamic';
 
 /**
  * API Route pour l'analyse visuelle industrielle hybride.
@@ -21,3 +22,4 @@ export const POST = createHybridRoute<{ photoDataUri: string }, any>({
     return await visionAssistantDescription({ photoDataUri });
   }
 });
+

@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+export const revalidate = false;
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db/prisma-client';
 
@@ -19,9 +21,8 @@ export async function POST(request: NextRequest) {
     const lastSyncDate = lastSync ? new Date(lastSync) : new Date(0);
 
     // Récupérer les KnowledgeItems créés/mis à jour depuis la dernière sync
-    const where: any = {
+    const where: Record<string, unknown> = {
       createdAt: { gt: lastSyncDate },
-      isPublic: true,
     };
 
     // scope='self' : uniquement l'utilisateur courant (inutilisé pour l'instant mais prévu)
@@ -40,12 +41,8 @@ export async function POST(request: NextRequest) {
         title: true,
         question: true,
         answer: true,
-        steps: true,
         tags: true,
         category: true,
-        difficulty: true,
-        isPublic: true,
-        syncedLocal: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -62,10 +59,8 @@ export async function POST(request: NextRequest) {
         title: ki.title,
         question: ki.question,
         answer: ki.answer,
-        steps: ki.steps,
         tags: ki.tags,
         category: ki.category,
-        difficulty: ki.difficulty,
       }),
       tags: ki.tags,
       createdAt: ki.createdAt,
@@ -80,9 +75,9 @@ export async function POST(request: NextRequest) {
       syncedAt: new Date().toISOString(),
       count: items.length,
     });
-  } catch (err: any) {
+  } catch (error: unknown) {
+    const err = error as Error;
     console.error('[SYNC/DOWNLOAD]', err.message);
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
 }
-

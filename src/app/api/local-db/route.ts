@@ -1,7 +1,8 @@
+export const dynamic = 'force-dynamic';
+export const revalidate = false;
 import { createHybridRoute } from '@/lib/api-route-creator';
 import { localDB } from '@/lib/db/local-db';
 
-export const dynamic = 'force-dynamic';
 
 /**
  * API de gestion de la Base de Données Locale [LOCAL_DB].
@@ -79,3 +80,4 @@ export const DELETE = createHybridRoute<any, any>({
     }
   }
 });
+

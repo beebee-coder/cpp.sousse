@@ -11,7 +11,7 @@ interface ValidationBadgeProps {
 }
 
 export function ValidationBadge({ status, label, value, className }: ValidationBadgeProps) {
-  const configs = {
+  const configs: Record<ValidationBadgeProps['status'], { color: string; bg: string; border: string; icon: any; animate?: string }> = {
     VALIDATED: { color: 'text-secondary', bg: 'bg-secondary/10', border: 'border-secondary/30', icon: CheckCircle2 },
     FAILED: { color: 'text-destructive', bg: 'bg-destructive/10', border: 'border-destructive/30', icon: AlertCircle },
     PENDING: { color: 'text-muted-foreground', bg: 'bg-muted/10', border: 'border-muted/30', icon: Clock },

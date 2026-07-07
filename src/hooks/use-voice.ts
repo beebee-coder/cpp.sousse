@@ -2,24 +2,21 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 
-interface VoiceOptions {
+export interface VoiceOptions {
   onResult?: (text: string) => void;
   onEnd?: () => void;
+  onCorrection?: () => void;
   lang?: string;
   autoRestart?: boolean;
 }
 
-interface VoiceState {
+export interface VoiceState {
   isListening: boolean;
   isSupported: boolean;
   error: string | null;
   volume: number;
 }
 
-/**
- * Hook de contrôle vocal optimisé pour VisioNode.
- * Stable, performant et sans boucles de rendu.
- */
 export function useVoice(options: VoiceOptions = {}) {
   const [state, setState] = useState<VoiceState>({
     isListening: false,
@@ -33,15 +30,19 @@ export function useVoice(options: VoiceOptions = {}) {
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const isManuallyStopped = useRef(true);
-  
+
   const onResultRef = useRef(options.onResult);
   const onEndRef = useRef(options.onEnd);
-  
-  // Mettre à jour les refs sans déclencher de re-rendu
+  const onCorrectionRef = useRef(options.onCorrection);
+
+  const lastTranscriptRef = useRef<string | null>(null);
+  const lastResultTimeRef = useRef<number>(0);
+
   useEffect(() => {
     onResultRef.current = options.onResult;
     onEndRef.current = options.onEnd;
-  }, [options.onResult, options.onEnd]);
+    onCorrectionRef.current = options.onCorrection;
+  }, [options.onResult, options.onEnd, options.onCorrection]);
 
   const stopVolumeAnalysis = useCallback(() => {
     if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
@@ -61,7 +62,7 @@ export function useVoice(options: VoiceOptions = {}) {
         const analyser = context.createAnalyser();
         analyser.fftSize = 256;
         source.connect(analyser);
-        
+
         audioContextRef.current = context;
         analyserRef.current = analyser;
       }
@@ -84,7 +85,7 @@ export function useVoice(options: VoiceOptions = {}) {
       };
       updateVolume();
     } catch (e) {
-      console.warn("Signal audio indisponible.");
+      console.warn('Signal audio indisponible.');
     }
   }, []);
 
@@ -92,7 +93,7 @@ export function useVoice(options: VoiceOptions = {}) {
     if (typeof window === 'undefined') return;
 
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    
+
     if (!SpeechRecognition) {
       setState(prev => ({ ...prev, isSupported: false }));
       return;
@@ -100,8 +101,8 @@ export function useVoice(options: VoiceOptions = {}) {
 
     if (!recognitionRef.current) {
       const recognition = new SpeechRecognition();
-      recognition.continuous = true;
-      recognition.interimResults = true;
+      recognition.continuous = false;
+      recognition.interimResults = false;
       recognition.lang = options.lang || 'fr-FR';
 
       recognition.onstart = () => {
@@ -114,20 +115,34 @@ export function useVoice(options: VoiceOptions = {}) {
         for (let i = event.resultIndex; i < event.results.length; ++i) {
           transcript += event.results[i][0].transcript;
         }
-        
-        if (transcript && onResultRef.current) {
+
+        const now = Date.now();
+        const isDuplicate = transcript === lastTranscriptRef.current && now - lastResultTimeRef.current < 1200;
+        lastTranscriptRef.current = transcript;
+        lastResultTimeRef.current = now;
+
+        if (!transcript || isDuplicate) return;
+
+        if (onResultRef.current) {
           onResultRef.current(transcript);
+        }
+
+        if (onCorrectionRef.current) {
+          const normalized = transcript.trim().toLowerCase();
+          if (/^non[.!?\s]*$/i.test(normalized)) {
+            onCorrectionRef.current();
+          }
         }
       };
 
       recognition.onend = () => {
         setState(prev => ({ ...prev, isListening: false }));
         stopVolumeAnalysis();
-        
+
         if (options.autoRestart && !isManuallyStopped.current) {
           try { recognition.start(); } catch (e) {}
         }
-        
+
         if (onEndRef.current) onEndRef.current();
       };
 
@@ -148,6 +163,8 @@ export function useVoice(options: VoiceOptions = {}) {
   const startListening = useCallback(() => {
     if (recognitionRef.current) {
       isManuallyStopped.current = false;
+      lastTranscriptRef.current = null;
+      lastResultTimeRef.current = 0;
       try { recognitionRef.current.start(); } catch (e) {}
     }
   }, []);
@@ -165,14 +182,13 @@ export function useVoice(options: VoiceOptions = {}) {
       isManuallyStopped.current = false;
       try {
         recognitionRef.current.stop();
-        // Le auto-restart dans onend prendra le relais
       } catch (e) {}
     }
   }, []);
 
   const speak = useCallback((text: string) => {
     if (typeof window === 'undefined' || !window.speechSynthesis) return;
-    
+
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = options.lang || 'fr-FR';
@@ -183,21 +199,21 @@ export function useVoice(options: VoiceOptions = {}) {
 
     utterance.onend = () => {
       if (wasListening && !isManuallyStopped.current) {
-        try { recognitionRef.current?.start(); } catch(e) {}
+        try { recognitionRef.current?.start(); } catch (e) {}
       }
     };
 
     window.speechSynthesis.speak(utterance);
   }, [options.lang]);
 
-  return { 
+  return {
     isListening: state.isListening,
     isSupported: state.isSupported,
     error: state.error,
     volume: state.volume,
-    startListening, 
-    stopListening, 
-    restart, 
-    speak 
+    startListening,
+    stopListening,
+    restart,
+    speak,
   };
 }

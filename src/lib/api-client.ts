@@ -1,9 +1,17 @@
-
+// src/lib/api-client.ts
 /**
- * @fileOverview Client API centralisé pour VisioNode.
- * Version : Audité pour la gestion fidèle des succès/échecs.
+ * @fileOverview Client API centralisé pour VisioNode (Version hybride unifiée).
+ *
+ * RÈGLE UNIQUE pour les deux cibles (Vercel web + Tauri desktop) :
+ *   - Web       : les routes sont servies par le même hôte (URL relative /api).
+ *   - Desktop   : la webview Tauri n'a PAS d'API locale ; elle appelle l'API
+ *                 cloud déployée sur Vercel via NEXT_PUBLIC_API_URL.
+ *
+ * Toute nouvelle feature doit passer par ce client (apiClient.get/post/...).
+ * Ainsi le code est écrit UNE fois et fonctionne dans les deux builds.
  */
 
+import { isDesktop } from './platform';
 import { executeHybridRequest } from './api-hybrid';
 
 export type ApiResponse<T> = T & {
@@ -13,6 +21,24 @@ export type ApiResponse<T> = T & {
   timestamp?: string;
   success?: boolean;
 };
+
+/**
+ * Résout l'URL finale d'un endpoint API.
+ *  - Desktop (Tauri) : on préfixe par NEXT_PUBLIC_API_URL (backend cloud).
+ *  - Web             : on garde l'URL relative (/api/...).
+ */
+export function resolveApiUrl(endpoint: string): string {
+  if (isDesktop) {
+    const cloudBase = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/$/, '');
+    if (cloudBase) {
+      const path = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+      return `${cloudBase}${path}`;
+    }
+    // Fallback (ne devrait pas arriver) : appel relatif.
+    console.warn('[API_CLIENT] NEXT_PUBLIC_API_URL manquant en mode desktop.');
+  }
+  return endpoint;
+}
 
 class ApiClient {
   private static instance: ApiClient;
@@ -37,16 +63,21 @@ class ApiClient {
   }
 
   private async requestWithBody<T>(endpoint: string, method: string, data: any): Promise<ApiResponse<T>> {
+    const url = resolveApiUrl(endpoint);
     const timestamp = new Date().toLocaleTimeString();
     try {
-      const result = await executeHybridRequest<any, any>(endpoint, data, async () => {
-        const response = await this.fetchWithTimeout(endpoint, {
+      const result = await executeHybridRequest<any, any>(url, data, async () => {
+        const response = await this.fetchWithTimeout(url, {
           method,
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          credentials: isDesktop ? 'include' : 'same-origin',
           body: data ? JSON.stringify(data) : undefined,
         });
-        const json = await response.json();
-        if (!response.ok) return { success: false, error: json.error || `HTTP_${response.status}` };
+        const json = await response.json().catch(() => ({}));
+        if (!response.ok) return { success: false, error: json.error || json.message || `HTTP_${response.status}` };
         return json;
       });
       return { ...result, timestamp, success: result.success ?? true } as ApiResponse<T>;
@@ -56,12 +87,16 @@ class ApiClient {
   }
 
   async get<T>(endpoint: string): Promise<ApiResponse<T>> {
+    const url = resolveApiUrl(endpoint);
     const timestamp = new Date().toLocaleTimeString();
     try {
-      const result = await executeHybridRequest<any, any>(endpoint, null, async () => {
-        const response = await this.fetchWithTimeout(endpoint, { method: 'GET' });
-        const json = await response.json();
-        if (!response.ok) return { success: false, error: json.error };
+      const result = await executeHybridRequest<any, any>(url, null, async () => {
+        const response = await this.fetchWithTimeout(url, {
+          method: 'GET',
+          credentials: isDesktop ? 'include' : 'same-origin',
+        });
+        const json = await response.json().catch(() => ({}));
+        if (!response.ok) return { success: false, error: json.error || json.message };
         return json;
       });
       return { ...result, timestamp, success: result.success ?? true } as ApiResponse<T>;
@@ -83,12 +118,16 @@ class ApiClient {
   }
 
   async delete<T>(endpoint: string): Promise<ApiResponse<T>> {
+    const url = resolveApiUrl(endpoint);
     const timestamp = new Date().toLocaleTimeString();
     try {
-      const result = await executeHybridRequest<any, any>(endpoint, null, async () => {
-        const response = await this.fetchWithTimeout(endpoint, { method: 'DELETE' });
-        const json = await response.json();
-        if (!response.ok) return { success: false, error: json.error || "ECHEC_SUPPRESSION" };
+      const result = await executeHybridRequest<any, any>(url, null, async () => {
+        const response = await this.fetchWithTimeout(url, {
+          method: 'DELETE',
+          credentials: isDesktop ? 'include' : 'same-origin',
+        });
+        const json = await response.json().catch(() => ({}));
+        if (!response.ok) return { success: false, error: json.error || json.message || 'ECHEC_SUPPRESSION' };
         return json;
       });
       return { ...result, timestamp, success: result.success !== false } as ApiResponse<T>;

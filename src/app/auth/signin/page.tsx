@@ -4,6 +4,7 @@ import { Suspense, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { AlertCircle, Loader2, Database } from 'lucide-react';
+import { apiClient } from '@/lib/api-client';
 
 /**
  * Station de Connexion VisioNode V7.8.6 - CORRIGÉE
@@ -28,39 +29,12 @@ function SignInForm() {
     console.log(`🔐 [AUTH_FRONT] [INIT] [${ts}] Tentative de liaison pour : ${email}`);
 
     try {
-      const response = await fetch('/api/auth/signin', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Accept': 'application/json' // ✅ AJOUTÉ
-        },
-        body: JSON.stringify({ email, password }),
-      });
-
-      // ✅ VÉRIFICATION DU CONTENT-TYPE AVANT PARSING
-      const contentType = response.headers.get('content-type');
-      
-      if (!contentType || !contentType.includes('application/json')) {
-        // Lecture du body pour diagnostic
-        const textResponse = await response.text();
-        console.error(`🔐 [AUTH_FRONT] [ERROR] [${ts}] Réponse non-JSON. Status: ${response.status}`);
-        console.error(`🔐 [AUTH_FRONT] [ERROR] Contenu (extrait):`, textResponse.slice(0, 300));
-        
-        // Si c'est une page HTML, afficher un message clair
-        if (textResponse.includes('<!DOCTYPE html>')) {
-          throw new Error(`Erreur serveur ${response.status} - L'API a renvoyé une page HTML. Vérifiez les logs du serveur.`);
-        }
-        
-        throw new Error(`Réponse non-JSON (Status: ${response.status}). Vérifiez l'API.`);
-      }
-
-      // ✅ PARSING JSON SÉCURISÉ
-      const data = await response.json();
+      const data = await apiClient.post<{ user?: any }>('/api/auth/signin', { email, password });
       setLoading(false);
 
-      if (!response.ok || !data.success) {
-        console.warn(`🔐 [AUTH_FRONT] [REJECT] [${ts}] Liaison refusée : ${data.message}`);
-        setError(data.message || "Erreur d'accréditation");
+      if (!data.success) {
+        console.warn(`🔐 [AUTH_FRONT] [REJECT] [${ts}] Liaison refusée : ${data.error}`);
+        setError(data.error || "Erreur d'accréditation");
         return;
       }
 
@@ -68,9 +42,9 @@ function SignInForm() {
       router.push(callbackUrl);
       router.refresh();
     } catch (e: any) {
-      console.error(`❌ [AUTH_FRONT] [ERROR] [${ts}] Rupture de liaison :`, e.message);
+      console.error(`❌ [AUTH_FRONT] [ERROR] [${ts}] Rupture de liaison :`, e?.message);
       setLoading(false);
-      setError(e.message || "Le centre de contrôle est injoignable.");
+      setError(e?.message || "Le centre de contrôle est injoignable.");
     }
   };
 

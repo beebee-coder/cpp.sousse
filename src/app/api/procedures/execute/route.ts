@@ -1,7 +1,8 @@
+export const dynamic = 'force-dynamic';
+export const revalidate = false;
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db/prisma-client';
 
-export const dynamic = 'force-dynamic';
 
 /**
  * API Route : Gestion des sessions d'exécution.
@@ -47,3 +48,4 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
+
