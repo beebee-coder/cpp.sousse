@@ -8,6 +8,10 @@ import { postgresClient } from '@/lib/db/postgres-client';
  * API Route pour la Banque d'Images.
  * Sauvegarde l'actif binaire et ses métadonnées de manière atomique.
  */
+// Sur Vercel (serverless, FS read-only), la Banque d'actifs binaires (images/vidéos
+// sur disque) n'a pas de backend : on répond proprement (pas de 500).
+const isCloudServerless = !!process.env.VERCEL;
+
 export const POST = createHybridRoute<{ 
   name: string; 
   type: 'image' | 'video'; 
@@ -16,6 +20,8 @@ export const POST = createHybridRoute<{
 }, any>({
   name: 'BANK_SAVE',
   webHandler: async (req, body) => {
+    if (isCloudServerless) return { success: false, error: 'BANK_WRITE_CLOUD_UNSUPPORTED' };
+
     const { name, type, data, metadata } = body;
     
     if (!name || !data) {

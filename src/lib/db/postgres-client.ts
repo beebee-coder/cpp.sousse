@@ -9,14 +9,19 @@ import path from 'path';
 const REGISTRY_ROOT = path.join(process.cwd(), '.registry');
 
 const ensureRegistry = () => {
-  if (!fs.existsSync(REGISTRY_ROOT)) {
-    fs.mkdirSync(REGISTRY_ROOT, { recursive: true });
+  // Résilient au FS read-only (ex: Vercel serverless) : on ignore l'échec de création.
+  try {
+    if (!fs.existsSync(REGISTRY_ROOT)) {
+      fs.mkdirSync(REGISTRY_ROOT, { recursive: true });
+    }
+    const dirs = ['items', 'bank', 'procedures'];
+    dirs.forEach(dir => {
+      const target = path.join(REGISTRY_ROOT, dir);
+      if (!fs.existsSync(target)) fs.mkdirSync(target, { recursive: true });
+    });
+  } catch (e) {
+    console.warn('[REGISTRY_FS] FS read-only, création de .registry ignorée:', (e as Error).message);
   }
-  const dirs = ['items', 'bank', 'procedures'];
-  dirs.forEach(dir => {
-    const target = path.join(REGISTRY_ROOT, dir);
-    if (!fs.existsSync(target)) fs.mkdirSync(target, { recursive: true });
-  });
 };
 
 interface FSNode {

@@ -49,21 +49,26 @@ interface FSNode {
 }
 
 const ensureLocalDB = () => {
-  if (!fs.existsSync(LOCAL_DB_ROOT)) {
-    fs.mkdirSync(LOCAL_DB_ROOT, { recursive: true });
-  }
-  [INDEX_CHROMA_DIR, CENTRALE_DIR].forEach(dir => {
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
+  // Résilient au FS read-only (ex: Vercel serverless) : on ignore l'échec de création.
+  try {
+    if (!fs.existsSync(LOCAL_DB_ROOT)) {
+      fs.mkdirSync(LOCAL_DB_ROOT, { recursive: true });
     }
-  });
-  if (!fs.existsSync(MANIFEST_FILE)) {
-    const initial: LocalDBManifest = {
-      files: [],
-      lastSync: new Date(0).toISOString(),
-      version: '1.0.0'
-    };
-    fs.writeFileSync(MANIFEST_FILE, JSON.stringify(initial, null, 2), 'utf8');
+    [INDEX_CHROMA_DIR, CENTRALE_DIR].forEach(dir => {
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+    });
+    if (!fs.existsSync(MANIFEST_FILE)) {
+      const initial: LocalDBManifest = {
+        files: [],
+        lastSync: new Date(0).toISOString(),
+        version: '1.0.0'
+      };
+      fs.writeFileSync(MANIFEST_FILE, JSON.stringify(initial, null, 2), 'utf8');
+    }
+  } catch (e) {
+    console.warn('[LOCAL_DB] FS read-only, création de .local-db ignorée:', (e as Error).message);
   }
 };
 
