@@ -29,7 +29,14 @@ export function DownloadApp() {
   const [os, setOs] = useState<OS>('unknown');
   const [mounted, setMounted] = useState(false);
   const [isLaunching, setIsLaunching] = useState(false);
+  const [exeAvail, setExeAvail] = useState<boolean | null>(null);
+  const [msiAvail, setMsiAvail] = useState<boolean | null>(null);
+  const [manifest, setManifest] = useState<{ windows?: { exe?: string; msi?: string } } | null>(null);
   const { toast } = useToast();
+
+  // URLs résolues : Blob (manifest) en priorité, sinon fallback statique local.
+  const exeUrl = manifest?.windows?.exe || '/installers/VisioNode_Setup_x64.exe';
+  const msiUrl = manifest?.windows?.msi || '/installers/VisioNode_Setup_x64.msi';
 
   useEffect(() => {
     setMounted(true);
@@ -39,14 +46,31 @@ export function DownloadApp() {
     else if (ua.includes('mac')) setOs('macos');
     else if (ua.includes('linux') || ua.includes('x11')) setOs('linux');
     else setOs('unknown');
-  }, []);
 
-  // Téléchargement direct via les fichiers statiques (fonctionne en prod Vercel)
-  const handleDownload = (filename: string, label: string) => {
-    const url = `/installers/${filename}`;
+    // Manifest des installers (URLs Vercel Blob), généré par scripts/upload-installers.mjs
+    fetch('/installers/installers.json')
+      .then((r) => (r.ok ? r.json() : null))
+      .then(setManifest)
+      .catch(() => {});
+
+    // Vérifie la disponibilité réelle (évite un 404 aveugle)
+    const check = async (url: string) => {
+      try {
+        const res = await fetch(url, { method: 'HEAD' });
+        return res.ok;
+      } catch {
+        return false;
+      }
+    };
+    check(exeUrl).then(setExeAvail);
+    check(msiUrl).then(setMsiAvail);
+  }, [exeUrl, msiUrl]);
+
+  // Téléchargement direct (URL Blob ou fallback statique)
+  const handleDownload = (url: string, label: string) => {
     const a = document.createElement('a');
     a.href = url;
-    a.download = filename;
+    a.download = url.split('/').pop() || 'VisioNode_Setup';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -144,12 +168,16 @@ export function DownloadApp() {
             </div>
             <Button
               className="w-full font-headline font-bold uppercase text-xs h-12 bg-primary text-primary-foreground shadow-lg"
-              onClick={() => handleDownload('VisioNode_Setup_x64.exe', 'VisioNode Setup (EXE)')}
+              onClick={() => handleDownload(exeUrl, 'VisioNode Setup (EXE)')}
+              disabled={exeAvail === false}
             >
               <Download className="w-4 h-4 mr-2" />
-              Télécharger EXE
+              {exeAvail === false ? 'Non disponible' : 'Télécharger EXE'}
             </Button>
-            {isWindows && <Badge variant="secondary" className="text-[8px] uppercase px-3">Recommandé pour votre appareil</Badge>}
+            {exeAvail === false && (
+              <span className="text-[8px] font-code text-destructive uppercase">Installateur non publié — relancez le build desktop</span>
+            )}
+            {isWindows && exeAvail !== false && <Badge variant="secondary" className="text-[8px] uppercase px-3">Recommandé pour votre appareil</Badge>}
           </Card>
 
           {/* MSI */}
@@ -164,10 +192,11 @@ export function DownloadApp() {
             <Button
               variant="outline"
               className="w-full font-headline font-bold uppercase text-xs h-12 border-border"
-              onClick={() => handleDownload('VisioNode_Setup_x64.msi', 'VisioNode Setup (MSI)')}
+              onClick={() => handleDownload(msiUrl, 'VisioNode Setup (MSI)')}
+              disabled={msiAvail === false}
             >
               <Download className="w-4 h-4 mr-2" />
-              Télécharger MSI
+              {msiAvail === false ? 'Non disponible' : 'Télécharger MSI'}
             </Button>
             <span className="text-[8px] font-code text-muted-foreground uppercase">Usage Administration Système</span>
           </Card>
@@ -188,7 +217,7 @@ export function DownloadApp() {
             <Button
               variant="outline"
               className="font-headline font-bold uppercase text-xs h-10 border-border"
-              onClick={() => handleDownload('VisioNode_Setup_x64.exe', 'VisioNode Setup (EXE)')}
+              onClick={() => handleDownload(exeUrl, 'VisioNode Setup (EXE)')}
             >
               <Download className="w-4 h-4 mr-2" />
               EXE (Windows)
@@ -196,7 +225,7 @@ export function DownloadApp() {
             <Button
               variant="outline"
               className="font-headline font-bold uppercase text-xs h-10 border-border"
-              onClick={() => handleDownload('VisioNode_Setup_x64.msi', 'VisioNode Setup (MSI)')}
+              onClick={() => handleDownload(msiUrl, 'VisioNode Setup (MSI)')}
             >
               <Download className="w-4 h-4 mr-2" />
               MSI (Windows)
@@ -219,7 +248,7 @@ export function DownloadApp() {
             <Button
               variant="outline"
               className="font-headline font-bold uppercase text-xs h-10 border-border"
-              onClick={() => handleDownload('VisioNode_Setup_x64.exe', 'VisioNode Setup (EXE)')}
+              onClick={() => handleDownload(exeUrl, 'VisioNode Setup (EXE)')}
             >
               <Download className="w-4 h-4 mr-2" />
               EXE (Windows)
@@ -227,7 +256,7 @@ export function DownloadApp() {
             <Button
               variant="outline"
               className="font-headline font-bold uppercase text-xs h-10 border-border"
-              onClick={() => handleDownload('VisioNode_Setup_x64.msi', 'VisioNode Setup (MSI)')}
+              onClick={() => handleDownload(msiUrl, 'VisioNode Setup (MSI)')}
             >
               <Download className="w-4 h-4 mr-2" />
               MSI (Windows)
@@ -266,8 +295,8 @@ export function DownloadApp() {
         <div className="flex-1">
           <h4 className="text-[10px] font-bold uppercase tracking-widest text-primary">Directives d'Injection</h4>
           <p className="text-[9px] font-code text-muted-foreground leading-tight uppercase">
-            &gt; Les installateurs sont publiés dans <span className="text-white">/public/installers/</span> après la construction desktop.<br/>
-            &gt; L'API de distribution vérifie l'intégrité avant chaque transfert.<br/>
+            &gt; Installateurs hébergés sur Vercel Blob (manifest <span className="text-white">/installers/installers.json</span>).<br/>
+            &gt; Publiés automatiquement par <span className="text-white">npm run desktop:build</span> (aucune commande utilisateur).<br/>
             &gt; Dernière forge réelle détectée : {new Date().toLocaleDateString()}
           </p>
         </div>

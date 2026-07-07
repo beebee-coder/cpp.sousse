@@ -52,6 +52,10 @@ src-tauri/debug/
 *.deb
 *.app
 
+# Installateurs desktop : livrés via Vercel Blob, jamais commités (fallback local uniquement)
+public/installers/*.exe
+public/installers/*.msi
+
 # Next.js specific
 .next/
 out/
