@@ -55,7 +55,7 @@ export default function ExecuteProcedurePage({ params }: { params: Promise<{ id:
 
   if (isLoading) {
     return (
-      <div className="flex h-screen bg-background items-center justify-center">
+      <div className="flex h-screen bg-transparent items-center justify-center">
         <div className="text-center space-y-4">
           <Loader2 className="w-10 h-10 animate-spin text-primary mx-auto" />
           <p className="font-code text-xs uppercase tracking-widest text-muted-foreground">Synchronisation avec le registre industriel...</p>
@@ -66,7 +66,7 @@ export default function ExecuteProcedurePage({ params }: { params: Promise<{ id:
 
   if (error || !procedure) {
     return (
-      <div className="flex h-screen bg-background items-center justify-center p-6">
+      <div className="flex h-screen bg-transparent items-center justify-center p-6">
         <Card className="p-8 border-destructive/30 bg-destructive/5 text-center max-w-md">
           <FileWarning className="w-12 h-12 text-destructive mx-auto mb-4" />
           <h2 className="text-lg font-headline font-bold uppercase mb-2">Erreur de Registre</h2>
@@ -78,7 +78,7 @@ export default function ExecuteProcedurePage({ params }: { params: Promise<{ id:
   }
 
   return (
-    <div className="flex flex-col lg:flex-row h-screen bg-background overflow-hidden">
+    <div className="flex flex-col lg:flex-row h-screen bg-transparent overflow-hidden">
       <DashboardSidebar />
       <main className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
         <header className="h-16 border-b border-border bg-card/30 flex items-center justify-between px-6 shrink-0 z-20">

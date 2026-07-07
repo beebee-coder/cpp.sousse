@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { TiltCard } from '@/components/three/TiltCard';
 import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { FullProcedure, ProcedureStep } from '@/lib/procedures/types';
@@ -60,10 +61,10 @@ export default function ProceduresListPage() {
   if (!mounted) return null;
 
   return (
-    <div className="flex flex-col lg:flex-row h-screen bg-background overflow-hidden">
+    <div className="flex flex-col lg:flex-row h-screen bg-transparent overflow-hidden">
       <DashboardSidebar />
       <main className="flex-1 flex flex-col min-w-0 h-full overflow-y-auto terminal-scroll">
-        <header className="h-16 border-b border-border bg-card/30 flex items-center justify-between px-6 shrink-0">
+        <header className="h-16 border-b border-border/70 bg-card/30 backdrop-blur-sm flex items-center justify-between px-6 shrink-0">
           <div className="flex items-center gap-4">
             <div className="lg:hidden w-10" />
             <FileText className="w-4 h-4 text-primary" />
@@ -108,10 +109,14 @@ export default function ProceduresListPage() {
               {filteredProcedures.map((proc) => {
                 const stepsCount = (proc.steps as unknown as ProcedureStep[])?.length || 0;
                 return (
-                  <Card 
-                    key={proc.id} 
-                    className="p-5 border-primary/20 bg-card/40 hover:border-primary/50 transition-all group cursor-pointer" 
+                  <TiltCard
+                    className="rounded-xl"
                     onClick={() => router.push(`/procedures/${proc.id}/execute`)}
+                  >
+                  <Card
+                    key={proc.id}
+                    glass
+                    className="p-5 border-primary/20 hover:border-primary/50 transition-all group cursor-pointer h-full"
                   >
                     <div className="flex justify-between items-start mb-4">
                       <Badge variant="outline" className="text-[8px] font-code border-primary/40 text-primary uppercase bg-primary/5">
@@ -162,6 +167,7 @@ export default function ProceduresListPage() {
                        </Button>
                     </div>
                   </Card>
+                  </TiltCard>
                 );
               })}
             </div>

@@ -11,11 +11,11 @@ export default function DownloadPage() {
   const router = useRouter();
 
   return (
-    <div className="flex flex-col lg:flex-row h-screen bg-background overflow-hidden">
+    <div className="flex flex-col lg:flex-row h-screen bg-transparent overflow-hidden">
       <DashboardSidebar />
-      
+       
       <main className="flex-1 flex flex-col min-w-0 h-full">
-        <header className="h-16 border-b border-border bg-card/30 flex items-center justify-between px-6 shrink-0">
+        <header className="h-16 border-b border-border/70 bg-card/30 backdrop-blur-sm flex items-center justify-between px-6 shrink-0">
           <div className="flex items-center gap-2">
             <div className="lg:hidden w-10" /> {/* Spacer pour le bouton de menu mobile */}
             <Button 

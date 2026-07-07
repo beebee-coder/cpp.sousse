@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { AlertCircle, Loader2, Database } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { Logo3D } from '@/components/three/Logo3D';
 
 /**
  * Station de Connexion VisioNode V7.8.6 - CORRIGÉE
@@ -49,12 +50,15 @@ function SignInForm() {
   };
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-6">
-      <div className="w-full max-w-md rounded-xl border border-border bg-card p-8 shadow-xl">
-        <div className="mb-8">
+    <div className="min-h-screen bg-transparent flex items-center justify-center p-6">
+      <div className="w-full max-w-md rounded-2xl border border-border/70 glass-panel p-8 shadow-glow-lg animate-fade-up">
+        <div className="mb-8 flex flex-col items-center text-center">
+          <div className="glow-ring rounded-xl p-1.5 mb-4 animate-float">
+            <Logo3D size={52} />
+          </div>
           <div className="flex items-center gap-2 mb-2">
              <Database className="w-5 h-5 text-primary" />
-             <h1 className="text-2xl font-bold font-headline uppercase tracking-tight text-primary">VisioNode Access</h1>
+             <h1 className="text-2xl font-bold font-headline uppercase tracking-tight text-gradient">VisioNode Access</h1>
           </div>
           <p className="text-sm text-muted-foreground mt-1 uppercase font-code text-[10px] tracking-widest">Liaison de contrôle industriel</p>
         </div>
@@ -94,7 +98,7 @@ function SignInForm() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full h-11 rounded-md bg-primary text-primary-foreground font-bold uppercase text-xs tracking-widest hover:bg-primary/90 disabled:opacity-50 transition-all flex items-center justify-center gap-2 shadow-lg"
+            className="w-full h-11 rounded-md bg-primary text-primary-foreground font-bold uppercase text-xs tracking-widest hover:brightness-110 disabled:opacity-50 transition-all flex items-center justify-center gap-2 shadow-glow"
           >
             {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Vérifier la Liaison"}
           </button>
@@ -113,7 +117,7 @@ function SignInForm() {
 
 export default function SignInPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-background flex items-center justify-center p-6 text-xs uppercase font-code">Initialisation du terminal...</div>}>
+    <Suspense fallback={<div className="min-h-screen bg-transparent flex items-center justify-center p-6 text-xs uppercase font-code">Initialisation du terminal...</div>}>
       <SignInForm />
     </Suspense>
   );

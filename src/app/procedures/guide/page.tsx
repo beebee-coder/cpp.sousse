@@ -101,7 +101,7 @@ export default function ProcedureGuideListPage() {
   if (!mounted) return null;
 
   return (
-    <div className="flex flex-col lg:flex-row h-screen bg-background overflow-hidden">
+    <div className="flex flex-col lg:flex-row h-screen bg-transparent overflow-hidden">
       <DashboardSidebar />
 
       <main className="flex-1 flex flex-col min-w-0 h-full">

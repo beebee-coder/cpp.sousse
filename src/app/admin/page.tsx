@@ -113,7 +113,7 @@ export default function AdminPage() {
 
   if (loading) {
     return (
-      <div className="flex h-screen bg-background">
+      <div className="flex h-screen bg-transparent">
         <DashboardSidebar />
         <main className="flex-1 flex flex-col items-center justify-center space-y-4">
           <Loader2 className="w-10 h-10 animate-spin text-primary" />
@@ -125,7 +125,7 @@ export default function AdminPage() {
 
   if (error) {
     return (
-      <div className="flex h-screen bg-background">
+      <div className="flex h-screen bg-transparent">
         <DashboardSidebar />
         <main className="flex-1 flex flex-col items-center justify-center p-6 text-center">
           <AlertCircle className="w-12 h-12 text-destructive mb-4" />
@@ -140,7 +140,7 @@ export default function AdminPage() {
   if (role !== 'admin') return null;
 
   return (
-    <div className="flex h-screen bg-background overflow-hidden">
+    <div className="flex h-screen bg-transparent overflow-hidden">
       <DashboardSidebar />
       
       <main className="flex-1 flex flex-col min-w-0 h-full overflow-y-auto terminal-scroll">

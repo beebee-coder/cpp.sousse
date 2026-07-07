@@ -24,6 +24,7 @@ import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
+import { Logo3D } from '@/components/three/Logo3D';
 
 const allNavItems = [
   { icon: LayoutDashboard, label: 'Tableau de Bord', href: '/dashboard' },
@@ -72,11 +73,11 @@ function SidebarContent({ pathname, isDesktop, isReady, onNavigate }: SidebarCon
   }, []);
 
   return (
-    <div className="flex flex-col h-full bg-card overflow-hidden">
-      <div className="p-6 border-b border-border shrink-0">
+    <div className="flex flex-col h-full glass-panel overflow-hidden">
+      <div className="p-6 border-b border-border/70 shrink-0">
         <Link href="/dashboard" className="flex items-center gap-3 mb-1" onClick={onNavigate}>
-          <div className="w-8 h-8 bg-primary rounded flex items-center justify-center shadow-[0_0_15px_rgba(50,181,212,0.3)] shrink-0">
-            <Monitor className="w-5 h-5 text-primary-foreground" />
+          <div className="glow-ring rounded-md p-0.5">
+            <Logo3D size={34} />
           </div>
           <h1 className="font-headline font-bold text-lg tracking-tighter uppercase truncate">VISIONODE</h1>
         </Link>
@@ -89,15 +90,15 @@ function SidebarContent({ pathname, isDesktop, isReady, onNavigate }: SidebarCon
           {navItems.map((item) => {
             const isActive = pathname === item.href;
             return (
-              <Link
+               <Link
                 key={item.label}
                 href={item.href}
                 onClick={onNavigate}
                 className={cn(
-                  "w-full flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-sm transition-all group",
+                  "w-full flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md transition-all duration-300 [transform-style:preserve-3d] group",
                   isActive 
-                    ? "bg-primary/10 text-primary border-r-2 border-primary" 
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    ? "bg-primary/10 text-primary border border-primary/30 shadow-glow translate-x-0.5" 
+                    : "text-muted-foreground hover:bg-muted/60 hover:text-foreground hover:translate-x-1 border border-transparent"
                 )}
               >
                 <item.icon className={cn("w-4 h-4 shrink-0", isActive ? "text-primary" : "text-muted-foreground group-hover:text-primary")} />
@@ -197,7 +198,7 @@ export function DashboardSidebar() {
       </div>
 
       {/* Desktop Permanent Sidebar */}
-      <div className="hidden lg:flex w-64 border-r border-border bg-card flex-col h-full shrink-0 overflow-hidden">
+      <div className="hidden lg:flex w-64 border-r border-border/70 bg-transparent flex-col h-full shrink-0 overflow-hidden">
         <SidebarContent 
           pathname={pathname} 
           isDesktop={isDesktop} 

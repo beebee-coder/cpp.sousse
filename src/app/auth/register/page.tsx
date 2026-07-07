@@ -55,9 +55,9 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-6">
-      <div className="w-full max-w-md rounded-xl border border-border bg-card p-8 shadow-xl">
-        <h1 className="text-2xl font-bold mb-2">Demander un accès</h1>
+    <div className="min-h-screen bg-transparent flex items-center justify-center p-6">
+      <div className="w-full max-w-md rounded-2xl border border-border/70 glass-panel p-8 shadow-glow-lg animate-fade-up">
+        <h1 className="text-2xl font-bold mb-2 text-gradient">Demander un accès</h1>
         <p className="text-sm text-muted-foreground mb-6">Votre compte sera confirmé par l’administrateur.</p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -154,7 +154,7 @@ export default function RegisterPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-md bg-primary px-4 py-2 font-medium text-primary-foreground disabled:opacity-60"
+            className="w-full rounded-md bg-primary px-4 py-2 font-bold uppercase text-xs tracking-widest text-primary-foreground shadow-glow hover:brightness-110 disabled:opacity-60 transition-all"
           >
             {loading ? 'Envoi…' : 'Envoyer la demande'}
           </button>

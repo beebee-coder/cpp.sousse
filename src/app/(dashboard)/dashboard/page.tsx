@@ -10,6 +10,7 @@ import { useState, useEffect } from 'react';
 import { usePlatform } from '@/components/PlatformProvider';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
+import { TiltCard } from '@/components/three/TiltCard';
 import { performHealthCheck } from '@/lib/platform';
 import { ExternalLink, Loader2 } from 'lucide-react';
 
@@ -149,12 +150,12 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="flex flex-col lg:flex-row h-screen bg-background overflow-hidden">
+    <div className="flex flex-col lg:flex-row h-screen bg-transparent overflow-hidden">
       <DashboardSidebar />
 
       <main className="flex-1 flex flex-col min-w-0 h-full overflow-y-auto lg:overflow-hidden">
         {/* Header */}
-        <header className="h-16 border-b border-border bg-card/30 flex items-center justify-between px-6 shrink-0">
+        <header className="h-16 border-b border-border/70 bg-card/30 backdrop-blur-sm flex items-center justify-between px-6 shrink-0">
           <div className="flex items-center gap-4">
             <div className="lg:hidden w-10" />
             <div className="hidden sm:flex items-center gap-2">
@@ -233,18 +234,21 @@ export default function DashboardPage() {
 
             <aside className="space-y-4 lg:overflow-y-auto lg:pr-2 terminal-scroll shrink-0">
               {/* Widget rôle */}
-              <Card className="p-4 border-primary/20 bg-black/20">
+              <TiltCard className="rounded-lg">
+              <Card glass className="p-4 border-primary/20">
                 <div className="flex items-center gap-2 mb-3">
                   <ShieldCheck className="w-4 h-4 text-primary" />
                   <h3 className="text-xs font-bold uppercase tracking-widest font-headline">
                     {role === 'admin' ? 'Console Admin' : role === 'user' ? 'Accès Rapide' : 'Espace Technique'}
                   </h3>
                 </div>
-                {mounted && roleWidgets()}
-              </Card>
+                 {mounted && roleWidgets()}
+               </Card>
+               </TiltCard>
 
-              {/* Intégrité */}
-              <Card className="p-4 border-primary/20 bg-black/20">
+               {/* Intégrité */}
+              <TiltCard className="rounded-lg">
+              <Card glass className="p-4 border-primary/20">
                 <div className="flex items-center gap-2 mb-3">
                   <HeartPulse className={cn('w-4 h-4', health?.healthy ? 'text-secondary' : 'text-destructive')} />
                   <h3 className="text-xs font-bold uppercase tracking-widest font-headline">Intégrité Moteur</h3>
@@ -256,11 +260,13 @@ export default function DashboardPage() {
                       {health?.healthy ? 'Optimal' : 'Dégradé'}
                     </span>
                   </div>
-                </div>
-              </Card>
+                 </div>
+               </Card>
+               </TiltCard>
 
-              {/* Capacités */}
-              <Card className="p-4 border-primary/20 bg-black/20">
+               {/* Capacités */}
+              <TiltCard className="rounded-lg">
+              <Card glass className="p-4 border-primary/20">
                 <div className="flex items-center gap-2 mb-3">
                   <Cpu className="w-4 h-4 text-primary" />
                   <h3 className="text-xs font-bold uppercase tracking-widest font-headline">Capacités</h3>
@@ -276,6 +282,7 @@ export default function DashboardPage() {
                   ))}
                 </div>
               </Card>
+              </TiltCard>
 
               {/* SyncPanel — Desktop uniquement */}
               {mounted && isDesktop && userId && (

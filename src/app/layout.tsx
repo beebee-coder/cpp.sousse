@@ -3,6 +3,7 @@ import './globals.css';
 import { PlatformProvider } from '@/components/PlatformProvider';
 import { DeepLinkHandler } from '@/components/DeepLinkHandler';
 import { Toaster } from '@/components/ui/toaster';
+import { AmbientBackground } from '@/components/three/AmbientBackground';
 import { Inter, Space_Grotesk, Source_Code_Pro } from 'next/font/google';
 
 const fontInter = Inter({ 
@@ -40,6 +41,7 @@ export default function RootLayout({
   return (
     <html lang="fr" className="dark">
       <body className={`${fontInter.variable} ${fontSpaceGrotesk.variable} ${fontSourceCodePro.variable} font-body antialiased selection:bg-primary/30 selection:text-primary`}>
+        <AmbientBackground />
         <PlatformProvider>
           <DeepLinkHandler />
           {children}
