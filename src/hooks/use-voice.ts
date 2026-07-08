@@ -15,6 +15,7 @@ export interface VoiceState {
   isSupported: boolean;
   error: string | null;
   volume: number;
+  isSpeaking: boolean;
 }
 
 export function useVoice(options: VoiceOptions = {}) {
@@ -23,6 +24,7 @@ export function useVoice(options: VoiceOptions = {}) {
     isSupported: true,
     error: null,
     volume: 0,
+    isSpeaking: false,
   });
 
   const recognitionRef = useRef<any>(null);
@@ -111,6 +113,8 @@ export function useVoice(options: VoiceOptions = {}) {
       };
 
       recognition.onresult = (event: any) => {
+        if (state.isSpeaking) return;
+
         let transcript = '';
         for (let i = event.resultIndex; i < event.results.length; ++i) {
           transcript += event.results[i][0].transcript;
@@ -139,7 +143,7 @@ export function useVoice(options: VoiceOptions = {}) {
         setState(prev => ({ ...prev, isListening: false }));
         stopVolumeAnalysis();
 
-        if (options.autoRestart && !isManuallyStopped.current) {
+        if (options.autoRestart && !isManuallyStopped.current && !state.isSpeaking) {
           try { recognition.start(); } catch (e) {}
         }
 
@@ -178,28 +182,46 @@ export function useVoice(options: VoiceOptions = {}) {
   }, [stopVolumeAnalysis]);
 
   const restart = useCallback(() => {
-    if (recognitionRef.current) {
+    if (recognitionRef.current && !state.isSpeaking) {
       isManuallyStopped.current = false;
       try {
         recognitionRef.current.stop();
       } catch (e) {}
     }
-  }, []);
+  }, [state.isSpeaking]);
 
   const speak = useCallback((text: string) => {
     if (typeof window === 'undefined' || !window.speechSynthesis) return;
 
+    const wasListening = !isManuallyStopped.current;
+    if (wasListening) recognitionRef.current?.stop();
+
+    setState(prev => ({ ...prev, isSpeaking: true }));
     window.speechSynthesis.cancel();
+
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = options.lang || 'fr-FR';
     utterance.rate = 1.0;
 
-    const wasListening = !isManuallyStopped.current;
-    if (wasListening) recognitionRef.current?.stop();
-
     utterance.onend = () => {
+      setState(prev => ({ ...prev, isSpeaking: false }));
       if (wasListening && !isManuallyStopped.current) {
-        try { recognitionRef.current?.start(); } catch (e) {}
+        setTimeout(() => {
+          if (!isManuallyStopped.current) {
+            try { recognitionRef.current?.start(); } catch (e) {}
+          }
+        }, 600);
+      }
+    };
+
+    utterance.onerror = () => {
+      setState(prev => ({ ...prev, isSpeaking: false }));
+      if (wasListening && !isManuallyStopped.current) {
+        setTimeout(() => {
+          if (!isManuallyStopped.current) {
+            try { recognitionRef.current?.start(); } catch (e) {}
+          }
+        }, 600);
       }
     };
 
@@ -211,6 +233,7 @@ export function useVoice(options: VoiceOptions = {}) {
     isSupported: state.isSupported,
     error: state.error,
     volume: state.volume,
+    isSpeaking: state.isSpeaking,
     startListening,
     stopListening,
     restart,

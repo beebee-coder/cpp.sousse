@@ -15,6 +15,7 @@ import {
   Cloud,
   Loader2,
   Image as ImageIcon,
+  MessageSquare,
   Video
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -28,6 +29,7 @@ import { Logo3D } from '@/components/three/Logo3D';
 
 const allNavItems = [
   { icon: LayoutDashboard, label: 'Tableau de Bord', href: '/dashboard' },
+  { icon: MessageSquare, label: 'Chat Neural', href: '/chat' },
   { icon: ShieldCheck, label: 'Console Admin', href: '/admin' },
   { icon: Database, label: 'Base RAG', href: '/dataset' },
   { icon: HardDrive, label: 'Explorateur BDD', href: '/bdd' },
@@ -57,7 +59,7 @@ function SidebarContent({ pathname, isDesktop, isReady, onNavigate }: SidebarCon
       return !['/bdd', '/pipeline', '/admin'].includes(item.href);
     }
 
-    return ['/dataset'].includes(item.href);
+    return ['/chat', '/dataset'].includes(item.href);
   });
 
   useEffect(() => {

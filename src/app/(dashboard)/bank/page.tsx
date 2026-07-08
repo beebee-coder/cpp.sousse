@@ -13,7 +13,8 @@ import {
   ArrowLeft,
   CheckCircle2,
   Image as ImageIcon,
-  Upload
+  Upload,
+  FlipHorizontal
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -41,6 +42,8 @@ export default function BankPage() {
   const [description, setDescription] = useState('');
   const [tags, setTags] = useState('');
   const [isSaving, setIsSyncing] = useState(false);
+  const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
+  const [cameras, setCameras] = useState<{ deviceId?: string; label?: string; facingMode?: string }[]>([]);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -72,17 +75,49 @@ export default function BankPage() {
     return () => stopCamera();
   }, [mounted, capturedData]);
 
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(t => t.stop());
+      streamRef.current = null;
+    }
+  };
+
+  const enumerateCameras = async () => {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoDevices = devices
+        .filter(d => d.kind === 'videoinput')
+        .map(d => ({
+          deviceId: d.deviceId,
+          label: d.label || `Caméra ${d.deviceId.slice(0, 8)}`,
+          facingMode: (d as any).facingMode,
+        }));
+      setCameras(videoDevices);
+    } catch {
+      // ignore
+    }
+  };
+
   const startCamera = async () => {
     if (typeof window === 'undefined' || typeof navigator === 'undefined') return;
     if (!navigator.mediaDevices?.getUserMedia) {
       toast({ title: "Accès Caméra Refusé", description: "L'accès caméra n'est pas disponible sur ce navigateur.", variant: "destructive" });
       return;
     }
+
+    await enumerateCameras();
+
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { width: 1280, height: 720 }, 
-        audio: mode === 'video' 
-      });
+      const constraints: MediaStreamConstraints = {
+        video: {
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          facingMode: facingMode,
+        },
+        audio: mode === 'video',
+      };
+
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
       streamRef.current = stream;
       if (videoRef.current) videoRef.current.srcObject = stream;
     } catch (err) {
@@ -90,10 +125,11 @@ export default function BankPage() {
     }
   };
 
-  const stopCamera = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(t => t.stop());
-    }
+  const switchCamera = async () => {
+    const next = facingMode === 'user' ? 'environment' : 'user';
+    setFacingMode(next);
+    stopCamera();
+    await startCamera();
   };
 
   const takePhoto = () => {
@@ -212,11 +248,19 @@ export default function BankPage() {
             </Card>
 
             {!capturedData && (
-              <div className="flex justify-center gap-4">
+              <div className="flex justify-center gap-4 flex-wrap">
                 <div className="flex bg-muted/30 p-1 rounded-sm border border-border">
                   <button onClick={() => setMode('image')} className={cn("px-4 py-2 text-[10px] font-bold uppercase rounded-sm transition-all", mode === 'image' ? "bg-primary text-primary-foreground shadow-lg" : "text-muted-foreground hover:text-foreground")}>Photo</button>
                   <button onClick={() => setMode('video')} className={cn("px-4 py-2 text-[10px] font-bold uppercase rounded-sm transition-all", mode === 'video' ? "bg-secondary text-secondary-foreground shadow-lg" : "text-muted-foreground hover:text-foreground")}>Vidéo</button>
                 </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={switchCamera}
+                  className="h-10 text-[10px] uppercase font-code border-border"
+                >
+                  <FlipHorizontal className="w-4 h-4 mr-2" /> {facingMode === 'user' ? 'Avant' : 'Arrière'}
+                </Button>
                 {mode === 'image' ? (
                   <div className="flex gap-2">
                     <Button onClick={takePhoto} className="px-8 bg-primary text-primary-foreground font-bold uppercase text-[10px] h-10 shadow-xl">
