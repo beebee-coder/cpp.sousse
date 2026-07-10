@@ -3,20 +3,80 @@ export const revalidate = false;
 import { createHybridRoute } from '@/lib/api-route-creator';
 import { postgresClient } from '@/lib/db/postgres-client';
 
-
 /**
- * API de gestion physique du Registre (FS).
+ * API de gestion du Registre.
+ * - Mode local (EXE desktop) : arborescence physique sur disque (.registry).
+ * - Mode Cloud (Vercel, serverless FS read-only) : l'arborescence est servie
+ *   depuis la base de données (Neon/PostgreSQL) via la table `knowledgeItem`,
+ *   regroupée par type. Le vrai Registre physique n'existe que dans l'EXE.
  */
-// Sur Vercel (serverless, FS read-only), le Registre physique (arborescence
-// fichiers sur disque) n'a pas de backend : on répond proprement (pas de 500).
-// Le vrai Registre local n'existe que dans l'EXE desktop.
 const isCloudServerless = !!process.env.VERCEL;
+
+// Construit l'arborescence du Registre à partir des KnowledgeItems (Cloud).
+const buildCloudTree = (items: any[]): any[] => {
+  const byType: Record<string, any[]> = {};
+  for (const it of items) {
+    const t = (it.type || 'document').toString();
+    if (!byType[t]) byType[t] = [];
+    byType[t].push(it);
+  }
+
+  const typeFolders = Object.entries(byType).map(([type, its]) => ({
+    id: `type-${type}`,
+    name: type.toUpperCase(),
+    type: 'folder',
+    isOpen: true,
+    children: its.map((it: any) => ({
+      id: it.id,
+      name: it.title || it.question || it.id,
+      type: 'file',
+      metadata: { cloudId: it.id, type: it.type, category: it.category }
+    }))
+  }));
+
+  return [{
+    id: 'Registre',
+    name: 'REGISTRE',
+    type: 'folder',
+    isOpen: true,
+    children: typeFolders
+  }];
+};
 
 export const GET = createHybridRoute<any, any>({
   name: 'REGISTRY_EXPLORER',
   webHandler: async (req) => {
     if (isCloudServerless) {
-      return { success: true, tree: [], provider: 'cloud', message: 'REGISTRY_EXPLORER_DESKTOP_ONLY' };
+      try {
+        const { prisma } = await import('@/lib/db/prisma-client');
+        const { searchParams } = new URL(req.url);
+        const targetPath = searchParams.get('path');
+        const action = searchParams.get('action');
+
+        if (action === 'diagnostic') {
+          return { success: true, logs: ['CLOUD_MODE', 'Registre servi depuis la base de données (Neon).'] };
+        }
+
+        if (targetPath) {
+          const item = await prisma.knowledgeItem.findUnique({ where: { id: targetPath } });
+          if (!item) return { success: false, error: 'INTROUVABLE' };
+          const content = JSON.stringify({
+            title: item.title,
+            type: item.type,
+            category: item.category,
+            question: item.question,
+            answer: item.answer,
+            content: item.content,
+            tags: item.tags || []
+          }, null, 2);
+          return { success: true, content };
+        }
+
+        const items = await prisma.knowledgeItem.findMany({ orderBy: { createdAt: 'desc' } });
+        return { success: true, tree: buildCloudTree(items), provider: 'cloud-db' };
+      } catch (e: any) {
+        return { success: false, error: e.message, tree: [] };
+      }
     }
     try {
       const { searchParams } = new URL(req.url);
@@ -86,10 +146,21 @@ export const PATCH = createHybridRoute<{ path: string; newName: string }, any>({
 export const DELETE = createHybridRoute<any, any>({
   name: 'REGISTRY_DELETE',
   webHandler: async (req) => {
-    if (isCloudServerless) return { success: false, error: 'REGISTRY_WRITE_CLOUD_UNSUPPORTED' };
     const { searchParams } = new URL(req.url);
     const targetPath = searchParams.get('path');
     if (!targetPath) return { success: false, error: 'PATH_REQUIRED' };
+
+    // Mode Cloud : suppression de la KnowledgeItem correspondante.
+    if (isCloudServerless) {
+      try {
+        const { prisma } = await import('@/lib/db/prisma-client');
+        await prisma.knowledgeItem.delete({ where: { id: targetPath } });
+        return { success: true, message: 'ELEMENT_SUPPRIME' };
+      } catch (error: any) {
+        return { success: false, error: error.message };
+      }
+    }
+
     try {
       await postgresClient.deleteItem(targetPath);
       return { success: true, message: 'ELEMENT_SUPPRIME' };
@@ -98,4 +169,3 @@ export const DELETE = createHybridRoute<any, any>({
     }
   }
 });
-
