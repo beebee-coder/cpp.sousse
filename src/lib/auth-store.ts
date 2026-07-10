@@ -161,3 +161,92 @@ export async function getAllUsers() {
     return [];
   }
 }
+
+export async function getUserById(userId: string) {
+  const prisma = await getPrisma();
+  try {
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) return null;
+    return {
+      id: user.id,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+      role: user.role,
+      approved: user.approved,
+      image: user.image,
+      createdAt: user.createdAt.getTime(),
+    };
+  } catch (error: any) {
+    console.error('❌ [AUTH_STORE] Erreur getUserById:', error.message);
+    return null;
+  }
+}
+
+export async function verifyUserPassword(userId: string, password: string) {
+  const prisma = await getPrisma();
+  try {
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user || !user.password) return false;
+    return await bcrypt.compare(password, user.password);
+  } catch (error: any) {
+    console.error('❌ [AUTH_STORE] Erreur verifyUserPassword:', error.message);
+    return false;
+  }
+}
+
+export async function updateCurrentUser(
+  userId: string,
+  data: { firstName?: string; lastName?: string; email?: string; password?: string; image?: string | null }
+) {
+  const prisma = await getPrisma();
+  try {
+    const existing = await prisma.user.findUnique({ where: { id: userId } });
+    if (!existing) {
+      return { success: false, error: 'USER_NOT_FOUND' };
+    }
+
+    const updateData: Record<string, unknown> = { updatedAt: new Date() };
+
+    if (data.firstName !== undefined) updateData.firstName = data.firstName;
+    if (data.lastName !== undefined) updateData.lastName = data.lastName;
+
+    if (data.email !== undefined) {
+      const normalizedEmail = data.email.toLowerCase().trim();
+      if (normalizedEmail !== existing.email) {
+        const emailExists = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+        if (emailExists) {
+          return { success: false, error: 'EMAIL_ALREADY_EXISTS' };
+        }
+        updateData.email = normalizedEmail;
+      }
+    }
+
+    if (data.password) {
+      updateData.password = await bcrypt.hash(data.password, 12);
+    }
+
+    if (data.image !== undefined) {
+      updateData.image = data.image === '' ? null : data.image;
+    }
+
+    const user = await prisma.user.update({ where: { id: userId }, data: updateData });
+
+    return {
+      success: true,
+      user: {
+        id: user.id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        role: user.role,
+        approved: user.approved,
+        image: user.image,
+        createdAt: user.createdAt.getTime(),
+      },
+    };
+  } catch (error: any) {
+    console.error('❌ [AUTH_STORE] Erreur updateCurrentUser:', error.message);
+    return { success: false, error: error.message };
+  }
+}

@@ -83,12 +83,30 @@ export interface StepAlarm {
   triggerBeforeEnd?: number;
 }
 
+export interface ConfigField {
+  id: string;
+  name: string;
+  type: string; // 'text', 'number', 'boolean', 'select'
+  description?: string;
+  options?: any;
+  required: boolean;
+}
+
+export interface StepCustomField {
+  templateId: string;
+  name: string;
+  type: string;
+  value: any;
+  required: boolean;
+}
+
 export interface ProcedureStep {
   id: string;
   order: number;
   title: string;
   subtitle?: string;
   description: string;
+  fields?: StepCustomField[];
   duration: {
     value: number;
     unit: string;

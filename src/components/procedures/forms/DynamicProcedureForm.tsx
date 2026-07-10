@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { apiClient } from '@/lib/api-client';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -83,59 +84,42 @@ export function DynamicProcedureForm({ onSubmit, isSaving }: DynamicProcedureFor
 
   const updateDefaults = (patch: Partial<ProcedureDefaults>) => {
     setDefaults(prev => ({ ...prev, ...patch }));
+
+    console.log('[CONFIG][DEFAULTS] patch reçu :', patch);
+
+    // Propager les métadonnées de la configuration vers procedure.metadata
+    const metadataFields = ['category', 'subcategory', 'department', 'criticality', 'language'];
+    const metadataPatch: any = {};
+    Object.keys(patch).forEach(key => {
+      if (metadataFields.includes(key)) {
+        metadataPatch[key] = (patch as any)[key];
+      }
+    });
+
+    if (Object.keys(metadataPatch).length > 0) {
+      setProcedure(prev => ({
+        ...prev,
+        metadata: {
+          ...prev.metadata,
+          ...metadataPatch,
+        } as any
+      }));
+    }
   };
 
   const createStepFromDefaults = (): ProcedureStep => {
-    const actionType = defaults.defaultActionType || undefined;
-    const timeoutAction = defaults.defaultTimeoutAction || undefined;
-    const alarmType = defaults.defaultAlarmType || undefined;
-    const alarmSeverity = defaults.defaultAlarmSeverity || undefined;
-    const valveOperation = defaults.defaultValveOperation || undefined;
-    const speedMode = defaults.defaultSpeedMode || undefined;
-    const defaultDuration = defaults.defaultDuration || 60;
-    const defaultUiLabel = defaults.defaultUiLabel || 'Confirmer';
-    const defaultSuccessExpression = defaults.defaultSuccessExpression || 'status == OK';
-
-    const action: any = {
-      instruction: '',
-      parameters: {},
-      ui: {
-        component: 'action_button',
-        label: defaultUiLabel,
-        icon: 'check',
-      },
-    };
-
-    if (actionType) {
-      action.type = actionType;
-    }
-
-    if (actionType === 'valve_operation') {
-      action.valveId = '';
-      action.operation = valveOperation || 'open';
-      action.speed = speedMode;
-      action.ui.component = 'valve_control';
-      action.ui.icon = 'valve_open';
-    }
-
-    if (actionType === 'command') {
-      action.command = '';
-    }
-
-    const alarms = alarmType
-      ? [
-          {
-            id: `alarm-${Date.now()}`,
-            code: `ALM-${Date.now()}`,
-            type: alarmType as any,
-            severity: alarmSeverity || 'medium',
-            description: '',
-            condition: '',
-            remedy: { title: '', description: '', steps: [], estimatedTime: 0 },
-            escalation: { ifPersistsAfter: 1, contact: '', message: '' },
-          },
-        ]
-      : [];
+    console.log('[CONFIG][CREATE_STEP] defaults utilisés :', {
+      defaultActionType: defaults.defaultActionType,
+      defaultValidationType: defaults.defaultValidationType,
+      defaultAlarmType: defaults.defaultAlarmType,
+      defaultAlarmSeverity: defaults.defaultAlarmSeverity,
+      defaultTimeoutAction: defaults.defaultTimeoutAction,
+      defaultValveOperation: defaults.defaultValveOperation,
+      defaultSpeedMode: defaults.defaultSpeedMode,
+      defaultDuration: defaults.defaultDuration,
+      defaultUiLabel: defaults.defaultUiLabel,
+      defaultSuccessExpression: defaults.defaultSuccessExpression,
+    });
 
     return {
       id: `step-${Date.now()}`,
@@ -144,22 +128,32 @@ export function DynamicProcedureForm({ onSubmit, isSaving }: DynamicProcedureFor
       subtitle: '',
       description: '',
       duration: {
-        value: defaultDuration,
+        value: 0,
         unit: 'seconds',
-        display: `${defaultDuration}s`,
+        display: '—',
         type: 'fixed',
       },
-      action,
+      action: {
+        type: '' as any,
+        instruction: '',
+        parameters: {},
+        ui: {
+          component: 'action_button',
+          label: '',
+          icon: 'check',
+        },
+      },
       validation: {
         conditions: [],
-        successExpression: defaultSuccessExpression,
+        successExpression: '',
         timeout: {
           value: 120,
           unit: 'seconds',
-          ...(timeoutAction ? { action: timeoutAction } : {}),
+          action: 'warn',
         },
       },
-      alarms,
+      alarms: [],
+      fields: [],
       fallbacks: [],
       media: {},
       notes: [],
@@ -171,131 +165,198 @@ export function DynamicProcedureForm({ onSubmit, isSaving }: DynamicProcedureFor
     } as ProcedureStep;
   };
 
-  const synchronizeStepWithDefaults = useCallback((index: number) => {
-    console.log('[SYNC_STEP] start', { index, defaults, stepCount: procedure.steps?.length });
+  const synchronizeStepWithDefaults = useCallback(async (index: number) => {
+    // ─── 1. Lire les valeurs configurées MAINTENANT (synchrone, avant tout await)
+    //        Règle : si la valeur est vide → on ne touche pas au champ de la séquence
+    const cfgActionType    = defaults.defaultActionType    || '';
+    const cfgValidationType = defaults.defaultValidationType || '';
+    const cfgAlarmType     = defaults.defaultAlarmType     || '';
+    const cfgAlarmSeverity = defaults.defaultAlarmSeverity || '';
+    const cfgValveOperation = defaults.defaultValveOperation || '';
+    const cfgSpeedMode     = defaults.defaultSpeedMode     || '';
+    const cfgTimeoutAction = defaults.defaultTimeoutAction  || '';
+    const cfgDuration      = defaults.defaultDuration;           // number | undefined
+    const cfgUiLabel       = defaults.defaultUiLabel       || '';
+    const cfgSuccessExpr   = defaults.defaultSuccessExpression || '';
 
+    console.log('[SYNC] config capturé :', {
+      cfgActionType, cfgValidationType, cfgAlarmType,
+      cfgDuration, cfgUiLabel, cfgSuccessExpr,
+    });
+
+    // ─── 2. Fetch des champs personnalisés (ProcedureFieldTemplate)
+    let configFieldTemplates: any[] = [];
+    try {
+      const res = await apiClient.get<{ success: boolean; items: any[] }>('/api/procedure-config-fields');
+      configFieldTemplates = (res.items ?? []).filter((t: any) => !!t.name); // garder seulement ceux avec un nom
+    } catch (e: any) {
+      console.warn('[SYNC] Erreur templates :', e.message);
+    }
+
+    // ─── 3. Mise à jour de la séquence — "apply only if configured"
     setProcedure(prev => {
       const steps = prev.steps || [];
-      const step = steps[index];
-      if (!step || !defaults) return prev;
+      const step  = steps[index];
+      if (!step) return prev;
 
-      const actionType = defaults.defaultActionType || undefined;
-      const timeoutAction = defaults.defaultTimeoutAction || undefined;
-      const alarmType = defaults.defaultAlarmType || undefined;
-      const alarmSeverity = defaults.defaultAlarmSeverity || undefined;
-      const valveOperation = defaults.defaultValveOperation || undefined;
-      const speedMode = defaults.defaultSpeedMode || undefined;
-      const validationType = defaults.defaultValidationType || undefined;
-      const defaultDuration = defaults.defaultDuration || step.duration?.value || 60;
-      const defaultUiLabel = defaults.defaultUiLabel || step.action?.ui?.label || 'Confirmer';
-      const defaultSuccessExpression = defaults.defaultSuccessExpression || step.validation?.successExpression || 'status == OK';
+      // ── Type d'action (appliqué seulement si configuré)
+      const action: any = { ...(step.action || {}) };
+      const actionApplied: string[] = [];
+      if (cfgActionType) {
+        action.type = cfgActionType;
+        action.ui = {
+          ...(action.ui || {}),
+          component: cfgActionType === 'valve_operation' ? 'valve_control' : 'action_button',
+          icon:      cfgActionType === 'valve_operation' ? 'valve_open'    : 'check',
+        };
+        if (cfgActionType === 'valve_operation') {
+          if (cfgValveOperation) action.operation = cfgValveOperation;
+          if (cfgSpeedMode)      action.speed      = cfgSpeedMode;
+          actionApplied.push(`type=${cfgActionType}`);
+          if (cfgValveOperation) actionApplied.push(`operation=${cfgValveOperation}`);
+          if (cfgSpeedMode)      actionApplied.push(`speed=${cfgSpeedMode}`);
+        } else {
+          delete action.operation;
+          delete action.speed;
+          delete action.valveId;
+          actionApplied.push(`type=${cfgActionType}`);
+        }
+        if (cfgActionType !== 'command') delete action.command;
+      } else {
+        console.log('[SYNC][APPLY] action.type : ignoré (valeur vide)');
+      }
 
-      const action: any = {
-        ...(step.action || {}),
-        instruction: step.action?.instruction || '',
-        parameters: step.action?.parameters || {},
-        ui: {
-          ...(step.action?.ui || {}),
-          component: 'action_button',
-          label: defaultUiLabel,
-          icon: 'check',
-        },
+      // ── Libellé du bouton (appliqué seulement si configuré)
+      if (cfgUiLabel) {
+        action.ui = { ...(action.ui || {}), label: cfgUiLabel };
+        actionApplied.push(`uiLabel=${cfgUiLabel}`);
+      } else {
+        console.log('[SYNC][APPLY] action.ui.label : ignoré (valeur vide)');
+      }
+
+      // ── Durée (appliquée seulement si > 0 et configurée)
+      let durationApplied = false;
+      const duration = (cfgDuration !== undefined && cfgDuration > 0)
+        ? (() => {
+            durationApplied = true;
+            return { ...(step.duration || {}), value: cfgDuration, unit: 'seconds', display: `${cfgDuration}s`, type: 'fixed' as const };
+          })()
+        : step.duration;
+      if (!durationApplied) {
+        console.log('[SYNC][APPLY] duration : ignoré (valeur vide ou 0)');
+      }
+
+      // ── Conditions de validation (appliquées seulement si type configuré)
+      let conditions = step.validation?.conditions || [];
+      if (cfgValidationType) {
+        conditions = conditions.length > 0
+          ? conditions.map(c => ({ ...c, type: cfgValidationType }))
+          : [{ id: `val-${Date.now()}`, type: cfgValidationType, operator: '==', value: 0, description: '', displayName: '' }];
+        console.log('[SYNC][APPLY] validation.type :', cfgValidationType);
+      } else {
+        console.log('[SYNC][APPLY] validation.type : ignoré (valeur vide)');
+      }
+
+      // ── Expression de succès (appliquée seulement si configurée)
+      const successExpression = cfgSuccessExpr
+        ? cfgSuccessExpr
+        : step.validation?.successExpression || '';
+      if (!cfgSuccessExpr) {
+        console.log('[SYNC][APPLY] successExpression : ignoré (valeur vide)');
+      }
+
+      // ── Timeout action (appliquée seulement si configurée)
+      const timeout = {
+        ...(step.validation?.timeout || { value: 120, unit: 'seconds' }),
+        ...(cfgTimeoutAction ? { action: cfgTimeoutAction as 'abort' | 'warn' | 'retry' } : {}),
       };
-
-      if (actionType) {
-        action.type = actionType;
+      if (!cfgTimeoutAction) {
+        console.log('[SYNC][APPLY] timeout.action : ignoré (valeur vide)');
       }
 
-      if (actionType === 'valve_operation') {
-        action.valveId = step.action?.valveId || '';
-        action.operation = valveOperation || 'open';
-        action.speed = speedMode;
-        action.ui.component = 'valve_control';
-        action.ui.icon = 'valve_open';
+      // ── Alarmes (appliquées seulement si type configuré)
+      let alarms = step.alarms || [];
+      if (cfgAlarmType) {
+        alarms = [{
+          id:          step.alarms?.[0]?.id   || `alarm-${Date.now()}`,
+          code:        step.alarms?.[0]?.code  || `ALM-${Date.now()}`,
+          type:        cfgAlarmType as 'warning' | 'critical' | 'info',
+          severity:    (cfgAlarmSeverity || step.alarms?.[0]?.severity || 'medium') as 'low' | 'medium' | 'high' | 'critical',
+          description: step.alarms?.[0]?.description || '',
+          condition:   step.alarms?.[0]?.condition   || '',
+          remedy:      step.alarms?.[0]?.remedy      || { title: '', description: '', steps: [], estimatedTime: 0 },
+          escalation:  step.alarms?.[0]?.escalation  || { ifPersistsAfter: 1, contact: '', message: '' },
+        }];
+        console.log('[SYNC][APPLY] alarme :', { type: cfgAlarmType, severity: cfgAlarmSeverity || 'medium' });
+      } else {
+        console.log('[SYNC][APPLY] alarme : ignoré (valeur vide)');
       }
 
-      if (actionType === 'command') {
-        action.command = step.action?.command || '';
-      }
-
-      const existingConditions = step.validation?.conditions || [];
-      const conditions = validationType
-        ? existingConditions.length > 0
-          ? existingConditions.map(c => (c.type === validationType ? c : { ...c, type: validationType }))
-          : [{ id: `val-${Date.now()}`, type: validationType, operator: '==', value: 0, description: '', displayName: '' }]
-        : existingConditions;
-
-      const alarms = alarmType
-        ? [
-            {
-              id: step.alarms?.[0]?.id || `alarm-${Date.now()}`,
-              code: step.alarms?.[0]?.code || `ALM-${Date.now()}`,
-              type: alarmType as 'warning' | 'critical' | 'info',
-              severity: (alarmSeverity || 'medium') as 'low' | 'medium' | 'high' | 'critical',
-              description: step.alarms?.[0]?.description || '',
-              condition: step.alarms?.[0]?.condition || '',
-              remedy: step.alarms?.[0]?.remedy || { title: '', description: '', steps: [], estimatedTime: 0 },
-              escalation: step.alarms?.[0]?.escalation || { ifPersistsAfter: 1, contact: '', message: '' },
-            },
-          ]
-        : [];
+      // ── Champs personnalisés (ProcedureFieldTemplate) — ajout sans doublons
+      const currentFields = step.fields || [];
+      const mergedFields  = [...currentFields];
+      configFieldTemplates.forEach((t: any) => {
+        if (!mergedFields.find(f => f.templateId === t.id)) {
+          mergedFields.push({
+            templateId: t.id,
+            name:       t.name,
+            type:       t.type,
+            value:      t.type === 'boolean' ? false : '',
+            required:   t.required,
+          });
+        }
+      });
 
       const updatedStep = {
         ...step,
-        order: index + 1,
-        duration: {
-          ...(step.duration || {}),
-          value: defaultDuration,
-          unit: 'seconds',
-          display: `${defaultDuration}s`,
-          type: 'fixed' as const,
-        },
+        order:  index + 1,
+        fields: mergedFields,
+        duration,
         action,
         validation: {
           ...(step.validation || {}),
           conditions,
-          successExpression: defaultSuccessExpression,
-          timeout: {
-            ...(step.validation?.timeout || {}),
-            value: 120,
-            unit: 'seconds',
-            ...(timeoutAction ? { action: timeoutAction as 'abort' | 'warn' | 'retry' } : {}),
-          },
+          successExpression,
+          timeout,
         },
         alarms,
-        dependencies: {
-          ...(step.dependencies || {}),
-          prerequisites: step.dependencies?.prerequisites || [],
-          dependsOn: step.dependencies?.dependsOn || [],
-          requiresConfirmation: step.dependencies?.requiresConfirmation ?? true,
-        },
       };
+
+      console.log('[SYNC] step mis à jour :', {
+        index,
+        actionType:     updatedStep.action?.type,
+        duration:       updatedStep.duration?.value,
+        uiLabel:        updatedStep.action?.ui?.label,
+        validationType: updatedStep.validation?.conditions?.[0]?.type,
+        alarmType:      updatedStep.alarms?.[0]?.type,
+        appliedFields:  actionApplied,
+      });
 
       const updatedSteps = [...steps];
       updatedSteps[index] = updatedStep;
-
-      console.log('[SYNC_STEP] success', {
-        index,
-        actionType,
-        validationType,
-        alarmType,
-        alarmCount: alarms.length,
-        timeoutAction,
-        valveOperation,
-        speedMode,
-        defaultDuration,
-        defaultUiLabel,
-        stepId: updatedStep.id,
-      });
-
       return { ...prev, steps: updatedSteps };
     });
 
+    // ─── 4. Toast récapitulatif (uniquement les champs appliqués)
+    const applied: string[] = [];
+    if (cfgActionType)     applied.push(`Action: ${cfgActionType}`);
+    if (cfgDuration && cfgDuration > 0) applied.push(`Durée: ${cfgDuration}s`);
+    if (cfgUiLabel)        applied.push(`Bouton: ${cfgUiLabel}`);
+    if (cfgValidationType) applied.push(`Validation: ${cfgValidationType}`);
+    if (cfgAlarmType)      applied.push(`Alarme: ${cfgAlarmType}`);
+    if (cfgTimeoutAction)  applied.push(`Timeout: ${cfgTimeoutAction}`);
+    if (configFieldTemplates.length > 0) applied.push(`+${configFieldTemplates.length} champ(s) perso`);
+
+    console.log('[SYNC] toast applied :', applied);
+
     toast({
-      title: 'Étape synchronisée',
-      description: `Étape ${index + 1} mise à jour avec la configuration courante.`,
+      title: `Étape ${index + 1} synchronisée`,
+      description: applied.length > 0
+        ? applied.join(' · ')
+        : 'Aucune valeur configurée à appliquer.',
     });
-  }, [defaults, updateSteps, toast]);
+  }, [defaults, toast]);
+
 
   const parseVoiceCommand = useCallback((raw: string, currentField: ForgeField, currentStepField: StepField) => {
     const t = raw.trim();

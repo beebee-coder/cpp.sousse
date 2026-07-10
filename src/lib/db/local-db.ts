@@ -16,6 +16,7 @@ const INDEX_CHROMA_DIR = path.join(LOCAL_DB_ROOT, 'INDEX_CHROMA');
 const CENTRALE_DIR = path.join(LOCAL_DB_ROOT, 'Centrale');
 const GROUPES_DIR = path.join(LOCAL_DB_ROOT, 'Groupes');
 const ALARMES_DIR = path.join(LOCAL_DB_ROOT, 'Alarmes');
+const RESSOURCES_HUMAINES_DIR = path.join(LOCAL_DB_ROOT, 'ressources humaines');
 const MANIFEST_FILE = path.join(LOCAL_DB_ROOT, 'local-db-manifest.json');
 
 export { LOCAL_DB_ROOT };
@@ -49,6 +50,7 @@ interface FSNode {
   metadata?: {
     knowledgeType?: string;
     cloudId?: string;
+    indexed?: boolean;
   };
 }
 
@@ -58,10 +60,16 @@ const ensureLocalDB = () => {
     if (!fs.existsSync(LOCAL_DB_ROOT)) {
       fs.mkdirSync(LOCAL_DB_ROOT, { recursive: true });
     }
-    [INDEX_CHROMA_DIR, CENTRALE_DIR, GROUPES_DIR, ALARMES_DIR].forEach(dir => {
+    [INDEX_CHROMA_DIR, CENTRALE_DIR, GROUPES_DIR, ALARMES_DIR, RESSOURCES_HUMAINES_DIR].forEach(dir => {
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
       }
+    });
+    const rhEquipesDir = path.join(RESSOURCES_HUMAINES_DIR, 'equipes');
+    if (!fs.existsSync(rhEquipesDir)) fs.mkdirSync(rhEquipesDir, { recursive: true });
+    ['equipe A', 'equipe B', 'equipe C', 'equipe D'].forEach(equipe => {
+      const target = path.join(rhEquipesDir, equipe);
+      if (!fs.existsSync(target)) fs.mkdirSync(target, { recursive: true });
     });
     if (!fs.existsSync(MANIFEST_FILE)) {
       const initial: LocalDBManifest = {
@@ -142,6 +150,7 @@ export const localDB = {
     const centraleTree: FSNode[] = scanDirectory(CENTRALE_DIR, 'Centrale');
     const groupesTree: FSNode[] = scanDirectory(GROUPES_DIR, 'Groupes');
     const alarmesTree: FSNode[] = scanDirectory(ALARMES_DIR, 'Alarmes');
+    const ressourcesHumainesTree: FSNode[] = scanDirectory(RESSOURCES_HUMAINES_DIR, 'ressources humaines');
 
     const rootNodes: FSNode[] = [];
 
@@ -181,7 +190,36 @@ export const localDB = {
       metadata: { knowledgeType: 'alarmes' }
     });
 
-    return rootNodes;
+    rootNodes.push({
+      id: 'ressources humaines',
+      name: 'ressources humaines',
+      type: 'folder',
+      isOpen: false,
+      children: ressourcesHumainesTree,
+      metadata: { knowledgeType: 'ressources-humaines' }
+    });
+
+    // Marque les fichiers déjà indexés/vectorisés vers ChromaDB
+    const indexedSet = (() => {
+      try {
+        const mp = path.join(LOCAL_DB_ROOT, 'chroma-index.json');
+        if (fs.existsSync(mp)) {
+          const data = JSON.parse(fs.readFileSync(mp, 'utf8'));
+          return new Set<string>((data.entries || []).map((e: any) => e.relPath));
+        }
+      } catch {}
+      return new Set<string>();
+    })();
+
+    const tagIndexed = (nodes: FSNode[]): FSNode[] => nodes.map(n => ({
+      ...n,
+      metadata: n.type === 'file' && indexedSet.has(n.id)
+        ? { ...n.metadata, indexed: true }
+        : n.metadata,
+      children: n.children ? tagIndexed(n.children) : undefined
+    }));
+
+    return tagIndexed(rootNodes);
   },
 
   /**
@@ -341,6 +379,20 @@ export const localDB = {
 
     console.log(`🗑️ [LOCAL_DB] [DELETE] ${relativePath}`);
     return true;
+  },
+
+  /**
+   * Renomme un fichier ou un dossier dans la BDD locale.
+   */
+  async renameItem(oldPath: string, newName: string): Promise<{ success: boolean }> {
+    const oldFullPath = path.join(LOCAL_DB_ROOT, oldPath);
+    const newFullPath = path.join(path.dirname(oldFullPath), newName);
+    if (!fs.existsSync(oldFullPath)) {
+      throw new Error('ELEMENT_INTROUVABLE');
+    }
+    fs.renameSync(oldFullPath, newFullPath);
+    console.log(`📝 [LOCAL_DB] [RENAME] ${oldPath} -> ${newName}`);
+    return { success: true };
   },
 
   /**

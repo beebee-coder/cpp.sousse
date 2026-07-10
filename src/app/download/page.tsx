@@ -43,7 +43,7 @@ export default function DownloadPage() {
 
         <footer className="h-12 border-t border-border bg-black/40 flex items-center justify-center gap-4 sm:gap-8 px-6 text-[8px] sm:text-[9px] font-code text-muted-foreground uppercase tracking-widest shrink-0">
           <span className="hidden sm:inline">Licence Industrielle CCP</span>
-          <span className="truncate">© 2026 VISIONODE PRECISION</span>
+          <span className="truncate">© 2026 COPILOTE-CCPE PRECISION</span>
           <span className="text-primary/50 hidden md:inline">SHA-256 Validated</span>
         </footer>
       </main>

@@ -3,6 +3,7 @@ export const revalidate = false;
 
 import { createHybridRoute } from '@/lib/api-route-creator';
 import { listCollections, deleteCollection, getOrCreateCollection, getChromaClient } from '@/lib/chroma';
+import { getLocalDBChromaTree } from '@/lib/local-indexer';
 
 /**
  * Route hybride pour lister les collections (ou classes Cloud).
@@ -37,11 +38,12 @@ export const GET = createHybridRoute<any, any>({
     }
 
     // Mode Local : ChromaDB Physique
+    // L'arborescence miroir (BDD Locale) est TOUJOURS renvoyée, même si ChromaDB
+    // n'est pas joignable, afin que l'arborescence reste conforme à la BDD Locale.
+    let collections: any[] = [];
     try {
-      const collections = await listCollections();
-      
-      // Enrichir avec le nombre de documents
-      const enrichedCollections = await Promise.all(collections.map(async (c: any) => {
+      collections = await listCollections();
+      collections = await Promise.all(collections.map(async (c: any) => {
         try {
           const client = await getChromaClient();
           if (!client) return { ...c, count: 0 };
@@ -52,12 +54,18 @@ export const GET = createHybridRoute<any, any>({
           return { ...c, count: 0 };
         }
       }));
+    } catch (e: any) {
+      console.warn('[VECTOR_COLLECTIONS] ChromaDB indisponible :', e.message);
+      collections = [];
+    }
 
-      return { 
-        success: true, 
-        count: collections.length, 
-        collections: enrichedCollections, 
-        provider: 'CHROMA_PERSISTENT_LOCAL' 
+    try {
+      return {
+        success: true,
+        count: collections.length,
+        collections,
+        mirrorTree: await getLocalDBChromaTree(),
+        provider: 'CHROMA_PERSISTENT_LOCAL'
       };
     } catch (e: any) {
       return { success: false, error: 'LOCAL_DB_UNREACHABLE', details: e.message, collections: [] };

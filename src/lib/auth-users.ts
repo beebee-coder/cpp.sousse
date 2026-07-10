@@ -5,7 +5,10 @@ import {
   rejectUser as rejectUserStore,
   authenticateUser as authenticateUserStore,
   getAllUsers as getAllUsersStore,
+  getUserById as getUserByIdStore,
   listPendingUsers as listPendingUsersStore,
+  updateCurrentUser as updateCurrentUserStore,
+  verifyUserPassword as verifyUserPasswordStore,
 } from '@/lib/auth-store';
 
 // Ré-exporter le type Role depuis Prisma pour assurer la cohérence
@@ -44,6 +47,21 @@ export async function rejectUser(userId: string) {
 
 export async function getAllUsers() {
   return getAllUsersStore();
+}
+
+export async function getUserById(userId: string) {
+  return getUserByIdStore(userId);
+}
+
+export async function verifyUserPassword(userId: string, password: string) {
+  return verifyUserPasswordStore(userId, password);
+}
+
+export async function updateCurrentUser(
+  userId: string,
+  data: { firstName?: string; lastName?: string; email?: string; password?: string }
+) {
+  return updateCurrentUserStore(userId, data);
 }
 
 export function canAccessRoute(role: Role | undefined, pathname: string) {

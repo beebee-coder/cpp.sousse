@@ -361,7 +361,7 @@ export default function DatasetPage() {
               <ChevronRight className="w-4 h-4 rotate-180" />
             </Button>
             <Database className="w-4 h-4 text-primary" />
-            <span className="font-headline font-bold text-xs uppercase tracking-widest text-primary">Station de Dataset & Forge RAG</span>
+            <span className="font-headline font-bold text-xs uppercase tracking-widest text-primary">Station de Dataset & Forge procedures</span>
           </div>
 
           <div className="flex items-center gap-2">
@@ -398,7 +398,7 @@ export default function DatasetPage() {
                   <Database className="w-3.5 h-3.5 mr-2" /> Questions / Réponses
                 </TabsTrigger>
                 <TabsTrigger value="forge" className="text-[10px] uppercase font-bold px-4 py-2">
-                  <Layers className="w-3.5 h-3.5 mr-2" /> Station de Forge RAG (Sequencer)
+                  <Layers className="w-3.5 h-3.5 mr-2" /> Station de forge procedures
                 </TabsTrigger>
               </TabsList>
             </div>

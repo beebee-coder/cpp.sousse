@@ -58,7 +58,7 @@ function SignInForm() {
           </div>
           <div className="flex items-center gap-2 mb-2">
              <Database className="w-5 h-5 text-primary" />
-             <h1 className="text-2xl font-bold font-headline uppercase tracking-tight text-gradient">VisioNode Access</h1>
+              <h1 className="text-2xl font-bold font-headline uppercase tracking-tight text-gradient">COPILOTE-CCPE</h1>
           </div>
           <p className="text-sm text-muted-foreground mt-1 uppercase font-code text-[10px] tracking-widest">Liaison de contrôle industriel</p>
         </div>

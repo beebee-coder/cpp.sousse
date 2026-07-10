@@ -28,6 +28,7 @@ import {
   VALVE_OPERATIONS,
   SPEED_MODES,
 } from '@/lib/procedures/config';
+import { apiClient } from '@/lib/api-client';
 
 type StepField = 'title' | 'description' | 'subtitle' | 'duration' | 'actionType' | 'actionTarget' | 'actionLabel';
 
@@ -244,7 +245,7 @@ export function StepEditor({
                           <div className="space-y-1.5 animate-in fade-in zoom-in-95 duration-200">
                             <label className="text-[8px] font-bold text-primary uppercase">Opération vanne</label>
                             <Select
-                              value={step.action?.operation || defaults?.defaultValveOperation || 'open'}
+                              value={step.action?.operation || ''}
                               onValueChange={(val) => updateStep(index, { action: { ...(step.action || {}), operation: val as any } })}
                             >
                               <SelectTrigger className={`h-8 bg-black/40 text-[9px] uppercase font-bold ${isActive(index, 'actionTarget') ? 'border-primary' : 'border-primary/40'}`}>
@@ -264,7 +265,7 @@ export function StepEditor({
                           <div className="space-y-1.5 animate-in fade-in zoom-in-95 duration-200">
                             <label className="text-[8px] font-bold text-primary uppercase">Vitesse</label>
                             <Select
-                              value={step.action?.speed || defaults?.defaultSpeedMode || 'progressive'}
+                              value={step.action?.speed || ''}
                               onValueChange={(val) => updateStep(index, { action: { ...(step.action || {}), speed: val as any } })}
                             >
                               <SelectTrigger className={`h-8 bg-black/40 text-[9px] uppercase font-bold ${isActive(index, 'actionTarget') ? 'border-primary' : 'border-primary/40'}`}>
@@ -285,11 +286,11 @@ export function StepEditor({
                         <label className="text-[8px] font-bold text-muted-foreground uppercase">Durée (s)</label>
                         <Input
                           type="number"
-                          value={step.duration?.value || 60}
-                          onChange={(e) => updateStep(index, { duration: { ...(step.duration || {}), value: parseInt(e.target.value) || 60, display: `${e.target.value}s` } })}
+                          value={step.duration?.value ?? ''}
+                          onChange={(e) => updateStep(index, { duration: { ...(step.duration || {}), value: parseInt(e.target.value) || 0, display: `${e.target.value}s` } })}
                           onFocus={() => onFieldFocus?.(index, 'duration')}
-                          className={`h-8 bg-black/40 text-center font-code text-xs ${isActive(index, 'duration') ? 'border-primary text-primary' : 'border-border'}`}
-                          placeholder="60"
+                          className={`h-8 bg-black/40 text-center font-code text-xs ${isActive(index, 'duration') ? 'border-primary text-primary' : !step.duration?.value ? 'border-amber-500/50 text-amber-500' : 'border-border'}`}
+                          placeholder="— non défini —"
                         />
                       </div>
 
@@ -299,79 +300,281 @@ export function StepEditor({
                           value={step.action?.ui?.label || ''}
                           onChange={(e) => updateStep(index, { action: { ...(step.action || {}), ui: { ...(step.action?.ui || {}), label: e.target.value } } })}
                           onFocus={() => onFieldFocus?.(index, 'actionLabel')}
-                          className={`h-8 bg-black/40 text-[9px] uppercase font-bold ${isActive(index, 'actionLabel') ? 'border-primary' : 'border-border'}`}
-                          placeholder="CONFIRMER"
+                          className={`h-8 bg-black/40 text-[9px] uppercase font-bold ${isActive(index, 'actionLabel') ? 'border-primary' : !step.action?.ui?.label ? 'border-amber-500/50 text-amber-500' : 'border-border'}`}
+                          placeholder="— non défini —"
                         />
                       </div>
                     </div>
                   </div>
 
                   <div className="pt-4 border-t border-border/50 flex flex-wrap gap-4 items-center justify-between">
-                    <div className="flex gap-4">
-                      <div className="flex items-center gap-2">
-                        <label className="text-[8px] font-bold text-muted-foreground uppercase">Type de validation</label>
-                        <Select
-                          value={step.validation?.conditions?.[0]?.type || defaults?.defaultValidationType || 'status'}
-                          onValueChange={(val) => {
-                            const conditions = [...(step.validation?.conditions || [])];
-                            if (conditions.length === 0) {
-                              conditions.push({ id: `val-${Date.now()}`, type: val, operator: '==', value: 0, description: '', displayName: '' });
-                            } else {
-                              conditions[0] = { ...conditions[0], type: val };
-                            }
-                            updateStep(index, { validation: { ...(step.validation || {}), conditions } });
-                          }}
-                        >
-                          <SelectTrigger className="h-7 bg-black/40 text-[9px] uppercase font-bold border-border">
-                            <SelectValue placeholder="Type" />
-                          </SelectTrigger>
-                          <SelectContent className="bg-background border-border">
-                            <SelectItem value="">Aucun</SelectItem>
-                            {VALIDATION_TYPES.map((type) => (
-                              <SelectItem key={type} value={type}>{type}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="flex items-center gap-2 px-3 py-1 bg-secondary/10 border border-secondary/20 rounded-sm">
-                        <Activity className="w-3.5 h-3.5 text-secondary" />
-                        <span className="text-[9px] font-bold text-secondary uppercase">Validation : {step.action?.type === 'valve_operation' ? 'Automatique' : 'Manuelle'}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <label className="text-[8px] font-bold text-muted-foreground uppercase">Type alarme</label>
-                        <Select
-                          value={step.alarms?.[0]?.type || defaults?.defaultAlarmType || 'warning'}
-                          onValueChange={(val) => {
-                            const alarms = [...(step.alarms || [])];
-                            if (alarms.length === 0) {
-                              alarms.push({
-                                id: `alarm-${Date.now()}`,
-                                code: `ALM-${Date.now()}`,
-                                type: val as any,
-                                severity: (defaults?.defaultAlarmSeverity as any) || 'medium',
-                                description: '',
-                                condition: '',
-                                remedy: { title: '', description: '', steps: [], estimatedTime: 0 },
-                                escalation: { ifPersistsAfter: 1, contact: '', message: '' },
-                              });
-                            } else {
-                              alarms[0] = { ...alarms[0], type: val as any };
-                            }
-                            updateStep(index, { alarms });
-                          }}
-                        >
-                          <SelectTrigger className="h-7 bg-black/40 text-[9px] uppercase font-bold border-border">
-                            <SelectValue placeholder="Type" />
-                          </SelectTrigger>
-                          <SelectContent className="bg-background border-border">
-                            <SelectItem value="">Aucun</SelectItem>
-                            {ALARM_TYPES.map((type) => (
-                              <SelectItem key={type} value={type}>{type}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
+                    <div className="flex gap-4 flex-wrap">
+                      {/* Type de validation : affiché seulement si une valeur est active (step ou defaults) */}
+                      {(() => {
+                        const validationTypeValue =
+                          step.validation?.conditions?.[0]?.type || '';
+                        if (!validationTypeValue) return null;
+                        return (
+                          <div className="flex items-center gap-2">
+                            <label className="text-[8px] font-bold text-muted-foreground uppercase">Type de validation</label>
+                            <Select
+                              value={validationTypeValue}
+                              onValueChange={(val) => {
+                                if (!val) {
+                                  // Aucun sélectionné manuellement → vider les conditions
+                                  updateStep(index, { validation: { ...(step.validation || {}), conditions: [] } });
+                                  return;
+                                }
+                                const conditions = [...(step.validation?.conditions || [])];
+                                if (conditions.length === 0) {
+                                  conditions.push({ id: `val-${Date.now()}`, type: val, operator: '==', value: 0, description: '', displayName: '' });
+                                } else {
+                                  conditions[0] = { ...conditions[0], type: val };
+                                }
+                                updateStep(index, { validation: { ...(step.validation || {}), conditions } });
+                              }}
+                            >
+                              <SelectTrigger className="h-7 bg-black/40 text-[9px] uppercase font-bold border-border">
+                                <SelectValue placeholder="Type" />
+                              </SelectTrigger>
+                              <SelectContent className="bg-background border-border">
+                                <SelectItem value="">Aucun</SelectItem>
+                                {VALIDATION_TYPES.map((type) => (
+                                  <SelectItem key={type} value={type}>{type}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        );
+                      })()}
+                       {/* Timeout action : affiché seulement si une valeur est active */}
+                       {(() => {
+                         const timeoutActionValue =
+                           step.validation?.timeout?.action || '';
+                         if (!timeoutActionValue) return null;
+                         return (
+                           <div className="flex items-center gap-2">
+                             <label className="text-[8px] font-bold text-muted-foreground uppercase">Timeout action</label>
+                             <Select
+                               value={timeoutActionValue}
+                               onValueChange={(val) => {
+                                 if (!val) return;
+                                 updateStep(index, { validation: { ...(step.validation || {}), timeout: { ...(step.validation?.timeout || { value: 120, unit: 'seconds' }), action: val as any } } });
+                               }}
+                             >
+                               <SelectTrigger className="h-7 bg-black/40 text-[9px] uppercase font-bold border-border">
+                                 <SelectValue placeholder="Action" />
+                               </SelectTrigger>
+                               <SelectContent className="bg-background border-border">
+                                 <SelectItem value="">Aucun</SelectItem>
+                                 {TIMEOUT_ACTIONS.map((action) => (
+                                   <SelectItem key={action} value={action}>{action}</SelectItem>
+                                 ))}
+                               </SelectContent>
+                             </Select>
+                           </div>
+                         );
+                       })()}
+                       {/* Expression de succès : affichée seulement si une valeur est active */}
+                       {(() => {
+                         const successExprValue =
+                           step.validation?.successExpression || '';
+                         if (!successExprValue) return null;
+                         return (
+                           <div className="flex items-center gap-2">
+                             <label className="text-[8px] font-bold text-muted-foreground uppercase">Expression succès</label>
+                             <Input
+                               value={successExprValue}
+                               onChange={(e) => updateStep(index, { validation: { ...(step.validation || {}), successExpression: e.target.value } })}
+                               onFocus={() => onFieldFocus?.(index, 'actionLabel')}
+                               className={`h-7 bg-black/40 text-[9px] font-code border-border ${isActive(index, 'actionLabel') ? 'border-primary text-primary' : 'text-foreground'}`}
+                             />
+                           </div>
+                         );
+                       })()}
+                       <div className="flex items-center gap-2 px-3 py-1 bg-secondary/10 border border-secondary/20 rounded-sm">
+                         <Activity className="w-3.5 h-3.5 text-secondary" />
+                         <span className="text-[9px] font-bold text-secondary uppercase">
+                           Validation : {(step.action?.type === 'valve_operation' || (step.validation?.conditions?.[0]?.type && step.validation?.conditions?.[0]?.type !== 'manual')) ? 'Automatique' : 'Manuelle'}
+                         </span>
+                       </div>
+                      {/* Type alarme : affiché seulement si une valeur est active (step ou defaults) */}
+                      {(() => {
+                        const alarmTypeValue =
+                          step.alarms?.[0]?.type || '';
+                        if (!alarmTypeValue) return null;
+                        return (
+                          <div className="flex items-center gap-2">
+                            <label className="text-[8px] font-bold text-muted-foreground uppercase">Type alarme</label>
+                            <Select
+                              value={alarmTypeValue}
+                              onValueChange={(val) => {
+                                if (!val) {
+                                  updateStep(index, { alarms: [] });
+                                  return;
+                                }
+                                const alarms = [...(step.alarms || [])];
+                                if (alarms.length === 0) {
+                                  alarms.push({
+                                    id: `alarm-${Date.now()}`,
+                                    code: `ALM-${Date.now()}`,
+                                    type: val as any,
+                                    severity: (defaults?.defaultAlarmSeverity as any) || 'medium',
+                                    description: '',
+                                    condition: '',
+                                    remedy: { title: '', description: '', steps: [], estimatedTime: 0 },
+                                    escalation: { ifPersistsAfter: 1, contact: '', message: '' },
+                                  });
+                                } else {
+                                  alarms[0] = { ...alarms[0], type: val as any };
+                                }
+                                updateStep(index, { alarms });
+                              }}
+                            >
+                              <SelectTrigger className="h-7 bg-black/40 text-[9px] uppercase font-bold border-border">
+                                <SelectValue placeholder="Type" />
+                              </SelectTrigger>
+                              <SelectContent className="bg-background border-border">
+                                <SelectItem value="">Aucun</SelectItem>
+                                {ALARM_TYPES.map((type) => (
+                                  <SelectItem key={type} value={type}>{type}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        );
+                      })()}
+                      {/* Sévérité alarme : affichée seulement si une alarme est active */}
+                      {(() => {
+                        const severityValue =
+                          step.alarms?.[0]?.severity || '';
+                        if (!severityValue) return null;
+                        return (
+                          <div className="flex items-center gap-2">
+                            <label className="text-[8px] font-bold text-muted-foreground uppercase">Sévérité alarme</label>
+                            <Select
+                              value={severityValue}
+                              onValueChange={(val) => {
+                                if (!val) return;
+                                const alarms = [...(step.alarms || [])];
+                                if (alarms.length === 0) {
+                                  alarms.push({
+                                    id: `alarm-${Date.now()}`,
+                                    code: `ALM-${Date.now()}`,
+                                    type: (defaults?.defaultAlarmType as any) || 'warning',
+                                    severity: val as any,
+                                    description: '',
+                                    condition: '',
+                                    remedy: { title: '', description: '', steps: [], estimatedTime: 0 },
+                                    escalation: { ifPersistsAfter: 1, contact: '', message: '' },
+                                  });
+                                } else {
+                                  alarms[0] = { ...alarms[0], severity: val as any };
+                                }
+                                updateStep(index, { alarms });
+                              }}
+                            >
+                              <SelectTrigger className="h-7 bg-black/40 text-[9px] uppercase font-bold border-border">
+                                <SelectValue placeholder="Sévérité" />
+                              </SelectTrigger>
+                              <SelectContent className="bg-background border-border">
+                                <SelectItem value="">Aucun</SelectItem>
+                                {ALARM_SEVERITIES.map((sev) => (
+                                  <SelectItem key={sev} value={sev}>{sev}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        );
+                      })()}
                     </div>
+                  </div>
+
+                  {/* CUSTOM FIELDS SECTION */}
+                  <div className="pt-4 border-t border-border/50">
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="text-[10px] font-bold text-primary uppercase tracking-widest flex items-center gap-2">
+                        <Layers className="w-3.5 h-3.5" />
+                        Attributs Personnalisés
+                      </h4>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-[9px] uppercase font-bold"
+                        onClick={async () => {
+                          try {
+                            // Utilise apiClient pour supporter web ET Desktop Tauri
+                            const res = await apiClient.get<{ success: boolean; items: any[] }>('/api/procedure-config-fields');
+                            const templates: any[] = res.items ?? [];
+                            const currentFields = step.fields || [];
+                            const newFields = [...currentFields];
+
+                            if (templates.length === 0) {
+                              console.warn('[StepEditor] Aucun template de configuration trouvé.');
+                            }
+
+                            templates.forEach((t: any) => {
+                              if (!currentFields.find((f) => f.templateId === t.id)) {
+                                newFields.push({
+                                  templateId: t.id,
+                                  name: t.name,
+                                  type: t.type,
+                                  value: t.type === 'boolean' ? false : '',
+                                  required: t.required,
+                                });
+                              }
+                            });
+
+                            updateStep(index, { fields: newFields });
+                          } catch (err) {
+                            console.error('[StepEditor] Failed to sync fields:', err);
+                          }
+                        }}
+                      >
+                        <RefreshCw className="w-3 h-3 mr-1" />
+                        Synchroniser Config
+                      </Button>
+                    </div>
+                    {step.fields && step.fields.length > 0 ? (
+                      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+                        {step.fields.map((field, fIdx) => (
+                          <div key={fIdx} className="space-y-1.5">
+                            <label className="text-[8px] font-bold text-muted-foreground uppercase">
+                              {field.name} {field.required && '*'}
+                            </label>
+                            {field.type === 'boolean' ? (
+                              <div className="flex items-center h-8">
+                                <input
+                                  type="checkbox"
+                                  checked={field.value}
+                                  onChange={(e) => {
+                                    const nextFields = [...step.fields!];
+                                    nextFields[fIdx].value = e.target.checked;
+                                    updateStep(index, { fields: nextFields });
+                                  }}
+                                  className="rounded border-border"
+                                />
+                              </div>
+                            ) : (
+                              <Input
+                                type={field.type === 'number' ? 'number' : 'text'}
+                                value={field.value || ''}
+                                onChange={(e) => {
+                                  const nextFields = [...step.fields!];
+                                  nextFields[fIdx].value = field.type === 'number' ? Number(e.target.value) : e.target.value;
+                                  updateStep(index, { fields: nextFields });
+                                }}
+                                className="h-8 bg-black/40 text-[10px] border-border"
+                              />
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-[10px] text-muted-foreground italic py-2">
+                        Aucun attribut configuré pour cette étape. Cliquez sur synchroniser pour importer la configuration globale.
+                      </div>
+                    )}
                   </div>
                 </div>
               </Card>

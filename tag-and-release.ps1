@@ -1,7 +1,7 @@
 # release-tagger.ps1
 # VisioNode Release Tagger v2.0 - Processus de Release Automatisé
 
-Write-Host "🏷️  VISIONODE - PROCESSUS DE RELEASE" -ForegroundColor Magenta
+Write-Host "🏷️  COPILOTE-CCPE - PROCESSUS DE RELEASE" -ForegroundColor Magenta
 Write-Host "========================================" -ForegroundColor Magenta
 Write-Host "📅 $(Get-Date -Format 'dd/MM/yyyy HH:mm')" -ForegroundColor Gray
 

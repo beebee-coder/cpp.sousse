@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react';
 import {
   LayoutDashboard,
   Database,
-  Monitor,
   Cpu,
   ShieldCheck,
   Rocket,
@@ -27,11 +26,11 @@ import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Logo3D } from '@/components/three/Logo3D';
 
-const allNavItems = [
+export const allNavItems = [
   { icon: LayoutDashboard, label: 'Tableau de Bord', href: '/dashboard' },
   { icon: MessageSquare, label: 'Chat Neural', href: '/chat' },
   { icon: ShieldCheck, label: 'Console Admin', href: '/admin' },
-  { icon: Database, label: 'Base RAG', href: '/dataset' },
+  { icon: Database, label: 'Base entrainement IA', href: '/dataset' },
   { icon: HardDrive, label: 'Explorateur BDD', href: '/bdd' },
   { icon: ImageIcon, label: "Banque d'images", href: '/bank' },
   { icon: Video, label: 'Flux Vidéo', href: '/conference' },
@@ -45,7 +44,7 @@ interface SidebarContentProps {
   onNavigate?: () => void;
 }
 
-function SidebarContent({ pathname, isDesktop, isReady, onNavigate }: SidebarContentProps) {
+export function SidebarContent({ pathname, isDesktop, isReady, onNavigate }: SidebarContentProps) {
   const [mounted, setMounted] = useState(false);
   const [role, setRole] = useState<string | undefined>(undefined);
   const isDev = process.env.NODE_ENV === 'development';
@@ -81,7 +80,7 @@ function SidebarContent({ pathname, isDesktop, isReady, onNavigate }: SidebarCon
           <div className="glow-ring rounded-md p-0.5">
             <Logo3D size={34} />
           </div>
-          <h1 className="font-headline font-bold text-lg tracking-tighter uppercase truncate">VISIONODE</h1>
+          <h1 className="font-headline font-bold text-lg tracking-tighter uppercase truncate">COPILOTE-CCPE</h1>
         </Link>
         <p className="text-[10px] text-muted-foreground font-code uppercase tracking-[0.2em] truncate">PRECISION_ENGINE v1.0</p>
       </div>
@@ -98,8 +97,8 @@ function SidebarContent({ pathname, isDesktop, isReady, onNavigate }: SidebarCon
                 onClick={onNavigate}
                 className={cn(
                   "w-full flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md transition-all duration-300 [transform-style:preserve-3d] group",
-                  isActive 
-                    ? "bg-primary/10 text-primary border border-primary/30 shadow-glow translate-x-0.5" 
+                  isActive
+                    ? "bg-primary/10 text-primary border border-primary/30 shadow-glow translate-x-0.5"
                     : "text-muted-foreground hover:bg-muted/60 hover:text-foreground hover:translate-x-1 border border-transparent"
                 )}
               >
@@ -121,8 +120,8 @@ function SidebarContent({ pathname, isDesktop, isReady, onNavigate }: SidebarCon
               onClick={onNavigate}
               className={cn(
                 "w-full flex items-center justify-between px-3 py-2 text-sm font-medium rounded-sm transition-all group border border-dashed border-primary/20",
-                pathname === '/pipeline' 
-                  ? "bg-primary/20 text-primary border-primary/50" 
+                pathname === '/pipeline'
+                  ? "bg-primary/20 text-primary border-primary/50"
                   : "text-muted-foreground hover:bg-primary/5 hover:text-primary"
               )}
             >
@@ -156,7 +155,7 @@ function SidebarContent({ pathname, isDesktop, isReady, onNavigate }: SidebarCon
                   <Cloud className="w-3 h-3 text-primary" />
                 )}
                 <span className={cn(
-                  "text-[9px] font-code uppercase font-bold", 
+                  "text-[9px] font-code uppercase font-bold",
                   isDesktop ? "text-secondary" : "text-primary"
                 )}>
                   {isDesktop ? "NATIF" : "CLOUD"}
@@ -171,40 +170,52 @@ function SidebarContent({ pathname, isDesktop, isReady, onNavigate }: SidebarCon
   );
 }
 
-export function DashboardSidebar() {
+export function DashboardSidebar({
+  mobileOpen,
+  onMobileOpenChange,
+  hideMobileTrigger = false,
+}: {
+  mobileOpen?: boolean;
+  onMobileOpenChange?: (open: boolean) => void;
+  hideMobileTrigger?: boolean;
+} = {}) {
   const { isDesktop, isReady } = usePlatform();
   const pathname = usePathname();
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
 
+  const open = mobileOpen ?? internalOpen;
+  const setOpen = onMobileOpenChange ?? setInternalOpen;
   const handleClose = () => setOpen(false);
 
   return (
     <>
       {/* Mobile Trigger */}
-      <div className="lg:hidden fixed top-4 left-4 z-50">
-        <Sheet open={open} onOpenChange={setOpen}>
-          <SheetTrigger asChild>
-            <Button variant="outline" size="icon" className="bg-card/80 backdrop-blur-sm border-primary/30 text-primary hover:bg-card">
-              <Menu className="w-5 h-5" />
-            </Button>
-          </SheetTrigger>
-          <SheetContent side="left" className="p-0 w-64 border-r border-border h-full">
-            <SidebarContent 
-              pathname={pathname} 
-              isDesktop={isDesktop} 
-              isReady={isReady} 
-              onNavigate={handleClose} 
-            />
-          </SheetContent>
-        </Sheet>
-      </div>
+      {!hideMobileTrigger && (
+        <div className="lg:hidden fixed top-4 left-4 z-50">
+          <Sheet open={open} onOpenChange={setOpen}>
+            <SheetTrigger asChild>
+              <Button variant="outline" size="icon" className="bg-card/80 backdrop-blur-sm border-primary/30 text-primary hover:bg-card">
+                <Menu className="w-5 h-5" />
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="left" className="p-0 w-64 border-r border-border h-full">
+              <SidebarContent
+                pathname={pathname}
+                isDesktop={isDesktop}
+                isReady={isReady}
+                onNavigate={handleClose}
+              />
+            </SheetContent>
+          </Sheet>
+        </div>
+      )}
 
       {/* Desktop Permanent Sidebar */}
       <div className="hidden lg:flex w-64 border-r border-border/70 bg-transparent flex-col h-full shrink-0 overflow-hidden">
-        <SidebarContent 
-          pathname={pathname} 
-          isDesktop={isDesktop} 
-          isReady={isReady} 
+        <SidebarContent
+          pathname={pathname}
+          isDesktop={isDesktop}
+          isReady={isReady}
         />
       </div>
     </>

@@ -1,0 +1,15 @@
+{
+  "version": "1.0.0",
+  "entries": [
+    {
+      "relPath": "INDEX_CHROMA/items/qa_seed-k-epi-crf.json",
+      "name": "qa_seed-k-epi-crf.json",
+      "parentDir": "INDEX_CHROMA/items",
+      "collection": "locdb-index-chroma-items",
+      "ids": [
+        "INDEX_CHROMA/items/qa_seed-k-epi-crf.json#0"
+      ],
+      "indexedAt": "2026-07-10T12:56:08.698Z"
+    }
+  ]
+}

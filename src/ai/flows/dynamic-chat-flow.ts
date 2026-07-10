@@ -6,6 +6,7 @@
 
 import Groq from 'groq-sdk';
 import { searchAcrossCollections, getSystemContextSummary } from '../../lib/chroma';
+import { searchChromaLocalDB } from '../../lib/local-indexer';
 import { postgresClient } from '../../lib/db/postgres-client';
 
 type ChatMessage = {
@@ -28,12 +29,22 @@ export async function dynamicChat(input: ChatInput) {
 
   const systemState = await getSystemContextSummary();
   
-  // 1. Recherche RAG
-  console.log(`🔍 [CHAT_RAG] [SEARCH] [${ts}] Recherche sémantique...`);
-  const ragResults = await searchAcrossCollections(input.message, 5);
-  console.log(`✅ [CHAT_RAG] [SUCCESS] [${ts}] ${ragResults.length} fragments récupérés.`);
-  
-  const context = ragResults.map(r => `[SOURCE: ${r.metadata?.origin}] : ${r.document}`).join('\n\n');
+  // 1. Recherche RAG path-aware dans Vecteurs ChromaDB
+  //    (question + interaction IA, pondérée par l'arborescence BDD Locale)
+  console.log(`🔍 [CHAT_RAG] [SEARCH] [${ts}] Recherche sémantique (Vecteurs ChromaDB)...`);
+  const historyText = input.history.slice(-4).map(m => m.content).filter(Boolean);
+  const ragResults = await searchChromaLocalDB(input.message, historyText, 6);
+  if (ragResults.length === 0) {
+    ragResults.push(...await searchAcrossCollections(input.message, 4));
+  }
+  console.log(`✅ [CHAT_RAG] [SUCCESS] [${ts}] ${ragResults.length} fragment(s) récupéré(s).`);
+
+  const context = ragResults.map(r => {
+    const m = r.metadata || {};
+    const path = [m.parentDir, m.fileName || m.name].filter(Boolean).join(' / ');
+    const source = path ? `${r.metadata?.origin} | ${path}` : (r.metadata?.origin || 'INCONNU');
+    return `[SOURCE: ${source}] : ${r.document}`;
+  }).join('\n\n');
 
   try {
     const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });

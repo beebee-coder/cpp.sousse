@@ -46,7 +46,18 @@ export const GET = createHybridRoute<any, any>({
 export const POST = createHybridRoute<any, any>({
   name: 'LOCAL_DB_POST',
   webHandler: async (req, body) => {
-    const { fileName, content, metadata, path: targetPath, type } = body;
+    const { fileName, content, metadata, path: targetPath, type, action } = body;
+
+    if (action === 'index-folder' && targetPath) {
+      const { indexLocalDBFolder } = await import('@/lib/local-indexer');
+      return await indexLocalDBFolder(targetPath);
+    }
+
+    if (action === 'index' && targetPath) {
+      const { indexLocalDBFile } = await import('@/lib/local-indexer');
+      return await indexLocalDBFile(targetPath);
+    }
+
 
     if (targetPath && type) {
       const fullPath = path.join(LOCAL_DB_ROOT, targetPath);
@@ -109,6 +120,22 @@ export const DELETE = createHybridRoute<any, any>({
       if (!deleted) {
         return { success: false, error: 'ELEMENT_INTROUVABLE' };
       }
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  }
+});
+
+export const PATCH = createHybridRoute<{ path: string; newName: string }, any>({
+  name: 'LOCAL_DB_RENAME',
+  webHandler: async (req, body) => {
+    const { path: oldPath, newName } = body;
+    if (!oldPath || !newName) {
+      return { success: false, error: 'PARAM_MISSING' };
+    }
+    try {
+      await localDB.renameItem(oldPath, newName);
       return { success: true };
     } catch (e: any) {
       return { success: false, error: e.message };

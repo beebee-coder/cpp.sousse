@@ -22,6 +22,7 @@ model User {
   password      String
   role          Role      @default(user)
   approved      Boolean   @default(false)
+  image         String?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   lastSyncAt    DateTime?
@@ -59,14 +60,15 @@ model Procedure {
 model ProcedureExecution {
   id            String    @id @default(cuid())
   procedureId   String
-  procedure     Procedure @relation(fields: [procedureId], references: [id])
   operatorId    String
+  status        String    @default("COMPLETED")
+  stepsStatus   Json?
+  totalDuration Int?      @default(0)
+  endTime       DateTime? @default(now())
+  startTime     DateTime? @default(now())
+  
   operator      User      @relation(fields: [operatorId], references: [id])
-  startTime     DateTime  @default(now())
-  endTime       DateTime?
-  status        String    @default("IN_PROGRESS")
-  stepsStatus   Json      // État de validation de chaque étape
-  totalDuration Int?      // en secondes
+  procedure     Procedure @relation(fields: [procedureId], references: [id])
   
   @@map("procedure_executions")
 }
@@ -86,4 +88,17 @@ model KnowledgeItem {
   updatedAt DateTime @updatedAt
 
   @@map("knowledge_items")
+}
+
+model ProcedureFieldTemplate {
+  id          String   @id @default(cuid())
+  name        String
+  type        String   // 'text', 'number', 'boolean', 'select'
+  description String?
+  options     Json?    // Optional list of choices if type is 'select'
+  required    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("procedure_field_templates")
 }

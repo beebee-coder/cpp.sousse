@@ -19,6 +19,12 @@ const ensureRegistry = () => {
       const target = path.join(REGISTRY_ROOT, dir);
       if (!fs.existsSync(target)) fs.mkdirSync(target, { recursive: true });
     });
+
+    const rhBase = path.join(REGISTRY_ROOT, 'ressources humaines', 'equipes');
+    ['equipe A', 'equipe B', 'equipe C', 'equipe D'].forEach(equipe => {
+      const target = path.join(rhBase, equipe);
+      if (!fs.existsSync(target)) fs.mkdirSync(target, { recursive: true });
+    });
   } catch (e) {
     console.warn('[REGISTRY_FS] FS read-only, création de .registry ignorée:', (e as Error).message);
   }

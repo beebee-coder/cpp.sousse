@@ -4,7 +4,7 @@
 
 $timestamp = Get-Date -Format "HH:mm:ss"
 Write-Host "------------------------------------------" -ForegroundColor Cyan
-Write-Host "🛠️ [$timestamp] INITIALISATION VISIONODE" -ForegroundColor Cyan
+Write-Host "🛠️ [$timestamp] INITIALISATION COPILOTE-CCPE" -ForegroundColor Cyan
 Write-Host "------------------------------------------"
 
 $envExample = ".env.example"

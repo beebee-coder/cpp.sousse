@@ -50,6 +50,14 @@ export const POST = createHybridRoute<{ collection: string; query: string; nResu
 
     // 🧠 MODE LOCAL : ChromaDB (uniquement en local/desktop)
     try {
+      // Recherche path-aware sur l'arborescence BDD Locale (collections locdb-*)
+      if (!collection || collection === 'local-db') {
+        const { searchChromaLocalDB } = await import('@/lib/local-indexer');
+        console.log(`🧠 [${timestamp}] [CHROMA_LOCAL] Recherche path-aware (BDD Locale)...`);
+        const results = await searchChromaLocalDB(query, [], nResults);
+        return { success: true, results, provider: 'CHROMADB_LOCAL_PATH_AWARE' };
+      }
+
       const chromaModule = await import('@/lib/chroma');
       console.log(`🧠 [${timestamp}] [CHROMA_LOCAL] Recherche sémantique...`);
       const results = await chromaModule.semanticSearch({

@@ -52,6 +52,10 @@ interface FSNode {
   metadata?: {
     knowledgeType?: string;
     cloudId?: string;
+    origin?: string;
+    relPath?: string;
+    collection?: string;
+    indexed?: boolean;
   };
 }
 
@@ -80,6 +84,30 @@ export default function BDDPage() {
     oldName: '',
     type: 'file'
   });
+
+  // Suivi observabe de l'opération de vectorisation (du début à la fin)
+  const [indexing, setIndexing] = useState<{ id: string | null; label: string; done: number; total: number }>({
+    id: null,
+    label: '',
+    done: 0,
+    total: 0
+  });
+
+  // Collecte récursivement tous les chemins de fichiers sous un dossier donné
+  const collectFileRelPaths = (nodes: FSNode[], targetId: string): string[] => {
+    const found: string[] = [];
+    const walkAll = (ns: FSNode[]) => ns.forEach(n => {
+      if (n.type === 'file') found.push(n.id);
+      if (n.children) walkAll(n.children);
+    });
+    const find = (ns: FSNode[]): boolean => ns.some(n => {
+      if (n.id === targetId && n.type === 'folder') { walkAll(n.children || []); return true; }
+      if (n.children && find(n.children)) return true;
+      return false;
+    });
+    find(nodes);
+    return found;
+  };
   const [renameValue, setRenameValue] = useState('');
 
   useEffect(() => {
@@ -131,12 +159,31 @@ export default function BDDPage() {
     try {
       const res = await apiClient.get<any>('/api/vector/collections');
       if (res && res.success) {
-        const chromaNodes = (res.collections || []).map((c: any) => ({
-          id: `chroma-${c.name}`,
-          name: `${c.name.toUpperCase()} (${c.count || 0})`,
-          type: 'collection' as const
-        }));
-        setTree([{ id: 'root-chroma', name: 'VECTEURS CHROMADB', type: 'folder', isOpen: true, children: chromaNodes }]);
+        // Arborescence miroir reproduisant EXACTEMENT la structure de la BDD Locale.
+        const mirrorTree: FSNode[] = Array.isArray(res.mirrorTree) ? (res.mirrorTree as FSNode[]) : [];
+
+        // Collections système hors arborescence BDD Locale (industrial_manuals, ...)
+        const otherCollections = (res.collections || [])
+          .filter((c: any) => !String(c.name).startsWith('locdb-'))
+          .map((c: any) => ({
+            id: `chroma-${c.name}`,
+            name: `${c.name.toUpperCase()} (${c.count || 0})`,
+            type: 'collection' as const
+          }));
+
+        const children: FSNode[] = [...mirrorTree];
+        if (otherCollections.length > 0) {
+          children.push({
+            id: 'other-collections',
+            name: 'COLLECTIONS SYSTÈME',
+            type: 'folder',
+            isOpen: false,
+            children: otherCollections,
+            metadata: { knowledgeType: 'other' }
+          });
+        }
+
+        setTree([{ id: 'root-chroma', name: 'VECTEURS CHROMADB', type: 'folder', isOpen: true, children }]);
       }
     } catch (e) {
       setTree([]);
@@ -174,6 +221,22 @@ export default function BDDPage() {
   const handleFileClick = async (node: FSNode) => {
     if (node.id === selectedFile) return;
     if (node.type === 'file') {
+      // Nœud issu de l'arborescence miroir ChromaDB (BDD Locale indexée)
+      if (mode === 'chroma' && node.metadata?.relPath) {
+        try {
+          const res = await apiClient.get<any>(`/api/vector/documents?relPath=${encodeURIComponent(node.metadata.relPath)}`);
+          if (res.success) {
+            setSelectedFile(node.id);
+            setFileContent(res.content);
+            setIsEditing(false);
+          } else {
+            throw new Error(res.error || 'NON_INDEXE');
+          }
+        } catch (e: any) {
+          toast({ title: "Document indisponible", description: e.message, variant: "destructive" });
+        }
+        return;
+      }
       try {
         let res;
         if (mode === 'locale') {
@@ -238,6 +301,28 @@ export default function BDDPage() {
     }
   };
 
+  // Suppression d'un nœud (répertoire ou fichier) dans Vecteurs ChromaDB
+  const deleteChromaNode = async (node: FSNode) => {
+    if (!confirm(`Supprimer définitivement "${node.id}" de Vecteurs ChromaDB ?`)) return;
+    try {
+      let res;
+      if (node.type === 'collection') {
+        const name = node.id.replace(/^chroma-/, '');
+        res = await apiClient.delete<any>(`/api/vector/collections?name=${encodeURIComponent(name)}`);
+      } else {
+        res = await apiClient.delete<any>(`/api/vector/documents?relPath=${encodeURIComponent(node.id)}`);
+      }
+      if (res.success) {
+        toast({ title: "Supprimé de Vecteurs ChromaDB" });
+        refreshChroma();
+      } else {
+        throw new Error(res.error || "Échec de la suppression");
+      }
+    } catch (e: any) {
+      toast({ title: "Échec suppression ChromaDB", description: e.message, variant: "destructive" });
+    }
+  };
+
   const saveFileChanges = async () => {
     if (!selectedFile) return;
     try {
@@ -280,15 +365,77 @@ export default function BDDPage() {
   const handleRename = async () => {
     if (!renameValue.trim()) return;
     try {
-      const res = await apiClient.patch('/api/registry', { path: renameModal.path, newName: renameValue });
+      const endpoint = mode === 'locale' ? '/api/local-db' : '/api/registry';
+      const res = await apiClient.patch(endpoint, { path: renameModal.path, newName: renameValue });
       if (res.success) {
         setRenameModal({ ...renameModal, isOpen: false });
         toast({ title: "Renommé avec succès" });
-        await refreshRegistry();
+        if (mode === 'locale') await refreshLocalDB();
+        else await refreshRegistry();
       }
     } catch (e: any) {
       toast({ title: "Erreur lors du renommage", variant: "destructive" });
     }
+  };
+
+  const indexFile = async (relPath: string) => {
+    if (indexing.id) return;
+    setIndexing({ id: relPath, label: relPath, done: 0, total: 1 });
+    toast({ title: "Vectorisation démarrée", description: `Indexation de ${relPath}…` });
+    try {
+      const res = await apiClient.post<any>('/api/local-db', { action: 'index', path: relPath });
+      if (res.success) {
+        toast({ title: "✅ Fichier vectorisé avec succès", description: `${relPath} → Vecteurs ChromaDB (${res.chunkCount} chunks)` });
+      } else {
+        throw new Error(res.message || res.error || "Échec de l'indexation");
+      }
+    } catch (e: any) {
+      toast({ title: "❌ Échec de la vectorisation", description: e.message, variant: "destructive" });
+    } finally {
+      setIndexing({ id: null, label: '', done: 0, total: 0 });
+      refreshLocalDB();
+      refreshChroma();
+    }
+  };
+
+  const indexFolder = async (relPath: string) => {
+    if (indexing.id) return;
+    const files = collectFileRelPaths(tree, relPath);
+    if (files.length === 0) {
+      toast({ title: "Aucun fichier à vectoriser", description: "Le dossier ne contient pas de fichier texte indexable.", variant: "destructive" });
+      return;
+    }
+
+    setIndexing({ id: relPath, label: relPath, done: 0, total: files.length });
+    toast({ title: "Vectorisation démarrée", description: `${files.length} fichier(s) à traiter dans ${relPath}…` });
+
+    let ok = 0;
+    const failures: string[] = [];
+
+    for (const f of files) {
+      try {
+        const res = await apiClient.post<any>('/api/local-db', { action: 'index', path: f });
+        if (res.success) ok++;
+        else failures.push(`${f}: ${res.message || res.error}`);
+      } catch (e: any) {
+        failures.push(`${f}: ${e.message}`);
+      }
+      setIndexing(prev => ({ ...prev, done: prev.done + 1 }));
+    }
+
+    setIndexing({ id: null, label: '', done: 0, total: 0 });
+
+    if (failures.length === 0) {
+      toast({ title: `✅ Dossier vectorisé avec succès`, description: `${ok}/${files.length} fichier(s) indexé(s) vers Vecteurs ChromaDB.` });
+    } else {
+      toast({
+        title: `⚠️ Vectorisation partielle : ${ok}/${files.length}`,
+        description: `${failures.length} échec(s). ${failures[0]}`,
+        variant: "destructive"
+      });
+    }
+    refreshLocalDB();
+    refreshChroma();
   };
 
   const handleClearRegistre = useCallback(async () => {
@@ -337,13 +484,40 @@ export default function BDDPage() {
              node.type === 'collection' ? <Boxes className="w-3.5 h-3.5 text-accent" /> :
              <FileJson className="w-3.5 h-3.5 text-muted-foreground" />}
             <span className="text-[10px] font-code uppercase truncate">{node.name}</span>
+            {node.metadata?.indexed && <Database className="w-3 h-3 text-accent shrink-0" />}
             {node.size && <span className="text-[9px] text-muted-foreground/60 font-code">{(node.size / 1024).toFixed(1)}KB</span>}
           </div>
           {(mode === 'web' || mode === 'locale') && (
             <div className="hidden group-hover:flex items-center gap-0.5 ml-2">
+              {node.type === 'folder' && (
+                <button onClick={(e) => { e.stopPropagation(); setNewModal({ isOpen: true, type: 'folder', parent: node.id }); }} title="Nouveau répertoire"><FolderPlus className="w-3 h-3 hover:text-primary" /></button>
+              )}
+              {mode === 'locale' && (
+                indexing.id === node.id ? (
+                  <Loader2 className="w-3 h-3 animate-spin text-accent" />
+                ) : (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); if (indexing.id) return; node.type === 'folder' ? indexFolder(node.id) : indexFile(node.id); }}
+                    disabled={!!indexing.id}
+                    title={node.type === 'folder' ? "Indexer et vectoriser le dossier" : "Indexer et vectoriser"}
+                  >
+                    <Database className={`w-3 h-3 hover:text-accent ${indexing.id ? 'opacity-40' : ''}`} />
+                  </button>
+                )
+              )}
               <button onClick={(e) => { e.stopPropagation(); setNewModal({ isOpen: true, type: 'file', parent: node.id }); }} title="Nouveau fichier"><FilePlus className="w-3 h-3 hover:text-primary" /></button>
               <button onClick={(e) => { e.stopPropagation(); setRenameModal({ isOpen: true, path: node.id, oldName: node.name, type: node.type as any }); setRenameValue(node.name); }} title="Renommer"><Type className="w-3 h-3 hover:text-secondary" /></button>
               <button onClick={(e) => { e.stopPropagation(); deleteItem(node.id); }} title="Supprimer radicalement"><Trash2 className="w-3 h-3 hover:text-destructive" /></button>
+            </div>
+          )}
+          {mode === 'locale' && indexing.id === node.id && (
+            <span className="ml-2 text-[9px] font-code text-accent shrink-0">
+              {indexing.done}/{indexing.total}
+            </span>
+          )}
+          {mode === 'chroma' && node.id !== 'root-chroma' && node.id !== 'other-collections' && (
+            <div className="hidden group-hover:flex items-center gap-0.5 ml-2">
+              <button onClick={(e) => { e.stopPropagation(); deleteChromaNode(node); }} title="Supprimer de Vecteurs ChromaDB"><Trash2 className="w-3 h-3 hover:text-destructive" /></button>
             </div>
           )}
         </div>
@@ -426,7 +600,7 @@ export default function BDDPage() {
                 {mode === 'locale' && 'BDD Locale'}
               </span>
               <div className="flex gap-1">
-                {mode === 'web' && <button onClick={() => setNewModal({ isOpen: true, type: 'folder', parent: null })}><FolderPlus className="w-4 h-4 hover:text-primary" /></button>}
+                {(mode === 'web' || mode === 'locale') && <button onClick={() => setNewModal({ isOpen: true, type: 'folder', parent: null })} title="Nouveau répertoire"><FolderPlus className="w-4 h-4 hover:text-primary" /></button>}
                 <button onClick={() => {
                   if (mode === 'web') refreshRegistry();
                   else if (mode === 'chroma') refreshChroma();
