@@ -18,15 +18,15 @@ struct ChatOutput {
 }
 
 use tauri::Manager;
-use tauri_plugin_sql::{Builder, Migrations, Migration, MigrationKind};
+use tauri_plugin_sql::{Builder, Migration, MigrationKind};
 
 // Migrations SQL embarquées (compilées dans le binaire) :
 // la DB SQLite locale est créée ET pré-remplie au premier lancement,
 // sans aucune commande de la part de l'utilisateur final.
 const LOCAL_DB_URL: &str = "sqlite:visionode.sqlite";
 
-fn local_migrations() -> Migrations {
-    Migrations::new(vec![
+fn local_migrations() -> Vec<Migration> {
+    vec![
         Migration {
             version: 1,
             description: "schema initial",
@@ -39,7 +39,7 @@ fn local_migrations() -> Migrations {
             sql: include_str!("../migrations/0002_seed.sql"),
             kind: MigrationKind::Up,
         },
-    ])
+    ]
 }
 
 #[tauri::command]
