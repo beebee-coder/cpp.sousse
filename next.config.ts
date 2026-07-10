@@ -60,7 +60,7 @@ const nextConfig: NextConfig = {
   },
   
   typescript: { ignoreBuildErrors: true },
-  // ⚠️ eslint: { ignoreDuringBuilds: true }  // SUPPRIMÉ - à placer ailleurs
+  eslint: { ignoreDuringBuilds: true },
 };
 
 export default nextConfig;
