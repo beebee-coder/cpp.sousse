@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       message: 'RAG Base API disponible',
-      endpoints: ['POST /api/rag-base - sync', 'POST /api/rag-base - clear-registre']
+      endpoints: ['POST /api/rag-base - sync', 'POST /api/rag-base - clear-registre', 'POST /api/rag-base - save (compatibilité)']
     });
   } catch (error) {
     console.error('[RAG_BASE_API] Error:', error);
@@ -70,12 +70,21 @@ export async function POST(request: NextRequest) {
 
       case 'save': {
         const pairCount = Array.isArray(data?.pairs) ? data.pairs.length : 0;
-        console.log(`[RAG_BASE_API] [SAVE] ${pairCount} paire(s) Q/R sauvegardée(s)`);
+        console.log(`[RAG_BASE_API] [SAVE] ${pairCount} paire(s) Q/R reçue(s).`);
+
+        if (pairCount > 0 && (!data?.fileName && !data?.description)) {
+          return NextResponse.json({
+            success: false,
+            error: 'CANONICAL_SAVE_USE_KNOWLEDGE_API',
+            message: 'Utilisez /api/knowledge pour la sauvegarde canonique. Cette route conserve la compatibilité descendante uniquement.',
+            pairCount
+          });
+        }
 
         return NextResponse.json({
           success: true,
           pairCount,
-          message: `${pairCount} paires Q/R sauvegardées dans REGISTRE.`,
+          message: `${pairCount} paires Q/R enregistrées via la route de compatibilité.`,
           timestamp: new Date().toISOString()
         });
       }

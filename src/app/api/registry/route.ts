@@ -2,6 +2,8 @@ export const dynamic = 'force-dynamic';
 export const revalidate = false;
 import { createHybridRoute } from '@/lib/api-route-creator';
 import { postgresClient } from '@/lib/db/postgres-client';
+import { prisma } from '@/lib/db/prisma-client';
+import { getSessionFromCookie } from '@/lib/session';
 
 /**
  * API de gestion du Registre.
@@ -101,7 +103,51 @@ export const GET = createHybridRoute<any, any>({
 export const POST = createHybridRoute<{ path: string; type: 'file' | 'folder'; content?: string }, any>({
   name: 'REGISTRY_CREATE',
   webHandler: async (req, body) => {
-    if (isCloudServerless) return { success: false, error: 'REGISTRY_WRITE_CLOUD_UNSUPPORTED' };
+    if (isCloudServerless) {
+      try {
+        const session = await getSessionFromCookie();
+        if (!session) return { success: false, error: 'NON_AUTHENTIFIÉ' };
+
+        const rawPath = body.path?.toString().trim() || 'items/qr-collection.json';
+        const normalizedPath = rawPath.replace(/^\/+|\\/g, '').replace(/\\/g, '/');
+        const safeFileName = normalizedPath.split('/').filter(Boolean).pop() || 'qr-collection.json';
+        const baseName = safeFileName.replace(/\.json$/i, '');
+        const contentText = typeof body.content === 'string' ? body.content : JSON.stringify(body.content || {}, null, 2);
+        const parsedContent = (() => {
+          try {
+            return JSON.parse(contentText);
+          } catch {
+            return null;
+          }
+        })();
+
+        const title = parsedContent?.title || baseName || 'Collection Q/R';
+        const knowledgeType = parsedContent?.type || 'qa';
+        const registryPath = parsedContent?.registryPath || normalizedPath;
+        const question = Array.isArray(parsedContent?.pairs) && parsedContent.pairs[0]?.question ? parsedContent.pairs[0].question : null;
+        const answer = Array.isArray(parsedContent?.pairs)
+          ? parsedContent.pairs.map((pair: any) => pair.answer).filter(Boolean).join('\n\n') || null
+          : null;
+
+        const item = await prisma.knowledgeItem.create({
+          data: {
+            userId: session.user.id,
+            title: title.trim(),
+            type: knowledgeType,
+            content: contentText,
+            question,
+            answer,
+            tags: Array.isArray(parsedContent?.tags) ? parsedContent.tags : ['Q/R', 'entrainement'],
+            category: parsedContent?.category || 'General',
+          }
+        });
+
+        return { success: true, itemId: item.id, path: registryPath, provider: 'cloud-db' };
+      } catch (e: any) {
+        return { success: false, error: e.message };
+      }
+    }
+
     try {
       if (body.type === 'folder') {
         await postgresClient.createFolder(body.path);

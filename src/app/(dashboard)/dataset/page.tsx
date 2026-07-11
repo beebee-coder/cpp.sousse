@@ -17,7 +17,10 @@ import {
   ListChecks,
   FileJson,
   FileText,
-  Volume2
+  Volume2,
+  Pencil,
+  X,
+  Check
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
@@ -32,6 +35,8 @@ import { useVoice } from '@/hooks/use-voice';
 import { cn } from '@/lib/utils';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import { isDesktop } from '@/lib/platform';
+import { syncEngine } from '@/lib/db/sync-engine';
 import { DynamicProcedureForm } from '@/components/procedures/forms/DynamicProcedureForm';
 
 interface QRPair {
@@ -64,6 +69,9 @@ export default function DatasetPage() {
   const [forgeSaving, setForgeSaving] = useState(false);
   const [activeField, setActiveField] = useState<SmartField>('question');
   const [lastTranscript, setLastTranscript] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editQuestion, setEditQuestion] = useState('');
+  const [editAnswer, setEditAnswer] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
   const questionInputRef = useRef<HTMLInputElement>(null);
   const answerInputRef = useRef<HTMLTextAreaElement>(null);
@@ -150,26 +158,32 @@ export default function DatasetPage() {
 
     setIsSaving(true);
     try {
-      const finalFileName = fileName.trim() || description.trim() || `rag_qr_${new Date().toISOString().replace(/[:.]/g, '-').split('.')[0]}`;
-      const sessionData: QRSessionData = {
-        name: description.trim() || finalFileName,
-        pairs,
+      const baseFileName = fileName.trim() || description.trim() || `rag_qr_${new Date().toISOString().replace(/[:.]/g, '-').split('.')[0]}`;
+      const normalizedFileName = baseFileName
+        .trim()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-zA-Z0-9._-]+/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '') || 'rag_qr_collection';
+      const registryFileName = normalizedFileName.toLowerCase().endsWith('.json') ? normalizedFileName : `${normalizedFileName}.json`;
+      const registryPath = `items/${registryFileName}`;
+      const sessionJSON = {
+        type: 'qa',
+        title: normalizedFileName,
+        description: description.trim(),
+        pairs: pairs.map(p => ({ question: p.question, answer: p.answer })),
         createdAt: new Date().toISOString(),
+        registryPath: registryPath,
       };
 
-      const res = await apiClient.post('/api/rag-base', {
-        action: 'save',
-        pairs: sessionData.pairs,
-        fileName: finalFileName,
-        description: sessionData.name,
+      const res = await apiClient.post('/api/registry', {
+        path: registryPath,
+        type: 'file',
+        content: JSON.stringify(sessionJSON, null, 2),
       });
 
       if ((res as any).success) {
-        toast({
-          title: 'Sauvegarde réussie',
-          description: `${(res as any).pairCount} paires Q/R sauvegardées dans REGISTRE.`
-        });
-
         setPairs([]);
         setFileName('');
         setDescription('');
@@ -177,6 +191,11 @@ export default function DatasetPage() {
         if (questionInputRef.current) {
           questionInputRef.current.focus();
         }
+
+        toast({
+          title: 'Sauvegarde réussie',
+          description: `${pairs.length} paires Q/R enregistrées dans REGISTRE (${registryPath}). La synchronisation et la vectorisation se feront ensuite.`
+        });
       } else {
         throw new Error((res as any).error || 'Erreur inconnue');
       }
@@ -279,23 +298,62 @@ export default function DatasetPage() {
     setPairs(prev => prev.filter(p => p.id !== id));
   }, []);
 
+  const handleStartEdit = useCallback((pair: QRPair) => {
+    setEditingId(pair.id);
+    setEditQuestion(pair.question);
+    setEditAnswer(pair.answer);
+  }, []);
+
+  const handleSaveEdit = useCallback(() => {
+    if (!editQuestion.trim() || !editAnswer.trim()) {
+      toast({
+        variant: 'destructive',
+        title: 'Champs requis',
+        description: 'La question et la réponse sont obligatoires.'
+      });
+      return;
+    }
+
+    setPairs(prev => prev.map(p => p.id === editingId ? { ...p, question: editQuestion.trim(), answer: editAnswer.trim() } : p));
+    setEditingId(null);
+    setEditQuestion('');
+    setEditAnswer('');
+
+    toast({
+      title: 'Q/R modifiée',
+      description: 'La paire question/réponse a été mise à jour.'
+    });
+  }, [editingId, editQuestion, editAnswer, toast]);
+
+  const handleCancelEdit = useCallback(() => {
+    setEditingId(null);
+    setEditQuestion('');
+    setEditAnswer('');
+  }, []);
+
   const handleSync = useCallback(async () => {
     setIsSyncing(true);
     try {
-      const res = await apiClient.post('/api/rag-base', { action: 'sync' });
-
-      if ((res as any).success) {
+      if (!isDesktop) {
         toast({
-          title: 'Synchronisation réussie',
-          description: `${(res as any).syncedCount} fichier(s) transféré(s) en BDD locale.`
+          title: 'Mode Web',
+          description: 'La synchronisation locale est disponible uniquement en mode Desktop.'
         });
-
-        setPairs([]);
-        setFileName('');
-        setDescription('');
-      } else {
-        throw new Error((res as any).error || 'Erreur inconnue');
+        return;
       }
+
+      const userId = 'user-admin-001';
+      const projectId = 'project-001';
+      const result = await syncEngine.syncAll(userId, projectId);
+
+      toast({
+        title: 'Synchronisation terminée',
+        description: `${result.injectedCount} item(s) transféré(s), ${result.vectorizedCount} fichier(s) vectorisé(s).`
+      });
+
+      setPairs([]);
+      setFileName('');
+      setDescription('');
     } catch (e: any) {
       toast({
         variant: 'destructive',
@@ -391,7 +449,7 @@ export default function DatasetPage() {
         </header>
 
         <div className="flex-1 overflow-auto p-4 lg:p-6">
-          <Tabs defaultValue="forge" className="h-full flex flex-col">
+          <Tabs defaultValue="qr" className="h-full flex flex-col">
             <div className="flex items-center justify-between border-b border-border pb-2 shrink-0">
               <TabsList className="bg-black/40 border border-border/40">
                 <TabsTrigger value="qr" className="text-[10px] uppercase font-bold px-4 py-2">
@@ -519,7 +577,7 @@ export default function DatasetPage() {
                             value={fileName}
                             onChange={(e) => setFileName(e.target.value)}
                             onFocus={() => setActiveField('fileName')}
-                            placeholder="Nom du fichier (optionnel)"
+                            placeholder="Nom du fichier"
                             className="h-8 text-[11px] uppercase font-code bg-transparent border-border/40 w-48"
                           />
                           <Input
@@ -527,13 +585,13 @@ export default function DatasetPage() {
                             value={description}
                             onChange={(e) => setDescription(e.target.value)}
                             onFocus={() => setActiveField('description')}
-                            placeholder="Description du contenu..."
+                            placeholder="Description (optionnel)"
                             className="h-8 text-[11px] uppercase font-code bg-transparent border-border/40 w-56"
                           />
                           <Button
                             size="sm"
                             onClick={handleSend}
-                            disabled={isSaving}
+                            disabled={isSaving || pairs.length === 0}
                             className="h-8 gap-2 bg-primary text-primary-foreground hover:bg-primary/90 text-[10px] uppercase font-bold"
                           >
                             {isSaving ? (
@@ -541,7 +599,7 @@ export default function DatasetPage() {
                             ) : (
                               <Save className="w-3.5 h-3.5" />
                             )}
-                            Envoyer
+                            Envoyer vers BDD
                           </Button>
                         </div>
                       </div>
@@ -550,36 +608,86 @@ export default function DatasetPage() {
                       <div className="max-h-[50vh] overflow-y-auto px-4 pb-4">
                         <div className="space-y-3 pt-4">
                           {pairs.map((pair, index) => (
-                            <Card key={pair.id} className="border-border/30 bg-card/30 group transition-all hover:border-primary/30">
+                            <Card key={pair.id} className="border-border/30 bg-card/30">
                               <CardContent className="p-4">
-                                <div className="flex items-start gap-4">
-                                  <div className="w-8 h-8 bg-primary/10 border border-primary/30 rounded-sm flex items-center justify-center shrink-0">
-                                    <span className="text-xs font-code font-bold text-primary">{index + 1}</span>
-                                  </div>
-                                  <div className="flex-1 space-y-3 min-w-0">
+                                {editingId === pair.id ? (
+                                  <div className="space-y-3">
                                     <div className="space-y-1">
-                                      <p className="text-[9px] font-code text-primary uppercase tracking-widest font-bold">Question</p>
-                                      <p className="text-xs font-code text-foreground/90 leading-relaxed bg-black/20 p-2 rounded-sm border border-border/20">
-                                        {pair.question}
-                                      </p>
+                                      <Label className="text-[9px] font-code text-primary uppercase tracking-widest font-bold">Question</Label>
+                                      <Input
+                                        value={editQuestion}
+                                        onChange={(e) => setEditQuestion(e.target.value)}
+                                        className="h-8 text-xs font-code bg-background border-border/40"
+                                      />
                                     </div>
-                                    <Separator className="bg-border/20" />
                                     <div className="space-y-1">
-                                      <p className="text-[9px] font-code text-secondary uppercase tracking-widest font-bold">Réponse</p>
-                                      <p className="text-xs font-code text-foreground/90 leading-relaxed bg-black/20 p-2 rounded-sm border border-border/20">
-                                        {pair.answer}
-                                      </p>
+                                      <Label className="text-[9px] font-code text-secondary uppercase tracking-widest font-bold">Réponse</Label>
+                                      <Textarea
+                                        value={editAnswer}
+                                        onChange={(e) => setEditAnswer(e.target.value)}
+                                        className="text-xs font-code bg-background border-border/40 min-h-[80px] resize-none"
+                                      />
+                                    </div>
+                                    <div className="flex items-center gap-2 pt-1">
+                                      <Button
+                                        size="sm"
+                                        onClick={handleSaveEdit}
+                                        className="h-7 gap-1 bg-secondary text-secondary-foreground hover:bg-secondary/80 text-[10px] uppercase font-bold"
+                                      >
+                                        <Check className="w-3 h-3" /> Sauvegarder
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        onClick={handleCancelEdit}
+                                        className="h-7 gap-1 text-[10px] uppercase font-bold text-muted-foreground"
+                                      >
+                                        <X className="w-3 h-3" /> Annuler
+                                      </Button>
                                     </div>
                                   </div>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => handleRemovePair(pair.id)}
-                                    className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive shrink-0"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </Button>
-                                </div>
+                                ) : (
+                                  <div className="flex items-start gap-4">
+                                    <div className="w-8 h-8 bg-primary/10 border border-primary/30 rounded-sm flex items-center justify-center shrink-0">
+                                      <span className="text-xs font-code font-bold text-primary">{index + 1}</span>
+                                    </div>
+                                    <div className="flex-1 space-y-3 min-w-0">
+                                      <div className="space-y-1">
+                                        <p className="text-[9px] font-code text-primary uppercase tracking-widest font-bold">Question</p>
+                                        <p className="text-xs font-code text-foreground/90 leading-relaxed bg-black/20 p-2 rounded-sm border border-border/20">
+                                          {pair.question}
+                                        </p>
+                                      </div>
+                                      <Separator className="bg-border/20" />
+                                      <div className="space-y-1">
+                                        <p className="text-[9px] font-code text-secondary uppercase tracking-widest font-bold">Réponse</p>
+                                        <p className="text-xs font-code text-foreground/90 leading-relaxed bg-black/20 p-2 rounded-sm border border-border/20">
+                                          {pair.answer}
+                                        </p>
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center gap-1 shrink-0">
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={() => handleStartEdit(pair)}
+                                        className="h-8 w-8 text-muted-foreground hover:text-primary"
+                                        title="Modifier"
+                                      >
+                                        <Pencil className="w-3.5 h-3.5" />
+                                      </Button>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={() => handleRemovePair(pair.id)}
+                                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                                        title="Supprimer"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </Button>
+                                    </div>
+                                  </div>
+                                )}
                               </CardContent>
                             </Card>
                           ))}
@@ -587,10 +695,10 @@ export default function DatasetPage() {
                         </div>
                       </div>
                     </CardContent>
-                  </Card>
-                )}
-              </div>
-            </TabsContent>
+                   </Card>
+                 )}
+               </div>
+             </TabsContent>
 
             {/* Forge RAG (Sequencer) */}
             <TabsContent value="forge" className="flex-1 overflow-hidden focus-visible:ring-0 mt-4">

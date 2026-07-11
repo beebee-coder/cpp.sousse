@@ -41,6 +41,7 @@ export async function POST(request: NextRequest) {
         title: true,
         question: true,
         answer: true,
+        content: true,
         tags: true,
         category: true,
         createdAt: true,
@@ -49,25 +50,37 @@ export async function POST(request: NextRequest) {
     });
 
     // Transformer en format CloudData compatible avec le sync-engine existant
-    const items = knowledgeItems.map((ki) => ({
-      id: ki.id,
-      projectId: 'global',
-      type: 'document' as const,
-      content: JSON.stringify({
-        knowledgeId: ki.id,
-        type: ki.type,
-        title: ki.title,
-        question: ki.question,
-        answer: ki.answer,
+    const items = knowledgeItems.map((ki) => {
+      let parsedContent: any = null;
+      try {
+        parsedContent = typeof ki.content === 'string' ? JSON.parse(ki.content) : ki.content;
+      } catch {
+        parsedContent = null;
+      }
+
+      const registryPath = parsedContent?.registryPath || parsedContent?.sourcePath || null;
+
+      return {
+        id: ki.id,
+        projectId: 'global',
+        type: 'document' as const,
+        content: ki.content || JSON.stringify({
+          knowledgeId: ki.id,
+          type: ki.type,
+          title: ki.title,
+          question: ki.question,
+          answer: ki.answer,
+          tags: ki.tags,
+          category: ki.category,
+        }),
         tags: ki.tags,
-        category: ki.category,
-      }),
-      tags: ki.tags,
-      createdAt: ki.createdAt,
-      // Métadonnées étendues pour la désérialisation locale
-      _knowledgeType: ki.type,
-      _title: ki.title,
-    }));
+        createdAt: ki.createdAt,
+        // Métadonnées étendues pour la désérialisation locale
+        _knowledgeType: ki.type,
+        _title: ki.title,
+        _registryPath: registryPath,
+      };
+    });
 
     return NextResponse.json({
       success: true,

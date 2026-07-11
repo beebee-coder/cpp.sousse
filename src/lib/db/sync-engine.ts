@@ -4,6 +4,12 @@ import { apiClient } from '../api-client';
 /**
  * @fileOverview Moteur de synchronisation atomique [SYNC_ENGINE].
  * Version : Client-Safe (Suppression des dépendances 'fs' pour éviter l'erreur de bundle).
+ *
+ * Flux :
+ * 1. downloadAndInjectPhase  : télécharge les KnowledgeItems du Cloud et
+ *    écrit les fichiers physiques dans le REGISTRE local + INDEX_CHROMA.
+ * 2. vectorizeLocalItems    : indexe séparément les fichiers locaux dans
+ *    ChromaDB (phase séparée de la synchronisation fichiers).
  */
 
 export const syncEngine = {
@@ -67,14 +73,24 @@ export const syncEngine = {
         const parsed = typeof item.content === 'string' ? JSON.parse(item.content) : item.content;
         const knowledgeType = item._knowledgeType || parsed.type || 'qa';
         const title = item._title || parsed.title || 'Sans titre';
+        const slug = title
+          .toLowerCase()
+          .normalize('NFD')
+          .replace(/[̀-ͯ]/g, '')
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-+|-+$/g, '')
+          .slice(0, 40);
 
-        const fileName = `${knowledgeType}_${item.id}.json`;
+        const requestedPath = typeof item._registryPath === 'string' && item._registryPath.trim()
+          ? item._registryPath.trim()
+          : (typeof parsed.registryPath === 'string' && parsed.registryPath.trim() ? parsed.registryPath.trim() : null);
+        const regPath = knowledgeType === 'procedure'
+          ? `procedures/${item.id}/procedure.json`
+          : (requestedPath || `items/${slug}-${item.id}.json`);
+        const registryDir = regPath.split('/').filter(Boolean);
+        const fileName = registryDir.length > 1 ? registryDir[registryDir.length - 1] : `${knowledgeType}_${item.id}.json`;
+        const targetDir = registryDir.length > 1 ? registryDir.slice(0, -1).join('/') : 'items';
 
-        // 1. Sauvegarde Registre Physique via API Route
-        const regPath = knowledgeType === 'procedure' 
-          ? `procedures/${item.id}/procedure.json` 
-          : `items/${item.id}.json`;
-        
         await apiClient.post('/api/registry', {
           path: regPath,
           type: 'file',
@@ -92,25 +108,7 @@ export const syncEngine = {
           },
           targetDir: knowledgeType === 'procedure'
             ? `procedures/${item.id}`
-            : 'items'
-        });
-
-        // 3. Vectorisation Locale via API Route
-        let semanticText = '';
-        if (knowledgeType === 'qa') {
-          semanticText = `Q: ${parsed.question}\nR: ${parsed.answer}`;
-        } else {
-          semanticText = `PROCÉDURE: ${title}\nDESCRIPTION: ${parsed.description || ''}`;
-        }
-
-        await apiClient.post('/api/vector/documents', {
-          collection: 'knowledge_items',
-          documents: [{
-            id: item.id,
-            content: semanticText,
-            metadata: { cloudId: item.id, type: knowledgeType, title, timestamp: Date.now() }
-          }],
-          upsert: true
+            : targetDir
         });
 
         successIds.push(item.id);
@@ -120,7 +118,7 @@ export const syncEngine = {
       }
     }
 
-    // 3. Purge Cloud après injection confirmée
+    // Purge Cloud après injection confirmée
     if (successIds.length > 0) {
       try {
         await apiClient.post('/api/sync/cleanup', { ids: successIds, projectId });
@@ -133,6 +131,23 @@ export const syncEngine = {
     return successIds.length;
   },
 
+  /**
+   * Phase de vectorisation séparée.
+   * Indexe les fichiers locaux du REGISTRE dans ChromaDB.
+   * Appelée APRÈS downloadAndInjectPhase pour respecter la séparation des phases.
+   */
+  async vectorizeLocalItems(folder: 'items' | 'procedures' | 'INDEX_CHROMA/items' = 'INDEX_CHROMA/items'): Promise<{ success: boolean; indexed?: number; errors?: string[] }> {
+    if (typeof window === 'undefined') return { success: false, errors: ['Server environment'] };
+
+    try {
+      const { indexLocalDBFolder } = await import('@/lib/local-indexer');
+      const result = await indexLocalDBFolder(folder);
+      return result;
+    } catch (e: any) {
+      return { success: false, errors: [e.message] };
+    }
+  },
+
   async syncAll(userId: string, projectId: string) {
     const state = await this.getSyncState(userId);
     state.status = 'syncing';
@@ -140,10 +155,15 @@ export const syncEngine = {
 
     try {
       const injectedCount = await this.downloadAndInjectPhase(userId, projectId);
+
+      // Phase de vectorisation séparée
+      const vectorResult = await this.vectorizeLocalItems('INDEX_CHROMA/items');
+
       state.lastSync = new Date();
       state.status = 'idle';
       await this.saveSyncState(state);
-      console.log(`🏁 [SYNC_COMPLETE] Injection terminée : ${injectedCount} items.`);
+      console.log(`🏁 [SYNC_COMPLETE] Injection : ${injectedCount} items, Vectorisation : ${vectorResult.indexed || 0} fichiers.`);
+      return { injectedCount, vectorizedCount: vectorResult.indexed || 0 };
     } catch (e: any) {
       state.status = 'error';
       await this.saveSyncState(state);

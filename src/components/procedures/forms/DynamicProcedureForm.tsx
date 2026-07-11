@@ -47,7 +47,7 @@ interface DynamicProcedureFormProps {
 
 export function DynamicProcedureForm({ onSubmit, isSaving }: DynamicProcedureFormProps) {
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState('metadata');
+  const [activeTab, setActiveTab] = useState('config');
   const [activeField, setActiveField] = useState<ForgeField>('title');
   const [activeStepIndex, setActiveStepIndex] = useState(0);
   const [activeStepField, setActiveStepField] = useState<StepField>('title');
@@ -487,7 +487,7 @@ export function DynamicProcedureForm({ onSubmit, isSaving }: DynamicProcedureFor
         return;
       }
       if (parsed.action === 'clear') {
-        if (activeTab === 'metadata') {
+        if (activeTab === 'config') {
           clearMetadataField(activeField);
           toast({ title: 'Correction vocale', description: 'Champ effacé.' });
         } else {
@@ -507,7 +507,7 @@ export function DynamicProcedureForm({ onSubmit, isSaving }: DynamicProcedureFor
       }
     },
     onCorrection: () => {
-      if (activeTab === 'metadata') {
+      if (activeTab === 'config') {
         clearMetadataField(activeField);
       } else {
         applyToStepField(activeStepIndex, activeStepField, '');
@@ -541,10 +541,10 @@ export function DynamicProcedureForm({ onSubmit, isSaving }: DynamicProcedureFor
               </TabsTrigger>
             </TabsList>
 
-            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-muted/10 border border-border rounded-sm">
-              <p className="text-[9px] font-code text-muted-foreground uppercase">
-                Champ : <span className="text-primary font-bold">{activeTab === 'metadata' ? activeField : `Étape ${activeStepIndex + 1} / ${activeStepField}`}</span>
-              </p>
+              <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-muted/10 border border-border rounded-sm">
+                <p className="text-[9px] font-code text-muted-foreground uppercase">
+                  Champ : <span className="text-primary font-bold">{activeTab === 'config' ? activeField : `Étape ${activeStepIndex + 1} / ${activeStepField}`}</span>
+                </p>
               {lastTranscript && (
                 <p className="text-[8px] font-code text-muted-foreground/70 max-w-xs truncate">
                   "{lastTranscript}"
@@ -593,7 +593,7 @@ export function DynamicProcedureForm({ onSubmit, isSaving }: DynamicProcedureFor
                         <SelectValue placeholder="SÉLECTION" />
                       </SelectTrigger>
                       <SelectContent className="bg-background border-border">
-                        <SelectItem value="">Aucun</SelectItem>
+                        <SelectItem value="__none__">Aucun</SelectItem>
                         {PROCEDURE_CATEGORIES.map(cat => (
                           <SelectItem key={cat} value={cat}>{cat}</SelectItem>
                         ))}
@@ -607,7 +607,7 @@ export function DynamicProcedureForm({ onSubmit, isSaving }: DynamicProcedureFor
                         <SelectValue placeholder="SÉLECTION" />
                       </SelectTrigger>
                       <SelectContent className="bg-background border-border">
-                        <SelectItem value="">Aucun</SelectItem>
+                        <SelectItem value="__none__">Aucun</SelectItem>
                         {PROCEDURE_SUBCATEGORIES.map(sub => (
                           <SelectItem key={sub} value={sub}>{sub}</SelectItem>
                         ))}
@@ -622,7 +622,7 @@ export function DynamicProcedureForm({ onSubmit, isSaving }: DynamicProcedureFor
                           <SelectValue placeholder="SÉLECTION" />
                         </SelectTrigger>
                         <SelectContent className="bg-background border-border">
-                          <SelectItem value="">Aucun</SelectItem>
+                          <SelectItem value="__none__">Aucun</SelectItem>
                           {PROCEDURE_DEPARTMENTS.map(dep => (
                             <SelectItem key={dep} value={dep}>{dep}</SelectItem>
                           ))}
@@ -636,7 +636,7 @@ export function DynamicProcedureForm({ onSubmit, isSaving }: DynamicProcedureFor
                           <SelectValue placeholder="SÉLECTION" />
                         </SelectTrigger>
                         <SelectContent className="bg-background border-border">
-                          <SelectItem value="">Aucun</SelectItem>
+                          <SelectItem value="__none__">Aucun</SelectItem>
                           {PROCEDURE_CRITICALITIES.map(crit => (
                             <SelectItem key={crit} value={crit}>{crit}</SelectItem>
                           ))}
@@ -651,7 +651,7 @@ export function DynamicProcedureForm({ onSubmit, isSaving }: DynamicProcedureFor
                         <SelectValue placeholder="SÉLECTION" />
                       </SelectTrigger>
                       <SelectContent className="bg-background border-border">
-                        <SelectItem value="">Aucun</SelectItem>
+                        <SelectItem value="__none__">Aucun</SelectItem>
                         {PROCEDURE_LANGUAGES.map(lang => (
                           <SelectItem key={lang} value={lang}>{lang}</SelectItem>
                         ))}
@@ -674,7 +674,7 @@ export function DynamicProcedureForm({ onSubmit, isSaving }: DynamicProcedureFor
                         <SelectValue placeholder="SÉLECTION" />
                       </SelectTrigger>
                       <SelectContent className="bg-background border-border">
-                        <SelectItem value="">Aucun</SelectItem>
+                        <SelectItem value="__none__">Aucun</SelectItem>
                         {ACTION_TYPES.map(type => (
                           <SelectItem key={type} value={type}>{type}</SelectItem>
                         ))}
@@ -688,7 +688,7 @@ export function DynamicProcedureForm({ onSubmit, isSaving }: DynamicProcedureFor
                         <SelectValue placeholder="SÉLECTION" />
                       </SelectTrigger>
                       <SelectContent className="bg-background border-border">
-                        <SelectItem value="">Aucun</SelectItem>
+                        <SelectItem value="__none__">Aucun</SelectItem>
                         {VALVE_OPERATIONS.map(op => (
                           <SelectItem key={op} value={op}>{op}</SelectItem>
                         ))}
@@ -702,7 +702,7 @@ export function DynamicProcedureForm({ onSubmit, isSaving }: DynamicProcedureFor
                         <SelectValue placeholder="SÉLECTION" />
                       </SelectTrigger>
                       <SelectContent className="bg-background border-border">
-                        <SelectItem value="">Aucun</SelectItem>
+                        <SelectItem value="__none__">Aucun</SelectItem>
                         {VALIDATION_TYPES.map(type => (
                           <SelectItem key={type} value={type}>{type}</SelectItem>
                         ))}
@@ -716,7 +716,7 @@ export function DynamicProcedureForm({ onSubmit, isSaving }: DynamicProcedureFor
                         <SelectValue placeholder="SÉLECTION" />
                       </SelectTrigger>
                       <SelectContent className="bg-background border-border">
-                        <SelectItem value="">Aucun</SelectItem>
+                        <SelectItem value="__none__">Aucun</SelectItem>
                         {TIMEOUT_ACTIONS.map(action => (
                           <SelectItem key={action} value={action}>{action}</SelectItem>
                         ))}
@@ -730,7 +730,7 @@ export function DynamicProcedureForm({ onSubmit, isSaving }: DynamicProcedureFor
                         <SelectValue placeholder="SÉLECTION" />
                       </SelectTrigger>
                       <SelectContent className="bg-background border-border">
-                        <SelectItem value="">Aucun</SelectItem>
+                        <SelectItem value="__none__">Aucun</SelectItem>
                         {ALARM_TYPES.map(type => (
                           <SelectItem key={type} value={type}>{type}</SelectItem>
                         ))}
@@ -744,7 +744,7 @@ export function DynamicProcedureForm({ onSubmit, isSaving }: DynamicProcedureFor
                         <SelectValue placeholder="SÉLECTION" />
                       </SelectTrigger>
                       <SelectContent className="bg-background border-border">
-                        <SelectItem value="">Aucun</SelectItem>
+                        <SelectItem value="__none__">Aucun</SelectItem>
                         {ALARM_SEVERITIES.map(sev => (
                           <SelectItem key={sev} value={sev}>{sev}</SelectItem>
                         ))}
@@ -758,7 +758,7 @@ export function DynamicProcedureForm({ onSubmit, isSaving }: DynamicProcedureFor
                         <SelectValue placeholder="SÉLECTION" />
                       </SelectTrigger>
                       <SelectContent className="bg-background border-border">
-                        <SelectItem value="">Aucun</SelectItem>
+                        <SelectItem value="__none__">Aucun</SelectItem>
                         {SPEED_MODES.map(mode => (
                           <SelectItem key={mode} value={mode}>{mode}</SelectItem>
                         ))}
