@@ -30,7 +30,7 @@ export interface SearchResult {
 const REGISTRY_ROOT = path.join(process.cwd(), '.registry');
 const REGISTRY_ITEMS_DIR = path.join(REGISTRY_ROOT, 'items');
 const REGISTRY_BANK_DIR = path.join(REGISTRY_ROOT, 'bank');
-const INDEX_CHROMA_DIR = path.join(REGISTRY_ROOT, 'INDEX_CHROMA');
+const LOCAL_DB_INDEX_CHROMA_DIR = path.join(process.cwd(), '.local-db', 'INDEX_CHROMA');
 const CHROMA_DATA_DIR = path.join(process.cwd(), '.data', 'chromadb');
 
 const IS_CLOUD = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
@@ -51,8 +51,8 @@ export async function getSystemContextSummary() {
     if (fs.existsSync(REGISTRY_BANK_DIR)) {
       summary.bankAssets = fs.readdirSync(REGISTRY_BANK_DIR).length;
     }
-    if (fs.existsSync(INDEX_CHROMA_DIR)) {
-      const files = fs.readdirSync(INDEX_CHROMA_DIR, { recursive: true, withFileTypes: false }) as string[];
+    if (fs.existsSync(LOCAL_DB_INDEX_CHROMA_DIR)) {
+      const files = fs.readdirSync(LOCAL_DB_INDEX_CHROMA_DIR, { recursive: true, withFileTypes: false }) as string[];
       summary.localDBFiles = files.filter(f => f.endsWith('.json')).length;
     }
   } catch (e) {}
@@ -134,7 +134,7 @@ export function fallbackSemanticSearch(query: string, nResults = 5, componentFil
     } catch (e) {}
   }
 
-  if (fs.existsSync(INDEX_CHROMA_DIR)) {
+  if (fs.existsSync(LOCAL_DB_INDEX_CHROMA_DIR)) {
     try {
       const scanForJson = (dir: string, baseRel: string) => {
         let jsonFiles: string[] = [];
@@ -151,7 +151,7 @@ export function fallbackSemanticSearch(query: string, nResults = 5, componentFil
         return jsonFiles;
       };
 
-      const jsonFiles = scanForJson(INDEX_CHROMA_DIR, 'INDEX_CHROMA');
+      const jsonFiles = scanForJson(LOCAL_DB_INDEX_CHROMA_DIR, 'INDEX_CHROMA');
       for (const relFile of jsonFiles) {
         const fullPath = path.join(REGISTRY_ROOT, relFile);
         const content = fs.readFileSync(fullPath, 'utf8');

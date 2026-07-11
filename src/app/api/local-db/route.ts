@@ -46,7 +46,7 @@ export const GET = createHybridRoute<any, any>({
 export const POST = createHybridRoute<any, any>({
   name: 'LOCAL_DB_POST',
   webHandler: async (req, body) => {
-    const { fileName, content, metadata, path: targetPath, type, action } = body;
+    const { fileName, content, metadata, path: targetPath, type, action, targetDir } = body;
 
     if (action === 'index-folder' && targetPath) {
       const { indexLocalDBFolder } = await import('@/lib/local-indexer');

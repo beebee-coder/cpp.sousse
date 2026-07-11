@@ -6,7 +6,7 @@
 
 import Groq from 'groq-sdk';
 import { searchAcrossCollections, getSystemContextSummary } from '../../lib/chroma';
-import { searchChromaLocalDB } from '../../lib/local-indexer';
+import { searchChromaLocalDB, tokenizeText } from '../../lib/local-indexer';
 import { postgresClient } from '../../lib/db/postgres-client';
 
 type ChatMessage = {
@@ -37,6 +37,14 @@ export async function dynamicChat(input: ChatInput) {
   if (ragResults.length === 0) {
     ragResults.push(...await searchAcrossCollections(input.message, 4));
   }
+
+  // 1b. Complément web : si la BDD web n'est pas encore purgée, on exploite
+  //     les KnowledgeItem pour renforcer le contexte via les noms de fichiers,
+  //     l'arborescence et le contenu Q/R.
+  if (ragResults.length < 3) {
+    ragResults.push(...(await searchKnowledgeItemsWeb(input.message, historyText)));
+  }
+
   console.log(`✅ [CHAT_RAG] [SUCCESS] [${ts}] ${ragResults.length} fragment(s) récupéré(s).`);
 
   const context = ragResults.map(r => {
@@ -82,3 +90,86 @@ export async function dynamicChat(input: ChatInput) {
 
   throw new Error("Réponse vide.");
 }
+
+/**
+ * Recherche contextuelle dans la BDD web (REGISTRE / KnowledgeItems).
+ * Utilisée quand le RAG local ne trouve pas assez de résultats.
+ */
+const searchKnowledgeItemsWeb = async (query: string, history: string[] = []): Promise<any[]> => {
+  const effectiveQuery = [...history.slice(-4), query].filter(Boolean).join(' ');
+  const queryTokens = tokenizeText(effectiveQuery);
+  if (queryTokens.length === 0) return [];
+
+  try {
+    const { prisma } = await import('@/lib/db/prisma-client');
+
+    // Limiter le scan pour rester réactive.
+    const items = await prisma.knowledgeItem.findMany({
+      take: 200,
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        title: true,
+        type: true,
+        question: true,
+        answer: true,
+        tags: true,
+        category: true,
+        content: true,
+        createdAt: true
+      }
+    });
+
+    const scored: any[] = [];
+    for (const item of items) {
+      const title = (item.title || '').toLowerCase();
+      const question = (item.question || '').toLowerCase();
+      const answer = (item.answer || '').toLowerCase();
+      const tags = (item.tags || []).join(' ').toLowerCase();
+      const content = (item.content || '').toLowerCase();
+      const searchSpace = `${title} ${question} ${answer} ${tags} ${content}`;
+
+      let score = 0;
+      for (const token of queryTokens) {
+        if (title.includes(token)) score += 20;
+        if (tags.includes(token)) score += 15;
+        if (question.includes(token)) score += 10;
+        if (answer.includes(token)) score += 8;
+        if (searchSpace.includes(token)) score += 5;
+      }
+
+      if (score > 0) {
+        const document = item.question && item.answer
+          ? `Q: ${item.question}\nR: ${item.answer}`
+          : (item.content || item.title || '');
+        
+        const fileName = item.title || 'unknown';
+        const pathParts = fileName.split(/[^a-zA-Z0-9]+/).filter(Boolean);
+        const parentDir = pathParts.length > 1 ? pathParts.slice(0, -1).join('/') : '';
+
+        scored.push({
+          id: item.id,
+          document,
+          metadata: {
+            origin: 'WEB_REGISTRY',
+            cloudId: item.id,
+            title: item.title,
+            type: item.type,
+            category: item.category,
+            tags: item.tags || [],
+            fileName,
+            parentDir,
+            pathSegments: pathParts.slice(0, -1)
+          },
+          distance: 0,
+          score: Math.min(score / 100, 0.98)
+        });
+      }
+    }
+
+    return scored.sort((a, b) => b.score - a.score).slice(0, 5);
+  } catch (e: any) {
+    console.error('[CHAT_RAG] [WEB_SEARCH] Error:', e.message);
+    return [];
+  }
+};

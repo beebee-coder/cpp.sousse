@@ -184,6 +184,23 @@ export default function DatasetPage() {
       });
 
       if ((res as any).success) {
+        if (isDesktop) {
+          try {
+            await apiClient.post('/api/local-db', {
+              fileName: registryFileName,
+              content: JSON.stringify(sessionJSON, null, 2),
+              metadata: {
+                knowledgeType: 'qa',
+                cloudId: undefined,
+                tags: ['Q/R', 'entrainement', ...(description.trim() ? [description.trim()] : [])]
+              },
+              targetDir: 'items'
+            });
+          } catch (e) {
+            console.warn('[DATASET] Erreur écriture BDD locale :', e);
+          }
+        }
+
         setPairs([]);
         setFileName('');
         setDescription('');
@@ -194,7 +211,7 @@ export default function DatasetPage() {
 
         toast({
           title: 'Sauvegarde réussie',
-          description: `${pairs.length} paires Q/R enregistrées dans REGISTRE (${registryPath}). La synchronisation et la vectorisation se feront ensuite.`
+          description: `${pairs.length} paires Q/R enregistrées dans REGISTRE (${registryPath}).${isDesktop ? ' Copie locale + vectorisation JSON effectuées.' : ''}`
         });
       } else {
         throw new Error((res as any).error || 'Erreur inconnue');
@@ -502,9 +519,6 @@ export default function DatasetPage() {
                       <Database className="w-4 h-4 text-primary" />
                       Question Technique
                     </CardTitle>
-                    <CardDescription className="text-xs uppercase font-code">
-                      Saisie textuelle ou vocale de la question
-                    </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="space-y-2">
@@ -521,21 +535,12 @@ export default function DatasetPage() {
                   </CardContent>
                 </Card>
 
-                <div className="flex justify-center">
-                  <div className="p-2 bg-primary/10 rounded-full">
-                    <Volume2 className="w-5 h-5 text-primary" />
-                  </div>
-                </div>
-
                 <Card className="border-border/40 bg-card/50 shadow-xl">
                   <CardHeader className="space-y-1">
                     <CardTitle className="text-lg flex items-center gap-2">
                       <Save className="w-4 h-4 text-secondary" />
                       Réponse Adéquate
                     </CardTitle>
-                    <CardDescription className="text-xs uppercase font-code">
-                      Saisie textuelle ou vocale de la réponse
-                    </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="space-y-2">
@@ -566,47 +571,72 @@ export default function DatasetPage() {
                 {pairs.length > 0 && (
                   <Card className="border-border/40 bg-card/50 shadow-xl">
                     <CardHeader className="space-y-1">
-                      <div className="flex items-center justify-between">
+                      <div className="flex flex-col gap-2">
                         <CardTitle className="text-base flex items-center gap-2">
                           <FileJson className="w-4 h-4 text-primary" />
                           Session ({pairs.length})
                         </CardTitle>
                         <div className="flex items-center gap-2">
-                          <Input
-                            ref={fileNameInputRef}
-                            value={fileName}
-                            onChange={(e) => setFileName(e.target.value)}
-                            onFocus={() => setActiveField('fileName')}
-                            placeholder="Nom du fichier"
-                            className="h-8 text-[11px] uppercase font-code bg-transparent border-border/40 w-48"
-                          />
-                          <Input
-                            ref={descriptionInputRef}
-                            value={description}
-                            onChange={(e) => setDescription(e.target.value)}
-                            onFocus={() => setActiveField('description')}
-                            placeholder="Description (optionnel)"
-                            className="h-8 text-[11px] uppercase font-code bg-transparent border-border/40 w-56"
-                          />
-                          <Button
-                            size="sm"
-                            onClick={handleSend}
-                            disabled={isSaving || pairs.length === 0}
-                            className="h-8 gap-2 bg-primary text-primary-foreground hover:bg-primary/90 text-[10px] uppercase font-bold"
-                          >
-                            {isSaving ? (
-                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            ) : (
-                              <Save className="w-3.5 h-3.5" />
-                            )}
-                            Envoyer vers BDD
-                          </Button>
+                          <div className="flex-1 space-y-1">
+                            <Label className="text-[9px] font-code text-primary uppercase tracking-widest font-bold">Nom du fichier</Label>
+                            <Input
+                              ref={fileNameInputRef}
+                              value={fileName}
+                              onChange={(e) => setFileName(e.target.value)}
+                              onFocus={() => setActiveField('fileName')}
+                              placeholder="Ex: MON_FICHIER_QR"
+                              className="h-8 text-[11px] uppercase font-code bg-transparent border-border/40"
+                            />
+                          </div>
+                          <div className="flex-1 space-y-1">
+                            <Label className="text-[9px] font-code text-muted-foreground uppercase tracking-widest font-bold">Description (optionnel)</Label>
+                            <Input
+                              ref={descriptionInputRef}
+                              value={description}
+                              onChange={(e) => setDescription(e.target.value)}
+                              onFocus={() => setActiveField('description')}
+                              placeholder="Contexte, sujet, usage..."
+                              className="h-8 text-[11px] uppercase font-code bg-transparent border-border/40"
+                            />
+                          </div>
+                          <div className="flex items-end">
+                            <Button
+                              size="sm"
+                              onClick={handleSend}
+                              disabled={isSaving || pairs.length === 0}
+                              className="h-8 gap-2 bg-primary text-primary-foreground hover:bg-primary/90 text-[10px] uppercase font-bold"
+                            >
+                              {isSaving ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <Save className="w-3.5 h-3.5" />
+                              )}
+                              Envoyer vers BDD
+                            </Button>
+                          </div>
                         </div>
+                        {(!fileName.trim() && !description.trim()) && (
+                          <p className="text-[9px] font-code text-destructive/80 uppercase">
+                            Attention : sans nom ni description, le fichier sera nommé automatiquement avec un horodatage.
+                          </p>
+                        )}
                       </div>
                     </CardHeader>
                     <CardContent className="p-0">
                       <div className="max-h-[50vh] overflow-y-auto px-4 pb-4">
                         <div className="space-y-3 pt-4">
+                          <div className="p-3 bg-black/30 border border-border/30 rounded-sm">
+                            <p className="text-[9px] font-code text-muted-foreground uppercase tracking-widest font-bold mb-2">Prévisualisation JSON</p>
+                            <pre className="text-[10px] font-code text-foreground/90 whitespace-pre-wrap leading-relaxed">
+{JSON.stringify({
+  type: 'qa',
+  title: (fileName.trim() || description.trim() || `rag_qr_${new Date().toISOString().replace(/[:.]/g, '-').split('.')[0]}`).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'rag_qr_collection',
+  description: description.trim() || null,
+  pairCount: pairs.length,
+  pairs: pairs.map(p => ({ question: p.question, answer: p.answer }))
+}, null, 2)}
+                            </pre>
+                          </div>
                           {pairs.map((pair, index) => (
                             <Card key={pair.id} className="border-border/30 bg-card/30">
                               <CardContent className="p-4">

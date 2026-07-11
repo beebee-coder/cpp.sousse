@@ -87,7 +87,7 @@ const STOP_WORDS = new Set([
 ]);
 
 /** Normalise et découpe un texte en tokens pertinents (sans mots vides). */
-const tokenizeText = (text: string): string[] => {
+export const tokenizeText = (text: string): string[] => {
   return text
     .toLowerCase()
     .normalize('NFD')

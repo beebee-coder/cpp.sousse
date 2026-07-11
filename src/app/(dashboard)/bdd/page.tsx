@@ -631,7 +631,7 @@ export default function BDDPage() {
                     <Textarea value={fileContent} onChange={(e) => setFileContent(e.target.value)} className="w-full h-full bg-black/80 font-code text-[11px] border-none focus-visible:ring-0 p-4 resize-none terminal-scroll" spellCheck={false} />
                   ) : (
                     <div className="w-full h-full bg-black/40 p-4 overflow-auto terminal-scroll flex items-center justify-center">
-                      {selectedFile.endsWith('.json') ? (
+                      {(selectedFile.endsWith('.json') || mode === 'web') ? (
                         <pre className="font-code text-[10px] text-primary/80 whitespace-pre-wrap w-full h-full">{fileContent}</pre>
                       ) : fileContent.startsWith('data:image') ? (
                         <div className="relative group max-w-full max-h-full">
