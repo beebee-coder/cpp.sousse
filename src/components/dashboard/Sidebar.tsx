@@ -4,15 +4,12 @@ import { useState, useEffect } from 'react';
 import {
   LayoutDashboard,
   Database,
-  Cpu,
   ShieldCheck,
   Rocket,
   ChevronRight,
   HardDrive,
   Download,
   Menu,
-  Cloud,
-  Loader2,
   Image as ImageIcon,
   MessageSquare,
   Video
@@ -20,7 +17,9 @@ import {
 import { cn } from '@/lib/utils';
 import { usePlatform } from '@/components/PlatformProvider';
 import { SyncPanel } from '@/components/dashboard/SyncPanel';
+import { ModeBadge } from '@/components/ModeBadge';
 import { usePathname } from 'next/navigation';
+import { useSession } from '@/components/SessionProvider';
 import Link from 'next/link';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
@@ -46,7 +45,7 @@ interface SidebarContentProps {
 
 export function SidebarContent({ pathname, isDesktop, isReady, onNavigate }: SidebarContentProps) {
   const [mounted, setMounted] = useState(false);
-  const [role, setRole] = useState<string | undefined>(undefined);
+  const { role } = useSession();
   const isDev = process.env.NODE_ENV === 'development';
 
   const navItems = allNavItems.filter((item) => {
@@ -63,14 +62,6 @@ export function SidebarContent({ pathname, isDesktop, isReady, onNavigate }: Sid
 
   useEffect(() => {
     setMounted(true);
-
-    const loadSession = async () => {
-      const response = await fetch('/api/auth/me');
-      const data = await response.json();
-      setRole((data.session?.user as any)?.role as string | undefined);
-    };
-
-    void loadSession();
   }, []);
 
   return (
@@ -136,34 +127,7 @@ export function SidebarContent({ pathname, isDesktop, isReady, onNavigate }: Sid
       </nav>
 
       <div className="p-4 border-t border-border bg-black/20 space-y-3 shrink-0">
-        <div className="flex items-center justify-between h-8">
-          <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-widest">Mode</span>
-          {!mounted || !isReady ? (
-            <div className="flex items-center gap-2 px-2 py-1 bg-muted/20 rounded-sm min-w-[90px] justify-center h-7">
-              <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />
-            </div>
-          ) : (
-            <div className="flex items-center gap-1.5 min-w-[90px] justify-end">
-              <div className={cn("w-1.5 h-1.5 rounded-full animate-pulse shrink-0", isDesktop ? "bg-secondary" : "bg-primary")} />
-              <div className={cn(
-                "flex items-center gap-1.5 p-1 px-2 border rounded-sm transition-all min-w-[75px] justify-center h-7",
-                isDesktop ? "bg-secondary/5 border-secondary/20" : "bg-primary/5 border-primary/20"
-              )}>
-                {isDesktop ? (
-                  <Cpu className="w-3 h-3 text-secondary" />
-                ) : (
-                  <Cloud className="w-3 h-3 text-primary" />
-                )}
-                <span className={cn(
-                  "text-[9px] font-code uppercase font-bold",
-                  isDesktop ? "text-secondary" : "text-primary"
-                )}>
-                  {isDesktop ? "NATIF" : "CLOUD"}
-                </span>
-              </div>
-            </div>
-          )}
-        </div>
+        <ModeBadge />
         {mounted && <SyncPanel />}
       </div>
     </div>

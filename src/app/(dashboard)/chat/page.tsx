@@ -1,8 +1,6 @@
 ﻿"use client";
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { DashboardSidebar } from '@/components/dashboard/Sidebar';
-import { ConnectionStatus } from '@/components/dashboard/ConnectionStatus';
 import {
   Send,
   Bot,
@@ -28,6 +26,7 @@ import { Badge } from '@/components/ui/badge';
 import { useChat } from '@/hooks/use-chat';
 import { useVoice } from '@/hooks/use-voice';
 import { cn } from '@/lib/utils';
+import { ConnectionStatus } from '@/components/dashboard/ConnectionStatus';
 
 export default function ChatPage() {
   const { messages, sendMessage, clearChat, isLoading, currentProvider } = useChat((text) => {
@@ -98,8 +97,6 @@ export default function ChatPage() {
 
   return (
     <div className="flex flex-col lg:flex-row h-screen bg-background overflow-hidden">
-      <DashboardSidebar />
-
       <main className="flex-1 flex flex-col min-w-0 h-full">
         <header className="h-16 border-b border-border bg-card/30 flex items-center justify-between px-6 shrink-0">
           <div className="flex items-center gap-4">

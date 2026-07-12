@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
-import { DashboardSidebar } from '@/components/dashboard/Sidebar';
 import {
   Folder, 
   Database, 
@@ -532,7 +531,6 @@ export default function BDDPage() {
 
   return (
     <div className="flex flex-col lg:flex-row h-screen bg-transparent overflow-hidden">
-      <DashboardSidebar />
       <main className="flex-1 flex flex-col min-w-0 h-full">
         <header className="h-16 border-b border-border bg-card/30 flex items-center justify-between px-6 shrink-0">
           <div className="flex items-center gap-2">

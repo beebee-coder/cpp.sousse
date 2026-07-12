@@ -1,10 +1,11 @@
 "use client";
 
-import { DashboardSidebar, allNavItems } from '@/components/dashboard/Sidebar';
+import { allNavItems } from '@/components/dashboard/Sidebar';
 import { TopNavbar } from '@/components/dashboard/TopNavbar';
 import { CommandPalette } from '@/components/dashboard/CommandPalette';
 import { useState, useEffect } from 'react';
 import { usePlatform } from '@/components/PlatformProvider';
+import { useSession } from '@/components/SessionProvider';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { TiltCard } from '@/components/three/TiltCard';
@@ -27,28 +28,12 @@ export default function DashboardPage() {
   const [time, setTime] = useState<string>('');
   const [mounted, setMounted] = useState(false);
   const [health, setHealth] = useState<{ healthy: boolean; issues: string[] } | null>(null);
-  const [role, setRole] = useState<string | undefined>(undefined);
-  const [userEmail, setUserEmail] = useState<string | undefined>(undefined);
-  const [userImage, setUserImage] = useState<string | undefined>(undefined);
   const { isDesktop } = usePlatform();
-  const [mobileOpen, setMobileOpen] = useState(false);
+  const { role, user } = useSession();
 
   useEffect(() => {
     setMounted(true);
     setHealth(performHealthCheck());
-
-    const loadSession = async () => {
-      try {
-        const response = await fetch('/api/auth/me');
-        const data = await response.json();
-        const user = (data.user ?? data.session?.user) as any;
-        setRole(user?.role as string | undefined);
-        setUserEmail(user?.email as string | undefined);
-        setUserImage(user?.image as string | undefined);
-      } catch {}
-    };
-
-    void loadSession();
 
     const updateTime = () => setTime(new Date().toLocaleTimeString());
     updateTime();
@@ -72,7 +57,6 @@ export default function DashboardPage() {
   return (
     <div className="flex flex-col h-screen bg-transparent overflow-hidden">
       <TopNavbar
-        onMenuClick={() => setMobileOpen(true)}
         health={health}
         mounted={mounted}
         isDesktop={isDesktop}
@@ -80,8 +64,6 @@ export default function DashboardPage() {
       />
 
       <div className="flex flex-1 min-h-0">
-        <DashboardSidebar hideMobileTrigger mobileOpen={mobileOpen} onMobileOpenChange={setMobileOpen} />
-
         <main className="flex-1 flex flex-col min-w-0 overflow-y-auto lg:overflow-hidden">
           {/* Contenu principal — cartes de navigation */}
           <div className="flex-1 p-4 lg:p-6 overflow-y-auto flex flex-col gap-4 lg:gap-6">
@@ -116,8 +98,8 @@ export default function DashboardPage() {
                   <h3 className="font-headline font-bold text-sm uppercase tracking-wide mb-1.5 group-hover:text-primary transition-colors flex items-center gap-2">
                     <span className="glow-ring rounded-full p-0.5 shrink-0">
                       <span className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center border border-primary/30 overflow-hidden block">
-                        {mounted && userImage ? (
-                          <img src={userImage} alt="" className="w-full h-full object-cover" />
+                        {mounted && user?.image ? (
+                          <img src={user.image} alt="" className="w-full h-full object-cover" />
                         ) : (
                           <User className="w-3.5 h-3.5 text-primary" />
                         )}
@@ -126,7 +108,7 @@ export default function DashboardPage() {
                     Profil Utilisateur
                   </h3>
                   <p className="text-xs text-muted-foreground font-code leading-relaxed">
-                    {mounted && userEmail ? userEmail : 'Gérer votre compte et vos accès'}
+                    {mounted && user?.email ? user.email : 'Gérer votre compte et vos accès'}
                   </p>
                 </Card>
               </TiltCard>

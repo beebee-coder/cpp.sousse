@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { DashboardSidebar } from '@/components/dashboard/Sidebar';
 import {
   FileText,
   Plus,
@@ -62,7 +61,6 @@ export default function ProceduresListPage() {
 
   return (
     <div className="flex flex-col lg:flex-row h-screen bg-transparent overflow-hidden">
-      <DashboardSidebar />
       <main className="flex-1 flex flex-col min-w-0 h-full overflow-y-auto terminal-scroll">
         <header className="h-16 border-b border-border/70 bg-card/30 backdrop-blur-sm flex items-center justify-between px-6 shrink-0">
           <div className="flex items-center gap-4">

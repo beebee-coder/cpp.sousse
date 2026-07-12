@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { DashboardSidebar } from '@/components/dashboard/Sidebar';
 import { CheckCircle2, XCircle, Clock, Users, AlertCircle, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
@@ -114,7 +113,6 @@ export default function AdminPage() {
   if (loading) {
     return (
       <div className="flex h-screen bg-transparent">
-        <DashboardSidebar />
         <main className="flex-1 flex flex-col items-center justify-center space-y-4">
           <Loader2 className="w-10 h-10 animate-spin text-primary" />
           <p className="font-code text-[10px] uppercase tracking-widest text-muted-foreground animate-pulse">Lecture du Registre d'Accréditation...</p>
@@ -126,7 +124,6 @@ export default function AdminPage() {
   if (error) {
     return (
       <div className="flex h-screen bg-transparent">
-        <DashboardSidebar />
         <main className="flex-1 flex flex-col items-center justify-center p-6 text-center">
           <AlertCircle className="w-12 h-12 text-destructive mb-4" />
           <h2 className="text-lg font-headline font-bold uppercase mb-2">Rupture de Liaison</h2>
@@ -141,8 +138,6 @@ export default function AdminPage() {
 
   return (
     <div className="flex h-screen bg-transparent overflow-hidden">
-      <DashboardSidebar />
-      
       <main className="flex-1 flex flex-col min-w-0 h-full overflow-y-auto terminal-scroll">
         <header className="h-16 border-b border-border bg-card/30 flex items-center px-6 shrink-0">
           <div className="flex items-center gap-3">

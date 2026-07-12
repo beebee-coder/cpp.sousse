@@ -56,6 +56,25 @@ export async function clearSessionCookie() {
   authAudit.info('SESSION_COOKIE_CLEARED', {});
 }
 
+/**
+ * Émet un JWT signé (HS256) de courte durée (5 min) destiné au transfert de
+ * session web → application desktop (Tauri) via deep link `visionode://auth`.
+ * Contrairement au cookie de session, ce jeton embarque l'e-mail et porte une
+ * audience/émetteur explicites afin que le backend cloud puisse le vérifier
+ * de façon autonome (l'app desktop n'a pas accès au secret).
+ */
+export async function createDesktopHandoffToken(
+  user: SessionUser & { email?: string }
+): Promise<string> {
+  return new SignJWT({ user: { id: user.id, email: user.email ?? '', firstName: user.firstName, lastName: user.lastName, role: user.role } })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setIssuedAt()
+    .setExpirationTime('5m')
+    .setIssuer('visionode-web')
+    .setAudience('visionode-desktop')
+    .sign(encodedSecret);
+}
+
 export async function getSessionFromCookie(): Promise<SessionPayload | null> {
   const cookieStore = await cookies();
   const token = cookieStore.get(COOKIE_NAME)?.value;

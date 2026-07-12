@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react';
 import { Activity, Bell, ExternalLink, Loader2, Menu } from 'lucide-react';
 import { StatusBadge } from '@/components/dashboard/StatusBadge';
 import { ProfilePhotoMenu } from '@/components/dashboard/ProfilePhotoMenu';
+import { useSession } from '@/components/SessionProvider';
+import { useDashboardNav } from '@/components/dashboard/AppChrome';
 
 interface TopNavbarProps {
   onMenuClick?: () => void;
@@ -14,49 +16,29 @@ interface TopNavbarProps {
 }
 
 export function TopNavbar({ onMenuClick, health, mounted, isDesktop, role }: TopNavbarProps) {
-  const [pendingCount, setPendingCount] = useState(0);
+  const session = useSession();
+  const nav = useDashboardNav();
+  const resolvedRole = role ?? session.role;
+  const userImage = session.user?.image;
+  const pendingCount = session.pendingCount;
   const [isOpeningDesktop, setIsOpeningDesktop] = useState(false);
-  const [userImage, setUserImage] = useState<string | undefined>(undefined);
-
-  useEffect(() => {
-    const loadUser = async () => {
-      try {
-        const res = await fetch('/api/auth/me');
-        const data = await res.json();
-        const user = (data.user ?? data.session?.user) as any;
-        if (user?.image) setUserImage(user.image);
-      } catch {}
-    };
-    void loadUser();
-  }, []);
 
   const handleSaveImage = async (image: string | null) => {
     if (image === null) return;
-    const res = await fetch('/api/auth/me', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image }),
-    });
-    const data = await res.json();
-    if (data.success && data.user) {
-      setUserImage(data.user.image ?? undefined);
+    try {
+      const res = await fetch('/api/auth/me', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        await session.refresh();
+      }
+    } catch (e) {
+      console.error(e);
     }
   };
-
-  useEffect(() => {
-    if (role === 'admin') {
-      const fetchPending = async () => {
-        try {
-          const res = await fetch('/api/auth/pending-count');
-          const d = await res.json();
-          setPendingCount(d.count ?? 0);
-        } catch {}
-      };
-      void fetchPending();
-      const poll = setInterval(fetchPending, 30000);
-      return () => clearInterval(poll);
-    }
-  }, [role]);
 
   const handleOpenDesktop = async () => {
     try {
@@ -77,15 +59,16 @@ export function TopNavbar({ onMenuClick, health, mounted, isDesktop, role }: Top
 
   return (
     <header className="sticky top-0 z-40 h-14 shrink-0 flex items-center gap-3 px-3 sm:px-5 border-b border-border/70 bg-card/40 backdrop-blur-md">
-      {onMenuClick && (
-        <button
-          onClick={onMenuClick}
-          className="lg:hidden p-2 -ml-1 rounded-md text-muted-foreground hover:text-primary hover:bg-muted/60 transition-colors shrink-0"
-          aria-label="Ouvrir le menu"
-        >
-          <Menu className="w-5 h-5" />
-        </button>
-      )}
+      <button
+        onClick={() => {
+          nav?.setMobileOpen(true);
+          onMenuClick?.();
+        }}
+        className="lg:hidden p-2 -ml-1 rounded-md text-muted-foreground hover:text-primary hover:bg-muted/60 transition-colors shrink-0"
+        aria-label="Ouvrir le menu"
+      >
+        <Menu className="w-5 h-5" />
+      </button>
 
       <div className="flex items-center gap-2 shrink-0">
         <Activity className="w-4 h-4 text-primary" />
@@ -102,7 +85,7 @@ export function TopNavbar({ onMenuClick, health, mounted, isDesktop, role }: Top
       <div className="flex-1" />
 
       <div className="flex items-center gap-2 sm:gap-4 shrink-0">
-        {role === 'admin' && (
+        {resolvedRole === 'admin' && (
           <a href="/admin" className="p-2 text-muted-foreground hover:text-primary transition-colors relative hidden sm:block">
             <Bell className="w-5 h-5" />
             {pendingCount > 0 && (
@@ -113,7 +96,7 @@ export function TopNavbar({ onMenuClick, health, mounted, isDesktop, role }: Top
 
         <div className="flex items-center gap-2">
           <div className="text-right hidden sm:block">
-            <p className="text-[10px] uppercase tracking-widest text-muted-foreground">{role || 'utilisateur'}</p>
+            <p className="text-[10px] uppercase tracking-widest text-muted-foreground">{resolvedRole || 'utilisateur'}</p>
             <p className="text-xs font-medium">Session active</p>
           </div>
           <button

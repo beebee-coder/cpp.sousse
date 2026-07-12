@@ -1,51 +1,77 @@
 "use client";
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { Loader2 } from 'lucide-react';
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Loader2 } from "lucide-react";
+import { apiClient } from "@/lib/api-client";
+import { useSession } from "@/components/SessionProvider";
+
+interface VerifyMagicLinkResponse {
+  success: boolean;
+  user?: {
+    id: string;
+    email: string;
+    role: string;
+    firstName?: string | null;
+    lastName?: string | null;
+    image?: string | null;
+  };
+  error?: string;
+}
 
 export function DeepLinkHandler() {
   const router = useRouter();
+  const { login } = useSession();
   const [isVerifying, setIsVerifying] = useState(false);
 
   useEffect(() => {
     // Vérifier si on est dans l'environnement Tauri
-    if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__) {
-      import('@tauri-apps/plugin-deep-link').then((deepLink) => {
-        deepLink.onOpenUrl(async (urls) => {
-          const url = urls[0];
-          if (url && url.startsWith('visionode://login')) {
-            setIsVerifying(true);
-            const urlObj = new URL(url);
-            const token = urlObj.searchParams.get('token');
-            if (token) {
-              try {
-                // Envoyer le token à l'API locale pour valider et créer le cookie de session
-                const res = await fetch('/api/auth/verify-magic-link', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ token }),
-                });
+    if (typeof window !== "undefined" && (window as any).__TAURI_INTERNALS__) {
+      import("@tauri-apps/plugin-deep-link")
+        .then((deepLink) => {
+          deepLink
+            .onOpenUrl(async (urls) => {
+              const url = urls[0];
+              if (!url) return;
+              // Accepter visionode://auth (web) et visionode://login (legacy).
+              if (!(url.startsWith("visionode://auth") || url.startsWith("visionode://login"))) {
+                return;
+              }
 
-                if (res.ok) {
-                  // Session établie, forcer un rechargement vers le dashboard
-                  window.location.href = '/dashboard';
+              setIsVerifying(true);
+              try {
+                const urlObj = new URL(url);
+                const token = urlObj.searchParams.get("token");
+                if (!token) {
+                  setIsVerifying(false);
+                  return;
+                }
+
+                // Le desktop n'a pas d'API locale : on délègue la vérification
+                // (et la validation du JWT signé) au backend cloud.
+                const res = await apiClient.post<VerifyMagicLinkResponse>(
+                  "/api/auth/verify-magic-link",
+                  { token },
+                );
+
+                if (res.success && res.user) {
+                  // Adoption de l'identité cloud (même compte, aucune saisie).
+                  login(res.user as any);
+                  router.replace("/dashboard");
                 } else {
-                  console.error('Échec de la validation du lien magique');
+                  console.error("Échec de la validation du lien de transfert :", res.error);
                   setIsVerifying(false);
                 }
               } catch (e) {
                 console.error("Token invalide ou corrompu", e);
                 setIsVerifying(false);
               }
-            } else {
-              setIsVerifying(false);
-            }
-          }
-        }).catch(console.error);
-      }).catch(console.error);
+            })
+            .catch(console.error);
+        })
+        .catch(console.error);
     }
-  }, [router]);
+  }, [router, login]);
 
   if (isVerifying) {
     return (

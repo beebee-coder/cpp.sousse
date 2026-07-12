@@ -3,8 +3,9 @@
 import { Suspense, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { AlertCircle, Loader2, Database } from 'lucide-react';
+import { AlertCircle, Loader2, Database, Eye, EyeOff } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { useSession } from '@/components/SessionProvider';
 import { Logo3D } from '@/components/three/Logo3D';
 
 /**
@@ -14,10 +15,12 @@ import { Logo3D } from '@/components/three/Logo3D';
 function SignInForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { refresh } = useSession();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const callbackUrl = searchParams.get('callbackUrl') ?? '/dashboard';
 
@@ -40,6 +43,9 @@ function SignInForm() {
       }
 
       console.log(`✅ [AUTH_FRONT] [SUCCESS] [${ts}] Liaison établie. Transfert vers le dashboard.`);
+      // Synchronise la session persistante AVANT la navigation pour éviter
+      // un affichage transitoire "USER" puis "ADMIN" sur le dashboard.
+      await refresh();
       router.push(callbackUrl);
       router.refresh();
     } catch (e: any) {
@@ -78,14 +84,24 @@ function SignInForm() {
           
           <div className="space-y-2">
             <label className="text-[10px] font-bold uppercase text-muted-foreground tracking-widest">Clé de Sécurité</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              className="w-full rounded-md border border-border bg-black/40 px-3 py-2 text-sm focus:ring-1 focus:ring-primary outline-none"
-              required
-            />
+            <div className="relative">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                className="w-full rounded-md border border-border bg-black/40 pl-3 pr-10 py-2 text-sm focus:ring-1 focus:ring-primary outline-none"
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-primary transition-colors"
+                aria-label={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
           </div>
 
           {error && (
@@ -105,6 +121,9 @@ function SignInForm() {
         </form>
 
         <div className="mt-8 pt-6 border-t border-border/50 text-center space-y-4">
+          <Link href="/auth/forgot-password" className="block text-muted-foreground hover:text-primary font-bold uppercase tracking-widest text-[10px] underline-offset-4 hover:underline">
+            Mot de passe oublié ?
+          </Link>
           <p className="text-[9px] font-code text-muted-foreground uppercase">Station d'accès certifiée CCP</p>
           <Link href="/auth/register" className="inline-block text-primary font-bold uppercase tracking-widest text-[10px] underline-offset-4 hover:underline">
             Demander une accréditation

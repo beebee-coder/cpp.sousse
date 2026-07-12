@@ -208,6 +208,113 @@
   animation: fade-up 0.6s cubic-bezier(0.22,1,0.36,1) forwards;
 }
 
+/* ──────────────────────────────────────────────────────────────
+   Mode Layout Animations
+   ────────────────────────────────────────────────────────────── */
+
+/* Floating animation for backgrounds */
+@keyframes float {
+  0%, 100% { transform: translate(0, 0px); }
+  25% { transform: translate(-20px, -20px); }
+  50% { transform: translate(20px, 20px); }
+  75% { transform: translate(-10px, 10px); }
+}
+
+@keyframes float-slow {
+  0%, 100% { transform: translate(0, 0px); }
+  25% { transform: translate(30px, 10px); }
+  50% { transform: translate(-20px, -30px); }
+  75% { transform: translate(10px, -10px); }
+}
+
+.animate-float {
+  animation: float 15s ease-in-out infinite;
+}
+
+.animate-float-slow {
+  animation: float-slow 20s ease-in-out infinite;
+}
+
+/* Grid animation */
+@keyframes grid-pan {
+  0% { background-position: 0 0; }
+  100% { background-position: 48px 48px; }
+}
+
+.animate-grid-pan {
+  animation: grid-pan 30s linear infinite;
+}
+
+/* 3D Rotation */
+@keyframes rotate-3d {
+  0% { transform: rotateX(0deg) rotateY(0deg); }
+  100% { transform: rotateX(360deg) rotateY(360deg); }
+}
+
+.animate-rotate-3d {
+  animation: rotate-3d 16s linear infinite;
+}
+
+/* Fade up */
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 40px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+/* Border flow */
+@keyframes border-flow {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.animate-border-flow {
+  animation: border-flow 6s ease infinite;
+}
+
+/* Scanline */
+@keyframes scanline {
+  0% { top: 0%; }
+  100% { top: 100%; }
+}
+
+.animate-scanline {
+  animation: scanline 3.5s linear infinite;
+}
+
+/* Pulse glow */
+@keyframes pulse-glow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Pulse ring */
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(59, 130, 246, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
+  }
+}
+
+.animate-pulse-ring {
+  animation: pulse-ring 2s infinite;
+}
+
 /* Respect des préférences d'accessibilité */
 @media (prefers-reduced-motion: reduce) {
   .ambient-grid,

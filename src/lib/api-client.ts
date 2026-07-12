@@ -16,6 +16,7 @@ import { executeHybridRequest } from './api-hybrid';
 
 export type ApiResponse<T> = T & {
   error?: string;
+  message?: string;
   offline?: boolean;
   provider?: string;
   timestamp?: string;
