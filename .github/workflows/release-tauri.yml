@@ -58,9 +58,7 @@ jobs:
       - name: Build Tauri Real Binary
         env:
           BLOB_READ_WRITE_TOKEN: "dummy-token-for-ci"
-        run: |
-          cd src-tauri
-          cargo tauri build
+        run: npx tauri build
 
       - name: Upload installers artifact
         if: always()
