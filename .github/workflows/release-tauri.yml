@@ -57,7 +57,7 @@ jobs:
 
       - name: Build Tauri Real Binary
         env:
-          BLOB_READ_WRITE_TOKEN: "dummy-token-for-ci"
+          BLOB_READ_WRITE_TOKEN: ${{ secrets.BLOB_READ_WRITE_TOKEN }}
         run: npx tauri build
 
       - name: Upload installers artifact
