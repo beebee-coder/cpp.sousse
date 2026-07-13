@@ -1,6 +1,6 @@
 {
   "windows": {
-    "exe": "",
-    "msi": ""
+    "exe": "https://patxgunzfnp01hpm.public.blob.vercel-storage.com/installers/VisioNode_Setup_x64.exe",
+    "msi": "https://patxgunzfnp01hpm.public.blob.vercel-storage.com/installers/VisioNode_Setup_x64.msi"
   }
 }
