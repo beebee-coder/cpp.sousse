@@ -58,7 +58,7 @@ jobs:
       - name: Build Tauri Real Binary
         env:
           BLOB_READ_WRITE_TOKEN: ${{ secrets.BLOB_READ_WRITE_TOKEN }}
-        run: npx tauri build
+        run: npm run desktop:build
 
       - name: Upload installers artifact
         if: always()
