@@ -29,6 +29,7 @@ async function upload(file, pathname, contentType) {
   const blob = await put(pathname, data, {
     access: 'public',
     addRandomSuffix: false,
+    allowOverwrite: true,
     token,
     contentType,
   });
