@@ -33,6 +33,9 @@ const REGISTRY_BANK_DIR = path.join(REGISTRY_ROOT, 'bank');
 const LOCAL_DB_INDEX_CHROMA_DIR = path.join(process.cwd(), '.local-db', 'INDEX_CHROMA');
 const CHROMA_DATA_DIR = path.join(process.cwd(), '.data', 'chromadb');
 
+// URL du serveur Chroma (embarqué en station locale, lancé en arrière-plan).
+const CHROMA_SERVER_URL = process.env.CHROMA_URL || 'http://127.0.0.1:8000';
+
 // "Cloud" = Vercel serverless (FS read-only, pas de Chroma local).
 // Le build desktop (EXE Tauri) tourne en NODE_ENV=production mais reste une
 // STATION LOCALE : il DOIT pouvoir lancer Chroma. On ne se base donc que sur VERCEL.
@@ -194,14 +197,63 @@ export function getLocalEmbedder() {
 }
 
 let _chromaClient: any = null;
+let _chromaEnsurePromise: Promise<boolean> | null = null;
+
+/**
+ * Lance le serveur Chroma en arrière-plan (station locale / hybride uniquement)
+ * si aucun serveur n'est déjà joignable. Aucune intervention utilisateur requise.
+ * Le processus est détaché (detached + unref) afin de survivre à l'application
+ * et de ne pas bloquer son arrêt. Sur Vercel (IS_CLOUD) aucun lancement n'a lieu.
+ */
+export async function ensureChromaRunning(): Promise<boolean> {
+  if (IS_CLOUD) return false;
+  if (_chromaEnsurePromise) return _chromaEnsurePromise;
+  _chromaEnsurePromise = (async () => {
+    const ping = async (): Promise<boolean> => {
+      try {
+        const res = await fetch(`${CHROMA_SERVER_URL}/api/v1/heartbeat`, {
+          signal: AbortSignal.timeout(800),
+        } as any);
+        return res.ok;
+      } catch {
+        return false;
+      }
+    };
+
+    if (await ping()) return true;
+
+    try {
+      const { spawn } = await import('child_process');
+      const proc = spawn(
+        'chroma',
+        ['run', '--host', '127.0.0.1', '--port', '8000', '--path', CHROMA_DATA_DIR],
+        { detached: true, stdio: 'ignore', windowsHide: true }
+      );
+      proc.unref();
+
+      for (let i = 0; i < 30; i++) {
+        await new Promise((r) => setTimeout(r, 500));
+        if (await ping()) return true;
+      }
+      console.warn('[CHROMA] Serveur non joignable après le lancement. Vecteurs ChromaDB indisponibles (repli actif).');
+      return false;
+    } catch (e: any) {
+      console.warn('[CHROMA] Impossible de lancer le serveur Chroma (commande "chroma" introuvable ?) :', e.message);
+      return false;
+    }
+  })();
+  return _chromaEnsurePromise;
+}
+
 export async function getChromaClient(): Promise<any> {
   if (IS_CLOUD) return null;
   if (_chromaClient) return _chromaClient;
   try {
+    await ensureChromaRunning();
     const chroma = await import('chromadb');
     const ChromaClientClass = (chroma as any).ChromaClient || (chroma as any).default?.ChromaClient;
     if (ChromaClientClass) {
-      _chromaClient = new ChromaClientClass({ path: CHROMA_DATA_DIR });
+      _chromaClient = new ChromaClientClass({ path: CHROMA_SERVER_URL });
     }
     return _chromaClient;
   } catch { return null; }
