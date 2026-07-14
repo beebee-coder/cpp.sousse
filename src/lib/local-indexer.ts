@@ -10,7 +10,9 @@ import { upsertDocuments, getChromaClient, listCollections, deleteCollection, Se
  * la BDD Locale — reproduisant ainsi la même structure que la BDD Locale.
  */
 
-const IS_CLOUD = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
+// "Cloud" = Vercel serverless uniquement. Le build desktop (EXE) est en
+// NODE_ENV=production mais reste local et doit vectoriser via Chroma.
+const IS_CLOUD = process.env.VERCEL === '1';
 
 const LOCAL_DB_ROOT = path.join(process.cwd(), '.local-db');
 const MIRROR_FILE = path.join(LOCAL_DB_ROOT, 'chroma-index.json');

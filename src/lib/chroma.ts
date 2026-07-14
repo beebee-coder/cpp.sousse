@@ -33,7 +33,10 @@ const REGISTRY_BANK_DIR = path.join(REGISTRY_ROOT, 'bank');
 const LOCAL_DB_INDEX_CHROMA_DIR = path.join(process.cwd(), '.local-db', 'INDEX_CHROMA');
 const CHROMA_DATA_DIR = path.join(process.cwd(), '.data', 'chromadb');
 
-const IS_CLOUD = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
+// "Cloud" = Vercel serverless (FS read-only, pas de Chroma local).
+// Le build desktop (EXE Tauri) tourne en NODE_ENV=production mais reste une
+// STATION LOCALE : il DOIT pouvoir lancer Chroma. On ne se base donc que sur VERCEL.
+const IS_CLOUD = process.env.VERCEL === '1';
 
 const STOP_WORDS = new Set(['le', 'la', 'les', 'de', 'du', 'des', 'un', 'une', 'et', 'en', 'ce', 'ces', 'pour', 'sur', 'dans', 'avec', 'est', 'sont']);
 

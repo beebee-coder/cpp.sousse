@@ -44,6 +44,8 @@ interface LocalDBManifest {
   files: LocalDBManifestEntry[];
   lastSync: string;
   version: string;
+  /** Amorçage unique depuis le Registre physique (.registry) déjà effectué. */
+  seededFromRegistry?: boolean;
 }
 
 interface FSNode {
@@ -497,10 +499,79 @@ export const localDB = {
 
   /**
    * Initialise la structure physique si elle n'existe pas.
+   * Déclenche l'amorçage unique depuis le Registre physique (.registry) afin que
+   * les arborescences BDD Locale et Vecteurs ChromaDB ne soient pas vides après
+   * une installation locale / hybride fraîche.
    */
   async initialize(): Promise<void> {
     ensureLocalDB();
+    await this.seedFromRegistryIfEmpty();
     console.log('✅ [LOCAL_DB] Structure initialisée.');
+  },
+
+  /**
+   * Amorçage au premier lancement (mode local / hybride) :
+   * injecte le contenu textuel du Registre physique (.registry) dans INDEX_CHROMA
+   * puis vectorise vers ChromaDB, afin que les arborescences BDD Locale et
+   * Vecteurs ChromaDB reflètent le Registre même sans synchronisation cloud.
+   * Idempotent : protégé par le flag `seededFromRegistry` du manifest.
+   */
+  async seedFromRegistryIfEmpty(): Promise<{ seeded: number; indexed?: number }> {
+    ensureLocalDB();
+    const manifest = loadManifest();
+    if (manifest.seededFromRegistry) return { seeded: 0 };
+
+    const REGISTRY_ROOT = path.join(process.cwd(), '.registry');
+    let seeded = 0;
+
+    const walk = (dir: string, base: string) => {
+      if (!fs.existsSync(dir)) return;
+      for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+        const abs = path.join(dir, ent.name);
+        const rel = base ? `${base}/${ent.name}` : ent.name;
+        if (ent.isDirectory()) {
+          walk(abs, rel);
+        } else if (ent.name.toLowerCase().endsWith('.json')) {
+          let raw = '';
+          try {
+            raw = fs.readFileSync(abs, 'utf8');
+          } catch {
+            continue;
+          }
+          const targetDir = base || 'items';
+          try {
+            this.injectFile(ent.name, raw, {
+              knowledgeType: base.split('/')[0] || 'items',
+              tags: ['registry', `regpath:${rel.replace(/\.json$/i, '')}`],
+            }, targetDir);
+            seeded++;
+          } catch (e) {
+            console.warn(`[LOCAL_DB] [SEED] Échec injection ${rel}:`, (e as Error).message);
+          }
+        }
+      }
+    };
+
+    walk(REGISTRY_ROOT, '');
+
+    manifest.seededFromRegistry = true;
+    saveManifest(manifest);
+
+    let indexed: number | undefined;
+    // Vecteur uniquement en station locale (dev ou EXE desktop). Côté Vercel (VERCEL='1')
+    // le FS est read-only et Chroma n'est pas disponible.
+    if (process.env.VERCEL !== '1') {
+      try {
+        const { indexLocalDBFolder } = await import('@/lib/local-indexer');
+        const res = await indexLocalDBFolder('INDEX_CHROMA');
+        indexed = res.indexed;
+      } catch (e) {
+        console.warn('[LOCAL_DB] [SEED] Indexation Chroma ignorée :', (e as Error).message);
+      }
+    }
+
+    console.log(`✅ [LOCAL_DB] [SEED] Amorçage terminé : ${seeded} fichier(s) injecté(s), ${indexed ?? 0} vectorisé(s).`);
+    return { seeded, indexed };
   },
 
   /**
