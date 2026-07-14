@@ -113,7 +113,7 @@ async function main() {
           title,
           type,
           content: raw,
-          tags: ['registry', `regpath:${relNoExt}`],
+          tags: ['registry', `regpath:${rel}`],
           category: topFolder
         },
         create: {
@@ -122,7 +122,7 @@ async function main() {
           title,
           type,
           content: raw,
-          tags: ['registry', `regpath:${relNoExt}`],
+          tags: ['registry', `regpath:${rel}`],
           category: topFolder
         }
       });

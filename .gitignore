@@ -94,7 +94,18 @@ temp/
 data/chromadb/
 
 # Données locales hybrides / registre physique
-.registry/
+# Le squelette texte + dossiers du .registry est déployé (source de vérité cloud / Vercel)
+# afin que `prisma/seed.ts` le resynchronise vers Neon au build.
+# Les binaires (images/vidéos) restent ignorés : ils sont servis via Blob/FS, jamais en DB.
+.registry/**
+!.registry/
+!.registry/**/
+!.registry/**/*.json
+!.registry/**/*.md
+!.registry/**/*.txt
+!.registry/**/*.csv
+!.registry/**/*.yaml
+!.registry/**/*.yml
 .data/
 
 # HuggingFace Transformers - cache des modèles locaux

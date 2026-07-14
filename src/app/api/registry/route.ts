@@ -15,8 +15,20 @@ import { getSessionFromCookie } from '@/lib/session';
 const isCloudServerless = !!process.env.VERCEL;
 
 // Construit l'arborescence du Registre à partir des KnowledgeItems (Cloud).
-// Reconstruit la hiérarchie de dossiers à partir du tag `regpath:` (ex: regpath:Alarmes/sous-dossier/fichier)
+// Reconstruit la hiérarchie de dossiers à partir du tag `regpath:` (ex: regpath:Alarmes/sous-dossier/fichier.json)
 // afin de restituer EXACTEMENT l'arborescence du .registry même côté Vercel (FS non déployé).
+//
+// Pour que l'arbre cloud soit STRUCTURELLEMENT IDENTIQUE à l'arbre local (scan physique de .registry,
+// voir postgresClient.getRegistryTree / ensureRegistry), on injecte d'abord le squelette canonique
+// (dossiers even vides : Alarmes, bank, items, procedures, ressources humaines/equipes/equipe A..D).
+// On renvoie ensuite le tableau de premier niveau directement (SANS wrapper 'REGISTRE') afin d'épouser
+// exactement la forme renvoyée par getRegistryTree côté local.
+const CANONICAL_SKELETON: Record<string, string[]> = {
+  '': ['Alarmes', 'bank', 'items', 'procedures', 'ressources humaines'],
+  'ressources humaines': ['equipes'],
+  'ressources humaines/equipes': ['equipe A', 'equipe B', 'equipe C', 'equipe D'],
+};
+
 const buildCloudTree = (items: any[]): any[] => {
   const rootChildren: any[] = [];
   const folderMap = new Map<string, any>();
@@ -28,7 +40,7 @@ const buildCloudTree = (items: any[]): any[] => {
       acc = acc ? `${acc}/${seg}` : seg;
       let folder = folderMap.get(acc);
       if (!folder) {
-        folder = { id: `dir::${acc}`, name: seg, type: 'folder', isOpen: true, children: [] };
+        folder = { id: `dir::${acc}`, name: seg, type: 'folder', isOpen: false, children: [] };
         folderMap.set(acc, folder);
         parentList.push(folder);
       }
@@ -37,6 +49,21 @@ const buildCloudTree = (items: any[]): any[] => {
     return parentList;
   };
 
+  // 1. Injecter le squelette canonique (garantit l'affichage des dossiers vides côté cloud).
+  for (const [parent, names] of Object.entries(CANONICAL_SKELETON)) {
+    const parentSegs = parent ? parent.split('/').filter(Boolean) : [];
+    const parentList = parentSegs.length > 0 ? ensureFolder(parentSegs) : rootChildren;
+    for (const name of names) {
+      const acc = parent ? `${parent}/${name}` : name;
+      if (!folderMap.has(acc)) {
+        const folder = { id: `dir::${acc}`, name, type: 'folder', isOpen: false, children: [] };
+        folderMap.set(acc, folder);
+        parentList.push(folder);
+      }
+    }
+  }
+
+  // 2. Fusionner les items DB (reconstruits via le tag regpath: incluant l'extension de fichier).
   const loose: any[] = [];
 
   for (const it of items) {
@@ -75,13 +102,8 @@ const buildCloudTree = (items: any[]): any[] => {
     });
   }
 
-  return [{
-    id: 'Registre',
-    name: 'REGISTRE',
-    type: 'folder',
-    isOpen: true,
-    children: rootChildren
-  }];
+  // 3. Retourner l'arborescence de premier niveau (même forme que getRegistryTree local).
+  return rootChildren;
 };
 
 export const GET = createHybridRoute<any, any>({
