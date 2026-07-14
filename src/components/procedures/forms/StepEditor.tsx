@@ -17,8 +17,11 @@ import {
   Settings2,
   Activity,
   RefreshCw,
+  Image as ImageIcon,
+  Check,
 } from 'lucide-react';
-import { ProcedureStep } from '@/lib/procedures/types';
+import { ProcedureStep, ProcedureMedia } from '@/lib/procedures/types';
+import { MediaCaptureField } from './MediaCaptureField';
 import {
   ACTION_TYPES,
   VALIDATION_TYPES,
@@ -34,6 +37,8 @@ type StepField = 'title' | 'description' | 'subtitle' | 'duration' | 'actionType
 
 interface StepEditorProps {
   steps: ProcedureStep[];
+  mediaLibrary?: ProcedureMedia[];
+  onMediaLibraryChange?: (media: ProcedureMedia[]) => void;
   onChange: (steps: any[]) => void;
   activeStepIndex?: number;
   activeStepField?: StepField;
@@ -51,6 +56,7 @@ interface StepEditorProps {
     defaultDuration: number;
     defaultUiLabel: string;
     defaultSuccessExpression: string;
+    enableMedia: boolean;
   };
   createStep?: () => ProcedureStep;
   onSyncStepWithDefaults?: (index: number) => void;
@@ -58,6 +64,8 @@ interface StepEditorProps {
 
 export function StepEditor({
   steps,
+  mediaLibrary = [],
+  onMediaLibraryChange,
   onChange,
   activeStepIndex = 0,
   activeStepField = 'title',
@@ -83,6 +91,7 @@ export function StepEditor({
           alarms: [],
           fallbacks: [],
           media: {},
+          mediaRefs: [],
           notes: [],
           dependencies: { prerequisites: [], dependsOn: [], requiresConfirmation: true },
         };
@@ -116,17 +125,23 @@ export function StepEditor({
             {defaults && (
               <div className="hidden md:flex items-center gap-2 px-2 py-1 bg-muted/10 border border-border/40 rounded-sm">
                 <Settings2 className="w-3 h-3 text-muted-foreground" />
-                <span className="text-[9px] font-code text-muted-foreground uppercase">Config : {defaults.defaultActionType || 'Aucune'}</span>
+                <span className="text-tiny font-code text-muted-foreground uppercase">Config : {defaults.defaultActionType || 'Aucune'}</span>
                 {defaults.defaultDuration ? (
-                  <span className="text-[9px] font-code text-muted-foreground/70 uppercase">/ {defaults.defaultDuration}s</span>
+                  <span className="text-tiny font-code text-muted-foreground/70 uppercase">/ {defaults.defaultDuration}s</span>
                 ) : null}
               </div>
             )}
           </div>
-          <Button variant="outline" size="sm" onClick={addStep} className="h-8 text-[9px] uppercase border-border font-bold">
+          <Button variant="outline" size="sm" onClick={addStep} className="h-8 text-tiny uppercase border-border font-bold">
             <Plus className="w-3.5 h-3.5 mr-2" /> Ajouter une Séquence
           </Button>
         </div>
+
+        {defaults?.enableMedia && onMediaLibraryChange && (
+          <Card className="p-4 panel-card border-primary/30">
+            <MediaCaptureField media={mediaLibrary} onChange={onMediaLibraryChange} />
+          </Card>
+        )}
 
         <div className="space-y-6">
           {steps.map((step, index) => {
@@ -161,13 +176,13 @@ export function StepEditor({
                   <div className="flex items-center gap-3">
                     <div className="hidden lg:flex items-center gap-2">
                       {step.action?.type ? (
-                        <Badge variant="outline" className="text-[8px] font-code border-primary/40 text-primary uppercase">{step.action.type}</Badge>
+                        <Badge variant="outline" className="text-micro font-code border-primary/40 text-primary uppercase">{step.action.type}</Badge>
                       ) : null}
                       {step.alarms?.[0]?.type ? (
-                        <Badge variant="outline" className="text-[8px] font-code border-destructive/40 text-destructive uppercase">{step.alarms[0].type}</Badge>
+                        <Badge variant="outline" className="text-micro font-code border-destructive/40 text-destructive uppercase">{step.alarms[0].type}</Badge>
                       ) : null}
                       {step.duration?.value ? (
-                        <span className="text-[9px] font-code text-muted-foreground uppercase">{step.duration.value}s</span>
+                        <span className="text-tiny font-code text-muted-foreground uppercase">{step.duration.value}s</span>
                       ) : null}
                     </div>
                     <Tooltip>
@@ -182,7 +197,7 @@ export function StepEditor({
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent>
-                        <p className="text-[9px] font-code uppercase">Synchroniser cette étape avec la Configuration</p>
+                        <p className="text-tiny font-code uppercase">Synchroniser cette étape avec la Configuration</p>
                       </TooltipContent>
                     </Tooltip>
                     <Button variant="ghost" size="icon" onClick={() => removeStep(index)} className="h-8 w-8 text-muted-foreground hover:text-destructive transition-colors">
@@ -195,7 +210,7 @@ export function StepEditor({
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                     <div className="space-y-4">
                       <div>
-                        <label className="text-[9px] font-bold uppercase text-muted-foreground tracking-widest block mb-2">Description de la Séquence</label>
+                        <label className="text-tiny font-bold uppercase text-muted-foreground tracking-widest block mb-2">Description de la Séquence</label>
                         <Textarea
                           value={step.description}
                           onChange={(e) => updateStep(index, { description: e.target.value })}
@@ -205,7 +220,7 @@ export function StepEditor({
                         />
                       </div>
                       <div>
-                        <label className="text-[9px] font-bold uppercase text-primary tracking-widest block mb-2">Sous-Titre de Phase</label>
+                        <label className="text-tiny font-bold uppercase text-primary tracking-widest block mb-2">Sous-Titre de Phase</label>
                         <Input
                           value={step.subtitle || ''}
                           onChange={(e) => updateStep(index, { subtitle: e.target.value })}
@@ -216,20 +231,20 @@ export function StepEditor({
                       </div>
                     </div>
 
-                    <div className="p-4 bg-primary/5 border border-primary/20 rounded-sm space-y-4">
+                    <div className="p-4 info-card space-y-4">
                       <div className="flex items-center gap-2 mb-2">
                         <Settings2 className="w-3.5 h-3.5 text-primary" />
                         <span className="text-[10px] font-bold text-primary uppercase tracking-widest">Configuration de l'Action</span>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-4">
+                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="space-y-1.5">
-                          <label className="text-[8px] font-bold text-muted-foreground uppercase">Type d'Action</label>
+                          <label className="text-micro font-bold text-muted-foreground uppercase">Type d'Action</label>
                           <Select
                             value={step.action?.type || ''}
                             onValueChange={(val) => updateStep(index, { action: { ...(step.action || {}), type: val as any } })}
                           >
-                            <SelectTrigger className={`h-8 bg-black/40 text-[9px] uppercase font-bold ${isActive(index, 'actionType') ? 'border-primary' : 'border-primary/20'}`}>
+                            <SelectTrigger className={`h-8 bg-black/40 text-tiny uppercase font-bold ${isActive(index, 'actionType') ? 'border-primary' : 'border-primary/20'}`}>
                               <SelectValue placeholder="Action" />
                             </SelectTrigger>
                             <SelectContent className="bg-background border-border">
@@ -243,12 +258,12 @@ export function StepEditor({
 
                         {step.action?.type === 'valve_operation' && (
                           <div className="space-y-1.5 animate-in fade-in zoom-in-95 duration-200">
-                            <label className="text-[8px] font-bold text-primary uppercase">Opération vanne</label>
+                            <label className="text-micro font-bold text-primary uppercase">Opération vanne</label>
                             <Select
                               value={step.action?.operation || ''}
                               onValueChange={(val) => updateStep(index, { action: { ...(step.action || {}), operation: val as any } })}
                             >
-                              <SelectTrigger className={`h-8 bg-black/40 text-[9px] uppercase font-bold ${isActive(index, 'actionTarget') ? 'border-primary' : 'border-primary/40'}`}>
+                              <SelectTrigger className={`h-8 bg-black/40 text-tiny uppercase font-bold ${isActive(index, 'actionTarget') ? 'border-primary' : 'border-primary/40'}`}>
                                 <SelectValue placeholder="Opération" />
                               </SelectTrigger>
                               <SelectContent className="bg-background border-border">
@@ -263,12 +278,12 @@ export function StepEditor({
 
                         {step.action?.type === 'valve_operation' && (
                           <div className="space-y-1.5 animate-in fade-in zoom-in-95 duration-200">
-                            <label className="text-[8px] font-bold text-primary uppercase">Vitesse</label>
+                            <label className="text-micro font-bold text-primary uppercase">Vitesse</label>
                             <Select
                               value={step.action?.speed || ''}
                               onValueChange={(val) => updateStep(index, { action: { ...(step.action || {}), speed: val as any } })}
                             >
-                              <SelectTrigger className={`h-8 bg-black/40 text-[9px] uppercase font-bold ${isActive(index, 'actionTarget') ? 'border-primary' : 'border-primary/40'}`}>
+                              <SelectTrigger className={`h-8 bg-black/40 text-tiny uppercase font-bold ${isActive(index, 'actionTarget') ? 'border-primary' : 'border-primary/40'}`}>
                                 <SelectValue placeholder="Vitesse" />
                               </SelectTrigger>
                               <SelectContent className="bg-background border-border">
@@ -283,7 +298,7 @@ export function StepEditor({
                       </div>
 
                       <div className="space-y-1.5">
-                        <label className="text-[8px] font-bold text-muted-foreground uppercase">Durée (s)</label>
+                        <label className="text-micro font-bold text-muted-foreground uppercase">Durée (s)</label>
                         <Input
                           type="number"
                           value={step.duration?.value ?? ''}
@@ -295,12 +310,12 @@ export function StepEditor({
                       </div>
 
                       <div className="space-y-1.5">
-                        <label className="text-[8px] font-bold text-muted-foreground uppercase">Libellé du Bouton (UI)</label>
+                        <label className="text-micro font-bold text-muted-foreground uppercase">Libellé du Bouton (UI)</label>
                         <Input
                           value={step.action?.ui?.label || ''}
                           onChange={(e) => updateStep(index, { action: { ...(step.action || {}), ui: { ...(step.action?.ui || {}), label: e.target.value } } })}
                           onFocus={() => onFieldFocus?.(index, 'actionLabel')}
-                          className={`h-8 bg-black/40 text-[9px] uppercase font-bold ${isActive(index, 'actionLabel') ? 'border-primary' : !step.action?.ui?.label ? 'border-amber-500/50 text-amber-500' : 'border-border'}`}
+                          className={`h-8 bg-black/40 text-tiny uppercase font-bold ${isActive(index, 'actionLabel') ? 'border-primary' : !step.action?.ui?.label ? 'border-amber-500/50 text-amber-500' : 'border-border'}`}
                           placeholder="— non défini —"
                         />
                       </div>
@@ -316,7 +331,7 @@ export function StepEditor({
                         if (!validationTypeValue) return null;
                         return (
                           <div className="flex items-center gap-2">
-                            <label className="text-[8px] font-bold text-muted-foreground uppercase">Type de validation</label>
+                            <label className="text-micro font-bold text-muted-foreground uppercase">Type de validation</label>
                             <Select
                               value={validationTypeValue}
                               onValueChange={(val) => {
@@ -334,7 +349,7 @@ export function StepEditor({
                                 updateStep(index, { validation: { ...(step.validation || {}), conditions } });
                               }}
                             >
-                              <SelectTrigger className="h-7 bg-black/40 text-[9px] uppercase font-bold border-border">
+                              <SelectTrigger className="h-7 bg-black/40 text-tiny uppercase font-bold border-border">
                                 <SelectValue placeholder="Type" />
                               </SelectTrigger>
                               <SelectContent className="bg-background border-border">
@@ -354,7 +369,7 @@ export function StepEditor({
                          if (!timeoutActionValue) return null;
                          return (
                            <div className="flex items-center gap-2">
-                             <label className="text-[8px] font-bold text-muted-foreground uppercase">Timeout action</label>
+                             <label className="text-micro font-bold text-muted-foreground uppercase">Timeout action</label>
                              <Select
                                value={timeoutActionValue}
                                onValueChange={(val) => {
@@ -362,7 +377,7 @@ export function StepEditor({
                                  updateStep(index, { validation: { ...(step.validation || {}), timeout: { ...(step.validation?.timeout || { value: 120, unit: 'seconds' }), action: val as any } } });
                                }}
                              >
-                               <SelectTrigger className="h-7 bg-black/40 text-[9px] uppercase font-bold border-border">
+                               <SelectTrigger className="h-7 bg-black/40 text-tiny uppercase font-bold border-border">
                                  <SelectValue placeholder="Action" />
                                </SelectTrigger>
                                <SelectContent className="bg-background border-border">
@@ -382,19 +397,19 @@ export function StepEditor({
                          if (!successExprValue) return null;
                          return (
                            <div className="flex items-center gap-2">
-                             <label className="text-[8px] font-bold text-muted-foreground uppercase">Expression succès</label>
+                             <label className="text-micro font-bold text-muted-foreground uppercase">Expression succès</label>
                              <Input
                                value={successExprValue}
                                onChange={(e) => updateStep(index, { validation: { ...(step.validation || {}), successExpression: e.target.value } })}
                                onFocus={() => onFieldFocus?.(index, 'actionLabel')}
-                               className={`h-7 bg-black/40 text-[9px] font-code border-border ${isActive(index, 'actionLabel') ? 'border-primary text-primary' : 'text-foreground'}`}
+                               className={`h-7 bg-black/40 text-tiny font-code border-border ${isActive(index, 'actionLabel') ? 'border-primary text-primary' : 'text-foreground'}`}
                              />
                            </div>
                          );
                        })()}
                        <div className="flex items-center gap-2 px-3 py-1 bg-secondary/10 border border-secondary/20 rounded-sm">
                          <Activity className="w-3.5 h-3.5 text-secondary" />
-                         <span className="text-[9px] font-bold text-secondary uppercase">
+                         <span className="text-tiny font-bold text-secondary uppercase">
                            Validation : {(step.action?.type === 'valve_operation' || (step.validation?.conditions?.[0]?.type && step.validation?.conditions?.[0]?.type !== 'manual')) ? 'Automatique' : 'Manuelle'}
                          </span>
                        </div>
@@ -405,7 +420,7 @@ export function StepEditor({
                         if (!alarmTypeValue) return null;
                         return (
                           <div className="flex items-center gap-2">
-                            <label className="text-[8px] font-bold text-muted-foreground uppercase">Type alarme</label>
+                            <label className="text-micro font-bold text-muted-foreground uppercase">Type alarme</label>
                             <Select
                               value={alarmTypeValue}
                               onValueChange={(val) => {
@@ -431,7 +446,7 @@ export function StepEditor({
                                 updateStep(index, { alarms });
                               }}
                             >
-                              <SelectTrigger className="h-7 bg-black/40 text-[9px] uppercase font-bold border-border">
+                              <SelectTrigger className="h-7 bg-black/40 text-tiny uppercase font-bold border-border">
                                 <SelectValue placeholder="Type" />
                               </SelectTrigger>
                               <SelectContent className="bg-background border-border">
@@ -451,7 +466,7 @@ export function StepEditor({
                         if (!severityValue) return null;
                         return (
                           <div className="flex items-center gap-2">
-                            <label className="text-[8px] font-bold text-muted-foreground uppercase">Sévérité alarme</label>
+                            <label className="text-micro font-bold text-muted-foreground uppercase">Sévérité alarme</label>
                             <Select
                               value={severityValue}
                               onValueChange={(val) => {
@@ -474,7 +489,7 @@ export function StepEditor({
                                 updateStep(index, { alarms });
                               }}
                             >
-                              <SelectTrigger className="h-7 bg-black/40 text-[9px] uppercase font-bold border-border">
+                              <SelectTrigger className="h-7 bg-black/40 text-tiny uppercase font-bold border-border">
                                 <SelectValue placeholder="Sévérité" />
                               </SelectTrigger>
                               <SelectContent className="bg-background border-border">
@@ -500,7 +515,7 @@ export function StepEditor({
                       <Button
                         variant="outline"
                         size="sm"
-                        className="h-7 text-[9px] uppercase font-bold"
+                        className="h-7 text-tiny uppercase font-bold"
                         onClick={async () => {
                           try {
                             // Utilise apiClient pour supporter web ET Desktop Tauri
@@ -539,7 +554,7 @@ export function StepEditor({
                       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
                         {step.fields.map((field, fIdx) => (
                           <div key={fIdx} className="space-y-1.5">
-                            <label className="text-[8px] font-bold text-muted-foreground uppercase">
+                            <label className="text-micro font-bold text-muted-foreground uppercase">
                               {field.name} {field.required && '*'}
                             </label>
                             {field.type === 'boolean' ? (
@@ -576,6 +591,72 @@ export function StepEditor({
                       </div>
                     )}
                   </div>
+
+                  {/* MEDIA REFERENCE SECTION */}
+                  {defaults?.enableMedia && (
+                  <div className="pt-4 border-t border-border/50">
+                    <div className="flex items-center gap-2 mb-3">
+                      <ImageIcon className="w-3.5 h-3.5 text-primary" />
+                      <h4 className="text-[10px] font-bold text-primary uppercase tracking-widest">Médias de la séquence (réutilisation)</h4>
+                    </div>
+                    {mediaLibrary.length === 0 ? (
+                      <p className="text-[10px] text-muted-foreground italic py-1">
+                        Aucun média dans la bibliothèque. Ajoutez-en un ci-dessus (capture / upload).
+                      </p>
+                    ) : (
+                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                        {mediaLibrary.map((m) => {
+                          const checked = (step.mediaRefs || []).includes(m.id);
+                          return (
+                            <button
+                              key={m.id}
+                              type="button"
+                              onClick={() => {
+                                const current = step.mediaRefs || [];
+                                const next = checked
+                                  ? current.filter((id) => id !== m.id)
+                                  : [...current, m.id];
+                                updateStep(index, { mediaRefs: next });
+                              }}
+                              className={`group relative rounded overflow-hidden border text-left transition ${checked ? 'border-primary ring-1 ring-primary' : 'border-border hover:border-primary/50'}`}
+                            >
+                              <div className="aspect-video bg-black flex items-center justify-center">
+                                {m.kind === 'image' ? (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img src={m.url} alt={m.title} className="w-full h-full object-cover" />
+                                ) : (
+                                  <video src={m.url} className="w-full h-full object-cover" muted />
+                                )}
+                              </div>
+                              <div className="p-1.5 flex items-center gap-1.5 bg-card/60">
+                                <ImageIcon className="w-3 h-3 text-muted-foreground shrink-0" />
+                                <span className="text-micro font-code uppercase truncate">{m.title}</span>
+                              </div>
+                              {checked && (
+                                <span className="absolute top-1 right-1 h-5 w-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center">
+                                  <Check className="w-3 h-3" />
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {(step.mediaRefs || []).length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {(step.mediaRefs || []).map((id) => {
+                          const m = mediaLibrary.find((x) => x.id === id);
+                          if (!m) return null;
+                          return (
+                            <Badge key={id} variant="outline" className="text-tiny font-code border-primary/40 text-primary">
+                              {m.kind === 'image' ? 'Image' : 'Vidéo'} · {m.title}
+                            </Badge>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                  )}
                 </div>
               </Card>
             );

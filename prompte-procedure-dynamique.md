@@ -142,6 +142,8 @@ model Procedure {
   // Données structurées
   prerequisites   Json             // Liste des prérequis
   steps           Json             // Liste des étapes
+                        // 📸 Chaque step peut contenir "mediaRefs": [mediaId,...]
+                        //    pour réutiliser les médias capturés/uploadés
   parameters      Json?            // Paramètres configurables
   postExecution   Json?            // Post-exécution
   
@@ -167,6 +169,7 @@ model Procedure {
   executions      ProcedureExecution[]
   alarms          ProcedureAlarm[]
   documents       ProcedureDocument[]
+  media           ProcedureMedia[]     // 📸 Médias capturés/uploadés (bibliothèque)
   
   @@index([code])
   @@index([category])
@@ -233,6 +236,31 @@ model ProcedureDocument {
   caption         String?
   uploadedBy      String
   uploadedAt      DateTime @default(now())
+}
+
+// 📸 NOUVEAU — Médias capturés/uploadés à la configuration,
+// réutilisables dans la séquence de procédure (étape par étape)
+model ProcedureMedia {
+  id              String   @id @default(cuid())
+  procedureId     String
+  procedure       Procedure @relation(fields: [procedureId], references: [id])
+
+  kind            MediaKind      // IMAGE | VIDEO
+  source          MediaSource    // CAPTURE | UPLOAD
+  title           String
+  description     String?
+  url             String         // URL du fichier (provider de stockage)
+  thumbnailUrl    String?        // Miniature (vidéos/aperçu)
+  mimeType        String
+  fileSize        Int?           // Taille en octets
+  duration        Float?         // Durée (vidéos) en secondes
+  width           Int?           // Dimensions (optionnel)
+  height          Int?
+
+  createdAt       DateTime @default(now())
+  createdBy       String
+
+  @@index([procedureId])
 }
 
 // Enums
@@ -311,6 +339,17 @@ enum DocumentType {
   DIAGRAM
   PDF
   MODEL
+}
+
+// 📸 NOUVEAU — Énumérations pour les médias capturés/uploadés
+enum MediaKind {
+  IMAGE
+  VIDEO
+}
+
+enum MediaSource {
+  CAPTURE   // capturé via la caméra (photo/vidéo en direct)
+  UPLOAD    // téléversé depuis le disque
 }
 ```
 
@@ -533,6 +572,33 @@ Caractéristiques :
 - Support des médias (image, vidéo, diagramme)
 - Intégration avec l'assistant vocal
 
+📸 NOUVEAU — Bibliothèque de médias capturables/uploadables (ProcedureMediaField)
+---------------------------------------------------------------
+Lors de la configuration de la procédure, le formulaire expose une section
+"Médias de référence" permettant de CAPTURER OU UPLOADER des images et vidéos
+qui seront ensuite RÉUTILISABLES dans la séquence de la procédure (à chaque étape) :
+
+- 🎥 Capture directe depuis la caméra (getUserMedia / MediaRecorder) :
+    • Photo instantanée (capture d'image via canvas)
+    • Enregistrement vidéo (avec durée max config. et aperçu live)
+- 📁 Upload depuis le disque (glisser-déposer ou sélecteur de fichier) :
+    • Images (jpg/png/webp/gif) et vidéos (mp4/webm/mov)
+    • Validation du type MIME et de la taille (ex. <= 50 Mo)
+- 🖼️ Miniatures/aperçu automatique + lecteur intégré (image/vidéo)
+- 🏷️ Chaque média reçoit un libellé + description optionnelle
+- 📚 Les médias capturés/uploadés alimentent une "bibliothèque de médias"
+  attachée à la procédure (ProcedureMedia) et sont indexés par id
+- 🔗 Référencement dans les étapes : chaque Step peut référencer un ou
+  plusieurs médias de la bibliothèque via leur id (step.mediaRefs[])
+- ♻️ Réutilisation : un même média peut être affiché/inséré dans plusieurs
+  étapes de la séquence (ex. photo de référence d'un composant, vidéo
+  de démonstration d'une manipulation) — "utilisé ultérieurement"
+- ✏️ Édition/suppression des médias depuis le formulaire, avec mise à jour
+  des références dans les étapes
+- 💾 Stockage : upload vers un provider (local/azure-blob/s3) + url persistée
+  dans ProcedureMedia ; les fichiers binaires ne sont PAS encodés en base64
+  dans le JSON de la procédure (on stocke uniquement l'id + url)
+
 B. ProcedureExecutor (components/procedures/execution/ProcedureExecutor.tsx)
 ---------------------------------------------------------------
 Caractéristiques :
@@ -604,6 +670,14 @@ D. Templates (app/api/procedures/templates/route.ts)
 GET    /api/procedures/templates        // Liste des templates
 POST   /api/procedures/templates        // Créer template
 GET    /api/procedures/templates/:id    // Détail template
+
+E. 📸 Médias (app/api/procedures/media/route.ts)
+---------------------------------------------------------------
+POST   /api/procedures/media            // Upload/capture d'un média (image/vidéo)
+                                        //   -> crée ProcedureMedia + stocke le fichier
+GET    /api/procedures/media?procedureId=// Liste la bibliothèque de médias
+DELETE /api/procedures/media/:id        // Supprime un média + ses fichiers
+                                        //   + purge les mediaRefs des étapes
 
 E. Analytics (app/api/procedures/analytics/route.ts)
 ---------------------------------------------------------------
@@ -715,7 +789,8 @@ L'implémentation sera considérée comme réussie si :
 4. ✅ L'assistant guide l'opérateur étape par étape
 5. ✅ Les alarmes sont détectées et des remèdes sont proposés
 6. ✅ L'opérateur peut utiliser la voix pour naviguer
-7. ✅ Les médias (images, vidéos) sont intégrés et affichés
+7. ✅ Les médias (images, vidéos) sont intégrés et affichés pour chaque etape affichée de la procedure et peuvent etre editer
+7b. ✅ Lors de la configuration, l'utilisateur peut capturer (caméra) ou uploader une image/vidéo, et la réutiliser plus tard dans n'importe quelle étape de la séquence
 8. ✅ La progression est visible et suivie
 9. ✅ Un rapport d'exécution est généré à la fin
 10. ✅ La recherche RAG trouve les procédures pertinentes

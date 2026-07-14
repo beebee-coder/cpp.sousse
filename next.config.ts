@@ -10,9 +10,6 @@ const nextConfig: NextConfig = {
   // Désactivation du cache Webpack pour stabiliser l'environnement Cloud
   webpack: (config: any, context: any) => {
     const { isServer, isTurbopack } = context;
-    if (!isServer) {
-      config.cache = false;
-    }
     if (!isTurbopack) {
       config.resolve.fallback = {
         ...config.resolve.fallback,

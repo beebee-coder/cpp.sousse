@@ -2,11 +2,9 @@
 
 import React from 'react';
 import { ModeLayout } from './ModeLayout';
-import { ModeBadge } from './ModeIndicator';
 
 interface ModeAwareLayoutProps {
   children: React.ReactNode;
-  showBadge?: boolean;
 }
 
 /**
@@ -14,11 +12,11 @@ interface ModeAwareLayoutProps {
  * Intègre automatiquement :
  * 1. La détection du mode (web/hybride/locale)
  * 2. Le thème visuel correspondant (via ModeLayout)
- * 3. Le badge indicateur du mode
+ * 3. Le badge indicateur du mode (badge global en bas à droite, voir AppChrome)
  */
-export function ModeAwareLayout({ children, showBadge = true }: ModeAwareLayoutProps) {
+export function ModeAwareLayout({ children }: ModeAwareLayoutProps) {
   return (
-    <ModeLayout showModeIndicator={showBadge}>
+    <ModeLayout>
       {children}
     </ModeLayout>
   );

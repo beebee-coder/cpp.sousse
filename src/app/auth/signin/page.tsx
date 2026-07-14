@@ -6,6 +6,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { AlertCircle, Loader2, Database, Eye, EyeOff } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { useSession } from '@/components/SessionProvider';
+import { usePlatform } from '@/components/PlatformProvider';
+import { localAuth } from '@/lib/auth/local-auth';
 import { Logo3D } from '@/components/three/Logo3D';
 
 /**
@@ -15,7 +17,8 @@ import { Logo3D } from '@/components/three/Logo3D';
 function SignInForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { refresh } = useSession();
+  const { refresh, login } = useSession();
+  const { isDesktop } = usePlatform();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -43,6 +46,16 @@ function SignInForm() {
       }
 
       console.log(`✅ [AUTH_FRONT] [SUCCESS] [${ts}] Liaison établie. Transfert vers le dashboard.`);
+
+      const u = data.user;
+      // En mode desktop / local, la session est persistée côté client (SQLite
+      // locale via l'intercepteur hybride) : on la conserve pour rester
+      // connecté et on l'établit immédiatement sans repasser par le serveur.
+      if (isDesktop && u) {
+        localAuth.saveSession({ id: u.id, email: u.email, role: u.role });
+        login({ id: u.id, email: u.email, role: u.role, firstName: u.firstName, lastName: u.lastName }, { persist: true });
+      }
+
       // Synchronise la session persistante AVANT la navigation pour éviter
       // un affichage transitoire "USER" puis "ADMIN" sur le dashboard.
       await refresh();

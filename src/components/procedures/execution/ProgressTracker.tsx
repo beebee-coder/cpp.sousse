@@ -42,7 +42,7 @@ export function ProgressTracker({ steps, currentStepIndex, completedSteps }: Pro
                 ) : isCurrent ? (
                   <Clock className="w-3 h-3 animate-spin-slow" />
                 ) : (
-                  <span className="text-[8px] font-bold">{index + 1}</span>
+                  <span className="text-micro font-bold">{index + 1}</span>
                 )}
               </div>
 
@@ -55,7 +55,7 @@ export function ProgressTracker({ steps, currentStepIndex, completedSteps }: Pro
                   {step.title}
                 </p>
                 <div className="flex items-center gap-2 mt-1">
-                   <span className="text-[8px] font-code text-muted-foreground uppercase">{step.duration.display}</span>
+                   <span className="text-micro font-code text-muted-foreground uppercase">{step.duration.display}</span>
                    {isCurrent && <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />}
                 </div>
               </div>

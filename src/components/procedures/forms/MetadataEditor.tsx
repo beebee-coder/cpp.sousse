@@ -94,7 +94,7 @@ export function MetadataEditor({ data, onChange, activeField, onFieldFocus }: Me
   const getActiveVoice = () => voice;
 
   return (
-    <Card className="p-6 border-border bg-card/40 space-y-8">
+    <Card className="p-6 panel-card space-y-8">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
         {/* Identification */}
         <div className="space-y-6">
@@ -102,7 +102,7 @@ export function MetadataEditor({ data, onChange, activeField, onFieldFocus }: Me
           
           <div className="space-y-4">
             <div>
-              <label className="text-[9px] font-bold uppercase text-muted-foreground block mb-1.5">Titre de la procédure</label>
+              <label className="text-tiny font-bold uppercase text-muted-foreground block mb-1.5">Titre de la procédure</label>
               <Input 
                 value={data.title} 
                 onChange={(e) => onChange({ title: e.target.value })}
@@ -112,9 +112,9 @@ export function MetadataEditor({ data, onChange, activeField, onFieldFocus }: Me
               />
             </div>
             
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="text-[9px] font-bold uppercase text-muted-foreground block mb-1.5">Code Système</label>
+                <label className="text-tiny font-bold uppercase text-muted-foreground block mb-1.5">Code Système</label>
                 <Input 
                   value={data.code} 
                   onChange={(e) => onChange({ code: e.target.value })}
@@ -124,7 +124,7 @@ export function MetadataEditor({ data, onChange, activeField, onFieldFocus }: Me
                 />
               </div>
               <div>
-                <label className="text-[9px] font-bold uppercase text-muted-foreground block mb-1.5">Version</label>
+                <label className="text-tiny font-bold uppercase text-muted-foreground block mb-1.5">Version</label>
                 <Input 
                   value={data.version} 
                   onChange={(e) => onChange({ version: e.target.value })}
@@ -143,7 +143,7 @@ export function MetadataEditor({ data, onChange, activeField, onFieldFocus }: Me
           
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="text-[9px] font-bold uppercase text-muted-foreground block mb-1.5">Catégorie</label>
+              <label className="text-tiny font-bold uppercase text-muted-foreground block mb-1.5">Catégorie</label>
               <Select value={data.category} onValueChange={(val) => onChange({ category: val })}>
                 <SelectTrigger className={`bg-black/40 border h-10 ${activeField === 'category' ? 'border-primary' : 'border-border'}`}>
                   <SelectValue placeholder="SÉLECTION" />
@@ -157,7 +157,7 @@ export function MetadataEditor({ data, onChange, activeField, onFieldFocus }: Me
               </Select>
             </div>
             <div>
-              <label className="text-[9px] font-bold uppercase text-muted-foreground block mb-1.5">Criticité</label>
+              <label className="text-tiny font-bold uppercase text-muted-foreground block mb-1.5">Criticité</label>
               <Select value={data.criticality} onValueChange={(val) => onChange({ criticality: val })}>
                 <SelectTrigger className={`bg-black/40 border h-10 ${activeField === 'criticality' ? 'border-primary' : 'border-border'}`}>
                   <SelectValue placeholder="SÉLECTION" />
@@ -175,7 +175,7 @@ export function MetadataEditor({ data, onChange, activeField, onFieldFocus }: Me
       </div>
 
       <div className="pt-4">
-        <label className="text-[9px] font-bold uppercase text-muted-foreground block mb-1.5">Description Technique Globale</label>
+        <label className="text-tiny font-bold uppercase text-muted-foreground block mb-1.5">Description Technique Globale</label>
         <Textarea 
           placeholder="Objectifs et périmètre de la procédure..." 
           onFocus={() => onFieldFocus('description')}

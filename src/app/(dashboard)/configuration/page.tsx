@@ -60,7 +60,7 @@ export default function ConfigurationPage() {
   if (loading) return <div className="p-8">Chargement...</div>;
 
   return (
-    <div className="p-8 max-w-4xl mx-auto space-y-8">
+    <div className="flex-1 overflow-y-auto p-4 sm:p-8 max-w-4xl mx-auto space-y-8 w-full">
       <div>
         <h1 className="text-3xl font-bold mb-2">Configuration des Procédures</h1>
         <p className="text-gray-500">Gérez la bibliothèque d'attributs réutilisables pour les étapes de procédure.</p>

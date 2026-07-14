@@ -65,6 +65,19 @@ export default {
         md: 'calc(var(--radius) - 2px)',
         sm: 'calc(var(--radius) - 4px)',
       },
+      fontSize: {
+        'micro': 'var(--font-size-micro)',
+        'tiny': 'var(--font-size-tiny)',
+        '2xs': 'var(--font-size-xs)',
+        '2sm': 'var(--font-size-sm)',
+        '2base': 'var(--font-size-base)',
+        '2lg': 'var(--font-size-lg)',
+        '2xl-token': 'var(--font-size-xl)',
+      },
+      lineHeight: {
+        'micro': '1rem',
+        'tiny': '1.125rem',
+      },
       boxShadow: {
         'glow': '0 0 22px -3px hsl(var(--primary) / 0.55)',
         'glow-lg': '0 0 48px -6px hsl(var(--primary) / 0.6)',

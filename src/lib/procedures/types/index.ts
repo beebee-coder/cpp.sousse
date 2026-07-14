@@ -138,7 +138,7 @@ export interface ProcedureStep {
   validation: {
     conditions: StepValidationCondition[];
     successExpression: string;
-    timeout: {
+    timeout?: {
       value: number;
       unit: string;
       action: 'abort' | 'warn' | 'retry';
@@ -151,12 +151,36 @@ export interface ProcedureStep {
     diagram?: { url: string; caption?: string };
     video?: { url: string; caption?: string; duration?: number };
   };
+  /** 📸 Références vers mediaLibrary (réutilisation du média dans la séquence) */
+  mediaRefs?: string[];
   notes: string[];
   dependencies: {
     prerequisites: string[];
     dependsOn: string[];
     requiresConfirmation: boolean;
   };
+}
+
+/**
+ * @fileOverview Médias capturés/uploadés à la configuration de la forge,
+ * réutilisables (par référence id) dans n'importe quelle étape de la séquence.
+ */
+export type MediaKind = 'image' | 'video';
+export type MediaSource = 'capture' | 'upload';
+
+export interface ProcedureMedia {
+  id: string;
+  kind: MediaKind;
+  source: MediaSource;
+  title: string;
+  description?: string;
+  url: string;            // blob: / object URL (aperçu dans la session)
+  thumbnailUrl?: string;  // miniature (image = url, vidéo = frame capturé)
+  mimeType: string;
+  fileSize?: number;
+  duration?: number;      // Durée vidéo (s)
+  createdAt: string;
+  file?: File;            // Référence binaire conservée en mémoire (upload ultérieur)
 }
 
 export interface FullProcedure {
@@ -192,6 +216,8 @@ export interface FullProcedure {
     reporting: PostExecutionReporting;
   };
   metadata: ProcedureMetadata;
+  /** 📸 Bibliothèque de médias capturés/uploadés à la configuration */
+  mediaLibrary?: ProcedureMedia[];
   authorId?: string;
   createdAt: Date;
   updatedAt: Date;

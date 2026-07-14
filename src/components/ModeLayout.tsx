@@ -5,7 +5,6 @@ import { useAppMode } from '@/hooks/use-app-mode';
 
 interface ModeLayoutProps {
   children: React.ReactNode;
-  showModeIndicator?: boolean;
 }
 
 /**
@@ -14,7 +13,7 @@ interface ModeLayoutProps {
  * - Navigation top bar
  * - Background: subtle gradient
  */
-function WebLayout({ children, showModeIndicator = true }: ModeLayoutProps) {
+function WebLayout({ children }: ModeLayoutProps) {
   return (
     <div className="relative min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
       {/* Subtle animated background */}
@@ -22,16 +21,6 @@ function WebLayout({ children, showModeIndicator = true }: ModeLayoutProps) {
         <div className="absolute top-0 right-0 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl animate-float" />
         <div className="absolute bottom-0 left-0 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl animate-float-slow" />
       </div>
-
-      {/* Header badge */}
-      {showModeIndicator && (
-        <div className="fixed top-4 right-4 z-50">
-          <div className="px-4 py-2 rounded-full bg-gradient-to-r from-blue-500 to-cyan-400 shadow-lg shadow-blue-500/50 text-white text-sm font-bold flex items-center gap-2">
-            <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
-            <span>☁️ Web Mode</span>
-          </div>
-        </div>
-      )}
 
       <div className="relative z-10">{children}</div>
     </div>
@@ -44,7 +33,7 @@ function WebLayout({ children, showModeIndicator = true }: ModeLayoutProps) {
  * - Dual column potential
  * - Background: dynamic pattern
  */
-function HybridLayout({ children, showModeIndicator = true }: ModeLayoutProps) {
+function HybridLayout({ children }: ModeLayoutProps) {
   return (
     <div className="relative min-h-screen bg-gradient-to-br from-slate-950 via-purple-900 to-slate-950">
       {/* Animated grid background */}
@@ -69,16 +58,6 @@ function HybridLayout({ children, showModeIndicator = true }: ModeLayoutProps) {
         <div className="absolute bottom-1/3 right-1/3 w-96 h-96 bg-pink-500/10 rounded-full blur-3xl animate-float-slow" />
       </div>
 
-      {/* Header badge */}
-      {showModeIndicator && (
-        <div className="fixed top-4 right-4 z-50">
-          <div className="px-4 py-2 rounded-full bg-gradient-to-r from-purple-500 to-pink-400 shadow-lg shadow-purple-500/50 text-white text-sm font-bold flex items-center gap-2">
-            <span className="w-2 h-2 bg-white rounded-full" />
-            <span>🔗 Mode Hybride</span>
-          </div>
-        </div>
-      )}
-
       <div className="relative z-10">{children}</div>
     </div>
   );
@@ -90,7 +69,7 @@ function HybridLayout({ children, showModeIndicator = true }: ModeLayoutProps) {
  * - Compact/dense UI
  * - Background: warm, earthy
  */
-function LocalLayout({ children, showModeIndicator = true }: ModeLayoutProps) {
+function LocalLayout({ children }: ModeLayoutProps) {
   return (
     <div className="relative min-h-screen bg-gradient-to-br from-slate-900 via-amber-900 to-slate-900">
       {/* Warm gradient overlay */}
@@ -99,17 +78,6 @@ function LocalLayout({ children, showModeIndicator = true }: ModeLayoutProps) {
         <div className="absolute top-0 left-0 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl animate-pulse" />
         <div className="absolute bottom-0 right-0 w-96 h-96 bg-orange-500/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
       </div>
-
-      {/* Offline indicator badge */}
-      {showModeIndicator && (
-        <div className="fixed top-4 right-4 z-50 space-y-2">
-          <div className="px-4 py-2 rounded-full bg-gradient-to-r from-amber-500 to-orange-400 shadow-lg shadow-amber-500/50 text-white text-sm font-bold flex items-center gap-2">
-            <span className="w-2 h-2 bg-white rounded-full animate-bounce" />
-            <span>⚡ Mode Offline</span>
-          </div>
-          <div className="text-xs text-amber-200/70 text-right px-4">🔋 Autonome</div>
-        </div>
-      )}
 
       <div className="relative z-10">{children}</div>
     </div>
@@ -120,7 +88,7 @@ function LocalLayout({ children, showModeIndicator = true }: ModeLayoutProps) {
  * Smart Layout Wrapper
  * Sélectionne automatiquement le layout selon le mode
  */
-export function ModeLayout({ children, showModeIndicator = true }: ModeLayoutProps) {
+export function ModeLayout({ children }: ModeLayoutProps) {
   const { mode, isReady } = useAppMode();
 
   if (!isReady) {
@@ -136,12 +104,12 @@ export function ModeLayout({ children, showModeIndicator = true }: ModeLayoutPro
 
   switch (mode) {
     case 'web':
-      return <WebLayout showModeIndicator={showModeIndicator}>{children}</WebLayout>;
+      return <WebLayout>{children}</WebLayout>;
     case 'hybride':
-      return <HybridLayout showModeIndicator={showModeIndicator}>{children}</HybridLayout>;
+      return <HybridLayout>{children}</HybridLayout>;
     case 'locale':
-      return <LocalLayout showModeIndicator={showModeIndicator}>{children}</LocalLayout>;
+      return <LocalLayout>{children}</LocalLayout>;
     default:
-      return <WebLayout showModeIndicator={showModeIndicator}>{children}</WebLayout>;
+      return <WebLayout>{children}</WebLayout>;
   }
 }

@@ -532,41 +532,43 @@ export default function BDDPage() {
   return (
     <div className="flex flex-col lg:flex-row h-screen bg-transparent overflow-hidden">
       <main className="flex-1 flex flex-col min-w-0 h-full">
-        <header className="h-16 border-b border-border bg-card/30 flex items-center justify-between px-6 shrink-0">
-          <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" onClick={() => router.back()} className="h-8 w-8 text-muted-foreground hover:text-white">
+        <header className="border-b border-border bg-card/30 flex flex-wrap items-center gap-3 px-4 sm:px-6 py-2 shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <Button variant="ghost" size="icon" onClick={() => router.back()} className="h-8 w-8 text-muted-foreground hover:text-white shrink-0">
               <ArrowLeft className="w-4 h-4" />
             </Button>
-            <HardDrive className="w-4 h-4 text-primary" />
-            <span className="font-headline font-bold text-xs uppercase tracking-widest text-primary">STATION DE FORGE RAG</span>
+            <HardDrive className="w-4 h-4 text-primary shrink-0" />
+            <span className="font-headline font-bold text-xs uppercase tracking-widest text-primary truncate">STATION DE FORGE RAG</span>
           </div>
-          <div className="flex bg-muted/40 p-0.5 rounded border border-border/40 font-code text-[10px] gap-0.5 shrink-0 mx-4">
-            <Button
-              size="sm"
-              variant={mode === 'web' ? 'default' : 'ghost'}
-              onClick={() => setMode('web')}
-              className={cn("h-7 px-3 text-[9px] font-bold uppercase", mode === 'web' ? "bg-primary text-primary-foreground hover:bg-primary/95" : "text-muted-foreground hover:text-white hover:bg-white/5")}
-            >
-              BDD Web (Registre)
-            </Button>
-            <Button
-              size="sm"
-              variant={mode === 'locale' ? 'default' : 'ghost'}
-              onClick={() => setMode('locale')}
-              className={cn("h-7 px-3 text-[9px] font-bold uppercase", mode === 'locale' ? "bg-primary text-primary-foreground hover:bg-primary/95" : "text-muted-foreground hover:text-white hover:bg-white/5")}
-            >
-              BDD Locale
-            </Button>
-            <Button
-              size="sm"
-              variant={mode === 'chroma' ? 'default' : 'ghost'}
-              onClick={() => setMode('chroma')}
-              className={cn("h-7 px-3 text-[9px] font-bold uppercase", mode === 'chroma' ? "bg-primary text-primary-foreground hover:bg-primary/95" : "text-muted-foreground hover:text-white hover:bg-white/5")}
-            >
-              ChromaDB
-            </Button>
+          <div className="overflow-x-auto terminal-scroll shrink-0">
+            <div className="flex bg-muted/40 p-0.5 rounded border border-border/40 font-code text-[10px] gap-0.5 w-max">
+              <Button
+                size="sm"
+                variant={mode === 'web' ? 'default' : 'ghost'}
+                onClick={() => setMode('web')}
+                className={cn("h-7 px-3 text-[9px] font-bold uppercase", mode === 'web' ? "bg-primary text-primary-foreground hover:bg-primary/95" : "text-muted-foreground hover:text-white hover:bg-white/5")}
+              >
+                BDD Web (Registre)
+              </Button>
+              <Button
+                size="sm"
+                variant={mode === 'locale' ? 'default' : 'ghost'}
+                onClick={() => setMode('locale')}
+                className={cn("h-7 px-3 text-[9px] font-bold uppercase", mode === 'locale' ? "bg-primary text-primary-foreground hover:bg-primary/95" : "text-muted-foreground hover:text-white hover:bg-white/5")}
+              >
+                BDD Locale
+              </Button>
+              <Button
+                size="sm"
+                variant={mode === 'chroma' ? 'default' : 'ghost'}
+                onClick={() => setMode('chroma')}
+                className={cn("h-7 px-3 text-[9px] font-bold uppercase", mode === 'chroma' ? "bg-primary text-primary-foreground hover:bg-primary/95" : "text-muted-foreground hover:text-white hover:bg-white/5")}
+              >
+                ChromaDB
+              </Button>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 ml-auto">
             {mode === 'web' && (
               <Button
                 size="sm"

@@ -118,7 +118,7 @@ export default function ConferencePage() {
         </footer>
 
         {/* Overlay Alerte Industrielle */}
-        <div className="absolute bottom-24 left-8 pointer-events-none opacity-40">
+        <div className="absolute bottom-24 left-1/2 -translate-x-1/2 pointer-events-none opacity-40">
            <div className="flex items-center gap-3 bg-red-600/10 border border-red-600/30 p-2 rounded-sm">
               <ShieldAlert className="w-4 h-4 text-red-600 animate-bounce" />
               <span className="text-[9px] font-code text-red-600 uppercase font-bold tracking-widest">Surveillance de Flux Critique Active</span>

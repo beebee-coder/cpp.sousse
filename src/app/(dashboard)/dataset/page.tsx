@@ -66,6 +66,7 @@ export default function DatasetPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [forgeSaving, setForgeSaving] = useState(false);
+  const [activeTab, setActiveTab] = useState('qr');
   const [activeField, setActiveField] = useState<SmartField>('question');
   const [lastTranscript, setLastTranscript] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -427,16 +428,16 @@ export default function DatasetPage() {
   return (
     <div className="flex flex-col lg:flex-row h-screen bg-transparent overflow-hidden">
       <main className="flex-1 flex flex-col min-w-0 h-full">
-        <header className="h-16 border-b border-border bg-card/30 flex items-center justify-between px-6 shrink-0">
-          <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" onClick={() => router.back()} className="h-8 w-8 text-muted-foreground hover:text-white">
+        <header className="border-b border-border bg-card/30 flex flex-wrap items-center gap-3 px-4 sm:px-6 py-2 shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <Button variant="ghost" size="icon" onClick={() => router.back()} className="h-8 w-8 text-muted-foreground hover:text-white shrink-0">
               <ChevronRight className="w-4 h-4 rotate-180" />
             </Button>
-            <Database className="w-4 h-4 text-primary" />
-            <span className="font-headline font-bold text-xs uppercase tracking-widest text-primary">Station de Dataset & Forge procedures</span>
+            <Database className="w-4 h-4 text-primary shrink-0" />
+            <span className="font-headline font-bold text-xs uppercase tracking-widest text-primary truncate">Station de Dataset & Forge procedures</span>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 ml-auto">
             <Button
               size="sm"
               variant="secondary"
@@ -463,32 +464,15 @@ export default function DatasetPage() {
         </header>
 
         <div className="flex-1 overflow-auto p-4 lg:p-6">
-          <Tabs defaultValue="qr" className="h-full flex flex-col">
-            <div className="flex items-center justify-between border-b border-border pb-2 shrink-0">
-              <TabsList className="bg-black/40 border border-border/40">
-                <TabsTrigger value="qr" className="text-[10px] uppercase font-bold px-4 py-2">
-                  <Database className="w-3.5 h-3.5 mr-2" /> Questions / Réponses
-                </TabsTrigger>
-                <TabsTrigger value="forge" className="text-[10px] uppercase font-bold px-4 py-2">
-                  <Layers className="w-3.5 h-3.5 mr-2" /> Station de forge procedures
-                </TabsTrigger>
-              </TabsList>
-            </div>
-
-            {/* Q/R Single View */}
-            <TabsContent value="qr" className="flex-1 overflow-hidden focus-visible:ring-0 mt-4">
-              <div className="h-full flex flex-col gap-6 max-w-4xl mx-auto pb-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <p className="text-[10px] font-code text-muted-foreground uppercase">
-                      Champ actif : <span className="text-primary font-bold">{activeField}</span>
-                    </p>
-                    {lastTranscript && (
-                      <p className="text-[9px] font-code text-muted-foreground/70 max-w-md truncate">
-                        Dernière reconnaissance : "{lastTranscript}"
-                      </p>
-                    )}
-                  </div>
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-2 shrink-0">
+              <div className="flex items-center gap-3 min-w-0">
+                <TabsList className="bg-black/40 border border-border/40">
+                  <TabsTrigger value="qr" className="text-[10px] uppercase font-bold px-4 py-2">
+                    <Database className="w-3.5 h-3.5 mr-2" /> Questions / Réponses
+                  </TabsTrigger>
+                </TabsList>
+                {activeTab === 'qr' && (
                   <Button
                     type="button"
                     size="sm"
@@ -507,6 +491,26 @@ export default function DatasetPage() {
                       </>
                     )}
                   </Button>
+                )}
+              </div>
+              <TabsList className="bg-black/40 border border-border/40">
+                <TabsTrigger value="forge" className="text-[10px] uppercase font-bold px-4 py-2">
+                  <Layers className="w-3.5 h-3.5 mr-2" /> Station de forge procedures
+                </TabsTrigger>
+              </TabsList>
+            </div>
+
+            {/* Q/R Single View */}
+            <TabsContent value="qr" className="flex-1 overflow-hidden focus-visible:ring-0 mt-4">
+              <div className="h-full flex flex-col gap-6 max-w-4xl mx-auto pb-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 min-w-0">
+                    {lastTranscript && (
+                      <p className="text-[9px] font-code text-muted-foreground/70 max-w-md truncate">
+                        Dernière reconnaissance : "{lastTranscript}"
+                      </p>
+                    )}
+                  </div>
                 </div>
 
                 {/* Input Zone */}
@@ -519,7 +523,6 @@ export default function DatasetPage() {
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="space-y-2">
-                      <Label className="text-[10px] font-bold uppercase text-muted-foreground">Question</Label>
                       <Input
                         ref={questionInputRef}
                         value={question}
@@ -541,7 +544,6 @@ export default function DatasetPage() {
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="space-y-2">
-                      <Label className="text-[10px] font-bold uppercase text-muted-foreground">Réponse</Label>
                       <Textarea
                         ref={answerInputRef}
                         value={answer}

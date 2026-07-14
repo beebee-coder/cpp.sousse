@@ -28,7 +28,7 @@ export function ValidationBadge({ status, label, value, className }: ValidationB
     )}>
       <Icon className={cn("w-3.5 h-3.5", config.color, config.animate)} />
       <div className="flex flex-col">
-        <span className={cn("text-[8px] font-bold uppercase tracking-widest", config.color)}>{label}</span>
+        <span className={cn("text-micro font-bold uppercase tracking-widest", config.color)}>{label}</span>
         {value && <span className="text-[10px] font-code font-bold text-white uppercase">{value}</span>}
       </div>
     </div>

@@ -126,6 +126,8 @@ export interface ProcedureDefaults {
   defaultDuration: number;
   defaultUiLabel: string;
   defaultSuccessExpression: string;
+  /** Option : activer la capture/upload de médias (image/vidéo) dans la séquence */
+  enableMedia: boolean;
 }
 
 export const DEFAULT_PROCEDURE_DEFAULTS: ProcedureDefaults = {
@@ -144,4 +146,5 @@ export const DEFAULT_PROCEDURE_DEFAULTS: ProcedureDefaults = {
   defaultDuration: 60,
   defaultUiLabel: 'Confirmer',
   defaultSuccessExpression: 'status == OK',
+  enableMedia: false,
 };

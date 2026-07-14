@@ -13,7 +13,6 @@ if (!token) {
   console.error('❌ [INSTALLERS] BLOB_READ_WRITE_TOKEN manquant. Définissez-le (local .env + env projet Vercel).');
   process.exit(1);
 }
-
 const bundleDir = 'src-tauri/target/release/bundle';
 
 function findLatest(dir, ext) {

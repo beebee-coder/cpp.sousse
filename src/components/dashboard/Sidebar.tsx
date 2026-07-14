@@ -17,7 +17,6 @@ import {
 import { cn } from '@/lib/utils';
 import { usePlatform } from '@/components/PlatformProvider';
 import { SyncPanel } from '@/components/dashboard/SyncPanel';
-import { ModeBadge } from '@/components/ModeBadge';
 import { usePathname } from 'next/navigation';
 import { useSession } from '@/components/SessionProvider';
 import Link from 'next/link';
@@ -127,7 +126,6 @@ export function SidebarContent({ pathname, isDesktop, isReady, onNavigate }: Sid
       </nav>
 
       <div className="p-4 border-t border-border bg-black/20 space-y-3 shrink-0">
-        <ModeBadge />
         {mounted && <SyncPanel />}
       </div>
     </div>

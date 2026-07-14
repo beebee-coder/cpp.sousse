@@ -42,7 +42,7 @@ export function StepGuide({ step, onNext, onAlarm, onResolve, isAlarm, startTime
   }, [startTime]);
 
   useEffect(() => {
-    if (elapsed > step.validation.timeout.value && !isAlarm) {
+    if (elapsed > (step.validation.timeout?.value || Infinity) && !isAlarm) {
       // onAlarm('TIMEOUT_EXCEEDED');
     }
   }, [elapsed, step, isAlarm, onAlarm]);
@@ -100,7 +100,7 @@ export function StepGuide({ step, onNext, onAlarm, onResolve, isAlarm, startTime
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-10">
         {/* Instructions */}
         <div className="md:col-span-2 space-y-6">
-           <div className="p-6 bg-black/40 border border-border rounded-sm min-h-[160px] relative overflow-hidden group">
+           <div className="p-6 terminal-card min-h-[160px] relative overflow-hidden group">
               <div className="absolute top-0 left-0 w-1 h-full bg-primary group-hover:w-2 transition-all" />
               <p className="text-base sm:text-lg font-code leading-relaxed text-foreground/90">
                 {step.description}
@@ -124,13 +124,13 @@ export function StepGuide({ step, onNext, onAlarm, onResolve, isAlarm, startTime
               )}
 
               {step.action.type === 'valve_operation' && (
-                <div className="flex items-center gap-4 p-2 bg-black/40 border border-primary/20 rounded-sm">
+                <div className="flex items-center gap-4 p-2 terminal-card rounded-sm">
                    <Button onClick={onNext} className="bg-primary text-primary-foreground font-bold uppercase px-8 h-12">
                      <Settings2 className="w-4 h-4 mr-2" />
                      {step.action.ui.label}
                    </Button>
                    <div className="px-4">
-                      <p className="text-[9px] font-bold text-muted-foreground uppercase">Cible</p>
+                      <p className="text-tiny font-bold text-muted-foreground uppercase">Cible</p>
                       <p className="text-xl font-code font-bold text-primary">{step.action.target}%</p>
                    </div>
                 </div>
@@ -156,12 +156,12 @@ export function StepGuide({ step, onNext, onAlarm, onResolve, isAlarm, startTime
                 <span className="text-[10px] font-code uppercase">Ressource Visuelle</span>
               </div>
               <div className="absolute bottom-4 left-4 right-4 z-20">
-                <Badge className="bg-primary/20 text-primary border-primary/40 uppercase text-[8px] font-bold">Ref: {step.id}-IMG</Badge>
+                <Badge className="bg-primary/20 text-primary border-primary/40 uppercase text-micro font-bold">Ref: {step.id}-IMG</Badge>
               </div>
            </Card>
 
-           <div className="p-3 bg-primary/5 border border-primary/20 rounded-sm">
-              <p className="text-[9px] font-bold text-primary uppercase mb-2 flex items-center gap-2">
+           <div className="p-3 info-card">
+              <p className="text-tiny font-bold text-primary uppercase mb-2 flex items-center gap-2">
                 <RotateCcw className="w-3 h-3" />
                 Notes de maintenance
               </p>
@@ -179,7 +179,7 @@ export function StepGuide({ step, onNext, onAlarm, onResolve, isAlarm, startTime
            <h4 className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.2em] mb-4">Paramètres de Validation Temps Réel</h4>
            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
              {step.validation.conditions.map((cond) => (
-               <div key={cond.id} className="flex items-center justify-between p-3 bg-black/40 border border-border rounded-sm">
+               <div key={cond.id} className="flex items-center justify-between p-3 terminal-card">
                  <span className="text-[10px] font-code text-white/80 uppercase">{cond.displayName}</span>
                  <div className="flex items-center gap-2">
                     <span className="text-[10px] font-code font-bold text-secondary">{cond.value} {cond.unit}</span>

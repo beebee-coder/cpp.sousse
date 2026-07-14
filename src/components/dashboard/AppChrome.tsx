@@ -3,6 +3,7 @@
 import { createContext, useContext, useState, type ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
 import { DashboardSidebar } from '@/components/dashboard/Sidebar';
+import { ModeBadge } from '@/components/ModeBadge';
 
 interface DashboardNavValue {
   mobileOpen: boolean;
@@ -50,6 +51,11 @@ export function AppChrome({ children }: { children: ReactNode }) {
         />
         <div className="flex-1 min-w-0 flex flex-col h-full overflow-hidden">
           {children}
+        </div>
+
+        {/* Badge de mode épinglé en bas à droite */}
+        <div className="fixed bottom-4 right-4 z-40 w-56 max-w-[calc(100vw-2rem)] pointer-events-auto">
+          <ModeBadge menuPlacement="top" />
         </div>
       </div>
     </DashboardNavContext.Provider>

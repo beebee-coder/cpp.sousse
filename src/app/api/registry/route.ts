@@ -15,33 +15,72 @@ import { getSessionFromCookie } from '@/lib/session';
 const isCloudServerless = !!process.env.VERCEL;
 
 // Construit l'arborescence du Registre à partir des KnowledgeItems (Cloud).
+// Reconstruit la hiérarchie de dossiers à partir du tag `regpath:` (ex: regpath:Alarmes/sous-dossier/fichier)
+// afin de restituer EXACTEMENT l'arborescence du .registry même côté Vercel (FS non déployé).
 const buildCloudTree = (items: any[]): any[] => {
-  const byType: Record<string, any[]> = {};
+  const rootChildren: any[] = [];
+  const folderMap = new Map<string, any>();
+
+  const ensureFolder = (segments: string[]): any[] => {
+    let parentList = rootChildren;
+    let acc = '';
+    for (const seg of segments) {
+      acc = acc ? `${acc}/${seg}` : seg;
+      let folder = folderMap.get(acc);
+      if (!folder) {
+        folder = { id: `dir::${acc}`, name: seg, type: 'folder', isOpen: true, children: [] };
+        folderMap.set(acc, folder);
+        parentList.push(folder);
+      }
+      parentList = folder.children;
+    }
+    return parentList;
+  };
+
+  const loose: any[] = [];
+
   for (const it of items) {
-    const t = (it.type || 'document').toString();
-    if (!byType[t]) byType[t] = [];
-    byType[t].push(it);
+    const regPathTag = (it.tags || []).find(
+      (t: any) => typeof t === 'string' && t.startsWith('regpath:')
+    ) as string | undefined;
+
+    if (regPathTag) {
+      const rel = regPathTag.slice('regpath:'.length);
+      const segments = rel.split('/').filter(Boolean);
+      const fileName = segments.pop();
+      const target = segments.length > 0 ? ensureFolder(segments) : rootChildren;
+      target.push({
+        id: it.id,
+        name: fileName || it.title || it.question || it.id,
+        type: 'file',
+        metadata: { cloudId: it.id, type: it.type, category: it.category }
+      });
+    } else {
+      loose.push({
+        id: it.id,
+        name: it.title || it.question || it.id,
+        type: 'file',
+        metadata: { cloudId: it.id, type: it.type, category: it.category }
+      });
+    }
   }
 
-  const typeFolders = Object.entries(byType).map(([type, its]) => ({
-    id: `type-${type}`,
-    name: type.toUpperCase(),
-    type: 'folder',
-    isOpen: true,
-    children: its.map((it: any) => ({
-      id: it.id,
-      name: it.title || it.question || it.id,
-      type: 'file',
-      metadata: { cloudId: it.id, type: it.type, category: it.category }
-    }))
-  }));
+  if (loose.length > 0) {
+    rootChildren.push({
+      id: 'cloud-loose',
+      name: 'COLLECTIONS Q/R (CLOUD)',
+      type: 'folder',
+      isOpen: true,
+      children: loose
+    });
+  }
 
   return [{
     id: 'Registre',
     name: 'REGISTRE',
     type: 'folder',
     isOpen: true,
-    children: typeFolders
+    children: rootChildren
   }];
 };
 

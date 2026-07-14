@@ -5,10 +5,16 @@ import path from 'path';
  * @fileOverview Base de données locale physique [LOCAL_DB].
  * Structure arborescente pour l'Explorateur BDD et l'exploitation IA.
  *
- * Deux répertoires principaux :
- * 1. INDEX_CHROMA  - Résultat accumulatif des fichiers injectés lors de la sync.
- *                    Gestion des doublons par nom de fichier via dossiers indexés.
- * 2. Centrale      - Répertoire central pour l'arborescence future.
+ * Répertoires principaux (miroirs de l'arborescence de la BDD Web / Registre) :
+ * 1. INDEX_CHROMA            - Résultat accumulatif des fichiers injectés lors de la sync.
+ *                              Gestion des doublons par nom de fichier via dossiers indexés.
+ * 2. Centrale / Groupes      - Arborescence centralisée de l'installation (issue de l'arborescence).
+ * 3. Alarmes                 - Répertoire des alarmes.
+ * 4. ressources humaines     - Répertoire des équipes / ressources humaines.
+ * 5. bank                     - Banque d'Images (miroir du dossier `bank` du Registre Web).
+ *                              Concordant avec la BDD Web afin de recevoir les actifs binaires
+ *                              (images/vidéos) et leurs métadonnées, puis d'être indexé/vectorisé
+ *                              dans l'arborescence Vecteurs ChromaDB.
  */
 
 const LOCAL_DB_ROOT = path.join(process.cwd(), '.local-db');
@@ -17,6 +23,7 @@ const CENTRALE_DIR = path.join(LOCAL_DB_ROOT, 'Centrale');
 const GROUPES_DIR = path.join(LOCAL_DB_ROOT, 'Groupes');
 const ALARMES_DIR = path.join(LOCAL_DB_ROOT, 'Alarmes');
 const RESSOURCES_HUMAINES_DIR = path.join(LOCAL_DB_ROOT, 'ressources humaines');
+const BANK_DIR = path.join(LOCAL_DB_ROOT, 'bank');
 const MANIFEST_FILE = path.join(LOCAL_DB_ROOT, 'local-db-manifest.json');
 
 export { LOCAL_DB_ROOT };
@@ -60,7 +67,7 @@ const ensureLocalDB = () => {
     if (!fs.existsSync(LOCAL_DB_ROOT)) {
       fs.mkdirSync(LOCAL_DB_ROOT, { recursive: true });
     }
-    [INDEX_CHROMA_DIR, CENTRALE_DIR, GROUPES_DIR, ALARMES_DIR, RESSOURCES_HUMAINES_DIR].forEach(dir => {
+    [INDEX_CHROMA_DIR, CENTRALE_DIR, GROUPES_DIR, ALARMES_DIR, RESSOURCES_HUMAINES_DIR, BANK_DIR].forEach(dir => {
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
       }
@@ -151,6 +158,7 @@ export const localDB = {
     const groupesTree: FSNode[] = scanDirectory(GROUPES_DIR, 'Groupes');
     const alarmesTree: FSNode[] = scanDirectory(ALARMES_DIR, 'Alarmes');
     const ressourcesHumainesTree: FSNode[] = scanDirectory(RESSOURCES_HUMAINES_DIR, 'ressources humaines');
+    const bankTree: FSNode[] = scanDirectory(BANK_DIR, 'bank');
 
     const rootNodes: FSNode[] = [];
 
@@ -197,6 +205,15 @@ export const localDB = {
       isOpen: false,
       children: ressourcesHumainesTree,
       metadata: { knowledgeType: 'ressources-humaines' }
+    });
+
+    rootNodes.push({
+      id: 'bank',
+      name: 'bank',
+      type: 'folder',
+      isOpen: false,
+      children: bankTree,
+      metadata: { knowledgeType: 'bank' }
     });
 
     // Marque les fichiers déjà indexés/vectorisés vers ChromaDB
@@ -412,6 +429,30 @@ export const localDB = {
   },
 
   /**
+   * Persiste un actif de la Banque d'Images (binaire + métadonnées) dans le
+   * dossier `bank` de la BDD Locale, en miroir concordant du Registre Web.
+   * Le chemin relatif est exprimé par rapport à `bank/` (ex: `nom/nom.jpg`).
+   */
+  async saveBankAsset(assetRelPath: string, content: string): Promise<{ success: boolean; path: string }> {
+    ensureLocalDB();
+    const safeRel = assetRelPath.replace(/^\/+/, '');
+    const fullPath = path.join(BANK_DIR, safeRel);
+    const dir = path.dirname(fullPath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    if (content.startsWith('data:')) {
+      const base64Data = content.split(',')[1];
+      fs.writeFileSync(fullPath, Buffer.from(base64Data, 'base64'));
+    } else {
+      fs.writeFileSync(fullPath, content, 'utf8');
+    }
+    const targetPath = path.relative(LOCAL_DB_ROOT, fullPath).replace(/\\/g, '/');
+    console.log(`🏦 [LOCAL_DB] [BANK] Actif persisté : ${targetPath}`);
+    return { success: true, path: targetPath };
+  },
+
+  /**
    * Recherche dans l'INDEX_CHROMA par nom de fichier ou métadonnées.
    * Utilisé par l'IA pour structurer les réponses.
    */
@@ -472,11 +513,46 @@ export const localDB = {
     const REGISTRY_ROOT = path.join(process.cwd(), '.registry');
     const mirrored: string[] = [];
 
+    // Miroir dédié du dossier « bank » de la BDD Web (Registre) vers la BDD Locale.
+    // Recopie l'arborescence COMPLÈTE (dossiers + fichiers binaires et metadata.json)
+    // afin que les actifs peuplés en mode Web (Banque d'Images) aient un répertoire
+    // concordant dans la BDD Locale, prêt à être indexé/vectorisé dans Vecteurs ChromaDB.
+    const mirrorBankSubtree = (dir: string, targetBase: string) => {
+      if (!fs.existsSync(dir)) return;
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        const src = path.join(dir, entry.name);
+        const dest = path.join(targetBase, entry.name);
+        if (entry.isDirectory()) {
+          if (!fs.existsSync(dest)) {
+            fs.mkdirSync(dest, { recursive: true });
+            mirrored.push(path.relative(LOCAL_DB_ROOT, dest).replace(/\\/g, '/'));
+          }
+          mirrorBankSubtree(src, dest);
+        } else {
+          if (!fs.existsSync(dest)) {
+            fs.copyFileSync(src, dest);
+            mirrored.push(path.relative(LOCAL_DB_ROOT, dest).replace(/\\/g, '/'));
+          }
+        }
+      }
+    };
+
+    const bankSrc = path.join(REGISTRY_ROOT, 'bank');
+    if (fs.existsSync(bankSrc)) {
+      if (!fs.existsSync(BANK_DIR)) fs.mkdirSync(BANK_DIR, { recursive: true });
+      mirrorBankSubtree(bankSrc, BANK_DIR);
+    }
+
+    // Miroir squelette (comportement historique) : reflète l'arborescence du Registre
+    // dans INDEX_CHROMA pour les autres répertoires (le dossier « bank » est déjà
+    // traité par le miroir dédié ci-dessus afin d'éviter tout doublon).
     const mirror = (dir: string) => {
       if (!fs.existsSync(dir)) return;
       const items = fs.readdirSync(dir, { withFileTypes: true });
       for (const item of items) {
         if (item.isDirectory()) {
+          if (item.name.toLowerCase() === 'bank') continue;
           const relPath = path.relative(REGISTRY_ROOT, path.join(dir, item.name)).replace(/\\/g, '/');
           const mirrorPath = path.join(INDEX_CHROMA_DIR, relPath);
           if (!fs.existsSync(mirrorPath)) {

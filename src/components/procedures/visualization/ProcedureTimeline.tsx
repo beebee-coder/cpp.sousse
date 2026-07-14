@@ -37,7 +37,7 @@ export function ProcedureTimeline({ steps, currentStepIndex, completedSteps }: P
               
               <div className="absolute top-10 w-24 text-center">
                  <p className={cn(
-                   "text-[8px] font-headline font-bold uppercase tracking-widest leading-tight truncate",
+                   "text-micro font-headline font-bold uppercase tracking-widest leading-tight truncate",
                    isCurrent ? "text-primary" : "text-muted-foreground"
                  )}>
                    {step.title}

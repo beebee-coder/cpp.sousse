@@ -83,14 +83,48 @@ export const postgresClient = {
     const fullPath = path.join(REGISTRY_ROOT, relPath);
     if (!fs.existsSync(fullPath)) throw new Error("FICHIER_INTROUVABLE");
     
+    // [Point 5] MIME dérivé de l'extension réelle (pas d'écrasement webm -> image/jpeg).
+    const EXT_MIME: Record<string, string> = {
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.png': 'image/png',
+      '.gif': 'image/gif',
+      '.webp': 'image/webp',
+      '.bmp': 'image/bmp',
+      '.mp4': 'video/mp4',
+      '.webm': 'video/webm',
+      '.mov': 'video/quicktime',
+    };
+
     const ext = path.extname(fullPath).toLowerCase();
-    if (['.jpg', '.jpeg', '.png', '.mp4'].includes(ext)) {
+    if (EXT_MIME[ext]) {
       const buffer = fs.readFileSync(fullPath);
-      const mime = ext === '.mp4' ? 'video/mp4' : 'image/jpeg';
-      return `data:${mime};base64,${buffer.toString('base64')}`;
+      return `data:${EXT_MIME[ext]};base64,${buffer.toString('base64')}`;
     }
     
     return fs.readFileSync(fullPath, 'utf8');
+  },
+
+  async exists(relPath: string): Promise<boolean> {
+    const fullPath = path.join(REGISTRY_ROOT, relPath);
+    return fs.existsSync(fullPath);
+  },
+
+  async listBankAssets(): Promise<any[]> {
+    const bankRoot = path.join(REGISTRY_ROOT, 'bank');
+    if (!fs.existsSync(bankRoot)) return [];
+    const items: any[] = [];
+    for (const entry of fs.readdirSync(bankRoot, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const metaPath = path.join(bankRoot, entry.name, 'metadata.json');
+      if (!fs.existsSync(metaPath)) continue;
+      try {
+        items.push(JSON.parse(fs.readFileSync(metaPath, 'utf8')));
+      } catch {
+        // metadata.json corrompu : ignoré
+      }
+    }
+    return items;
   },
 
   async saveFile(relPath: string, content: string) {

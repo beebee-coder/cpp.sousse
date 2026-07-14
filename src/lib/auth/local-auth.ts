@@ -11,17 +11,16 @@ export const localAuth = {
     const session = localStorage.getItem('visionode_local_session');
     if (session) {
       try {
-        return JSON.parse(session);
+        const parsed = JSON.parse(session);
+        return parsed && parsed.id ? parsed : null;
       } catch {
         return null;
       }
     }
-    // Default offline fallback user
-    return {
-      id: 'usr-local-001',
-      email: 'operator@local.internal',
-      role: 'technician',
-    };
+    // Aucun utilisateur en session locale : on laisse la page de connexion
+    // prendre le relais (mode local) plutôt que de se connecter automatiquement
+    // avec un compte factice. L'utilisateur s'authentifie avec ses identifiants.
+    return null;
   },
   
   saveSession: (user: SessionUser) => {

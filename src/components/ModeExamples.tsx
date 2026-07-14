@@ -149,7 +149,7 @@ export function Example6_DashboardOverview() {
 
   return (
     <div className="p-6 space-y-6">
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {/* Card 1: Current Mode */}
         <div className="bg-slate-900 border border-slate-700 rounded p-4">
           <div className="text-sm text-slate-400 mb-2">Current Mode</div>
@@ -236,7 +236,7 @@ export function Example9_CompletePage() {
 
       {/* Main Content */}
       <main className="p-6 max-w-6xl mx-auto">
-        <div className="grid grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
           {/* Current Status */}
           <div className="bg-slate-900 border border-slate-700 rounded-lg p-6">
             <h2 className="text-lg font-bold mb-4">Status</h2>

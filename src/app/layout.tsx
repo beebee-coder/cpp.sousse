@@ -3,13 +3,14 @@ import './globals.css';
 import { PlatformProvider } from '@/components/PlatformProvider';
 import { DeepLinkHandler } from '@/components/DeepLinkHandler';
 import { Toaster } from '@/components/ui/toaster';
-import { AmbientBackground } from '@/components/three/AmbientBackground';
 import { Inter, Space_Grotesk, Source_Code_Pro } from 'next/font/google';
 import { auth } from '@/lib/auth';
 import { SessionProvider } from '@/components/SessionProvider';
 import { AppChrome } from '@/components/dashboard/AppChrome';
 import { ModeAwareLayout } from '@/components/ModeAwareLayout';
+import { AuthGate } from '@/components/auth/AuthGate';
 import type { SessionUser } from '@/components/SessionProvider';
+import { LazyAmbientBackground } from '@/components/three/LazyAmbientBackground';
 
 const fontInter = Inter({ 
   subsets: ['latin'], 
@@ -69,8 +70,9 @@ export default async function RootLayout({
         <PlatformProvider>
           <SessionProvider initialUser={initialUser}>
             <ModeAwareLayout>
-              <AmbientBackground />
+              <LazyAmbientBackground />
               <DeepLinkHandler />
+              <AuthGate />
               <AppChrome>{children}</AppChrome>
               <Toaster />
             </ModeAwareLayout>

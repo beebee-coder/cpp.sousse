@@ -6,8 +6,10 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
 import { MetadataEditor } from './MetadataEditor';
 import { StepEditor } from './StepEditor';
+import { ProcedureMedia } from '@/lib/procedures/types';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Save, Eye, Settings2, Layers, Mic, MicOff, Activity } from 'lucide-react';
 import { FullProcedure, ProcedureStep } from '@/lib/procedures/types';
@@ -71,7 +73,8 @@ export function DynamicProcedureForm({ onSubmit, isSaving }: DynamicProcedureFor
       description: '',
       items: []
     },
-    steps: []
+    steps: [],
+    mediaLibrary: []
   });
 
   const updateMetadata = (meta: any) => {
@@ -80,6 +83,10 @@ export function DynamicProcedureForm({ onSubmit, isSaving }: DynamicProcedureFor
 
   const updateSteps = (steps: ProcedureStep[]) => {
     setProcedure(prev => ({ ...prev, steps }));
+  };
+
+  const updateMediaLibrary = (media: ProcedureMedia[]) => {
+    setProcedure(prev => ({ ...prev, mediaLibrary: media }));
   };
 
   const updateDefaults = (patch: Partial<ProcedureDefaults>) => {
@@ -156,6 +163,7 @@ export function DynamicProcedureForm({ onSubmit, isSaving }: DynamicProcedureFor
       fields: [],
       fallbacks: [],
       media: {},
+      mediaRefs: [],
       notes: [],
       dependencies: {
         prerequisites: [],
@@ -269,7 +277,7 @@ export function DynamicProcedureForm({ onSubmit, isSaving }: DynamicProcedureFor
       const timeout = {
         ...(step.validation?.timeout || { value: 120, unit: 'seconds' }),
         ...(cfgTimeoutAction ? { action: cfgTimeoutAction as 'abort' | 'warn' | 'retry' } : {}),
-      };
+      } as ProcedureStep['validation']['timeout'];
       if (!cfgTimeoutAction) {
         console.log('[SYNC][APPLY] timeout.action : ignoré (valeur vide)');
       }
@@ -527,26 +535,28 @@ export function DynamicProcedureForm({ onSubmit, isSaving }: DynamicProcedureFor
   return (
     <div className="space-y-6 pb-20">
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
-            <TabsList className="bg-muted/30 border border-border p-1">
-              <TabsTrigger value="config" className="text-[10px] uppercase font-bold px-6 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-                <Settings2 className="w-3.5 h-3.5 mr-2" /> Configuration
-              </TabsTrigger>
-              <TabsTrigger value="steps" className="text-[10px] uppercase font-bold px-6 data-[state=active]:bg-secondary data-[state=active]:text-secondary-foreground">
-                <Layers className="w-3.5 h-3.5 mr-2" /> Séquençage
-              </TabsTrigger>
-              <TabsTrigger value="preview" className="text-[10px] uppercase font-bold px-6 data-[state=active]:bg-white data-[state=active]:text-black">
-                <Eye className="w-3.5 h-3.5 mr-2" /> Aperçu
-              </TabsTrigger>
-            </TabsList>
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between mb-6">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-3 min-w-0">
+            <div className="overflow-x-auto terminal-scroll">
+              <TabsList className="bg-muted/30 border border-border p-1 inline-flex w-max">
+                <TabsTrigger value="config" className="text-[10px] uppercase font-bold px-3 sm:px-6 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                  <Settings2 className="w-3.5 h-3.5 mr-2" /> Configuration
+                </TabsTrigger>
+                <TabsTrigger value="steps" className="text-[10px] uppercase font-bold px-3 sm:px-6 data-[state=active]:bg-secondary data-[state=active]:text-secondary-foreground">
+                  <Layers className="w-3.5 h-3.5 mr-2" /> Séquençage
+                </TabsTrigger>
+                <TabsTrigger value="preview" className="text-[10px] uppercase font-bold px-3 sm:px-6 data-[state=active]:bg-white data-[state=active]:text-black">
+                  <Eye className="w-3.5 h-3.5 mr-2" /> Aperçu
+                </TabsTrigger>
+              </TabsList>
+            </div>
 
               <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-muted/10 border border-border rounded-sm">
-                <p className="text-[9px] font-code text-muted-foreground uppercase">
+                <p className="text-tiny font-code text-muted-foreground uppercase">
                   Champ : <span className="text-primary font-bold">{activeTab === 'config' ? activeField : `Étape ${activeStepIndex + 1} / ${activeStepField}`}</span>
                 </p>
               {lastTranscript && (
-                <p className="text-[8px] font-code text-muted-foreground/70 max-w-xs truncate">
+                <p className="text-micro font-code text-muted-foreground/70 max-w-xs truncate">
                   "{lastTranscript}"
                 </p>
               )}
@@ -556,7 +566,7 @@ export function DynamicProcedureForm({ onSubmit, isSaving }: DynamicProcedureFor
                 variant={voice.isListening ? "destructive" : "secondary"}
                 onClick={() => voice.isListening ? voice.stopListening() : voice.startListening()}
                 disabled={!voice.isSupported}
-                className="h-7 gap-1.5 text-[9px] uppercase font-bold"
+                className="h-7 gap-1.5 text-tiny uppercase font-bold"
               >
                 {voice.isListening ? (
                   <><MicOff className="w-3 h-3" /> Stop</>
@@ -567,10 +577,10 @@ export function DynamicProcedureForm({ onSubmit, isSaving }: DynamicProcedureFor
             </div>
           </div>
 
-          <Button 
-            onClick={() => onSubmit(procedure)} 
+          <Button
+            onClick={() => onSubmit(procedure)}
             disabled={isSaving}
-            className="bg-primary text-primary-foreground font-bold uppercase text-[11px] h-10 px-8 shadow-[0_0_20px_rgba(50,181,212,0.2)]"
+            className="w-full lg:w-auto bg-primary text-primary-foreground font-bold uppercase text-[11px] h-10 px-8 shadow-[0_0_20px_rgba(50,181,212,0.2)]"
           >
             {isSaving ? "Synchronisation..." : "Enregistrer la Procédure"}
             <Save className="w-4 h-4 ml-2" />
@@ -578,8 +588,8 @@ export function DynamicProcedureForm({ onSubmit, isSaving }: DynamicProcedureFor
         </div>
 
         <TabsContent value="config" className="mt-0 focus-visible:ring-0">
-          <Card className="p-6 border-border bg-card/40 space-y-8">
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+          <Card className="p-6 panel-card space-y-8">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
               <div className="space-y-6">
                 <div className="flex items-center gap-2 pb-2 border-b border-primary/20">
                   <Settings2 className="w-4 h-4 text-primary" />
@@ -587,7 +597,7 @@ export function DynamicProcedureForm({ onSubmit, isSaving }: DynamicProcedureFor
                 </div>
                 <div className="space-y-4">
                   <div>
-                    <label className="text-[9px] font-bold uppercase text-muted-foreground block mb-1.5">Catégorie</label>
+                    <label className="text-tiny font-bold uppercase text-muted-foreground block mb-1.5">Catégorie</label>
                     <Select value={defaults.category} onValueChange={(val) => updateDefaults({ category: val })}>
                       <SelectTrigger className="bg-black/40 border h-10">
                         <SelectValue placeholder="SÉLECTION" />
@@ -601,7 +611,7 @@ export function DynamicProcedureForm({ onSubmit, isSaving }: DynamicProcedureFor
                     </Select>
                   </div>
                   <div>
-                    <label className="text-[9px] font-bold uppercase text-muted-foreground block mb-1.5">Sous-catégorie</label>
+                    <label className="text-tiny font-bold uppercase text-muted-foreground block mb-1.5">Sous-catégorie</label>
                     <Select value={defaults.subcategory} onValueChange={(val) => updateDefaults({ subcategory: val })}>
                       <SelectTrigger className="bg-black/40 border h-10">
                         <SelectValue placeholder="SÉLECTION" />
@@ -614,9 +624,9 @@ export function DynamicProcedureForm({ onSubmit, isSaving }: DynamicProcedureFor
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                      <label className="text-[9px] font-bold uppercase text-muted-foreground block mb-1.5">Département</label>
+                      <label className="text-tiny font-bold uppercase text-muted-foreground block mb-1.5">Département</label>
                       <Select value={defaults.department} onValueChange={(val) => updateDefaults({ department: val })}>
                         <SelectTrigger className="bg-black/40 border h-10">
                           <SelectValue placeholder="SÉLECTION" />
@@ -630,7 +640,7 @@ export function DynamicProcedureForm({ onSubmit, isSaving }: DynamicProcedureFor
                       </Select>
                     </div>
                     <div>
-                      <label className="text-[9px] font-bold uppercase text-muted-foreground block mb-1.5">Criticité</label>
+                      <label className="text-tiny font-bold uppercase text-muted-foreground block mb-1.5">Criticité</label>
                       <Select value={defaults.criticality} onValueChange={(val) => updateDefaults({ criticality: val })}>
                         <SelectTrigger className="bg-black/40 border h-10">
                           <SelectValue placeholder="SÉLECTION" />
@@ -645,7 +655,7 @@ export function DynamicProcedureForm({ onSubmit, isSaving }: DynamicProcedureFor
                     </div>
                   </div>
                   <div>
-                    <label className="text-[9px] font-bold uppercase text-muted-foreground block mb-1.5">Langue</label>
+                    <label className="text-tiny font-bold uppercase text-muted-foreground block mb-1.5">Langue</label>
                     <Select value={defaults.language} onValueChange={(val) => updateDefaults({ language: val })}>
                       <SelectTrigger className="bg-black/40 border h-10">
                         <SelectValue placeholder="SÉLECTION" />
@@ -668,7 +678,7 @@ export function DynamicProcedureForm({ onSubmit, isSaving }: DynamicProcedureFor
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="text-[9px] font-bold uppercase text-muted-foreground block mb-1.5">Type d'action</label>
+                    <label className="text-tiny font-bold uppercase text-muted-foreground block mb-1.5">Type d'action</label>
                     <Select value={defaults.defaultActionType} onValueChange={(val) => updateDefaults({ defaultActionType: val })}>
                       <SelectTrigger className="bg-black/40 border h-10">
                         <SelectValue placeholder="SÉLECTION" />
@@ -682,7 +692,7 @@ export function DynamicProcedureForm({ onSubmit, isSaving }: DynamicProcedureFor
                     </Select>
                   </div>
                   <div>
-                    <label className="text-[9px] font-bold uppercase text-muted-foreground block mb-1.5">Opération vanne</label>
+                    <label className="text-tiny font-bold uppercase text-muted-foreground block mb-1.5">Opération vanne</label>
                     <Select value={defaults.defaultValveOperation} onValueChange={(val) => updateDefaults({ defaultValveOperation: val })}>
                       <SelectTrigger className="bg-black/40 border h-10">
                         <SelectValue placeholder="SÉLECTION" />
@@ -696,7 +706,7 @@ export function DynamicProcedureForm({ onSubmit, isSaving }: DynamicProcedureFor
                     </Select>
                   </div>
                   <div>
-                    <label className="text-[9px] font-bold uppercase text-muted-foreground block mb-1.5">Type de validation</label>
+                    <label className="text-tiny font-bold uppercase text-muted-foreground block mb-1.5">Type de validation</label>
                     <Select value={defaults.defaultValidationType} onValueChange={(val) => updateDefaults({ defaultValidationType: val })}>
                       <SelectTrigger className="bg-black/40 border h-10">
                         <SelectValue placeholder="SÉLECTION" />
@@ -710,7 +720,7 @@ export function DynamicProcedureForm({ onSubmit, isSaving }: DynamicProcedureFor
                     </Select>
                   </div>
                   <div>
-                    <label className="text-[9px] font-bold uppercase text-muted-foreground block mb-1.5">Action timeout</label>
+                    <label className="text-tiny font-bold uppercase text-muted-foreground block mb-1.5">Action timeout</label>
                     <Select value={defaults.defaultTimeoutAction} onValueChange={(val) => updateDefaults({ defaultTimeoutAction: val })}>
                       <SelectTrigger className="bg-black/40 border h-10">
                         <SelectValue placeholder="SÉLECTION" />
@@ -724,7 +734,7 @@ export function DynamicProcedureForm({ onSubmit, isSaving }: DynamicProcedureFor
                     </Select>
                   </div>
                   <div>
-                    <label className="text-[9px] font-bold uppercase text-muted-foreground block mb-1.5">Type d'alarme</label>
+                    <label className="text-tiny font-bold uppercase text-muted-foreground block mb-1.5">Type d'alarme</label>
                     <Select value={defaults.defaultAlarmType} onValueChange={(val) => updateDefaults({ defaultAlarmType: val })}>
                       <SelectTrigger className="bg-black/40 border h-10">
                         <SelectValue placeholder="SÉLECTION" />
@@ -738,7 +748,7 @@ export function DynamicProcedureForm({ onSubmit, isSaving }: DynamicProcedureFor
                     </Select>
                   </div>
                   <div>
-                    <label className="text-[9px] font-bold uppercase text-muted-foreground block mb-1.5">Sévérité d'alarme</label>
+                    <label className="text-tiny font-bold uppercase text-muted-foreground block mb-1.5">Sévérité d'alarme</label>
                     <Select value={defaults.defaultAlarmSeverity} onValueChange={(val) => updateDefaults({ defaultAlarmSeverity: val })}>
                       <SelectTrigger className="bg-black/40 border h-10">
                         <SelectValue placeholder="SÉLECTION" />
@@ -752,7 +762,7 @@ export function DynamicProcedureForm({ onSubmit, isSaving }: DynamicProcedureFor
                     </Select>
                   </div>
                   <div>
-                    <label className="text-[9px] font-bold uppercase text-muted-foreground block mb-1.5">Vitesse</label>
+                    <label className="text-tiny font-bold uppercase text-muted-foreground block mb-1.5">Vitesse</label>
                     <Select value={defaults.defaultSpeedMode} onValueChange={(val) => updateDefaults({ defaultSpeedMode: val })}>
                       <SelectTrigger className="bg-black/40 border h-10">
                         <SelectValue placeholder="SÉLECTION" />
@@ -766,7 +776,7 @@ export function DynamicProcedureForm({ onSubmit, isSaving }: DynamicProcedureFor
                     </Select>
                   </div>
                   <div>
-                    <label className="text-[9px] font-bold uppercase text-muted-foreground block mb-1.5">Durée par défaut (s)</label>
+                    <label className="text-tiny font-bold uppercase text-muted-foreground block mb-1.5">Durée par défaut (s)</label>
                     <Input
                       type="number"
                       value={defaults.defaultDuration}
@@ -776,7 +786,7 @@ export function DynamicProcedureForm({ onSubmit, isSaving }: DynamicProcedureFor
                     />
                   </div>
                   <div>
-                    <label className="text-[9px] font-bold uppercase text-muted-foreground block mb-1.5">Label bouton</label>
+                    <label className="text-tiny font-bold uppercase text-muted-foreground block mb-1.5">Label bouton</label>
                     <Input
                       value={defaults.defaultUiLabel}
                       onChange={(e) => updateDefaults({ defaultUiLabel: e.target.value })}
@@ -785,7 +795,7 @@ export function DynamicProcedureForm({ onSubmit, isSaving }: DynamicProcedureFor
                     />
                   </div>
                   <div className="col-span-2">
-                    <label className="text-[9px] font-bold uppercase text-muted-foreground block mb-1.5">Expression de succès</label>
+                    <label className="text-tiny font-bold uppercase text-muted-foreground block mb-1.5">Expression de succès</label>
                     <Input
                       value={defaults.defaultSuccessExpression}
                       onChange={(e) => updateDefaults({ defaultSuccessExpression: e.target.value })}
@@ -798,41 +808,62 @@ export function DynamicProcedureForm({ onSubmit, isSaving }: DynamicProcedureFor
                 <div className="mt-6 p-4 bg-muted/10 border border-border/40 rounded-sm">
                   <div className="flex items-center gap-2 mb-3">
                     <Activity className="w-3.5 h-3.5 text-secondary" />
-                    <span className="text-[9px] font-bold text-secondary uppercase tracking-widest">Aperçu de la configuration par défaut</span>
+                    <span className="text-tiny font-bold text-secondary uppercase tracking-widest">Aperçu de la configuration par défaut</span>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {defaults.defaultActionType ? (
-                      <Badge variant="outline" className="text-[9px] font-code border-primary/40 text-primary">
+                      <Badge variant="outline" className="text-tiny font-code border-primary/40 text-primary">
                         Action: {defaults.defaultActionType}
                       </Badge>
                     ) : null}
                     {defaults.defaultValveOperation ? (
-                      <Badge variant="outline" className="text-[9px] font-code border-primary/40 text-primary">
+                      <Badge variant="outline" className="text-tiny font-code border-primary/40 text-primary">
                         Vanne: {defaults.defaultValveOperation}
                       </Badge>
                     ) : null}
                     {defaults.defaultAlarmType ? (
-                      <Badge variant="outline" className="text-[9px] font-code border-destructive/40 text-destructive">
+                      <Badge variant="outline" className="text-tiny font-code border-destructive/40 text-destructive">
                         Alarme: {defaults.defaultAlarmType}
                       </Badge>
                     ) : null}
                     {defaults.defaultDuration ? (
-                      <Badge variant="outline" className="text-[9px] font-code border-secondary/40 text-secondary">
+                      <Badge variant="outline" className="text-tiny font-code border-secondary/40 text-secondary">
                         Durée: {defaults.defaultDuration}s
                       </Badge>
                     ) : null}
                     {defaults.defaultUiLabel ? (
-                      <Badge variant="outline" className="text-[9px] font-code border-secondary/40 text-secondary">
+                      <Badge variant="outline" className="text-tiny font-code border-secondary/40 text-secondary">
                         Bouton: {defaults.defaultUiLabel}
                       </Badge>
                     ) : null}
                     {defaults.defaultSuccessExpression ? (
-                      <Badge variant="outline" className="text-[9px] font-code border-secondary/40 text-secondary">
+                      <Badge variant="outline" className="text-tiny font-code border-secondary/40 text-secondary">
                         Expression: {defaults.defaultSuccessExpression}
                       </Badge>
                     ) : null}
                   </div>
                 </div>
+              </div>
+            </div>
+
+            <div className="pt-6 border-t border-border/40 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Settings2 className="w-4 h-4 text-primary" />
+                <div>
+                  <h3 className="text-[10px] font-bold text-primary uppercase tracking-[0.2em]">Médias dans la séquence (image / vidéo)</h3>
+                  <p className="text-tiny text-muted-foreground/70 font-code mt-1">
+                    Option : active la capture / upload de médias dans l'onglet Séquençage.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <Badge variant="outline" className={`text-tiny font-code border-border ${defaults.enableMedia ? 'text-primary border-primary/40' : 'text-muted-foreground'}`}>
+                  {defaults.enableMedia ? 'ACTIVÉ' : 'DÉSACTIVÉ'}
+                </Badge>
+                <Switch
+                  checked={defaults.enableMedia}
+                  onCheckedChange={(val) => updateDefaults({ enableMedia: val })}
+                />
               </div>
             </div>
           </Card>
@@ -842,6 +873,8 @@ export function DynamicProcedureForm({ onSubmit, isSaving }: DynamicProcedureFor
           <StepEditor
             key={`step-editor-${defaults.defaultActionType}-${defaults.defaultDuration}`}
             steps={procedure.steps || []}
+            mediaLibrary={procedure.mediaLibrary || []}
+            onMediaLibraryChange={updateMediaLibrary}
             onChange={updateSteps}
             defaults={defaults}
             createStep={createStepFromDefaults}

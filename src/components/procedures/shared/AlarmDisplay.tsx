@@ -23,7 +23,7 @@ export function AlarmDisplay({ alarm, onResolve }: AlarmDisplayProps) {
           </div>
         </div>
         <div className="px-2 py-1 bg-destructive/20 border border-destructive/40 rounded-sm">
-          <span className="text-[9px] font-code font-bold text-destructive uppercase">{alarm.severity}</span>
+          <span className="text-tiny font-code font-bold text-destructive uppercase">{alarm.severity}</span>
         </div>
       </div>
 

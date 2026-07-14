@@ -4,9 +4,9 @@ import { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { 
-  CheckCircle2, 
-  Play, 
+import {
+  CheckCircle2,
+  Play,
   ShieldCheck,
   Zap,
   RotateCcw,
@@ -17,8 +17,8 @@ import {
   MessageSquare,
   FileText
 } from 'lucide-react';
-import { FullProcedure, PrerequisiteItem } from '@/lib/procedures/types';
-import { ExecutionEngine, ExecutionState } from '@/lib/procedures/services/execution-engine.service';
+import { FullProcedure } from '@/lib/procedures/types';
+import { useProcedureExecution } from '@/lib/procedures/hooks/useProcedureExecution';
 import { StepGuide } from './StepGuide';
 import { ProgressTracker } from './ProgressTracker';
 import { useVoice } from '@/hooks/use-voice';
@@ -32,13 +32,35 @@ interface ProcedureExecutorProps {
 }
 
 export function ProcedureExecutor({ procedure }: ProcedureExecutorProps) {
-  const [engine] = useState(() => new ExecutionEngine(procedure));
-  const [state, setState] = useState<ExecutionState>(() => engine.getState());
   const [currentTime, setCurrentTime] = useState(Date.now());
   const [advice, setAdvice] = useState<AssistantAdvice | null>(null);
   const [isAssistantLoading, setIsAssistantLoading] = useState(false);
-  const [report, setReport] = useState<any>(null);
-  const [currentPrerequisite, setCurrentPrerequisite] = useState<PrerequisiteItem | null>(null);
+  const [currentPrerequisite, setCurrentPrerequisite] = useState<FullProcedure['prerequisites']['items'][number] | null>(null);
+
+  const {
+    status,
+    currentStepIndex,
+    currentStep,
+    totalSteps,
+    isRunning,
+    isCompleted,
+    isAlarm,
+    confirmedPrerequisites,
+    stepReport,
+    alarm,
+    start,
+    nextStep,
+    triggerAlarm,
+    resolveAlarm,
+    confirmPrerequisite,
+    confirmAllPrerequisites,
+  } = useProcedureExecution({
+    procedure,
+    onComplete: (execState) => {
+      const finalReport = reportingService.generateReport(procedure, execState);
+      console.log('[EXECUTOR] Rapport généré:', finalReport);
+    },
+  });
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(Date.now()), 1000);
@@ -46,31 +68,49 @@ export function ProcedureExecutor({ procedure }: ProcedureExecutorProps) {
   }, []);
 
   useEffect(() => {
-    if (state.status === 'RUNNING' || state.status === 'WAITING_CONFIRMATION') {
+    if (status === 'RUNNING' || status === 'WAITING_CONFIRMATION') {
       setIsAssistantLoading(true);
-      procedureAssistant.getStepAdvice(procedure, state).then(res => {
+      procedureAssistant.getStepAdvice(procedure, {
+        currentStepIndex,
+        status,
+        completedSteps: stepReport.filter(r => r.status === 'completed').map(r => r.stepId),
+        activeAlarms: alarm || [],
+        confirmedPrerequisites,
+      } as any).then(res => {
         setAdvice(res);
         setIsAssistantLoading(false);
-      });
+      }).catch(() => setIsAssistantLoading(false));
     }
-  }, [state.currentStepIndex, state.status, procedure]);
+  }, [currentStepIndex, status, procedure, stepReport, alarm, confirmedPrerequisites]);
 
-  const handleConfirmPrerequisites = () => setState(engine.confirmPrerequisites());
-  const handleNext = () => {
-    const nextState = engine.nextStep();
-    setState(nextState);
-    if (nextState.status === 'COMPLETED') {
-      const finalReport = reportingService.generateReport(procedure, nextState);
-      setReport(finalReport);
+  const voice = useVoice({
+    onResult: (text) => {
+      const command = matchVoiceAction(text);
+      if (command) {
+        if (command.action === 'START' && status === 'IDLE') start();
+        if (command.action === 'NEXT') nextStep();
+        if (command.action === 'ALARM') triggerAlarm('VOICE_EMERGENCY');
+        if (command.action === 'CONFIRM' && status === 'PREREQUISITES_CHECK') {
+          if (currentPrerequisite) confirmPrerequisite(currentPrerequisite.id);
+        }
+      }
+    },
+    autoRestart: true,
+    lang: 'fr-FR'
+  });
+
+  useEffect(() => {
+    if (status === 'PREREQUISITES_CHECK' && currentPrerequisite) {
+      const utterance = new SpeechSynthesisUtterance(currentPrerequisite.manualCheckInstruction || `Prérequis : ${currentPrerequisite.displayName}. Veuillez confirmer.`);
+      utterance.lang = 'fr-FR';
+      utterance.rate = 1.0;
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(utterance);
     }
-  };
-  const handleTriggerAlarm = (code: string) => setState(engine.triggerAlarm(code));
-  const handleResolveAlarm = (code: string) => setState(engine.resolveAlarm(code));
+  }, [currentPrerequisite, status]);
 
   const handleStart = () => {
-    const nextState = engine.start();
-    setState(nextState);
-    
+    start();
     const prerequisites = procedure.prerequisites.items;
     if (prerequisites.length > 0) {
       setCurrentPrerequisite(prerequisites[0]);
@@ -79,13 +119,8 @@ export function ProcedureExecutor({ procedure }: ProcedureExecutorProps) {
 
   const handleConfirmPrerequisite = () => {
     if (!currentPrerequisite) return;
-    
-    const nextState = engine.confirmNextPrerequisite(currentPrerequisite.id);
-    setState(nextState);
-    
-    const prerequisites = procedure.prerequisites.items;
-    const remaining = prerequisites.filter(p => !nextState.confirmedPrerequisites.includes(p.id));
-    
+    const newConfirmed = confirmPrerequisite(currentPrerequisite.id);
+    const remaining = procedure.prerequisites.items.filter(p => !newConfirmed.includes(p.id));
     if (remaining.length > 0) {
       setCurrentPrerequisite(remaining[0]);
     } else {
@@ -93,31 +128,12 @@ export function ProcedureExecutor({ procedure }: ProcedureExecutorProps) {
     }
   };
 
-  const voice = useVoice({
-    onResult: (text) => {
-      const command = matchVoiceAction(text);
-      if (command) {
-        if (command.action === 'START' && state.status === 'IDLE') handleStart();
-        if (command.action === 'NEXT') handleNext();
-        if (command.action === 'ALARM') handleTriggerAlarm('VOICE_EMERGENCY');
-        if (command.action === 'CONFIRM' && state.status === 'PREREQUISITES_CHECK') handleConfirmPrerequisite();
-      }
-    },
-    autoRestart: true,
-    lang: 'fr-FR'
-  });
+  const handleConfirmPrerequisites = () => {
+    confirmAllPrerequisites();
+    setCurrentPrerequisite(null);
+  };
 
-  useEffect(() => {
-    if (state.status === 'PREREQUISITES_CHECK' && currentPrerequisite) {
-      const utterance = new SpeechSynthesisUtterance(currentPrerequisite.manualCheckInstruction || `Prérequis : ${currentPrerequisite.displayName}. Veuillez confirmer.`);
-      utterance.lang = 'fr-FR';
-      utterance.rate = 1.0;
-      window.speechSynthesis.cancel();
-      window.speechSynthesis.speak(utterance);
-    }
-  }, [currentPrerequisite, state.status]);
-
-  const currentStep = state.currentStepIndex >= 0 ? procedure.steps[state.currentStepIndex] : null;
+  const displayCurrentStep = currentStepIndex >= 0 ? procedure.steps[currentStepIndex] : null;
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-full">
@@ -126,12 +142,12 @@ export function ProcedureExecutor({ procedure }: ProcedureExecutorProps) {
           <div className="flex items-center gap-4">
             <div className={cn(
               "w-3 h-3 rounded-full animate-pulse shadow-[0_0_10px_rgba(var(--primary),0.5)]",
-              state.status === 'RUNNING' ? "bg-secondary" : 
-              state.status === 'ALARM' ? "bg-destructive" : "bg-primary"
+              status === 'RUNNING' ? "bg-secondary" : 
+              status === 'ALARM' ? "bg-destructive" : "bg-primary"
             )} />
             <div>
               <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Contrôle de conformité</p>
-              <h2 className="text-sm font-headline font-bold uppercase">{state.status.replace('_', ' ')}</h2>
+              <h2 className="text-sm font-headline font-bold uppercase">{status.replace('_', ' ')}</h2>
             </div>
           </div>
 
@@ -141,7 +157,7 @@ export function ProcedureExecutor({ procedure }: ProcedureExecutorProps) {
               size="sm" 
               onClick={() => voice.isListening ? voice.stopListening() : voice.startListening()}
               className={cn(
-                "h-9 px-4 text-[9px] font-bold uppercase transition-all",
+                "h-9 px-4 text-tiny font-bold uppercase transition-all",
                 voice.isListening ? "bg-red-500/10 border-red-500 text-red-500 animate-pulse" : "border-border text-muted-foreground"
               )}
             >
@@ -154,14 +170,14 @@ export function ProcedureExecutor({ procedure }: ProcedureExecutorProps) {
             <div className="text-right">
               <p className="text-[10px] font-bold text-muted-foreground uppercase">T+ EXÉCUTION</p>
               <p className="text-sm font-code font-bold text-primary">
-                {state.startTime ? Math.floor((currentTime - state.startTime) / 1000) : 0}s
+                {status === 'IDLE' ? '0s' : `${Math.floor((currentTime - (currentStepIndex >= 0 ? currentTime - 1000 : currentTime)) / 1000)}s`}
               </p>
             </div>
           </div>
         </Card>
 
         <div className="min-h-[500px]">
-          {state.status === 'IDLE' && (
+          {status === 'IDLE' && (
             <Card className="h-full flex flex-col items-center justify-center p-12 text-center bg-card/20 border-dashed border-primary/30">
               <Zap className="w-16 h-16 text-primary mb-6 animate-pulse" />
               <h2 className="text-2xl font-headline font-bold uppercase mb-2">Prêt pour Initialisation</h2>
@@ -174,7 +190,7 @@ export function ProcedureExecutor({ procedure }: ProcedureExecutorProps) {
             </Card>
           )}
 
-          {state.status === 'PREREQUISITES_CHECK' && (
+          {status === 'PREREQUISITES_CHECK' && (
             <Card className="p-8 border-primary/20 bg-card/40 space-y-6 shadow-2xl">
               <div className="flex items-center gap-3 border-b border-border pb-4">
                 <ShieldCheck className="w-6 h-6 text-primary" />
@@ -186,12 +202,12 @@ export function ProcedureExecutor({ procedure }: ProcedureExecutorProps) {
                   <div className="p-6 bg-black/40 border border-primary/30 rounded-sm">
                     <div className="flex items-center gap-3 mb-4">
                       <span className="text-[10px] font-bold text-primary uppercase tracking-widest">
-                        Étape {state.confirmedPrerequisites.length + 1} sur {procedure.prerequisites.items.length}
+                        Étape {confirmedPrerequisites.length + 1} sur {procedure.prerequisites.items.length}
                       </span>
                     </div>
                     <h4 className="text-lg font-headline font-bold uppercase mb-2">{currentPrerequisite.displayName}</h4>
                     <p className="text-sm font-code text-muted-foreground mb-4">{currentPrerequisite.description}</p>
-                    <div className="p-4 bg-primary/5 border border-primary/20 rounded-sm">
+                    <div className="p-4 info-card">
                       <p className="text-xs font-code text-primary">
                         <span className="font-bold">Instruction : </span>
                         {currentPrerequisite.manualCheckInstruction}
@@ -225,32 +241,43 @@ export function ProcedureExecutor({ procedure }: ProcedureExecutorProps) {
             </Card>
           )}
 
-          {(state.status === 'RUNNING' || state.status === 'ALARM' || state.status === 'WAITING_CONFIRMATION') && currentStep && (
+          {(status === 'RUNNING' || status === 'ALARM' || status === 'WAITING_CONFIRMATION') && displayCurrentStep && (
             <StepGuide 
-              step={currentStep} 
-              onNext={handleNext}
-              onAlarm={handleTriggerAlarm}
-              onResolve={handleResolveAlarm}
-              isAlarm={state.status === 'ALARM'}
-              startTime={state.stepStartTime || 0}
+              step={displayCurrentStep} 
+              onNext={() => nextStep()}
+              onAlarm={triggerAlarm}
+              onResolve={resolveAlarm}
+              isAlarm={status === 'ALARM'}
+              startTime={Date.now()}
             />
           )}
 
-          {state.status === 'COMPLETED' && (
-            <Card className="h-full flex flex-col items-center justify-center p-12 text-center bg-secondary/5 border-secondary/20 shadow-2xl">
+          {status === 'COMPLETED' && (
+            <Card className="h-full flex flex-col items-center justify-center p-12 text-center panel-card shadow-2xl">
               <CheckCircle2 className="w-16 h-16 text-secondary mb-6" />
               <h2 className="text-2xl font-headline font-bold uppercase mb-2 text-secondary">Mission Validée</h2>
               <p className="text-muted-foreground font-code text-sm max-w-md mb-8 uppercase">
                 Audit de conformité terminé. Rapport industriel généré pour archivage.
               </p>
-              {report && (
-                <div className="w-full max-w-lg mb-8 p-4 bg-black/40 border border-border rounded-sm text-left">
+              {stepReport.length > 0 && (
+                <div className="w-full max-w-lg mb-8 p-4 terminal-card text-left">
                   <div className="flex items-center gap-2 mb-3 text-secondary">
                     <FileText className="w-4 h-4" />
                     <span className="text-[10px] font-bold uppercase tracking-widest">Audit Summary</span>
                   </div>
                   <pre className="text-[10px] font-code text-muted-foreground whitespace-pre-wrap">
-                    {reportingService.toMarkdown(report)}
+                    {reportingService.toMarkdown({
+                      id: `report-${Date.now()}`,
+                      procedureCode: procedure.code,
+                      operatorId: 'admin_station',
+                      startTime: new Date().toISOString(),
+                      endTime: new Date().toISOString(),
+                      duration: stepReport.reduce((sum: number, r: any) => sum + r.duration, 0),
+                      stepsCompleted: stepReport.filter(r => r.status === 'completed').length,
+                      totalSteps: procedure.steps.length,
+                      alarmsTriggered: alarm || [],
+                      status: 'COMPLETED',
+                    })}
                   </pre>
                 </div>
               )}
@@ -270,8 +297,8 @@ export function ProcedureExecutor({ procedure }: ProcedureExecutorProps) {
       <aside className="space-y-6 flex flex-col h-full">
         <ProgressTracker 
           steps={procedure.steps} 
-          currentStepIndex={state.currentStepIndex}
-          completedSteps={state.completedSteps}
+          currentStepIndex={currentStepIndex}
+          completedSteps={stepReport.filter(r => r.status === 'completed').map(r => r.stepId)}
         />
 
         <Card className="p-4 border-secondary/20 bg-secondary/5 space-y-4">
@@ -285,24 +312,24 @@ export function ProcedureExecutor({ procedure }: ProcedureExecutorProps) {
           {advice ? (
             <div className="space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-500">
                <p className="text-[11px] font-code leading-relaxed text-white/90">
-                 {advice.text}
-               </p>
-               {advice.relatedDocs && advice.relatedDocs.length > 0 && (
-                 <div className="pt-2 space-y-2">
-                   <p className="text-[8px] font-bold text-muted-foreground uppercase tracking-widest">Référentiels RAG corrélés</p>
-                   {advice.relatedDocs.map((doc, i) => (
-                     <div key={i} className="p-2 bg-black/40 border border-border rounded-sm flex items-center justify-between group cursor-pointer hover:border-secondary/40 transition-colors">
-                        <span className="text-[9px] font-code text-muted-foreground truncate">{doc.metadata?.title || "Manuel technique"}</span>
-                        <MessageSquare className="w-3 h-3 text-secondary opacity-0 group-hover:opacity-100" />
-                     </div>
-                   ))}
-                 </div>
-               )}
+                  {advice.text}
+                </p>
+                {advice.relatedDocs && advice.relatedDocs.length > 0 && (
+                  <div className="pt-2 space-y-2">
+                    <p className="text-micro font-bold text-muted-foreground uppercase tracking-widest">Référentiels RAG corrélés</p>
+                    {advice.relatedDocs.map((doc: any, i: number) => (
+                      <div key={i} className="p-2 terminal-card flex items-center justify-between group cursor-pointer hover:border-secondary/40 transition-colors">
+                         <span className="text-tiny font-code text-muted-foreground truncate">{doc.metadata?.title || "Manuel technique"}</span>
+                         <MessageSquare className="w-3 h-3 text-secondary opacity-0 group-hover:opacity-100" />
+                      </div>
+                    ))}
+                  </div>
+                )}
             </div>
           ) : (
             <div className="py-8 flex flex-col items-center justify-center opacity-30">
                <Sparkles className="w-8 h-8 mb-2" />
-               <p className="text-[9px] font-code uppercase text-center">Traitement contextuel...</p>
+               <p className="text-tiny font-code uppercase text-center">Traitement contextuel...</p>
             </div>
           )}
         </Card>

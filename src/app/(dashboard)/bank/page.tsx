@@ -166,6 +166,22 @@ export default function BankPage() {
     }
   };
 
+  const BANK_ERRORS: Record<string, string> = {
+    NON_AUTHENTIFIÉ: "Session expirée. Reconnectez-vous.",
+    DONNEES_MANQUANTES: "Nom et capture requis.",
+    TYPE_INVALIDE: "Type d'actif invalide (image/vidéo).",
+    FORMAT_ATTENDU_DATA_URI: "Données binaires illisibles.",
+    MIME_NON_SUPPORTE: "Format de fichier non supporté.",
+    TYPE_INCOHÉRENT_IMAGE: "Le fichier n'est pas une image.",
+    TYPE_INCOHÉRENT_VIDEO: "Le fichier n'est pas une vidéo.",
+    DEPASSEMENT_TAILLE: "Fichier trop volumineux (max 50 Mo).",
+    NOM_INVALIDE: "Nom d'actif invalide.",
+    ACTIF_EXISTANT: "Un actif porte déjà ce nom. Renommez-le.",
+    BANK_WRITE_CLOUD_UNSUPPORTED: "Sauvegarde cloud indisponible (stockage non configuré).",
+    BANK_SAVE_FAILED: "Échec de l'enregistrement local.",
+    BANK_SAVE_CLOUD_FAILED: "Échec de l'enregistrement cloud.",
+  };
+
   const handleSave = async () => {
     if (!assetName.trim() || !capturedData) return;
     setIsSyncing(true);
@@ -186,7 +202,8 @@ export default function BankPage() {
         toast({ title: "Actif enregistré dans le Registre" });
         router.push('/bdd');
       } else {
-        throw new Error(res.error || "Erreur de sauvegarde");
+        const code = (res.error as string) || "ERREUR_INCONNUE";
+        throw new Error(BANK_ERRORS[code] || code);
       }
     } catch (e: any) {
       toast({ title: "Erreur", description: e.message, variant: "destructive" });

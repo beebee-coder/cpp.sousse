@@ -57,7 +57,7 @@ const MODE_CONFIG: Record<AppMode, ModeStyle> = {
   },
 };
 
-export function ModeBadge() {
+export function ModeBadge({ menuPlacement = 'bottom' }: { menuPlacement?: 'bottom' | 'top' }) {
   const { mode, isDesktop, online, localOnly, setLocalOnly } = useAppMode();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -113,7 +113,10 @@ export function ModeBadge() {
       </button>
 
       {open && (
-        <div className="absolute z-50 mt-2 w-full rounded-lg border border-border bg-popover/95 backdrop-blur p-1.5 shadow-glow animate-fade-up">
+        <div className={cn(
+          "absolute z-50 w-full rounded-lg border border-border bg-popover/95 backdrop-blur p-1.5 shadow-glow animate-fade-up",
+          menuPlacement === 'top' ? "bottom-full mb-2" : "mt-2 top-full"
+        )}>
           <p className="px-2 py-1 text-[9px] font-code uppercase tracking-widest text-muted-foreground/70">
             Stratégie de connexion
           </p>

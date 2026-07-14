@@ -4,9 +4,11 @@ export type AppError = Error & { code?: string; status?: number };
 
 export interface ProcedureFallback {
   id: string;
-  actionType: 'retry' | 'abort' | 'skip' | 'manual_override' | 'alternative_step';
+  title: string;
   description: string;
-  parameters?: Record<string, JsonValue>;
+  condition: string;
+  action: string;
+  estimatedTime: number;
 }
 
 export interface PostExecutionCheck {
