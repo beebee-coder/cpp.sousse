@@ -1,0 +1,44 @@
+use crate::vector_store::storage::VectorStore;
+use std::sync::Arc;
+
+pub struct VectorSearchEngine {
+    store: Arc<VectorStore>,
+}
+
+impl VectorSearchEngine {
+    pub fn new(store: Arc<VectorStore>) -> Self {
+        Self { store }
+    }
+
+    pub fn search(&self, query: &str, top_k: usize) -> Result<Vec<crate::vector_store::SearchResult>, String> {
+        self.store.search(query, top_k).map_err(|e| e.to_string())
+    }
+
+    pub fn search_with_origin(&self, query: &str, origin: &str, top_k: usize) -> Result<Vec<crate::vector_store::SearchResult>, String> {
+        let results = self.store.search(query, top_k).map_err(|e| e.to_string())?;
+        Ok(results.into_iter().filter(|r| r.document.metadata.origin == origin).collect())
+    }
+
+    pub fn get_context_for_query(&self, query: &str, max_contexts: usize) -> String {
+        match self.search(query, max_contexts) {
+            Ok(results) => {
+                if results.is_empty() {
+                    return String::new();
+                }
+                results.into_iter().map(|r| {
+                    let m = &r.document.metadata;
+                    let path = [m.parent_dir.as_deref(), m.file_name.as_deref()]
+                        .iter()
+                        .flatten()
+                        .filter(|s| !s.is_empty())
+                        .map(|s| s.to_string())
+                        .collect::<Vec<_>>()
+                        .join("/");
+                    let source = if path.is_empty() { m.origin.clone() } else { format!("{} | {}", m.origin, path) };
+                    format!("[SOURCE: {} | score: {:.2}] : {}", source, r.score, r.document.content)
+                }).collect::<Vec<_>>().join("\n\n")
+            }
+            Err(_) => String::new(),
+        }
+    }
+}

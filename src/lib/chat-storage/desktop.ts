@@ -3,22 +3,20 @@
  * Utilise le stockage persistant de la WebView Tauri.
  */
 import { ChatMessage, ChatStorage } from './types';
-
-const STORAGE_KEY = 'visionode_native_chat_history';
+import { getSharedHistoryKey } from './index';
 
 export const desktopStorage: ChatStorage = {
   async saveHistory(messages: ChatMessage[]) {
     if (typeof window === 'undefined') return;
-    // Tauri persiste le localStorage dans le répertoire AppData de l'utilisateur
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
+    localStorage.setItem(getSharedHistoryKey(), JSON.stringify(messages));
   },
   async loadHistory(): Promise<ChatMessage[]> {
     if (typeof window === 'undefined') return [];
-    const data = localStorage.getItem(STORAGE_KEY);
+    const data = localStorage.getItem(getSharedHistoryKey());
     return data ? JSON.parse(data) : [];
   },
   async clearHistory() {
     if (typeof window === 'undefined') return;
-    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(getSharedHistoryKey());
   }
 };

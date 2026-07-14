@@ -5,7 +5,7 @@ import { useAppMode } from '@/hooks/use-app-mode';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 export default function ModeDemo() {
-  const { mode, isOnline, isDesktop, online, localOnly, setLocalOnly } = useAppMode();
+  const { mode, isDesktop, online, localOnly, setLocalOnly } = useAppMode();
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 to-slate-900 p-8">
