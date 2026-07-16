@@ -28,9 +28,9 @@ export function detectHybridCapabilities(mode: HybridMode, online: boolean): Hyb
   if (mode === 'hybride') {
     return {
       canUseCloudAPI: online,
-      canUseNativeGroq: true,
-      canUseLocalRAG: true,
-      canUseLocalDB: true,
+      canUseNativeGroq: isTauri,
+      canUseLocalRAG: isTauri,
+      canUseLocalDB: isTauri,
       canStream: true,
       fallbackAvailable: true,
     };
@@ -39,10 +39,10 @@ export function detectHybridCapabilities(mode: HybridMode, online: boolean): Hyb
   if (mode === 'locale') {
     return {
       canUseCloudAPI: false,
-      canUseNativeGroq: true,
-      canUseLocalRAG: true,
-      canUseLocalDB: true,
-      canStream: true,
+      canUseNativeGroq: isTauri,
+      canUseLocalRAG: isTauri,
+      canUseLocalDB: isTauri,
+      canStream: isTauri,
       fallbackAvailable: false,
     };
   }

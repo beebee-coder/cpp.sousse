@@ -26,13 +26,21 @@ interface StepGuideProps {
   onResolve: (code: string) => void;
   isAlarm: boolean;
   startTime: number;
+  voiceActive?: boolean;
 }
 
-export function StepGuide({ step, onNext, onAlarm, onResolve, isAlarm, startTime }: StepGuideProps) {
+export function StepGuide({ step, onNext, onAlarm, onResolve, isAlarm, startTime, voiceActive }: StepGuideProps) {
   const [elapsed, setElapsed] = useState(0);
   const duration = step.duration.value;
   const progress = Math.min(100, (elapsed / duration) * 100);
   const warnedRef = useRef(false);
+  const primaryButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (voiceActive && primaryButtonRef.current) {
+      primaryButtonRef.current.focus();
+    }
+  }, [voiceActive]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -113,22 +121,23 @@ export function StepGuide({ step, onNext, onAlarm, onResolve, isAlarm, startTime
 
            {/* Actions / Buttons */}
            <div className="flex flex-wrap gap-4 pt-4">
-              {step.action.type === 'confirmation' && (
-                <Button 
-                  onClick={onNext}
-                  className="px-10 h-14 bg-secondary text-secondary-foreground font-bold uppercase text-sm shadow-[0_0_20px_rgba(46,184,146,0.3)] transition-all hover:scale-[1.02]"
-                >
-                  <CheckCircle2 className="w-5 h-5 mr-3" />
-                  {step.action.ui.label}
-                </Button>
-              )}
+               {step.action.type === 'confirmation' && (
+                 <Button 
+                   ref={primaryButtonRef}
+                   onClick={onNext}
+                   className="px-10 h-14 bg-secondary text-secondary-foreground font-bold uppercase text-sm shadow-[0_0_20px_rgba(46,184,146,0.3)] transition-all hover:scale-[1.02]"
+                 >
+                   <CheckCircle2 className="w-5 h-5 mr-3" />
+                   {step.action.ui.label}
+                 </Button>
+               )}
 
-              {step.action.type === 'valve_operation' && (
-                <div className="flex items-center gap-4 p-2 terminal-card rounded-sm">
-                   <Button onClick={onNext} className="bg-primary text-primary-foreground font-bold uppercase px-8 h-12">
-                     <Settings2 className="w-4 h-4 mr-2" />
-                     {step.action.ui.label}
-                   </Button>
+               {step.action.type === 'valve_operation' && (
+                 <div className="flex items-center gap-4 p-2 terminal-card rounded-sm">
+                    <Button ref={primaryButtonRef} onClick={onNext} className="bg-primary text-primary-foreground font-bold uppercase px-8 h-12">
+                      <Settings2 className="w-4 h-4 mr-2" />
+                      {step.action.ui.label}
+                    </Button>
                    <div className="px-4">
                       <p className="text-tiny font-bold text-muted-foreground uppercase">Cible</p>
                       <p className="text-xl font-code font-bold text-primary">{step.action.target}%</p>

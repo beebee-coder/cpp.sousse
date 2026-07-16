@@ -418,11 +418,10 @@ export const searchChromaLocalDB = async (
 
         let score = 0;
         for (const t of queryTokens) {
-          // Les noms d'arborescence (répertoires + fichier) reflètent le contenu :
-          // correspondance forte sur le chemin.
-          if (pathStr.includes(t)) score += 30;
-          if (fileName.toLowerCase().includes(t)) score += 10;
-          if (textLower.includes(t)) score += 8;
+          const tokenRegex = new RegExp(`\\b${t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+          if (pathStr.match(tokenRegex)) score += 30;
+          if (fileName.toLowerCase().match(tokenRegex)) score += 10;
+          if (textLower.match(tokenRegex)) score += 8;
         }
 
         if (score > 0) {

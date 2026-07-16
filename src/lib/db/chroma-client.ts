@@ -11,7 +11,7 @@ export const chromaClient = {
    */
   getPoints: async (collectionName: string): Promise<LocalVectorPoint[]> => {
     if (typeof window === 'undefined') return [];
-    const storageKey = `visionode_chroma_mock_vectors_${collectionName}`;
+    const storageKey = `visionode_chroma_vectors_${collectionName}`;
     const raw = localStorage.getItem(storageKey);
     return raw ? JSON.parse(raw) : [];
   },
@@ -23,7 +23,7 @@ export const chromaClient = {
     if (typeof window === 'undefined') return;
     
     // 1. Mise à jour du registre de prévisualisation local
-    const storageKey = `visionode_chroma_mock_vectors_${collectionName}`;
+    const storageKey = `visionode_chroma_vectors_${collectionName}`;
     const raw = localStorage.getItem(storageKey);
     const existing: LocalVectorPoint[] = raw ? JSON.parse(raw) : [];
 

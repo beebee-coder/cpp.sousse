@@ -2,72 +2,43 @@ export const dynamic = 'force-dynamic';
 export const revalidate = false;
 
 import { createHybridRoute } from '@/lib/api-route-creator';
+import { searchKnowledge } from '@/lib/weaviate/weaviate-knowledge';
 
-/**
- * API Route de recherche sémantique hybride.
- * Vercel (Cloud) -> Weaviate | Dev (Local) -> ChromaDB
- * 
- * Note: En mode Cloud, on évite strictement d'appeler ou d'importer ChromaDB
- * pour réduire la taille de la fonction serverless.
- */
-export const POST = createHybridRoute<{ collection: string; query: string; nResults?: number }, any>({
+export interface VectorSearchBody {
+  collection: string;
+  query: string;
+  nResults?: number;
+}
+
+export const POST = createHybridRoute<VectorSearchBody, any>({
   name: 'VECTOR_SEARCH',
   webHandler: async (req, body) => {
     const { collection, query, nResults = 5 } = body;
     const timestamp = new Date().toLocaleTimeString();
-    const isCloud = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
 
-    // 📡 MODE CLOUD : Weaviate en priorité absolue
-    if (isCloud) {
-      try {
-        console.log(`📡 [${timestamp}] [WEAVIATE_CLOUD] Recherche sémantique...`);
-        const { getWeaviateClient } = await import('@/lib/weaviate-client');
-        const client = await getWeaviateClient();
-        const className = collection.charAt(0).toUpperCase() + collection.slice(1);
-        
-        const result = await client.graphql
-          .get()
-          .withClassName(className)
-          .withFields('question answer _additional { distance }')
-          .withNearText({ concepts: [query] })
-          .withLimit(nResults)
-          .do();
-
-        const data = (result.data.Get as any)[className] || [];
-        const formatted = data.map((item: any) => ({
-          id: item.id || 'cloud-id',
-          document: `Question: ${item.question}\nRéponse: ${item.answer}`,
-          metadata: { provider: 'weaviate-cloud' },
-          score: 1 - (item._additional?.distance || 0)
-        }));
-
-        return { success: true, results: formatted, provider: 'WEAVIATE_CLOUD' };
-      } catch (e: any) {
-        console.error(`⚠️ [WEAVIATE] Échec :`, e.message);
-        return { success: false, error: 'CLOUD_SEARCH_FAILED', results: [] };
-      }
+    if (!query || typeof query !== 'string' || query.trim().length === 0) {
+      return { success: false, error: 'Requête de recherche vide', results: [] };
     }
 
-    // 🧠 MODE LOCAL : ChromaDB (uniquement en local/desktop)
+    // Recherche sémantique unifiée dans la collection Weaviate `KnowledgeItem`
+    // (procédures + Q/R). Le filtre `type` reste optionnel pour restreindre aux Q/R.
+    const typeFilter = collection && /qa|question/i.test(collection) ? ('qa' as const) : undefined;
+
     try {
-      // Recherche path-aware sur l'arborescence BDD Locale (collections locdb-*)
-      if (!collection || collection === 'local-db') {
-        const { searchChromaLocalDB } = await import('@/lib/local-indexer');
-        console.log(`🧠 [${timestamp}] [CHROMA_LOCAL] Recherche path-aware (BDD Locale)...`);
-        const results = await searchChromaLocalDB(query, [], nResults);
-        return { success: true, results, provider: 'CHROMADB_LOCAL_PATH_AWARE' };
-      }
+      console.log(`📡 [${timestamp}] [WEAVIATE_CLOUD] Recherche sémantique...`);
+      const items = await searchKnowledge(query, { nResults, type: typeFilter, publicOnly: false });
 
-      const chromaModule = await import('@/lib/chroma');
-      console.log(`🧠 [${timestamp}] [CHROMA_LOCAL] Recherche sémantique...`);
-      const results = await chromaModule.semanticSearch({
-        collectionName: collection || 'industrial_manuals',
-        query,
-        nResults,
-      });
-      return { success: true, results, provider: 'CHROMADB_LOCAL' };
-    } catch (error: any) {
-      return { success: false, error: error.message, results: [] };
+      const results = items.map(item => ({
+        id: item.knowledgeId || 'cloud-id',
+        document: item.content || `Question: ${item.title}`,
+        metadata: { provider: 'weaviate-cloud', type: item.type, title: item.title, tags: item.tags },
+        score: item.score,
+      }));
+
+      return { success: true, results, provider: 'WEAVIATE_CLOUD' };
+    } catch (e: any) {
+      console.error(`⚠️ [WEAVIATE] Échec :`, e.message);
+      return { success: false, error: 'CLOUD_SEARCH_FAILED', results: [] };
     }
-  }
+  },
 });

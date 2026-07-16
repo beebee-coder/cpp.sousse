@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
     });
 
     // Transformer en format CloudData compatible avec le sync-engine existant
-    const items = knowledgeItems.map((ki) => {
+    const items = knowledgeItems.map((ki: any) => {
       let parsedContent: any = null;
       try {
         parsedContent = typeof ki.content === 'string' ? JSON.parse(ki.content) : ki.content;

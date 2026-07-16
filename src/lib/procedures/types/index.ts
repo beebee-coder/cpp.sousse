@@ -98,6 +98,8 @@ export interface StepCustomField {
   type: string;
   value: any;
   required: boolean;
+  description?: string;
+  options?: any;
 }
 
 export interface ProcedureStep {

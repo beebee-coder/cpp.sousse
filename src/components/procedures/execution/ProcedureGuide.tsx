@@ -24,11 +24,14 @@ import {
   Edit3,
   Image,
   Video,
-  Save
+  Save,
+  Sparkles,
+  MessageSquare
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { FullProcedure, ProcedureStep } from '@/lib/procedures/types';
 import { useProcedureExecution } from '@/lib/procedures/hooks/useProcedureExecution';
+import { procedureAssistant, AssistantAdvice } from '@/lib/procedures/assistants/procedure-assistant';
 import { useTranslation } from '@/hooks/use-translation';
 import { BriefingStage } from './BriefingStage';
 import { PrerequisitesStage } from './PrerequisitesStage';
@@ -54,8 +57,11 @@ export function ProcedureGuide({ procedure, onComplete }: ProcedureGuideProps) {
   const [showStepNavigator, setShowStepNavigator] = useState(false);
   const [mediaEditorOpen, setMediaEditorOpen] = useState(false);
   const [localProcedure, setLocalProcedure] = useState(procedure);
+  const [advice, setAdvice] = useState<AssistantAdvice | null>(null);
+  const [isAssistantLoading, setIsAssistantLoading] = useState(false);
 
   const speechRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const adviceAbortRef = useRef<AbortController | null>(null);
   const t = useTranslation();
 
   const {
@@ -71,6 +77,7 @@ export function ProcedureGuide({ procedure, onComplete }: ProcedureGuideProps) {
     progress,
     isRunning,
     isCompleted,
+    isFailed,
     isAborted,
     isAlarm,
     start,
@@ -83,7 +90,7 @@ export function ProcedureGuide({ procedure, onComplete }: ProcedureGuideProps) {
     resolveAlarm,
     confirmPrerequisite,
     confirmAllPrerequisites,
-    abort,
+    fail,
     restart,
     exportJson,
   } = useProcedureExecution({
@@ -181,11 +188,42 @@ export function ProcedureGuide({ procedure, onComplete }: ProcedureGuideProps) {
   useEffect(() => {
     if (isRunning && currentStep?.validation.timeout && elapsed >= currentStep.validation.timeout.value) {
       if (currentStep.validation.timeout.action === 'abort') {
-        abort();
+        fail(t('guide.timeoutReached', currentStep.title));
         speak(t('guide.timeoutReached', currentStep.title));
       }
     }
-  }, [elapsed, currentStep, isRunning, abort]);
+  }, [elapsed, currentStep, isRunning, fail]);
+
+  // Conseiller RAG contextuel (connectivité RAG du Guide)
+  useEffect(() => {
+    if (adviceAbortRef.current) adviceAbortRef.current.abort();
+
+    if (phase === 'active' && isRunning && currentStep) {
+      const controller = new AbortController();
+      adviceAbortRef.current = controller;
+      setIsAssistantLoading(true);
+      const timer = setTimeout(() => {
+        procedureAssistant.getStepAdvice(procedure, {
+          currentStepIndex,
+          status,
+          completedSteps: stepReport.filter(r => r.status === 'completed').map(r => r.stepId),
+          activeAlarms: alarm || [],
+          confirmedPrerequisites: [...engineConfirmedPrerequisites],
+        } as any).then(res => {
+          if (!controller.signal.aborted) {
+            setAdvice(res);
+            setIsAssistantLoading(false);
+          }
+        }).catch(() => {
+          if (!controller.signal.aborted) setIsAssistantLoading(false);
+        });
+      }, 400);
+      return () => clearTimeout(timer);
+    }
+
+    setAdvice(null);
+    setIsAssistantLoading(false);
+  }, [phase, isRunning, currentStepIndex, status, procedure, stepReport, alarm, engineConfirmedPrerequisites]);
 
   const handleEnterPrerequisites = () => {
     setPhase('active');
@@ -461,27 +499,63 @@ export function ProcedureGuide({ procedure, onComplete }: ProcedureGuideProps) {
          />
        )}
 
-       {/* Running */}
-       {phase === 'active' && isRunning && currentStep && (
-         <RunningStage
-           currentStep={currentStep}
-           currentStepIndex={currentStepIndex}
-           totalSteps={totalSteps}
-           elapsed={elapsed}
-           isPaused={isPaused}
-           warningTime={false}
-           progress={progress}
-           procedure={procedure}
-           onNext={handleNextStep}
-           onPrevious={handlePreviousStep}
-           onTogglePause={handleTogglePause}
-           onRepeat={handleRepeatStep}
-           onSkip={handleSkipStep}
-           onTriggerAlarm={handleTriggerAlarm}
-           formatDuration={formatDuration}
-           stepReport={stepReport}
-         />
-       )}
+        {/* Running */}
+        {phase === 'active' && isRunning && currentStep && (
+          <RunningStage
+            currentStep={currentStep}
+            currentStepIndex={currentStepIndex}
+            totalSteps={totalSteps}
+            elapsed={elapsed}
+            isPaused={isPaused}
+            warningTime={false}
+            progress={progress}
+            procedure={procedure}
+            onNext={handleNextStep}
+            onPrevious={handlePreviousStep}
+            onTogglePause={handleTogglePause}
+            onRepeat={handleRepeatStep}
+            onSkip={handleSkipStep}
+            onTriggerAlarm={handleTriggerAlarm}
+            formatDuration={formatDuration}
+            stepReport={stepReport}
+          />
+        )}
+
+        {/* Copilote RAG */}
+        {phase === 'active' && isRunning && currentStep && (
+          <Card className="p-4 border-secondary/20 bg-secondary/5 space-y-4 mt-4">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <Sparkles className={cn("w-4 h-4 text-secondary", isAssistantLoading && "animate-spin")} />
+                <h4 className="text-[10px] font-bold uppercase tracking-widest text-secondary">Copilote Industriel</h4>
+              </div>
+            </div>
+
+            {advice ? (
+              <div className="space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-500">
+                <p className="text-[11px] font-code leading-relaxed text-white/90">
+                  {advice.text}
+                </p>
+                {advice.relatedDocs && advice.relatedDocs.length > 0 && (
+                  <div className="pt-2 space-y-2">
+                    <p className="text-micro font-bold text-muted-foreground uppercase tracking-widest">Référentiels RAG corrélés</p>
+                    {advice.relatedDocs.map((doc: any, i: number) => (
+                      <div key={i} className="p-2 terminal-card flex items-center justify-between group cursor-pointer hover:border-secondary/40 transition-colors">
+                        <span className="text-tiny font-code text-muted-foreground truncate">{doc.metadata?.title || "Manuel technique"}</span>
+                        <MessageSquare className="w-3 h-3 text-secondary opacity-0 group-hover:opacity-100" />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="py-6 flex flex-col items-center justify-center opacity-30">
+                <Sparkles className="w-8 h-8 mb-2" />
+                <p className="text-tiny font-code uppercase text-center">Traitement contextuel...</p>
+              </div>
+            )}
+          </Card>
+        )}
 
        {/* Completed */}
        {phase === 'active' && isCompleted && (
@@ -495,14 +569,33 @@ export function ProcedureGuide({ procedure, onComplete }: ProcedureGuideProps) {
          />
        )}
 
-       {/* Aborted */}
-       {phase === 'active' && isAborted && (
-         <AbortedStage
-           stepReport={stepReport}
-           formatDuration={formatDuration}
-           onRestart={handleRestart}
-         />
-       )}
+        {/* Aborted */}
+        {phase === 'active' && isAborted && (
+          <AbortedStage
+            stepReport={stepReport}
+            formatDuration={formatDuration}
+            onRestart={handleRestart}
+          />
+        )}
+
+        {/* Failed */}
+        {phase === 'active' && isFailed && (
+          <Card className="h-full flex flex-col items-center justify-center p-12 text-center panel-card shadow-2xl border-destructive/30">
+            <AlertTriangle className="w-16 h-16 text-destructive mb-6" />
+            <h2 className="text-2xl font-headline font-bold uppercase mb-2 text-destructive">Échec de la procédure</h2>
+            <p className="text-muted-foreground font-code text-sm max-w-md mb-8 uppercase">
+              La procédure a échoué en raison d'un dépassement de délai critique. Consultez le rapport d'exécution.
+            </p>
+            <div className="flex gap-4">
+              <Button variant="outline" onClick={handleRestart} className="h-10 text-[10px] uppercase font-bold px-8">
+                <RotateCcw className="w-4 h-4 mr-2" /> Réinitialiser
+              </Button>
+              <Button onClick={exportJson} className="h-10 text-[10px] uppercase font-bold bg-destructive text-destructive-foreground px-8 shadow-xl">
+                Télécharger le rapport
+              </Button>
+            </div>
+          </Card>
+        )}
 
        {/* Alarm Modal */}
        {alarm && alarm.length > 0 && (

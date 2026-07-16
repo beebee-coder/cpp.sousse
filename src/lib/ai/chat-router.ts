@@ -14,6 +14,7 @@ export interface ChatOrchestratorInput {
   mode: HybridMode;
   online: boolean;
   userId?: string;
+  userName?: string;
   onStreamChunk?: (chunk: string) => void;
 }
 
@@ -27,13 +28,14 @@ export interface ChatOrchestratorResult {
   tokensUsed?: number;
   sources: string[];
   ragResults: RAGResult[];
+  confidence: 'high' | 'medium' | 'low' | 'none';
 }
 
 export class ChatOrchestrator {
   async process(input: ChatOrchestratorInput): Promise<ChatOrchestratorResult> {
     const capabilities = detectHybridCapabilities(input.mode, input.online);
-    const context = await contextManager.buildContext(input.message, input.history, input.mode);
-    const messages = contextManager.buildMessages(context, input.history, input.message);
+    const context = await contextManager.buildContext(input.message, input.history, input.mode, input.userName);
+    const messages = contextManager.buildMessages(context, input.history, input.message, input.userName);
 
     toolExecutor.setAuthContext({ userId: input.userId, mode: input.mode });
 
@@ -42,6 +44,13 @@ export class ChatOrchestrator {
     }
 
     return await this.processWithCloudGroq(input, context, messages, capabilities);
+  }
+
+  private sanitizeResultText(text: string): string {
+    return text
+      .replace(/<environment_details\b[^>]*>[\s\S]*?<\/environment_details>/gi, '')
+      .replace(/<[^>\n]+>/g, '')
+      .trim();
   }
 
   private async processWithNativeGroq(
@@ -62,12 +71,14 @@ export class ChatOrchestrator {
         maxTokens: 300,
       });
 
+      const text = this.sanitizeResultText(result.text);
       return {
-        text: result.text,
+        text,
         provider: result.provider,
         model: result.model,
         sources: context.sources,
         ragResults: context.ragResults,
+        confidence: context.confidence,
       };
     } catch (err: any) {
       console.error('[CHAT_ORCHESTRATOR] Erreur Groq natif:', err.message);
@@ -112,7 +123,7 @@ export class ChatOrchestrator {
     }
 
     return {
-      text: finalText,
+      text: this.sanitizeResultText(finalText),
       provider: result.provider,
       model: result.model,
       toolUsed: toolCall?.tool,
@@ -121,11 +132,14 @@ export class ChatOrchestrator {
       tokensUsed: result.tokensUsed,
       sources: context.sources,
       ragResults: context.ragResults,
+      confidence: context.confidence,
     };
   }
 
   private buildNativeSystemPrompt(context: any): string {
-    const base = `Vous êtes VisioNode Core (Natif), l'IA de contrôle industriel CCP. Réponses techniques en français.`;
+    const userName = context.userName;
+    const greeting = userName ? `Vous parlez à ${userName}. ` : '';
+    const base = `Vous êtes COPILOTE-CCPE (Natif), l'IA de contrôle industriel CCP. ${greeting}Réponses techniques en français.`;
     const ragSection = context.context !== 'Aucun contexte disponible dans les référentiels.'
       ? `\nCONTEXTE RÉCUPÉRÉ:\n${context.context}`
       : '';

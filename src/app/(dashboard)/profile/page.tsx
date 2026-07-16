@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils';
 import { TiltCard } from '@/components/three/TiltCard';
 import { performHealthCheck } from '@/lib/platform';
 import { User, ShieldCheck, Cpu, Cloud, Mail, Fingerprint, Circle, LogOut, Save, RotateCcw, KeyRound, CheckCircle2, AlertTriangle, Camera, Upload, Trash2 } from 'lucide-react';
+import { fileToDataUrl, resizeDataUrl, MAX_DIM } from '@/lib/image-helpers';
 
 interface ProfileUser {
   id: string;
@@ -22,37 +23,6 @@ interface ProfileUser {
   approved?: boolean;
   image?: string | null;
   createdAt?: number;
-}
-
-const MAX_DIM = 256;
-
-function fileToDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
-
-function resizeDataUrl(dataUrl: string, type = 'image/jpeg'): Promise<string> {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      const scale = Math.min(1, MAX_DIM / Math.max(img.width, img.height));
-      const w = Math.round(img.width * scale);
-      const h = Math.round(img.height * scale);
-      const canvas = document.createElement('canvas');
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return resolve(dataUrl);
-      ctx.drawImage(img, 0, 0, w, h);
-      resolve(canvas.toDataURL(type, 0.85));
-    };
-    img.onerror = () => resolve(dataUrl);
-    img.src = dataUrl;
-  });
 }
 
 export default function ProfilePage() {
@@ -82,6 +52,9 @@ export default function ProfilePage() {
     const loadSession = async () => {
       try {
         const response = await fetch('/api/auth/me');
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
         const data = await response.json();
         const user = (data.user ?? data.session?.user) as ProfileUser | undefined;
         if (user) {
@@ -92,8 +65,12 @@ export default function ProfilePage() {
             lastName: user.lastName ?? '',
             email: user.email ?? '',
           });
+        } else if (!data.session) {
+          setMessage({ type: 'error', text: 'Session invalide. Veuillez vous reconnecter.' });
         }
-      } catch {}
+      } catch (err) {
+        setMessage({ type: 'error', text: 'Impossible de charger le profil. Vérifiez votre connexion.' });
+      }
     };
 
     void loadSession();
@@ -118,9 +95,13 @@ export default function ProfilePage() {
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const raw = await fileToDataUrl(file);
-    const resized = await resizeDataUrl(raw);
-    setImageData(resized);
+    try {
+      const raw = await fileToDataUrl(file);
+      const resized = await resizeDataUrl(raw);
+      setImageData(resized);
+    } catch {
+      setMessage({ type: 'error', text: 'Impossible de lire ou redimensionner cette image.' });
+    }
     if (fileRef.current) fileRef.current.value = '';
   };
 
@@ -188,6 +169,20 @@ export default function ProfilePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        const errMap: Record<string, string> = {
+          EMAIL_ALREADY_EXISTS: 'Cet e-mail est déjà utilisé.',
+          INVALID_CURRENT_PASSWORD: 'Mot de passe actuel incorrect.',
+          USER_NOT_FOUND: 'Utilisateur introuvable.',
+          INVALID_EMAIL: 'Format d’e-mail invalide.',
+          WEAK_PASSWORD: 'Le mot de passe doit contenir au moins 8 caractères.',
+          INVALID_IMAGE: 'Image invalide (JPG/PNG/WebP, < 500 Ko).',
+          UNAUTHENTICATED: 'Session expirée. Veuillez vous reconnecter.',
+        };
+        setMessage({ type: 'error', text: errMap[data.error] ?? 'Échec de la mise à jour.' });
+        return;
+      }
       const data = await res.json();
       if (data.success) {
         setProfile(data.user);
@@ -196,12 +191,7 @@ export default function ProfilePage() {
         setPasswords({ current: '', next: '', confirm: '' });
         setMessage({ type: 'success', text: 'Profil mis à jour avec succès.' });
       } else {
-        const errMap: Record<string, string> = {
-          EMAIL_ALREADY_EXISTS: 'Cet e-mail est déjà utilisé.',
-          INVALID_CURRENT_PASSWORD: 'Mot de passe actuel incorrect.',
-          USER_NOT_FOUND: 'Utilisateur introuvable.',
-        };
-        setMessage({ type: 'error', text: errMap[data.error] ?? (data.error || 'Échec de la mise à jour.') });
+        setMessage({ type: 'error', text: 'Échec de la mise à jour.' });
       }
     } catch {
       setMessage({ type: 'error', text: 'Erreur réseau lors de la mise à jour.' });

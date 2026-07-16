@@ -2,9 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { localDB } from '../local-db';
 import fs from 'fs';
 import path from 'path';
-import os from 'os';
 
-const TEST_REGISTRY = path.join(os.tmpdir(), `test-registry-${Date.now()}`);
+const TEST_REGISTRY = path.join(process.cwd(), '.local-db');
 
 vi.mock('../postgres-client', () => ({
   postgresClient: {}

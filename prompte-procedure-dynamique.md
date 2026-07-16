@@ -674,12 +674,12 @@ GET    /api/procedures/templates/:id    // Détail template
 E. 📸 Médias (app/api/procedures/media/route.ts)
 ---------------------------------------------------------------
 POST   /api/procedures/media            // Upload/capture d'un média (image/vidéo)
-                                        //   -> crée ProcedureMedia + stocke le fichier
+                                         //   -> crée ProcedureMedia + stocke le fichier
 GET    /api/procedures/media?procedureId=// Liste la bibliothèque de médias
 DELETE /api/procedures/media/:id        // Supprime un média + ses fichiers
-                                        //   + purge les mediaRefs des étapes
+                                         //   + purge les mediaRefs des étapes
 
-E. Analytics (app/api/procedures/analytics/route.ts)
+F. Analytics (app/api/procedures/analytics/route.ts)
 ---------------------------------------------------------------
 GET    /api/procedures/analytics/stats  // Statistiques générales
 GET    /api/procedures/analytics/:id    // Statistiques procédure
@@ -790,15 +790,15 @@ L'implémentation sera considérée comme réussie si :
 5. ✅ Les alarmes sont détectées et des remèdes sont proposés
 6. ✅ L'opérateur peut utiliser la voix pour naviguer
 7. ✅ Les médias (images, vidéos) sont intégrés et affichés pour chaque etape affichée de la procedure et peuvent etre editer
-7b. ✅ Lors de la configuration, l'utilisateur peut capturer (caméra) ou uploader une image/vidéo, et la réutiliser plus tard dans n'importe quelle étape de la séquence
-8. ✅ La progression est visible et suivie
-9. ✅ Un rapport d'exécution est généré à la fin
-10. ✅ La recherche RAG trouve les procédures pertinentes
-11. ✅ Les statistiques d'utilisation sont collectées
-12. ✅ L'interface est responsive et accessible
-13. ✅ Le système gère les erreurs de manière élégante
-14. ✅ Les performances sont optimisées (temps de chargement < 2s)
-15. ✅ Le code est propre, documenté et testé
+8. ✅ Lors de la configuration, l'utilisateur peut capturer (caméra) ou uploader une image/vidéo, et la réutiliser plus tard dans n'importe quelle étape de la séquence
+9. ✅ La progression est visible et suivie
+10. ✅ Un rapport d'exécution est généré à la fin
+11. ✅ La recherche RAG trouve les procédures pertinentes
+12. ✅ Les statistiques d'utilisation sont collectées
+13. ✅ L'interface est responsive et accessible
+14. ✅ Le système gère les erreurs de manière élégante
+15. ✅ Les performances sont optimisées (temps de chargement < 2s)
+16. ✅ Le code est propre, documenté et testé
 ```
 
 ---

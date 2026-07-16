@@ -11,7 +11,7 @@ import { getLocalDBChromaTree } from '@/lib/local-indexer';
 export const GET = createHybridRoute<any, any>({
   name: 'VECTOR_COLLECTIONS_GET',
   webHandler: async () => {
-    const isCloud = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
+    const isCloud = process.env.VERCEL === '1';
 
     if (isCloud) {
       try {
@@ -84,7 +84,7 @@ export const POST = createHybridRoute<{ name: string }, any>({
       });
     }
 
-    const isCloud = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
+    const isCloud = process.env.VERCEL === '1';
     if (isCloud) {
       return { success: false, error: 'WRITE_RESTRICTED_ON_CLOUD' };
     }
@@ -104,7 +104,7 @@ export const POST = createHybridRoute<{ name: string }, any>({
 });
 
 export async function DELETE(req: Request) {
-  const isCloud = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
+  const isCloud = process.env.VERCEL === '1';
   if (isCloud) {
     return new Response(JSON.stringify({ error: 'DELETE_RESTRICTED_ON_CLOUD' }), { status: 403 });
   }

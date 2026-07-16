@@ -23,39 +23,47 @@ pub fn tokenize_with_stems(text: &str) -> Vec<String> {
 }
 
 fn simple_stem(word: &str) -> String {
-    if word.len() <= 3 {
+    // On travaille sur des caractères (pas des octets) : `word[..word.len()-N]`
+    // sur un &str contenant des caractères multi-octets (é, ç, à…) découperait
+    // au milieu d'un point de code UTF-8 et provoquerait un panic.
+    let chars: Vec<char> = word.chars().collect();
+    let n = chars.len();
+
+    if n <= 3 {
         return word.to_string();
     }
 
+    // Retire les `drop` derniers caractères de façon sûre (frontière char).
+    let trim = |drop: usize| -> String { chars[..n.saturating_sub(drop)].iter().collect() };
+
     if word.ends_with("eurs") || word.ends_with("euse") {
-        return word[..word.len() - 3].to_string();
+        return trim(3);
     }
     if word.ends_with("aux") {
-        return word[..word.len() - 2].to_string();
-    }
-    if word.ends_with("aux") {
-        return word[..word.len() - 2].to_string();
+        return trim(2);
     }
     if word.ends_with("eur") {
-        return word[..word.len() - 3].to_string();
+        return trim(3);
     }
     if word.ends_with("eux") || word.ends_with("ies") || word.ends_with("ées") {
-        return word[..word.len() - 2].to_string();
+        return trim(2);
     }
-    if word.ends_with("ment") && word.len() > 5 {
-        return word[..word.len() - 4].to_string();
+    if word.ends_with("ment") && n > 5 {
+        return trim(4);
     }
     if word.ends_with("tion") || word.ends_with("sion") {
-        return word[..word.len() - 3].to_string();
-    }
-    if word.ends_with('s') || word.ends_with('x') {
-        return word[..word.len() - 1].to_string();
+        return trim(3);
     }
     if word.ends_with("ent") || word.ends_with("ant") {
-        return word[..word.len() - 3].to_string();
+        return trim(3);
     }
-    if word.ends_with("é") || word.ends_with("ée") || word.ends_with("és") || word.ends_with("ées") {
-        return word[..word.len() - 1].to_string();
+    // Terminaisons accentuées : traitées AVANT le pluriel simple en `s`,
+    // sinon `ées`/`és` seraient mal coupées.
+    if word.ends_with("ées") || word.ends_with("és") || word.ends_with("ée") || word.ends_with('é') {
+        return trim(1);
+    }
+    if word.ends_with('s') || word.ends_with('x') {
+        return trim(1);
     }
 
     word.to_string()
@@ -161,4 +169,33 @@ pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
         dot += x * y;
     }
     dot
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stem_ne_panique_pas_sur_accents() {
+        // Régression : ces mots finissent par des caractères multi-octets.
+        for w in ["procédés", "opérée", "créés", "français", "élevée", "caché", "à", "çé"] {
+            let _ = simple_stem(w); // ne doit pas paniquer
+        }
+    }
+
+    #[test]
+    fn tokenize_with_stems_gere_texte_accentue() {
+        let toks = tokenize_with_stems("Les opérateurs vérifient les procédures accentuées");
+        assert!(!toks.is_empty());
+    }
+
+    #[test]
+    fn cosine_similarity_vecteurs_identiques() {
+        let mut a = vec![1.0f32, 2.0, 3.0];
+        let mut b = vec![1.0f32, 2.0, 3.0];
+        l2_normalize(&mut a);
+        l2_normalize(&mut b);
+        let sim = cosine_similarity(&a, &b);
+        assert!((sim - 1.0).abs() < 1e-5);
+    }
 }

@@ -31,8 +31,7 @@ export function TopNavbar({ onMenuClick, health, mounted, isDesktop, role }: Top
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ image }),
       });
-      const data = await res.json();
-      if (data.success) {
+      if (res.ok) {
         await session.refresh();
       }
     } catch (e) {

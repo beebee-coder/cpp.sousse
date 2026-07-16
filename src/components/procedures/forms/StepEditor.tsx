@@ -529,14 +529,28 @@ export function StepEditor({
                             }
 
                             templates.forEach((t: any) => {
-                              if (!currentFields.find((f) => f.templateId === t.id)) {
+                              const existing = currentFields.find((f) => f.templateId === t.id);
+                              if (!existing) {
                                 newFields.push({
                                   templateId: t.id,
                                   name: t.name,
                                   type: t.type,
                                   value: t.type === 'boolean' ? false : '',
                                   required: t.required,
+                                  description: t.description ?? undefined,
+                                  options: t.options ?? undefined,
                                 });
+                              } else {
+                                // Propager les modifications du template sur le champ existant
+                                const idx = newFields.indexOf(existing);
+                                newFields[idx] = {
+                                  ...existing,
+                                  name: t.name,
+                                  type: t.type,
+                                  required: t.required,
+                                  description: t.description ?? undefined,
+                                  options: t.options ?? undefined,
+                                };
                               }
                             });
 
@@ -557,7 +571,26 @@ export function StepEditor({
                             <label className="text-micro font-bold text-muted-foreground uppercase">
                               {field.name} {field.required && '*'}
                             </label>
-                            {field.type === 'boolean' ? (
+                            {field.type === 'select' ? (
+                              <select
+                                value={field.value || ''}
+                                onChange={(e) => {
+                                  const nextFields = [...step.fields!];
+                                  nextFields[fIdx].value = e.target.value;
+                                  updateStep(index, { fields: nextFields });
+                                }}
+                                className="h-8 bg-black/40 text-[10px] border-border rounded px-2"
+                              >
+                                <option value="">— Sélectionner —</option>
+                                {Array.isArray(field.options)
+                                  ? field.options.map((opt: any, oIdx: number) => (
+                                      <option key={oIdx} value={typeof opt === 'object' ? opt.value : opt}>
+                                        {typeof opt === 'object' ? opt.label ?? opt.value : opt}
+                                      </option>
+                                    ))
+                                  : null}
+                              </select>
+                            ) : field.type === 'boolean' ? (
                               <div className="flex items-center h-8">
                                 <input
                                   type="checkbox"

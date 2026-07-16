@@ -4,6 +4,20 @@ import { createHybridRoute } from '@/lib/api-route-creator';
 import { postgresClient } from '@/lib/db/postgres-client';
 import { prisma } from '@/lib/db/prisma-client';
 import { getSessionFromCookie } from '@/lib/session';
+import path from 'path';
+
+const REGISTRY_ROOT = path.join(process.cwd(), '.registry');
+
+const sanitizeRegistryPath = (inputPath: string): string => {
+  const cleaned = inputPath.replace(/\\/g, '/').replace(/^\/+/, '');
+  const segments = cleaned.split('/').filter(s => s !== '.' && s !== '');
+  const safe = segments.join('/');
+  const full = path.join(REGISTRY_ROOT, safe);
+  if (!full.startsWith(REGISTRY_ROOT)) {
+    throw new Error('PATH_TRAVERSAL_DETECTED');
+  }
+  return safe;
+};
 
 /**
  * API de gestion du Registre.
@@ -111,7 +125,8 @@ export const GET = createHybridRoute<any, any>({
   webHandler: async (req) => {
     if (isCloudServerless) {
       try {
-        const { prisma } = await import('@/lib/db/prisma-client');
+        const { getPrismaClient } = await import('@/lib/db/prisma-client');
+        const prisma = await getPrismaClient();
         const { searchParams } = new URL(req.url);
         const targetPath = searchParams.get('path');
         const action = searchParams.get('action');
@@ -151,7 +166,8 @@ export const GET = createHybridRoute<any, any>({
       }
 
       if (targetPath) {
-        return { success: true, content: await postgresClient.getFile(targetPath) };
+        const safePath = sanitizeRegistryPath(targetPath);
+        return { success: true, content: await postgresClient.getFile(safePath) };
       }
 
       return { success: true, tree: await postgresClient.getRegistryTree() };
@@ -185,49 +201,64 @@ export const POST = createHybridRoute<{ path: string; type: 'file' | 'folder'; c
         const title = parsedContent?.title || baseName || 'Collection Q/R';
         const knowledgeType = parsedContent?.type || 'qa';
         const registryPath = parsedContent?.registryPath || normalizedPath;
+
+        // Validation du schéma pour les collections de type 'qa'.
+        if (knowledgeType === 'qa' && Array.isArray(parsedContent?.pairs)) {
+          if (parsedContent.pairs.length === 0) {
+            return { success: false, error: 'PAIRS_VIDES', details: 'Une collection Q/R doit contenir au moins une paire.' };
+          }
+          for (let i = 0; i < parsedContent.pairs.length; i++) {
+            const pair = parsedContent.pairs[i];
+            if (!pair || typeof pair.question !== 'string' || !pair.question.trim()
+              || typeof pair.answer !== 'string' || !pair.answer.trim()) {
+              return { success: false, error: `PAIR_INVALIDE_${i}`, details: `La paire ${i} nécessite question et answer non vides.` };
+            }
+          }
+        }
+
         const question = Array.isArray(parsedContent?.pairs) && parsedContent.pairs[0]?.question ? parsedContent.pairs[0].question : null;
         const answer = Array.isArray(parsedContent?.pairs)
           ? parsedContent.pairs.map((pair: any) => pair.answer).filter(Boolean).join('\n\n') || null
           : null;
 
-        const item = await prisma.knowledgeItem.create({
-          data: {
-            userId: session.user.id,
-            title: title.trim(),
-            type: knowledgeType,
-            content: contentText,
-            question,
-            answer,
-            tags: Array.isArray(parsedContent?.tags) ? parsedContent.tags : ['Q/R', 'entrainement'],
-            category: parsedContent?.category || 'General',
-          }
-        });
+        const regPathTag = `regpath:${normalizedPath.replace(/\.json$/i, '')}`;
 
-        return { success: true, itemId: item.id, path: registryPath, provider: 'cloud-db' };
+        const itemData = {
+          userId: session.user.id,
+          title: title.trim(),
+          type: knowledgeType,
+          content: contentText,
+          question,
+          answer,
+          tags: Array.isArray(parsedContent?.tags) ? [...parsedContent.tags, regPathTag] : ['Q/R', 'entrainement', regPathTag],
+          category: parsedContent?.category || 'General',
+        };
+
+        // Déduplication : mise à jour si un item de même titre+type existe déjà,
+        // sinon création. Évite la prolifération de doublons à chaque sauvegarde.
+        const existing = await prisma.knowledgeItem.findFirst({
+          where: { title: title.trim(), type: knowledgeType },
+          orderBy: { createdAt: 'desc' },
+        });
+        const item = existing
+          ? await prisma.knowledgeItem.update({ where: { id: existing.id }, data: itemData })
+          : await prisma.knowledgeItem.create({ data: itemData });
+
+        return { success: true, itemId: item.id, updated: !!existing, path: registryPath, provider: 'cloud-db' };
       } catch (e: any) {
         return { success: false, error: e.message };
       }
     }
 
     try {
+      const session = await getSessionFromCookie();
+      if (!session) return { success: false, error: 'NON_AUTHENTIFIÉ' };
+      const safePath = sanitizeRegistryPath(body.path || '');
       if (body.type === 'folder') {
-        await postgresClient.createFolder(body.path);
+        await postgresClient.createFolder(safePath);
       } else {
-        await postgresClient.saveFile(body.path, body.content || '{}');
+        await postgresClient.saveFile(safePath, body.content || '{}');
       }
-      return { success: true };
-    } catch (e: any) {
-      return { success: false, error: e.message };
-    }
-  }
-});
-
-export const PUT = createHybridRoute<{ path: string; content: string }, any>({
-  name: 'REGISTRY_UPDATE',
-  webHandler: async (req, body) => {
-    if (isCloudServerless) return { success: false, error: 'REGISTRY_WRITE_CLOUD_UNSUPPORTED' };
-    try {
-      await postgresClient.saveFile(body.path, body.content);
       return { success: true };
     } catch (e: any) {
       return { success: false, error: e.message };
@@ -238,11 +269,14 @@ export const PUT = createHybridRoute<{ path: string; content: string }, any>({
 export const PATCH = createHybridRoute<{ path: string; newName: string }, any>({
   name: 'REGISTRY_RENAME',
   webHandler: async (req, body) => {
+    const session = await getSessionFromCookie();
+    if (!session) return { success: false, error: 'NON_AUTHENTIFIÉ' };
     if (isCloudServerless) return { success: false, error: 'REGISTRY_WRITE_CLOUD_UNSUPPORTED' };
     try {
       const { path: oldPath, newName } = body;
       if (!oldPath || !newName) return { success: false, error: 'PARAM_MISSING' };
-      await postgresClient.renameItem(oldPath, newName);
+      const safePath = sanitizeRegistryPath(oldPath);
+      await postgresClient.renameItem(safePath, newName);
       return { success: true };
     } catch (e: any) {
       return { success: false, error: e.message };
@@ -253,14 +287,32 @@ export const PATCH = createHybridRoute<{ path: string; newName: string }, any>({
 export const DELETE = createHybridRoute<any, any>({
   name: 'REGISTRY_DELETE',
   webHandler: async (req) => {
+    const session = await getSessionFromCookie();
+    if (!session) return { success: false, error: 'NON_AUTHENTIFIÉ' };
+
     const { searchParams } = new URL(req.url);
     const targetPath = searchParams.get('path');
     if (!targetPath) return { success: false, error: 'PATH_REQUIRED' };
 
-    // Mode Cloud : suppression de la KnowledgeItem correspondante.
     if (isCloudServerless) {
       try {
-        const { prisma } = await import('@/lib/db/prisma-client');
+        const { getPrismaClient } = await import('@/lib/db/prisma-client');
+        const prisma = await getPrismaClient();
+        const item = await prisma.knowledgeItem.findUnique({ where: { id: targetPath } });
+        if (!item) return { success: false, error: 'INTROUVABLE' };
+        if (item.userId !== session.user.id && session.user.role !== 'admin') {
+          return { success: false, error: 'NON_AUTORISÉ' };
+        }
+
+        try {
+          const { deleteKnowledgeItem } = await import('@/lib/weaviate/weaviate-knowledge');
+          const { deleteBankAsset } = await import('@/lib/weaviate/weaviate-bank');
+          await deleteKnowledgeItem(targetPath);
+          await deleteBankAsset(targetPath);
+        } catch (e: any) {
+          console.warn(`[REGISTRY_DELETE] Weaviate cleanup failed: ${e.message}`);
+        }
+
         await prisma.knowledgeItem.delete({ where: { id: targetPath } });
         return { success: true, message: 'ELEMENT_SUPPRIME' };
       } catch (error: any) {
@@ -269,7 +321,8 @@ export const DELETE = createHybridRoute<any, any>({
     }
 
     try {
-      await postgresClient.deleteItem(targetPath);
+      const safePath = sanitizeRegistryPath(targetPath);
+      await postgresClient.deleteItem(safePath);
       return { success: true, message: 'ELEMENT_SUPPRIME' };
     } catch (error: any) {
       return { success: false, error: error.message };

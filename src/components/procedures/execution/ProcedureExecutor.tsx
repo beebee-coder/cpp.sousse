@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -36,6 +36,10 @@ export function ProcedureExecutor({ procedure }: ProcedureExecutorProps) {
   const [advice, setAdvice] = useState<AssistantAdvice | null>(null);
   const [isAssistantLoading, setIsAssistantLoading] = useState(false);
   const [currentPrerequisite, setCurrentPrerequisite] = useState<FullProcedure['prerequisites']['items'][number] | null>(null);
+  const debounceRef = useRef<NodeJS.Timeout | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const startButtonRef = useRef<HTMLButtonElement>(null);
+  const confirmButtonRef = useRef<HTMLButtonElement>(null);
 
   const {
     status,
@@ -68,19 +72,37 @@ export function ProcedureExecutor({ procedure }: ProcedureExecutorProps) {
   }, []);
 
   useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (abortControllerRef.current) abortControllerRef.current.abort();
+
     if (status === 'RUNNING' || status === 'WAITING_CONFIRMATION') {
-      setIsAssistantLoading(true);
-      procedureAssistant.getStepAdvice(procedure, {
-        currentStepIndex,
-        status,
-        completedSteps: stepReport.filter(r => r.status === 'completed').map(r => r.stepId),
-        activeAlarms: alarm || [],
-        confirmedPrerequisites,
-      } as any).then(res => {
-        setAdvice(res);
-        setIsAssistantLoading(false);
-      }).catch(() => setIsAssistantLoading(false));
+      debounceRef.current = setTimeout(() => {
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
+        setIsAssistantLoading(true);
+        procedureAssistant.getStepAdvice(procedure, {
+          currentStepIndex,
+          status,
+          completedSteps: stepReport.filter(r => r.status === 'completed').map(r => r.stepId),
+          activeAlarms: alarm || [],
+          confirmedPrerequisites,
+        } as any).then(res => {
+          if (!controller.signal.aborted) {
+            setAdvice(res);
+            setIsAssistantLoading(false);
+          }
+        }).catch(() => {
+          if (!controller.signal.aborted) {
+            setIsAssistantLoading(false);
+          }
+        });
+      }, 400);
     }
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      if (abortControllerRef.current) abortControllerRef.current.abort();
+    };
   }, [currentStepIndex, status, procedure, stepReport, alarm, confirmedPrerequisites]);
 
   const voice = useVoice({
@@ -93,6 +115,27 @@ export function ProcedureExecutor({ procedure }: ProcedureExecutorProps) {
         if (command.action === 'CONFIRM' && status === 'PREREQUISITES_CHECK') {
           if (currentPrerequisite) confirmPrerequisite(currentPrerequisite.id);
         }
+      }
+    },
+    onActivate: () => {
+      let guide = '';
+      if (status === 'IDLE') {
+        guide = `Procédure ${procedure.title} prête. Dites "démarrer" pour lancer la séquence.`;
+        setTimeout(() => startButtonRef.current?.focus(), 100);
+      } else if (status === 'PREREQUISITES_CHECK') {
+        guide = currentPrerequisite
+          ? `Prérequis en cours : ${currentPrerequisite.displayName}. Dites "confirmer" une fois vérifié.`
+          : 'Tous les prérequis sont confirmés. Dites "confirmer" pour lancer.';
+        setTimeout(() => confirmButtonRef.current?.focus(), 100);
+      } else if (status === 'RUNNING' || status === 'WAITING_CONFIRMATION') {
+        guide = `Étape ${currentStepIndex + 1} sur ${totalSteps} : ${displayCurrentStep?.title || 'en cours'}. Dites "suivant" pour passer à l étape suivante.`;
+      } else if (status === 'ALARM') {
+        guide = 'Anomalie détectée. Dites "anomalie" pour signaler, ou "suivant" pour continuer.';
+      } else if (status === 'COMPLETED') {
+        guide = 'Procédure terminée avec succès.';
+      }
+      if (guide) {
+        setTimeout(() => voice.speak(guide), 400);
       }
     },
     autoRestart: true,
@@ -184,7 +227,7 @@ export function ProcedureExecutor({ procedure }: ProcedureExecutorProps) {
               <p className="text-muted-foreground font-code text-sm max-w-md mb-8 uppercase">
                 Charge de la procédure "{procedure.title}" terminée. Moteur d'audit opérationnel.
               </p>
-              <Button onClick={handleStart} size="lg" className="bg-primary text-primary-foreground font-bold uppercase px-12 h-12 shadow-2xl">
+              <Button ref={startButtonRef} onClick={handleStart} size="lg" className="bg-primary text-primary-foreground font-bold uppercase px-12 h-12 shadow-2xl">
                 <Play className="w-5 h-5 mr-2" /> Démarrer la séquence réelle
               </Button>
             </Card>
@@ -215,15 +258,16 @@ export function ProcedureExecutor({ procedure }: ProcedureExecutorProps) {
                     </div>
                   </div>
                   
-                  <div className="flex gap-4">
-                    <Button 
-                      onClick={handleConfirmPrerequisite} 
-                      className="flex-1 h-12 bg-secondary text-secondary-foreground font-bold uppercase shadow-xl"
-                    >
-                      <CheckCircle2 className="w-5 h-5 mr-2" />
-                      Confirmer ce prérequis
-                    </Button>
-                  </div>
+                   <div className="flex gap-4">
+                     <Button 
+                       ref={confirmButtonRef}
+                       onClick={handleConfirmPrerequisite} 
+                       className="flex-1 h-12 bg-secondary text-secondary-foreground font-bold uppercase shadow-xl"
+                     >
+                       <CheckCircle2 className="w-5 h-5 mr-2" />
+                       Confirmer ce prérequis
+                     </Button>
+                   </div>
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -249,6 +293,7 @@ export function ProcedureExecutor({ procedure }: ProcedureExecutorProps) {
               onResolve={resolveAlarm}
               isAlarm={status === 'ALARM'}
               startTime={Date.now()}
+              voiceActive={voice.isListening}
             />
           )}
 

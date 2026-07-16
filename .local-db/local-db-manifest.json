@@ -1,21 +1,20 @@
 {
   "files": [
     {
-      "id": "1783349929494_2xlkbb0",
-      "originalName": "qa_seed-k-epi-crf.json",
-      "resolvedPath": "INDEX_CHROMA/items/qa_seed-k-epi-crf.json",
+      "id": "1784243553206_btorl8q",
+      "originalName": "search-doc.json",
+      "resolvedPath": "INDEX_CHROMA/search-doc.json",
       "type": "json",
       "knowledgeType": "qa",
-      "cloudId": "seed-k-epi-crf",
-      "timestamp": 1783349929494,
-      "size": 358,
+      "timestamp": 1784243553206,
+      "size": 8,
       "tags": [
-        "EPI",
-        "Sécurité",
-        "CRF"
+        "tag1",
+        "tag2"
       ]
     }
   ],
-  "lastSync": "2026-07-14T10:55:47.513Z",
-  "version": "1.0.0"
+  "lastSync": "2026-07-16T23:22:33.361Z",
+  "version": "1.0.0",
+  "seededFromRegistry": true
 }

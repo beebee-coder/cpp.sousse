@@ -54,9 +54,9 @@ export function DeepLinkHandler() {
                   { token },
                 );
 
-                if (res.success && res.user) {
+                 if (res.success && res.user) {
                   // Adoption de l'identité cloud (même compte, aucune saisie).
-                  login(res.user as any);
+                  login(res.user as any, { source: 'cloud' });
                   router.replace("/dashboard");
                 } else {
                   console.error("Échec de la validation du lien de transfert :", res.error);

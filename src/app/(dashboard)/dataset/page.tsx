@@ -19,7 +19,11 @@ import {
   Volume2,
   Pencil,
   X,
-  Check
+  Check,
+  Keyboard,
+  HelpCircle,
+  ChevronDown,
+  ChevronRight as ChevronRightIcon
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
@@ -29,6 +33,8 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
+import { Badge } from '@/components/ui/badge';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { useToast } from '@/hooks/use-toast';
 import { useVoice } from '@/hooks/use-voice';
 import { cn } from '@/lib/utils';
@@ -72,11 +78,14 @@ export default function DatasetPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editQuestion, setEditQuestion] = useState('');
   const [editAnswer, setEditAnswer] = useState('');
+  const [showJsonPreview, setShowJsonPreview] = useState(false);
+  const [justAddedId, setJustAddedId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const questionInputRef = useRef<HTMLInputElement>(null);
   const answerInputRef = useRef<HTMLTextAreaElement>(null);
   const fileNameInputRef = useRef<HTMLInputElement>(null);
   const descriptionInputRef = useRef<HTMLInputElement>(null);
+  const formCardRef = useRef<HTMLDivElement>(null);
 
   const activeFieldRef = useRef(activeField);
   useEffect(() => {
@@ -133,17 +142,14 @@ export default function DatasetPage() {
     };
 
     setPairs(prev => [...prev, newPair]);
+    setJustAddedId(newPair.id);
     setQuestion('');
     setAnswer('');
     setActiveField('question');
+    setTimeout(() => setJustAddedId(null), 1200);
     if (questionInputRef.current) {
       questionInputRef.current.focus();
     }
-
-    toast({
-      title: 'Q/R ajoutée',
-      description: 'La paire question/réponse a été ajoutée à la session.'
-    });
   }, [question, answer, toast]);
 
   const handleSend = useCallback(async () => {
@@ -196,12 +202,45 @@ export default function DatasetPage() {
               },
               targetDir: 'items'
             });
+
+            // Vectorisation immédiate dans Chroma (indexation du fichier fraîchement écrit)
+            // afin que la Q/R soit retrouvable par le RAG sans attendre une synchronisation manuelle.
+            try {
+              await apiClient.post('/api/local-db', {
+                action: 'index',
+                targetPath: `items/${registryFileName}`
+              });
+            } catch (idxErr) {
+              console.warn('[DATASET] Échec indexation vectorielle Chroma :', idxErr);
+            }
           } catch (e) {
             console.warn('[DATASET] Erreur écriture BDD locale :', e);
           }
         }
 
+        // (Non bloquant) Entraînement Weaviate Cloud pour la recherche sémantique des Q/R.
+        // Ignoré en cas d'erreur (ex : WEAVIATE non configuré) afin de ne pas faire échouer la sauvegarde.
+        try {
+          await apiClient.post('/api/vector/ingest', {
+            items: pairs.map(p => ({ question: p.question, answer: p.answer })),
+            metadata: {
+              id: normalizedFileName,
+              title: normalizedFileName,
+              tags: ['Q/R', 'entrainement', ...(description.trim() ? [description.trim()] : [])],
+              category: 'General'
+            }
+          });
+        } catch (weaviateErr) {
+          console.warn('[DATASET] Entraînement Weaviate ignoré :', weaviateErr);
+          toast({
+            variant: 'destructive',
+            title: 'Vectorisation Weaviate échouée',
+            description: 'Les paires Q/R sont sauvegardées mais ne seront pas retrouvées par le RAG sémantique cloud.',
+          });
+        }
+
         setPairs([]);
+        setJustAddedId(null);
         setFileName('');
         setDescription('');
         setActiveField('question');
@@ -211,7 +250,7 @@ export default function DatasetPage() {
 
         toast({
           title: 'Sauvegarde réussie',
-          description: `${pairs.length} paires Q/R enregistrées dans REGISTRE (${registryPath}).${isDesktop ? ' Copie locale + vectorisation JSON effectuées.' : ''}`
+          description: `${pairs.length} paires Q/R enregistrées dans REGISTRE (${registryPath}).${isDesktop ? ' Copie locale + indexation vectorielle Chroma effectuées.' : ''}`
         });
       } else {
         throw new Error((res as any).error || 'Erreur inconnue');
@@ -286,6 +325,32 @@ export default function DatasetPage() {
         setDescription(prev => prev ? `${prev} ${parsed.text}` : parsed.text);
         descriptionInputRef.current?.focus();
       }
+    },
+    onActivate: () => {
+      const firstEmpty = !question.trim() ? 'question'
+        : !answer.trim() ? 'answer'
+        : !fileName.trim() ? 'fileName'
+        : !description.trim() ? 'description'
+        : null;
+
+      if (firstEmpty) {
+        setActiveField(firstEmpty);
+        if (firstEmpty === 'question') questionInputRef.current?.focus();
+        else if (firstEmpty === 'answer') answerInputRef.current?.focus();
+        else if (firstEmpty === 'fileName') fileNameInputRef.current?.focus();
+        else if (firstEmpty === 'description') descriptionInputRef.current?.focus();
+      }
+
+      const guides: Record<string, string> = {
+        question: 'Dites votre question.',
+        answer: 'Dites la réponse.',
+        fileName: 'Dictée le nom du fichier.',
+        description: 'Dictée la description.',
+      };
+      const target = firstEmpty || activeFieldRef.current;
+      setTimeout(() => {
+        voice.speak(guides[target] || 'Je vous écoute.');
+      }, 400);
     },
     onCorrection: () => {
       const field = activeFieldRef.current;
@@ -363,9 +428,17 @@ export default function DatasetPage() {
       const projectId = 'project-001';
       const result = await syncEngine.syncAll(userId, projectId);
 
+      const parts = [
+        `${result.injectedCount} item(s) transféré(s)`,
+        `${result.vectorizedCount} fichier(s) vectorisé(s)`,
+      ];
+      if (result.skippedDuplicates > 0) parts.push(`${result.skippedDuplicates} doublon(s) ignoré(s)`);
+      if (result.failedItems.length > 0) parts.push(`${result.failedItems.length} échec(s)`);
+
       toast({
-        title: 'Synchronisation terminée',
-        description: `${result.injectedCount} item(s) transféré(s), ${result.vectorizedCount} fichier(s) vectorisé(s).`
+        title: result.failedItems.length > 0 ? 'Synchronisation partielle' : 'Synchronisation terminée',
+        description: parts.join(', '),
+        variant: result.failedItems.length > 0 ? 'destructive' : 'default',
       });
 
       setPairs([]);
@@ -412,6 +485,13 @@ export default function DatasetPage() {
       setForgeSaving(false);
     }
   }, [toast]);
+
+  const handleAnswerKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      e.preventDefault();
+      handleAddPair();
+    }
+  }, [handleAddPair]);
 
   useEffect(() => {
     setMounted(true);
@@ -502,81 +582,116 @@ export default function DatasetPage() {
 
             {/* Q/R Single View */}
             <TabsContent value="qr" className="flex-1 overflow-hidden focus-visible:ring-0 mt-4">
-              <div className="h-full flex flex-col gap-6 max-w-4xl mx-auto pb-4">
+              <div className="h-full flex flex-col gap-4 max-w-4xl mx-auto pb-4">
+                {/* Header */}
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 min-w-0">
-                    {lastTranscript && (
-                      <p className="text-[9px] font-code text-muted-foreground/70 max-w-md truncate">
-                        Dernière reconnaissance : "{lastTranscript}"
-                      </p>
+                  <div className="flex items-center gap-3">
+                    <h2 className="text-xs font-headline font-bold uppercase tracking-widest text-primary">
+                      Questions / Réponses
+                    </h2>
+                    {pairs.length > 0 && (
+                      <Badge variant="secondary" className="text-[9px] font-code uppercase">
+                        {pairs.length} paire{pairs.length > 1 ? 's' : ''}
+                      </Badge>
                     )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-code text-muted-foreground uppercase tracking-widest">
+                      {pairs.length} paire{pairs.length > 1 ? 's' : ''}
+                    </span>
                   </div>
                 </div>
 
-                {/* Input Zone */}
+                {/* Input Form */}
                 <Card className="border-border/40 bg-card/50 shadow-xl">
-                  <CardHeader className="space-y-1">
-                    <CardTitle className="text-lg flex items-center gap-2">
-                      <Database className="w-4 h-4 text-primary" />
-                      Question Technique
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="space-y-2">
-                      <Input
-                        ref={questionInputRef}
-                        value={question}
-                        onChange={(e) => setQuestion(e.target.value)}
-                        onFocus={() => setActiveField('question')}
-                        placeholder="Saisissez ou dictez la question technique..."
-                        className="flex-1 bg-background border-border/40 focus:border-primary/50 text-sm font-code"
-                      />
+                  <CardContent className="p-4 space-y-3">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline" className="text-[9px] font-code text-primary border-primary/30">Q</Badge>
+                          <Label className="text-[9px] font-code text-primary uppercase tracking-widest font-bold">Question</Label>
+                        </div>
+                        <Input
+                          ref={questionInputRef}
+                          value={question}
+                          onChange={(e) => setQuestion(e.target.value)}
+                          onFocus={() => setActiveField('question')}
+                          placeholder="Saisissez ou dictez la question technique..."
+                          className="h-9 text-xs font-code bg-background border-border/40 focus:border-primary/50"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline" className="text-[9px] font-code text-secondary border-secondary/30">R</Badge>
+                          <Label className="text-[9px] font-code text-secondary uppercase tracking-widest font-bold">Réponse</Label>
+                        </div>
+                        <div className="relative">
+                          <Textarea
+                            ref={answerInputRef}
+                            value={answer}
+                            onChange={(e) => setAnswer(e.target.value)}
+                            onFocus={() => setActiveField('answer')}
+                            onKeyDown={handleAnswerKeyDown}
+                            placeholder="Saisissez ou dictez la réponse technique..."
+                            className="text-xs font-code bg-background border-border/40 focus:border-secondary/50 min-h-[72px] resize-none pr-16"
+                          />
+                          <div className="absolute bottom-2 right-2 flex items-center gap-1">
+                            <kbd className="hidden md:inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[8px] font-code text-muted-foreground bg-black/40 border border-border/40 rounded-sm">
+                              <Keyboard className="w-2.5 h-2.5" />↵
+                            </kbd>
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                  </CardContent>
-                </Card>
-
-                <Card className="border-border/40 bg-card/50 shadow-xl">
-                  <CardHeader className="space-y-1">
-                    <CardTitle className="text-lg flex items-center gap-2">
-                      <Save className="w-4 h-4 text-secondary" />
-                      Réponse Adéquate
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="space-y-2">
-                      <Textarea
-                        ref={answerInputRef}
-                        value={answer}
-                        onChange={(e) => setAnswer(e.target.value)}
-                        onFocus={() => setActiveField('answer')}
-                        placeholder="Saisissez ou dictez la réponse technique..."
-                        className="flex-1 bg-background border-border/40 focus:border-primary/50 text-sm font-code min-h-[100px] resize-none"
-                      />
-                    </div>
-                  </CardContent>
-                  <CardFooter className="border-t border-border/20 pt-4 flex gap-2">
                     <Button
                       onClick={handleAddPair}
                       disabled={!question.trim() || !answer.trim()}
-                      className="w-full gap-2 bg-primary hover:bg-primary/90 text-background font-bold text-xs uppercase"
+                      className="w-full gap-2 bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-[10px] uppercase"
                     >
-                      <Plus className="w-4 h-4" />
-                      Ajouter Q/R
+                      <Plus className="w-3.5 h-3.5" />
+                      Ajouter à la session
                     </Button>
-                  </CardFooter>
+                  </CardContent>
                 </Card>
 
-                {/* Accumulated pairs + bulk actions */}
-                {pairs.length > 0 && (
-                  <Card className="border-border/40 bg-card/50 shadow-xl">
-                    <CardHeader className="space-y-1">
-                      <div className="flex flex-col gap-2">
+                {/* Pairs list or empty state */}
+                {pairs.length === 0 ? (
+                  <Card className="border-border/30 bg-card/20 flex-1 min-h-[200px]">
+                    <CardContent className="flex flex-col items-center justify-center h-full min-h-[200px] gap-3 py-8">
+                      <div className="w-12 h-12 rounded-full bg-muted/30 border border-border/30 flex items-center justify-center">
+                        <Database className="w-6 h-6 text-muted-foreground/50" />
+                      </div>
+                      <div className="text-center space-y-1">
+                        <p className="text-xs font-code text-muted-foreground uppercase tracking-widest">
+                          Aucune paire Q/R
+                        </p>
+                        <p className="text-[10px] font-code text-muted-foreground/60 max-w-xs">
+                          Ajoutez votre première question et réponse ci-dessus, puis envoyez vers la BDD.
+                        </p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <Card className="border-border/40 bg-card/50 shadow-xl flex-1 flex flex-col min-h-0">
+                    <CardHeader className="space-y-1 pb-3 shrink-0">
+                      <div className="flex items-center justify-between">
                         <CardTitle className="text-base flex items-center gap-2">
                           <FileJson className="w-4 h-4 text-primary" />
-                          Session ({pairs.length})
+                          Session
                         </CardTitle>
-                        <div className="flex items-center gap-2">
-                          <div className="flex-1 space-y-1">
+                        <Collapsible open={showJsonPreview} onOpenChange={setShowJsonPreview}>
+                          <CollapsibleTrigger asChild>
+                            <Button variant="ghost" size="sm" className="h-7 gap-1 text-[9px] font-code text-muted-foreground uppercase">
+                              <Code className="w-3 h-3" />
+                              {showJsonPreview ? 'Masquer' : 'Prévisualiser'} JSON
+                              {showJsonPreview ? <ChevronDown className="w-3 h-3" /> : <ChevronRightIcon className="w-3 h-3" />}
+                            </Button>
+                          </CollapsibleTrigger>
+                        </Collapsible>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-2">
+                          <div className="space-y-1">
                             <Label className="text-[9px] font-code text-primary uppercase tracking-widest font-bold">Nom du fichier</Label>
                             <Input
                               ref={fileNameInputRef}
@@ -584,10 +699,10 @@ export default function DatasetPage() {
                               onChange={(e) => setFileName(e.target.value)}
                               onFocus={() => setActiveField('fileName')}
                               placeholder="Ex: MON_FICHIER_QR"
-                              className="h-8 text-[11px] uppercase font-code bg-transparent border-border/40"
+                              className="h-7 text-[10px] uppercase font-code bg-transparent border-border/40"
                             />
                           </div>
-                          <div className="flex-1 space-y-1">
+                          <div className="space-y-1">
                             <Label className="text-[9px] font-code text-muted-foreground uppercase tracking-widest font-bold">Description (optionnel)</Label>
                             <Input
                               ref={descriptionInputRef}
@@ -595,38 +710,41 @@ export default function DatasetPage() {
                               onChange={(e) => setDescription(e.target.value)}
                               onFocus={() => setActiveField('description')}
                               placeholder="Contexte, sujet, usage..."
-                              className="h-8 text-[11px] uppercase font-code bg-transparent border-border/40"
+                              className="h-7 text-[10px] uppercase font-code bg-transparent border-border/40"
                             />
                           </div>
-                          <div className="flex items-end">
-                            <Button
-                              size="sm"
-                              onClick={handleSend}
-                              disabled={isSaving || pairs.length === 0}
-                              className="h-8 gap-2 bg-primary text-primary-foreground hover:bg-primary/90 text-[10px] uppercase font-bold"
-                            >
-                              {isSaving ? (
-                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              ) : (
-                                <Save className="w-3.5 h-3.5" />
-                              )}
-                              Envoyer vers BDD
-                            </Button>
-                          </div>
                         </div>
-                        {(!fileName.trim() && !description.trim()) && (
-                          <p className="text-[9px] font-code text-destructive/80 uppercase">
-                            Attention : sans nom ni description, le fichier sera nommé automatiquement avec un horodatage.
-                          </p>
-                        )}
+                        <div className="flex items-end">
+                          <Button
+                            size="sm"
+                            onClick={handleSend}
+                            disabled={isSaving || pairs.length === 0}
+                            className="h-7 gap-1.5 bg-secondary text-secondary-foreground hover:bg-secondary/80 text-[9px] uppercase font-bold"
+                          >
+                            {isSaving ? (
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                            ) : (
+                              <Save className="w-3 h-3" />
+                            )}
+                            Envoyer vers BDD
+                          </Button>
+                        </div>
                       </div>
+                      {(!fileName.trim() && !description.trim()) && (
+                        <p className="text-[9px] font-code text-amber-500/80 uppercase flex items-center gap-1">
+                          <HelpCircle className="w-3 h-3" />
+                          Sans nom ni description : nommage automatique par horodatage.
+                        </p>
+                      )}
                     </CardHeader>
-                    <CardContent className="p-0">
-                      <div className="max-h-[50vh] overflow-y-auto px-4 pb-4">
-                        <div className="space-y-3 pt-4">
-                          <div className="p-3 bg-black/30 border border-border/30 rounded-sm">
-                            <p className="text-[9px] font-code text-muted-foreground uppercase tracking-widest font-bold mb-2">Prévisualisation JSON</p>
-                            <pre className="text-[10px] font-code text-foreground/90 whitespace-pre-wrap leading-relaxed">
+                    <CardContent className="p-0 flex-1 overflow-hidden flex flex-col min-h-0">
+                      <ScrollArea className="flex-1 px-4 pb-4">
+                        <div className="space-y-2 pt-2">
+                          <Collapsible open={showJsonPreview}>
+                            <CollapsibleContent className="pb-3">
+                              <div className="p-3 bg-black/30 border border-border/30 rounded-sm">
+                                <p className="text-[9px] font-code text-muted-foreground uppercase tracking-widest font-bold mb-2">Prévisualisation JSON</p>
+                                <pre className="text-[9px] font-code text-foreground/90 whitespace-pre-wrap leading-relaxed max-h-40 overflow-y-auto terminal-scroll">
 {JSON.stringify({
   type: 'qa',
   title: (fileName.trim() || description.trim() || `rag_qr_${new Date().toISOString().replace(/[:.]/g, '-').split('.')[0]}`).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'rag_qr_collection',
@@ -634,100 +752,120 @@ export default function DatasetPage() {
   pairCount: pairs.length,
   pairs: pairs.map(p => ({ question: p.question, answer: p.answer }))
 }, null, 2)}
-                            </pre>
-                          </div>
-                          {pairs.map((pair, index) => (
-                            <Card key={pair.id} className="border-border/30 bg-card/30">
-                              <CardContent className="p-4">
-                                {editingId === pair.id ? (
-                                  <div className="space-y-3">
-                                    <div className="space-y-1">
-                                      <Label className="text-[9px] font-code text-primary uppercase tracking-widest font-bold">Question</Label>
-                                      <Input
-                                        value={editQuestion}
-                                        onChange={(e) => setEditQuestion(e.target.value)}
-                                        className="h-8 text-xs font-code bg-background border-border/40"
-                                      />
-                                    </div>
-                                    <div className="space-y-1">
-                                      <Label className="text-[9px] font-code text-secondary uppercase tracking-widest font-bold">Réponse</Label>
-                                      <Textarea
-                                        value={editAnswer}
-                                        onChange={(e) => setEditAnswer(e.target.value)}
-                                        className="text-xs font-code bg-background border-border/40 min-h-[80px] resize-none"
-                                      />
-                                    </div>
-                                    <div className="flex items-center gap-2 pt-1">
-                                      <Button
-                                        size="sm"
-                                        onClick={handleSaveEdit}
-                                        className="h-7 gap-1 bg-secondary text-secondary-foreground hover:bg-secondary/80 text-[10px] uppercase font-bold"
-                                      >
-                                        <Check className="w-3 h-3" /> Sauvegarder
-                                      </Button>
-                                      <Button
-                                        size="sm"
-                                        variant="ghost"
-                                        onClick={handleCancelEdit}
-                                        className="h-7 gap-1 text-[10px] uppercase font-bold text-muted-foreground"
-                                      >
-                                        <X className="w-3 h-3" /> Annuler
-                                      </Button>
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <div className="flex items-start gap-4">
-                                    <div className="w-8 h-8 bg-primary/10 border border-primary/30 rounded-sm flex items-center justify-center shrink-0">
-                                      <span className="text-xs font-code font-bold text-primary">{index + 1}</span>
-                                    </div>
-                                    <div className="flex-1 space-y-3 min-w-0">
-                                      <div className="space-y-1">
-                                        <p className="text-[9px] font-code text-primary uppercase tracking-widest font-bold">Question</p>
-                                        <p className="text-xs font-code text-foreground/90 leading-relaxed bg-black/20 p-2 rounded-sm border border-border/20">
-                                          {pair.question}
-                                        </p>
-                                      </div>
-                                      <Separator className="bg-border/20" />
-                                      <div className="space-y-1">
-                                        <p className="text-[9px] font-code text-secondary uppercase tracking-widest font-bold">Réponse</p>
-                                        <p className="text-xs font-code text-foreground/90 leading-relaxed bg-black/20 p-2 rounded-sm border border-border/20">
-                                          {pair.answer}
-                                        </p>
-                                      </div>
-                                    </div>
-                                    <div className="flex items-center gap-1 shrink-0">
-                                      <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        onClick={() => handleStartEdit(pair)}
-                                        className="h-8 w-8 text-muted-foreground hover:text-primary"
-                                        title="Modifier"
-                                      >
-                                        <Pencil className="w-3.5 h-3.5" />
-                                      </Button>
-                                      <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        onClick={() => handleRemovePair(pair.id)}
-                                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                                        title="Supprimer"
-                                      >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                      </Button>
-                                    </div>
-                                  </div>
+                                </pre>
+                              </div>
+                            </CollapsibleContent>
+                          </Collapsible>
+
+                          <div className="space-y-2">
+                            {pairs.map((pair, index) => (
+                              <Card
+                                key={pair.id}
+                                className={cn(
+                                  "border-border/30 bg-card/30 transition-all duration-300",
+                                  justAddedId === pair.id && "border-primary/50 bg-primary/5 shadow-lg shadow-primary/10"
                                 )}
-                              </CardContent>
-                            </Card>
-                          ))}
-                          <div ref={scrollRef} />
+                              >
+                                <CardContent className="p-3">
+                                  {editingId === pair.id ? (
+                                    <div className="space-y-2.5">
+                                      <div className="space-y-1">
+                                        <div className="flex items-center gap-2">
+                                          <Badge variant="outline" className="text-[9px] font-code text-primary border-primary/30">Q</Badge>
+                                          <Label className="text-[9px] font-code text-primary uppercase tracking-widest font-bold">Question</Label>
+                                        </div>
+                                        <Input
+                                          value={editQuestion}
+                                          onChange={(e) => setEditQuestion(e.target.value)}
+                                          className="h-8 text-xs font-code bg-background border-border/40"
+                                        />
+                                      </div>
+                                      <div className="space-y-1">
+                                        <div className="flex items-center gap-2">
+                                          <Badge variant="outline" className="text-[9px] font-code text-secondary border-secondary/30">R</Badge>
+                                          <Label className="text-[9px] font-code text-secondary uppercase tracking-widest font-bold">Réponse</Label>
+                                        </div>
+                                        <Textarea
+                                          value={editAnswer}
+                                          onChange={(e) => setEditAnswer(e.target.value)}
+                                          className="text-xs font-code bg-background border-border/40 min-h-[60px] resize-none"
+                                        />
+                                      </div>
+                                      <div className="flex items-center gap-2 pt-1">
+                                        <Button
+                                          size="sm"
+                                          onClick={handleSaveEdit}
+                                          className="h-7 gap-1 bg-secondary text-secondary-foreground hover:bg-secondary/80 text-[10px] uppercase font-bold"
+                                        >
+                                          <Check className="w-3 h-3" /> Sauvegarder
+                                        </Button>
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          onClick={handleCancelEdit}
+                                          className="h-7 gap-1 text-[10px] uppercase font-bold text-muted-foreground"
+                                        >
+                                          <X className="w-3 h-3" /> Annuler
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <div className="flex items-start gap-3">
+                                      <div className="w-7 h-7 bg-primary/10 border border-primary/30 rounded-sm flex items-center justify-center shrink-0">
+                                        <span className="text-[10px] font-code font-bold text-primary">{index + 1}</span>
+                                      </div>
+                                      <div className="flex-1 space-y-2 min-w-0">
+                                        <div className="space-y-1">
+                                          <div className="flex items-center gap-2">
+                                            <Badge variant="outline" className="text-[9px] font-code text-primary border-primary/30 px-1.5 py-0">Q</Badge>
+                                            <p className="text-xs font-code text-foreground/90 leading-relaxed break-words">
+                                              {pair.question}
+                                            </p>
+                                          </div>
+                                        </div>
+                                        <Separator className="bg-border/10" />
+                                        <div className="space-y-1">
+                                          <div className="flex items-center gap-2">
+                                            <Badge variant="outline" className="text-[9px] font-code text-secondary border-secondary/30 px-1.5 py-0">R</Badge>
+                                            <p className="text-xs font-code text-foreground/80 leading-relaxed break-words">
+                                              {pair.answer}
+                                            </p>
+                                          </div>
+                                        </div>
+                                      </div>
+                                      <div className="flex items-center gap-0.5 shrink-0">
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          onClick={() => handleStartEdit(pair)}
+                                          className="h-7 w-7 text-muted-foreground hover:text-primary"
+                                          title="Modifier"
+                                        >
+                                          <Pencil className="w-3 h-3" />
+                                        </Button>
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          onClick={() => handleRemovePair(pair.id)}
+                                          className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                                          title="Supprimer"
+                                        >
+                                          <Trash2 className="w-3 h-3" />
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  )}
+                                </CardContent>
+                              </Card>
+                            ))}
+                          </div>
                         </div>
-                      </div>
+                      </ScrollArea>
                     </CardContent>
-                   </Card>
-                 )}
-               </div>
-             </TabsContent>
+                  </Card>
+                )}
+              </div>
+            </TabsContent>
 
             {/* Forge RAG (Sequencer) */}
             <TabsContent value="forge" className="flex-1 overflow-hidden focus-visible:ring-0 mt-4">

@@ -24,6 +24,7 @@ interface UseProcedureExecutionReturn {
   progress: number;
   isRunning: boolean;
   isCompleted: boolean;
+  isFailed: boolean;
   isAborted: boolean;
   isAlarm: boolean;
   start: () => void;
@@ -34,15 +35,16 @@ interface UseProcedureExecutionReturn {
   togglePause: () => void;
   triggerAlarm: (code: string) => void;
   resolveAlarm: (code: string) => void;
-    confirmPrerequisite: (id: string) => string[];
-    confirmAllPrerequisites: () => string[];
+  confirmPrerequisite: (id: string) => string[];
+  confirmAllPrerequisites: () => string[];
   abort: () => void;
+  fail: (reason: string) => void;
   restart: () => void;
   exportJson: () => void;
 }
 
 export function useProcedureExecution({ procedure, onComplete }: UseProcedureExecutionOptions): UseProcedureExecutionReturn {
-  const [engine] = useState(() => new ExecutionEngine(procedure));
+  const [engine, setEngine] = useState(() => new ExecutionEngine(procedure));
   const [state, setState] = useState<ExecutionState>(() => engine.getState());
   const [elapsed, setElapsed] = useState(0);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -51,13 +53,22 @@ export function useProcedureExecution({ procedure, onComplete }: UseProcedureExe
   const currentStep = state.currentStepIndex >= 0 ? procedure.steps[state.currentStepIndex] : null;
   const totalSteps = procedure.steps.length;
 
-  const syncState = useCallback(() => {
-    setState(engine.getState());
-  }, [engine]);
+  useEffect(() => {
+    setEngine(new ExecutionEngine(procedure));
+    setState({ ...new ExecutionEngine(procedure).getState(), status: 'IDLE' });
+    setElapsed(0);
+    stepStartRef.current = Date.now();
+    if (timerRef.current) clearInterval(timerRef.current);
+  }, [procedure.id, procedure.code]);
 
   useEffect(() => {
-    engine.getState();
-  }, [procedure, engine]);
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+      if (state.status === 'RUNNING' || state.status === 'PAUSED') {
+        engine.abort();
+      }
+    };
+  }, [engine, state.status]);
 
   // Timer
   useEffect(() => {
@@ -128,7 +139,12 @@ export function useProcedureExecution({ procedure, onComplete }: UseProcedureExe
   const togglePause = useCallback(() => {
     const newState = state.status === 'PAUSED' ? engine.resume() : engine.pause();
     setState(newState);
-  }, [engine, state.status]);
+    if (state.status === 'PAUSED') {
+      stepStartRef.current = Date.now() - (elapsed * 1000);
+    } else {
+      stepStartRef.current = Date.now();
+    }
+  }, [engine, state.status, elapsed]);
 
   const triggerAlarm = useCallback((code: string) => {
     const newState = engine.triggerAlarm(code);
@@ -154,6 +170,11 @@ export function useProcedureExecution({ procedure, onComplete }: UseProcedureExe
 
   const abort = useCallback(() => {
     const newState = engine.abort();
+    setState(newState);
+  }, [engine]);
+
+  const fail = useCallback((reason: string) => {
+    const newState = engine.fail(reason);
     setState(newState);
   }, [engine]);
 
@@ -197,6 +218,7 @@ export function useProcedureExecution({ procedure, onComplete }: UseProcedureExe
     progress,
     isRunning: state.status === 'RUNNING',
     isCompleted: state.status === 'COMPLETED',
+    isFailed: state.status === 'FAILED',
     isAborted: state.status === 'ABORTED',
     isAlarm: state.status === 'ALARM',
     start,
@@ -210,6 +232,7 @@ export function useProcedureExecution({ procedure, onComplete }: UseProcedureExe
     confirmPrerequisite,
     confirmAllPrerequisites,
     abort,
+    fail,
     restart,
     exportJson,
   };

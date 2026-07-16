@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react';
 import { usePlatform } from '@/components/PlatformProvider';
 import { localAuth } from '@/lib/auth/local-auth';
+import { validateLocalSession } from '@/lib/local-sql';
 import { getDesktopSession, saveDesktopSession, clearDesktopSession } from '@/lib/desktop-session';
 
 export interface SessionUser {
@@ -34,7 +35,7 @@ interface SessionContextValue {
   source?: SessionSource;
   refresh: () => Promise<void>;
   /** Établit une session (utilisé par le handoff web→desktop). */
-  login: (user: SessionUser, opts?: { persist?: boolean }) => void;
+  login: (user: SessionUser, opts?: { persist?: boolean; source?: SessionSource }) => void;
   /** Déconnecte : purge la session cloud persistée sur desktop. */
   logout: () => void;
 }
@@ -95,10 +96,21 @@ export function SessionProvider({
       setSource('cloud');
       setStatus('authenticated');
     } else {
-      const local = localAuth.getCurrentSession();
-      setUser(local ?? undefined);
-      setSource('local');
-      setStatus(local ? 'authenticated' : 'unauthenticated');
+      (async () => {
+        const stored = localAuth.getCurrentSession();
+        const validated = await validateLocalSession(stored);
+        if (validated) {
+          localAuth.saveSession(validated);
+          setUser(validated);
+          setSource('local');
+          setStatus('authenticated');
+        } else {
+          localAuth.clearSession();
+          setUser(undefined);
+          setSource(undefined);
+          setStatus('unauthenticated');
+        }
+      })();
     }
   }, [isReady, initialUser, isDesktop]);
 
@@ -106,9 +118,9 @@ export function SessionProvider({
     if (isReady) void load();
   }, [load, isReady]);
 
-  const login = useCallback((u: SessionUser, opts?: { persist?: boolean }) => {
+  const login = useCallback((u: SessionUser, opts?: { persist?: boolean; source?: SessionSource }) => {
     setUser(u);
-    setSource('cloud');
+    setSource(opts?.source ?? 'cloud');
     setStatus('authenticated');
     if (opts?.persist !== false) saveDesktopSession(u);
   }, []);

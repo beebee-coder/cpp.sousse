@@ -13,62 +13,63 @@ export interface IngestPayload {
   metadata: Record<string, any>;
 }
 
-/**
- * API Route d'ingestion hybride optimisée pour le poids du bundle.
- * Sépare physiquement les chemins Cloud (Weaviate) et Local (Chroma).
- */
 export const POST = createHybridRoute<IngestPayload, any>({
   name: 'VECTOR_INGEST',
   webHandler: async (req, body) => {
     const { items, metadata } = body;
-    const collectionName = String(metadata.collection || 'industrial_manuals');
     const timestamp = new Date().toLocaleTimeString();
-    const isCloud = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
 
-    // 📡 CHEMIN CLOUD : Utilise exclusivement weaviate-client (Plus léger)
-    if (isCloud) {
-      try {
-        console.log(`📡 [${timestamp}] [CLOUD_TRAINING] Entraînement Weaviate Cloud...`);
-        const { getWeaviateClient } = await import('@/lib/weaviate-client');
-        const client = await getWeaviateClient();
-        const className = collectionName.charAt(0).toUpperCase() + collectionName.slice(1);
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return { success: false, error: 'Payload invalide: items requis et non vide', details: 'items must be a non-empty array' };
+    }
 
-        const batcher = client.batch.objectsBatcher();
-        items.forEach(item => {
-          batcher.withObject({
-            class: className,
-            properties: {
-              question: item.question,
-              answer: item.answer,
-              ...metadata
-            }
-          });
-        });
-
-        await batcher.do();
-        return { success: true, message: 'ENTRAINEMENT_CLOUD_REUSSI', provider: 'WEAVIATE' };
-      } catch (e: any) {
-        console.error(`❌ [CLOUD_TRAINING] Échec :`, e.message);
-        return { success: false, error: 'CLOUD_INGEST_FAILED', details: e.message };
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (!item.question || !item.answer) {
+        return { success: false, error: `Item ${i} invalide: question et answer requis`, details: `Missing question or answer at index ${i}` };
+      }
+      if (typeof item.question !== 'string' || typeof item.answer !== 'string') {
+        return { success: false, error: `Item ${i} invalide: question et answer doivent être des chaînes`, details: `Invalid types at index ${i}` };
       }
     }
 
-    // 🧠 CHEMIN LOCAL : Utilise ChromaDB et Transformers (Poids lourd)
-    // On force l'import dynamique pour éviter que Vercel ne tente de l'analyser.
     try {
-      const chromaModule = await import('@/lib/chroma');
-      console.log(`🧠 [${timestamp}] [LOCAL_TRAINING] Entraînement ChromaDB Local...`);
-      
-      const docs = items.map((item, index) => ({
-        id: `local-${Date.now()}-${index}`,
-        content: `Question: ${item.question}\nRéponse: ${item.answer}`,
-        metadata: { ...metadata, ingested_at: new Date().toISOString() }
-      }));
-      
-      await chromaModule.upsertDocuments(collectionName, docs);
-      return { success: true, message: 'ENTRAINEMENT_LOCAL_REUSSI', provider: 'CHROMA' };
+      console.log(`📡 [${timestamp}] [WEAVIATE_CLOUD] Entraînement des Q/R (collection unifiée KnowledgeItem)...`);
+
+      // Indexation unifiée vers la collection Weaviate `KnowledgeItem`
+      // (même collection que les procédures) afin que le RAG sémantique
+      // retrouve aussi bien les procédures que les paires Q/R.
+      const { upsertKnowledgeItem } = await import('@/lib/weaviate/weaviate-knowledge');
+
+      const baseTags = Array.isArray(metadata?.tags) ? metadata.tags : ['Q/R', 'entrainement'];
+      const title = typeof metadata?.title === 'string' && metadata.title.trim() ? metadata.title.trim() : items[0].question.slice(0, 80);
+
+      const baseId = typeof metadata?.id === 'string' && metadata.id.trim()
+        ? metadata.id
+        : `qa-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        await upsertKnowledgeItem({
+          // Id unique par paire : sinon toutes les paires d'une session partagent
+          // le même knowledgeId et neaviate écrase → seule la dernière Q/R survivait.
+          knowledgeId: `${baseId}#${i}`,
+          userId: typeof metadata?.userId === 'string' ? metadata.userId : 'dataset-import',
+          type: 'qa',
+          title,
+          content: `Q: ${item.question}\nR: ${item.answer}`,
+          tags: baseTags,
+          category: typeof metadata?.category === 'string' ? metadata.category : 'General',
+          difficulty: 'MEDIUM',
+          isPublic: true,
+          createdAt: new Date().toISOString(),
+        });
+      }
+
+      return { success: true, message: 'ENTRAINEMENT_WEAVIATE_REUSSI', provider: 'WEAVIATE' };
     } catch (e: any) {
-      return { success: false, error: e.message };
+      console.error(`❌ [WEAVIATE] Échec entraînement Q/R :`, e.message);
+      return { success: false, error: 'CLOUD_INGEST_FAILED', details: e.message };
     }
-  }
+  },
 });

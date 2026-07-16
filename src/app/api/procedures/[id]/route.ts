@@ -4,6 +4,8 @@ export const revalidate = false;
 import { createHybridRoute } from '@/lib/api-route-creator';
 import { procedureManager } from '@/lib/procedures/services/procedure-manager.service';
 import { prisma } from '@/lib/db/prisma-client';
+import { getSessionFromCookie } from '@/lib/session';
+import { UpdateProcedureSchema } from '@/lib/procedures/validators/procedure.validator';
 
 /**
  * GET /api/procedures/[id]
@@ -29,21 +31,20 @@ export const GET = createHybridRoute<any, any>({
 export const PUT = createHybridRoute<any, any>({
   name: 'PROCEDURE_UPDATE',
   webHandler: async (req, body, params) => {
+    const session = await getSessionFromCookie();
+    if (!session || session.user.role !== 'admin') {
+      return new Response(JSON.stringify({ error: 'UNAUTHORIZED' }), { status: 401 });
+    }
+
     const id = params?.id;
     if (!id) return new Response(JSON.stringify({ error: "ID_REQUIS" }), { status: 400 });
 
-    const updated = await prisma.procedure.update({
-      where: { id },
-      data: {
-        title: body.title,
-        description: body.description,
-        steps: body.steps,
-        prerequisites: body.prerequisites,
-        criticality: body.criticality,
-        status: body.status,
-        updatedAt: new Date(),
-      }
-    });
+    const parsed = UpdateProcedureSchema.safeParse({ ...body, id });
+    if (!parsed.success) {
+      return new Response(JSON.stringify({ error: 'VALIDATION_ERROR', details: parsed.error.flatten() }), { status: 400 });
+    }
+
+    const updated = await procedureManager.update(id, parsed.data);
     return { success: true, procedure: updated };
   }
 });
@@ -54,10 +55,15 @@ export const PUT = createHybridRoute<any, any>({
 export const DELETE = createHybridRoute<any, any>({
   name: 'PROCEDURE_DELETE',
   webHandler: async (req, body, params) => {
+    const session = await getSessionFromCookie();
+    if (!session || session.user.role !== 'admin') {
+      return new Response(JSON.stringify({ error: 'UNAUTHORIZED' }), { status: 401 });
+    }
+
     const id = params?.id;
     if (!id) return new Response(JSON.stringify({ error: "ID_REQUIS" }), { status: 400 });
 
-    await prisma.procedure.delete({ where: { id } });
+    await procedureManager.delete(id);
     return { success: true, message: 'Procédure supprimée' };
   }
 });

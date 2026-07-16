@@ -2,37 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { User, Camera, Upload, Trash2 } from 'lucide-react';
-
-const MAX_DIM = 256;
-
-function fileToDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
-
-function resizeDataUrl(dataUrl: string, type = 'image/jpeg'): Promise<string> {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      const scale = Math.min(1, MAX_DIM / Math.max(img.width, img.height));
-      const w = Math.round(img.width * scale);
-      const h = Math.round(img.height * scale);
-      const canvas = document.createElement('canvas');
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return resolve(dataUrl);
-      ctx.drawImage(img, 0, 0, w, h);
-      resolve(canvas.toDataURL(type, 0.85));
-    };
-    img.onerror = () => resolve(dataUrl);
-    img.src = dataUrl;
-  });
-}
+import { fileToDataUrl, resizeDataUrl, MAX_DIM } from '@/lib/image-helpers';
 
 interface ProfilePhotoMenuProps {
   currentImage?: string | null;
@@ -66,8 +36,12 @@ export function ProfilePhotoMenu({ currentImage, onSave, size = 32 }: ProfilePho
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const raw = await fileToDataUrl(file);
-    setPreview(await resizeDataUrl(raw));
+    try {
+      const raw = await fileToDataUrl(file);
+      setPreview(await resizeDataUrl(raw));
+    } catch {
+      setPreview(null);
+    }
     if (fileRef.current) fileRef.current.value = '';
   };
 

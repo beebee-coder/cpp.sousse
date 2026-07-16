@@ -1,4 +1,5 @@
 use crate::vector_store::storage::VectorStore;
+use crate::vector_store::types::SearchResult;
 use std::sync::Arc;
 
 pub struct VectorSearchEngine {
@@ -10,13 +11,8 @@ impl VectorSearchEngine {
         Self { store }
     }
 
-    pub fn search(&self, query: &str, top_k: usize) -> Result<Vec<crate::vector_store::SearchResult>, String> {
+    pub fn search(&self, query: &str, top_k: usize) -> Result<Vec<SearchResult>, String> {
         self.store.search(query, top_k).map_err(|e| e.to_string())
-    }
-
-    pub fn search_with_origin(&self, query: &str, origin: &str, top_k: usize) -> Result<Vec<crate::vector_store::SearchResult>, String> {
-        let results = self.store.search(query, top_k).map_err(|e| e.to_string())?;
-        Ok(results.into_iter().filter(|r| r.document.metadata.origin == origin).collect())
     }
 
     pub fn get_context_for_query(&self, query: &str, max_contexts: usize) -> String {

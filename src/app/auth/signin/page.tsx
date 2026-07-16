@@ -41,7 +41,16 @@ function SignInForm() {
 
       if (!data.success) {
         console.warn(`🔐 [AUTH_FRONT] [REJECT] [${ts}] Liaison refusée : ${data.error}`);
-        setError(data.error || "Erreur d'accréditation");
+        const errorType = (data as any).errorType;
+        let message = data.error || "Erreur d'accréditation";
+        if (errorType === 'NETWORK_DOWN') {
+          message = "Réseau indisponible. Vérifiez votre connexion.";
+        } else if (errorType === 'DB_CORRUPTED') {
+          message = "Base de données locale corrompue. Redémarrez l'application.";
+        } else if (errorType === 'RATE_LIMITED') {
+          message = "Trop de tentatives. Patientez avant de réessayer.";
+        }
+        setError(message);
         return;
       }
 
@@ -53,7 +62,7 @@ function SignInForm() {
       // connecté et on l'établit immédiatement sans repasser par le serveur.
       if (isDesktop && u) {
         localAuth.saveSession({ id: u.id, email: u.email, role: u.role });
-        login({ id: u.id, email: u.email, role: u.role, firstName: u.firstName, lastName: u.lastName }, { persist: true });
+        login({ id: u.id, email: u.email, role: u.role, firstName: u.firstName, lastName: u.lastName }, { persist: true, source: 'local' });
       }
 
       // Synchronise la session persistante AVANT la navigation pour éviter

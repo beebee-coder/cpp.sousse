@@ -1,10 +1,20 @@
 use crate::vector_store::storage::VectorStore;
 use crate::vector_store::types::Document;
+use std::collections::hash_map::DefaultHasher;
 use std::fs;
+use std::hash::{Hash, Hasher};
 use std::path::Path;
 
 const CHUNK_SIZE: usize = 500;
-const CHUNK_OVERLAP: usize = 100;
+
+/// Hash court et stable du contenu pour garantir l'unicité des identifiants de
+/// chunk (évite les collisions d'`INSERT OR REPLACE` entre fichiers qui
+/// produiraient le même `file_path.replace(...)`).
+fn content_hash(s: &str) -> String {
+    let mut hasher = DefaultHasher::new();
+    s.hash(&mut hasher);
+    format!("{:x}", hasher.finish())
+}
 
 pub struct DocumentIndexer {
     store: std::sync::Arc<VectorStore>,
@@ -19,30 +29,33 @@ impl DocumentIndexer {
     pub fn index_local_db(&self) -> Result<crate::vector_store::types::IndexStats, String> {
         let root = Path::new(&self.local_db_root);
         if !root.exists() {
-            return Ok(self.store.get_stats());
+            return Ok(self.store.get_stats().map_err(|e| e.to_string())?);
         }
 
         let documents = self.scan_directory(root, None);
         if documents.is_empty() {
-            return Ok(self.store.get_stats());
+            return Ok(self.store.get_stats().map_err(|e| e.to_string())?);
         }
 
+        // Indexation incrémentale : on construit le vocabulaire sur l'ensemble du
+        // corpus (nécessaire pour un TF-IDF cohérent) mais on ne ré-écrit que les
+        // chunks dont le contenu a réellement changé, évitant un re-scan intégral
+        // coûteux à chaque lancement en mode hybride.
         self.store.build_vocabulary(&documents);
-        self.store.index_documents(documents).map_err(|e| e.to_string())
-    }
 
-    pub fn index_file(&self, file_path: &str) -> Result<crate::vector_store::types::IndexStats, String> {
-        let path = Path::new(file_path);
-        if !path.exists() {
-            return Err("File not found".to_string());
+        let already = self.store.indexed_content_hashes();
+        let to_index: Vec<Document> = documents
+            .into_iter()
+            .filter(|d| !already.contains(d.metadata.extra.get("content_hash").and_then(|v| v.as_str()).unwrap_or("")))
+            .collect();
+
+        if to_index.is_empty() {
+            eprintln!("[INDEX] Aucun document modifié — index déjà à jour.");
+            return Ok(self.store.get_stats().map_err(|e| e.to_string())?);
         }
 
-        let content = fs::read_to_string(file_path).map_err(|e| e.to_string())?;
-        let metadata = self.build_metadata(file_path, &content);
-        let chunks = self.chunk_text(&content, &metadata);
-
-        self.store.build_vocabulary(&chunks);
-        self.store.index_documents(chunks).map_err(|e| e.to_string())
+        self.store.index_documents(to_index).map_err(|e| e.to_string())?;
+        Ok(self.store.get_stats().map_err(|e| e.to_string())?)
     }
 
     fn scan_directory(&self, dir: &Path, parent_dir: Option<String>) -> Vec<Document> {
@@ -89,12 +102,15 @@ impl DocumentIndexer {
     fn chunk_text(&self, content: &str, metadata: &crate::vector_store::types::DocumentMetadata) -> Vec<Document> {
         let mut chunks = Vec::new();
         let text = content.trim();
+        let base = metadata.file_path.replace(['/', '\\'], "_");
 
         if text.len() <= CHUNK_SIZE {
+            let mut meta = metadata.clone();
+            meta.extra.insert("content_hash".to_string(), serde_json::json!(content_hash(text)));
             chunks.push(Document {
-                id: format!("{}-chunk-0", metadata.file_path.replace(['/', '\\'], "_")),
+                id: format!("{}-chunk-0-{}", base, &content_hash(text)[..8]),
                 content: text.to_string(),
-                metadata: metadata.clone(),
+                metadata: meta,
                 chunk_index: 0,
                 created_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
             });
@@ -112,10 +128,13 @@ impl DocumentIndexer {
             }
 
             if current_chunk.len() + sentence.len() > CHUNK_SIZE && !current_chunk.is_empty() {
+                let id = format!("{}-chunk-{}-{}", base, chunk_index, &content_hash(&current_chunk)[..8]);
+                let mut meta = metadata.clone();
+                meta.extra.insert("content_hash".to_string(), serde_json::json!(content_hash(&current_chunk)));
                 chunks.push(Document {
-                    id: format!("{}-chunk-{}", metadata.file_path.replace(['/', '\\'], "_"), chunk_index),
+                    id,
                     content: current_chunk.trim().to_string(),
-                    metadata: metadata.clone(),
+                    metadata: meta,
                     chunk_index,
                     created_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
                 });
@@ -130,10 +149,13 @@ impl DocumentIndexer {
         }
 
         if !current_chunk.trim().is_empty() {
+            let id = format!("{}-chunk-{}-{}", base, chunk_index, &content_hash(&current_chunk)[..8]);
+            let mut meta = metadata.clone();
+            meta.extra.insert("content_hash".to_string(), serde_json::json!(content_hash(&current_chunk)));
             chunks.push(Document {
-                id: format!("{}-chunk-{}", metadata.file_path.replace(['/', '\\'], "_"), chunk_index),
+                id,
                 content: current_chunk.trim().to_string(),
-                metadata: metadata.clone(),
+                metadata: meta,
                 chunk_index,
                 created_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
             });

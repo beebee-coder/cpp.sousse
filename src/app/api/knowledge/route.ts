@@ -50,6 +50,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'TITRE_ET_TYPE_REQUIS' }, { status: 400 });
     }
 
+    if (type === 'qa') {
+      const q = typeof question === 'string' ? question.trim() : '';
+      const a = typeof answer === 'string' ? answer.trim() : '';
+      if (!q || !a) {
+        return NextResponse.json({ success: false, error: 'QUESTION_ET_REPONSE_REQUISES' }, { status: 400 });
+      }
+    }
+
     const item = await prisma.knowledgeItem.create({
       data: {
         userId: session.user.id,
@@ -64,8 +72,28 @@ export async function POST(request: NextRequest) {
 
     console.log(`✅ [KNOWLEDGE_API] [SUCCESS] Item indexé avec succès : ${item.id}`);
 
-    // Optionnel : Déclencher ici la vectorisation Chroma/Weaviate asynchrone
-    
+    // Vectorisation Weaviate (non bloquante) : rend la recherche sémantique
+    // disponible pour cet item. Ignorée si Weaviate n'est pas configuré.
+    if (process.env.WEAVIATE_URL && process.env.WEAVIATE_API_KEY) {
+      try {
+        const { upsertKnowledgeItem } = await import('@/lib/weaviate/weaviate-knowledge');
+        await upsertKnowledgeItem({
+          knowledgeId: item.id,
+          userId: session.user.id,
+          type: (type || 'qa') as 'qa' | 'procedure',
+          title: item.title,
+          content: question && answer ? `Q: ${question}\nR: ${answer}` : (item.content || item.title),
+          tags: item.tags,
+          category: item.category || 'General',
+          difficulty: 'MEDIUM',
+          isPublic: false,
+          createdAt: new Date().toISOString(),
+        });
+      } catch (vecErr: any) {
+        console.warn('[KNOWLEDGE_API] Vectorisation Weaviate ignorée :', vecErr.message);
+      }
+    }
+
     return NextResponse.json({ success: true, item });
   } catch (error: unknown) {
     const err = error as Error;

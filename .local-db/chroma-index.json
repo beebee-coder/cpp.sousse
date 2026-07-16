@@ -2,14 +2,87 @@
   "version": "1.0.0",
   "entries": [
     {
-      "relPath": "INDEX_CHROMA/items/qa_seed-k-epi-crf.json",
-      "name": "qa_seed-k-epi-crf.json",
+      "relPath": "INDEX_CHROMA/bank/test/metadata.json",
+      "name": "metadata.json",
+      "parentDir": "INDEX_CHROMA/bank/test",
+      "collection": "locdb-index-chroma-bank-test",
+      "ids": [
+        "INDEX_CHROMA/bank/test/metadata.json#0"
+      ],
+      "indexedAt": "2026-07-16T23:22:33.432Z"
+    },
+    {
+      "relPath": "INDEX_CHROMA/bank/test1/metadata.json",
+      "name": "metadata.json",
+      "parentDir": "INDEX_CHROMA/bank/test1",
+      "collection": "locdb-index-chroma-bank-test1",
+      "ids": [
+        "INDEX_CHROMA/bank/test1/metadata.json#0"
+      ],
+      "indexedAt": "2026-07-16T23:22:33.439Z"
+    },
+    {
+      "relPath": "INDEX_CHROMA/items/niveau-condenseur.json",
+      "name": "niveau-condenseur.json",
       "parentDir": "INDEX_CHROMA/items",
       "collection": "locdb-index-chroma-items",
       "ids": [
-        "INDEX_CHROMA/items/qa_seed-k-epi-crf.json#0"
+        "INDEX_CHROMA/items/niveau-condenseur.json#0"
       ],
-      "indexedAt": "2026-07-10T12:56:08.698Z"
+      "indexedAt": "2026-07-16T23:22:33.452Z"
+    },
+    {
+      "relPath": "INDEX_CHROMA/items/rag_qr_2026-07-15T14-56-03-057Z.json",
+      "name": "rag_qr_2026-07-15T14-56-03-057Z.json",
+      "parentDir": "INDEX_CHROMA/items",
+      "collection": "locdb-index-chroma-items",
+      "ids": [
+        "INDEX_CHROMA/items/rag_qr_2026-07-15T14-56-03-057Z.json#0"
+      ],
+      "indexedAt": "2026-07-16T23:22:33.460Z"
+    },
+    {
+      "relPath": "INDEX_CHROMA/procedures/crf-start-001/procedure.json",
+      "name": "procedure.json",
+      "parentDir": "INDEX_CHROMA/procedures/crf-start-001",
+      "collection": "locdb-index-chroma-procedures-crf-start-001",
+      "ids": [
+        "INDEX_CHROMA/procedures/crf-start-001/procedure.json#0",
+        "INDEX_CHROMA/procedures/crf-start-001/procedure.json#1",
+        "INDEX_CHROMA/procedures/crf-start-001/procedure.json#2",
+        "INDEX_CHROMA/procedures/crf-start-001/procedure.json#3",
+        "INDEX_CHROMA/procedures/crf-start-001/procedure.json#4",
+        "INDEX_CHROMA/procedures/crf-start-001/procedure.json#5",
+        "INDEX_CHROMA/procedures/crf-start-001/procedure.json#6",
+        "INDEX_CHROMA/procedures/crf-start-001/procedure.json#7",
+        "INDEX_CHROMA/procedures/crf-start-001/procedure.json#8",
+        "INDEX_CHROMA/procedures/crf-start-001/procedure.json#9",
+        "INDEX_CHROMA/procedures/crf-start-001/procedure.json#10",
+        "INDEX_CHROMA/procedures/crf-start-001/procedure.json#11",
+        "INDEX_CHROMA/procedures/crf-start-001/procedure.json#12",
+        "INDEX_CHROMA/procedures/crf-start-001/procedure.json#13",
+        "INDEX_CHROMA/procedures/crf-start-001/procedure.json#14",
+        "INDEX_CHROMA/procedures/crf-start-001/procedure.json#15",
+        "INDEX_CHROMA/procedures/crf-start-001/procedure.json#16",
+        "INDEX_CHROMA/procedures/crf-start-001/procedure.json#17",
+        "INDEX_CHROMA/procedures/crf-start-001/procedure.json#18",
+        "INDEX_CHROMA/procedures/crf-start-001/procedure.json#19",
+        "INDEX_CHROMA/procedures/crf-start-001/procedure.json#20",
+        "INDEX_CHROMA/procedures/crf-start-001/procedure.json#21",
+        "INDEX_CHROMA/procedures/crf-start-001/procedure.json#22",
+        "INDEX_CHROMA/procedures/crf-start-001/procedure.json#23"
+      ],
+      "indexedAt": "2026-07-16T23:22:33.471Z"
+    },
+    {
+      "relPath": "INDEX_CHROMA/search-doc.json",
+      "name": "search-doc.json",
+      "parentDir": "INDEX_CHROMA",
+      "collection": "locdb-index-chroma",
+      "ids": [
+        "INDEX_CHROMA/search-doc.json#0"
+      ],
+      "indexedAt": "2026-07-16T23:22:33.478Z"
     }
   ]
 }

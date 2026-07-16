@@ -9,6 +9,10 @@ import {
   listPendingUsers as listPendingUsersStore,
   updateCurrentUser as updateCurrentUserStore,
   verifyUserPassword as verifyUserPasswordStore,
+  updateUserRole as updateUserRoleStore,
+  updateUserApproval as updateUserApprovalStore,
+  deleteUser as deleteUserStore,
+  getUserStats as getUserStatsStore,
 } from '@/lib/auth-store';
 
 // Ré-exporter le type Role depuis Prisma pour assurer la cohérence
@@ -62,6 +66,22 @@ export async function updateCurrentUser(
   data: { firstName?: string; lastName?: string; email?: string; password?: string }
 ) {
   return updateCurrentUserStore(userId, data);
+}
+
+export async function updateUserRole(userId: string, role: Role) {
+  return updateUserRoleStore(userId, role);
+}
+
+export async function updateUserApproval(userId: string, approved: boolean) {
+  return updateUserApprovalStore(userId, approved);
+}
+
+export async function deleteUser(userId: string) {
+  return deleteUserStore(userId);
+}
+
+export async function getUserStats() {
+  return getUserStatsStore();
 }
 
 export function canAccessRoute(role: Role | undefined, pathname: string) {

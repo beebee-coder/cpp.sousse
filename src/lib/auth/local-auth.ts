@@ -5,6 +5,8 @@ export interface SessionUser {
   role: string;
 }
 
+const LOCAL_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
 export const localAuth = {
   getCurrentSession: (): SessionUser | null => {
     if (typeof window === 'undefined') return null;
@@ -12,20 +14,25 @@ export const localAuth = {
     if (session) {
       try {
         const parsed = JSON.parse(session);
+        if (parsed && parsed.id && parsed.expiresAt && Date.now() > parsed.expiresAt) {
+          localStorage.removeItem('visionode_local_session');
+          return null;
+        }
         return parsed && parsed.id ? parsed : null;
       } catch {
         return null;
       }
     }
-    // Aucun utilisateur en session locale : on laisse la page de connexion
-    // prendre le relais (mode local) plutôt que de se connecter automatiquement
-    // avec un compte factice. L'utilisateur s'authentifie avec ses identifiants.
     return null;
   },
   
   saveSession: (user: SessionUser) => {
     if (typeof window !== 'undefined') {
-      localStorage.setItem('visionode_local_session', JSON.stringify(user));
+      const payload = {
+        ...user,
+        expiresAt: Date.now() + LOCAL_SESSION_TTL_MS,
+      };
+      localStorage.setItem('visionode_local_session', JSON.stringify(payload));
     }
   },
 

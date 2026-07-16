@@ -112,6 +112,52 @@ const generateId = () => {
   return `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 };
 
+const MAX_DUPLICATE_VERSIONS = 5;
+
+const MANIFEST_LOCK_FILE = path.join(LOCAL_DB_ROOT, '.manifest.lock');
+let manifestLockDepth = 0;
+
+const withManifestLock = <T>(fn: () => T): T => {
+  if (manifestLockDepth > 0) {
+    manifestLockDepth++;
+    return fn();
+  }
+
+  const deadline = Date.now() + 5000;
+  let fd: number | null = null;
+  while (Date.now() < deadline) {
+    try {
+      fd = fs.openSync(MANIFEST_LOCK_FILE, 'wx');
+      break;
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
+      const end = Date.now() + 20;
+      while (Date.now() < end) {}
+    }
+  }
+  if (fd === null) throw new Error('MANIFEST_LOCK_TIMEOUT');
+  manifestLockDepth = 1;
+  try {
+    return fn();
+  } finally {
+    manifestLockDepth--;
+    if (manifestLockDepth === 0) {
+      try { fs.closeSync(fd); } catch {}
+      try { fs.unlinkSync(MANIFEST_LOCK_FILE); } catch {}
+    }
+  }
+};
+
+let initializationPromise: Promise<void> | null = null;
+
+export async function ensureLocalDBInitialized(): Promise<void> {
+  if (initializationPromise) return initializationPromise;
+  initializationPromise = (async () => {
+    await localDB.initialize();
+  })();
+  return initializationPromise;
+}
+
 export const localDB = {
   /**
    * Retourne l'arborescence complète de la BDD locale.
@@ -272,21 +318,21 @@ export const localDB = {
       }
 
       const stats = fs.statSync(fullPath);
-      const manifest = loadManifest();
-
-      manifest.files.push({
-        id: generateId(),
-        originalName: fileName,
-        resolvedPath: targetPath,
-        type: path.extname(fileName).slice(1) || 'unknown',
-        knowledgeType: metadata?.knowledgeType,
-        cloudId: metadata?.cloudId,
-        timestamp: Date.now(),
-        size: stats.size,
-        tags: metadata?.tags
+      withManifestLock(() => {
+        const manifest = loadManifest();
+        manifest.files.push({
+          id: generateId(),
+          originalName: fileName,
+          resolvedPath: targetPath,
+          type: path.extname(fileName).slice(1) || 'unknown',
+          knowledgeType: metadata?.knowledgeType,
+          cloudId: metadata?.cloudId,
+          timestamp: Date.now(),
+          size: stats.size,
+          tags: metadata?.tags
+        });
+        saveManifest(manifest);
       });
-
-      saveManifest(manifest);
 
       console.log(`✅ [LOCAL_DB] [INJECT] ${fileName} → ${targetPath}`);
       return { success: true, path: targetPath, isDuplicate: false };
@@ -338,21 +384,45 @@ export const localDB = {
     }
 
     const fileStats = fs.statSync(fullPath);
-    const manifest = loadManifest();
-
-    manifest.files.push({
-      id: generateId(),
-      originalName: fileName,
-      resolvedPath: targetPath,
-      type: path.extname(fileName).slice(1) || 'unknown',
-      knowledgeType: metadata?.knowledgeType,
-      cloudId: metadata?.cloudId,
-      timestamp: Date.now(),
-      size: fileStats.size,
-      tags: metadata?.tags
+    withManifestLock(() => {
+      const manifest = loadManifest();
+      manifest.files.push({
+        id: generateId(),
+        originalName: fileName,
+        resolvedPath: targetPath,
+        type: path.extname(fileName).slice(1) || 'unknown',
+        knowledgeType: metadata?.knowledgeType,
+        cloudId: metadata?.cloudId,
+        timestamp: Date.now(),
+        size: fileStats.size,
+        tags: metadata?.tags
+      });
+      saveManifest(manifest);
     });
 
-    saveManifest(manifest);
+    if (existingVersions.length >= MAX_DUPLICATE_VERSIONS) {
+      const versionsToDelete = existingVersions
+        .map(f => {
+          const match = f.match(/^(\d+)_.+$/);
+          return match ? { name: f, index: parseInt(match[1], 10) } : null;
+        })
+        .filter((v): v is { name: string; index: number } => v !== null)
+        .sort((a, b) => a.index - b.index)
+        .slice(0, existingVersions.length - MAX_DUPLICATE_VERSIONS + 1);
+
+      for (const v of versionsToDelete) {
+        const oldPath = path.join(folderPath, v.name);
+        if (fs.existsSync(oldPath)) {
+          fs.unlinkSync(oldPath);
+          withManifestLock(() => {
+            const manifest = loadManifest();
+            manifest.files = manifest.files.filter(f => f.resolvedPath !== path.relative(LOCAL_DB_ROOT, oldPath).replace(/\\/g, '/'));
+            saveManifest(manifest);
+          });
+          console.log(`🗑️ [LOCAL_DB] [PRUNE] Ancienne version supprimée : ${v.name}`);
+        }
+      }
+    }
 
     console.log(`🔁 [LOCAL_DB] [DUPLICATE] ${fileName} → ${targetPath} (version ${nextIndex})`);
 
@@ -392,9 +462,19 @@ export const localDB = {
       fs.unlinkSync(fullPath);
     }
 
-    const manifest = loadManifest();
-    manifest.files = manifest.files.filter(f => f.resolvedPath !== relativePath);
-    saveManifest(manifest);
+    withManifestLock(() => {
+      const manifest = loadManifest();
+      const prefix = `${relativePath}/`;
+      manifest.files = manifest.files.filter(f => f.resolvedPath !== relativePath && !f.resolvedPath.startsWith(prefix));
+      saveManifest(manifest);
+    });
+
+    try {
+      const { deleteChromaItem } = await import('@/lib/local-indexer');
+      await deleteChromaItem(relativePath);
+    } catch (e) {
+      console.warn('[LOCAL_DB] Chroma cleanup échoué:', (e as Error).message);
+    }
 
     console.log(`🗑️ [LOCAL_DB] [DELETE] ${relativePath}`);
     return true;
@@ -409,7 +489,38 @@ export const localDB = {
     if (!fs.existsSync(oldFullPath)) {
       throw new Error('ELEMENT_INTROUVABLE');
     }
+    const isDir = fs.statSync(oldFullPath).isDirectory();
     fs.renameSync(oldFullPath, newFullPath);
+    const newRelPath = path.relative(LOCAL_DB_ROOT, newFullPath).replace(/\\/g, '/');
+
+    withManifestLock(() => {
+      const manifest = loadManifest();
+      const oldPrefix = isDir ? `${oldPath}/` : null;
+      manifest.files.forEach(entry => {
+        if (oldPrefix && entry.resolvedPath.startsWith(oldPrefix)) {
+          entry.resolvedPath = `${newRelPath}/${entry.resolvedPath.slice(oldPrefix.length)}`;
+        } else if (!oldPrefix && entry.resolvedPath === oldPath) {
+          entry.resolvedPath = newRelPath;
+        }
+      });
+      saveManifest(manifest);
+    });
+
+    try {
+      const { deleteChromaItem, indexLocalDBFile, indexLocalDBFolder } = await import('@/lib/local-indexer');
+      await deleteChromaItem(oldPath);
+
+      if (fs.existsSync(newFullPath)) {
+        if (fs.statSync(newFullPath).isDirectory()) {
+          await indexLocalDBFolder(newRelPath);
+        } else {
+          await indexLocalDBFile(newRelPath);
+        }
+      }
+    } catch (e) {
+      console.warn('[LOCAL_DB] Chroma rename cleanup échoué:', (e as Error).message);
+    }
+
     console.log(`📝 [LOCAL_DB] [RENAME] ${oldPath} -> ${newName}`);
     return { success: true };
   },
@@ -518,49 +629,55 @@ export const localDB = {
    */
   async seedFromRegistryIfEmpty(): Promise<{ seeded: number; indexed?: number }> {
     ensureLocalDB();
-    const manifest = loadManifest();
-    if (manifest.seededFromRegistry) return { seeded: 0 };
-
-    const REGISTRY_ROOT = path.join(process.cwd(), '.registry');
     let seeded = 0;
+    let indexed: number | undefined;
 
-    const walk = (dir: string, base: string) => {
-      if (!fs.existsSync(dir)) return;
-      for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
-        const abs = path.join(dir, ent.name);
-        const rel = base ? `${base}/${ent.name}` : ent.name;
-        if (ent.isDirectory()) {
-          walk(abs, rel);
-        } else if (ent.name.toLowerCase().endsWith('.json')) {
-          let raw = '';
-          try {
-            raw = fs.readFileSync(abs, 'utf8');
-          } catch {
-            continue;
-          }
-          const targetDir = base || 'items';
-          try {
-            this.injectFile(ent.name, raw, {
-              knowledgeType: base.split('/')[0] || 'items',
-              tags: ['registry', `regpath:${rel.replace(/\.json$/i, '')}`],
-            }, targetDir);
-            seeded++;
-          } catch (e) {
-            console.warn(`[LOCAL_DB] [SEED] Échec injection ${rel}:`, (e as Error).message);
+    let shouldIndex = false;
+    withManifestLock(() => {
+      const manifest = loadManifest();
+      if (manifest.seededFromRegistry) {
+        seeded = 0;
+        return;
+      }
+
+      const REGISTRY_ROOT = path.join(process.cwd(), '.registry');
+
+      const walk = (dir: string, base: string) => {
+        if (!fs.existsSync(dir)) return;
+        for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+          const abs = path.join(dir, ent.name);
+          const rel = base ? `${base}/${ent.name}` : ent.name;
+          if (ent.isDirectory()) {
+            walk(abs, rel);
+          } else if (ent.name.toLowerCase().endsWith('.json')) {
+            let raw = '';
+            try {
+              raw = fs.readFileSync(abs, 'utf8');
+            } catch {
+              continue;
+            }
+            const targetDir = base || 'items';
+            try {
+              this.injectFile(ent.name, raw, {
+                knowledgeType: base.split('/')[0] || 'items',
+                tags: ['registry', `regpath:${rel.replace(/\.json$/i, '')}`],
+              }, targetDir);
+              seeded++;
+            } catch (e) {
+              console.warn(`[LOCAL_DB] [SEED] Échec injection ${rel}:`, (e as Error).message);
+            }
           }
         }
-      }
-    };
+      };
 
-    walk(REGISTRY_ROOT, '');
+      walk(REGISTRY_ROOT, '');
 
-    manifest.seededFromRegistry = true;
-    saveManifest(manifest);
+      manifest.seededFromRegistry = true;
+      saveManifest(manifest);
+      shouldIndex = true;
+    });
 
-    let indexed: number | undefined;
-    // Vecteur uniquement en station locale (dev ou EXE desktop). Côté Vercel (VERCEL='1')
-    // le FS est read-only et Chroma n'est pas disponible.
-    if (process.env.VERCEL !== '1') {
+    if (shouldIndex && process.env.VERCEL !== '1') {
       try {
         const { indexLocalDBFolder } = await import('@/lib/local-indexer');
         const res = await indexLocalDBFolder('INDEX_CHROMA');

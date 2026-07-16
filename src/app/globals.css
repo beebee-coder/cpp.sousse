@@ -397,7 +397,66 @@
   animation: pulse-ring 2s infinite;
 }
 
-/* Respect des préférences d'accessibilité */
+/* ──────────────────────────────────────────────────────────────
+   Voice / STT-TTS UI Components
+   ────────────────────────────────────────────────────────────── */
+
+/* Red mic-listening pulse ring */
+@keyframes mic-pulse-ring {
+  0%   { box-shadow: 0 0 0 0   hsl(0 84% 60% / 0.55); }
+  60%  { box-shadow: 0 0 0 8px hsl(0 84% 60% / 0); }
+  100% { box-shadow: 0 0 0 0   hsl(0 84% 60% / 0); }
+}
+.animate-mic-ring {
+  animation: mic-pulse-ring 1.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Glow shadow for active mic button */
+.mic-glow-red {
+  box-shadow: 0 0 14px -2px hsl(0 84% 60% / 0.45);
+}
+
+/* Voice waveform canvas fade-in */
+.voice-wave-enter {
+  animation: fade-up 0.25s cubic-bezier(0.22,1,0.36,1) both;
+}
+
+/* Countdown ring stroke transition (supplement to inline style) */
+.countdown-ring circle {
+  transition: stroke-dasharray 0.12s linear;
+}
+
+/* TTS speaking status bar shimmer */
+@keyframes tts-shimmer {
+  0%   { opacity: 0.7; }
+  50%  { opacity: 1; }
+  100% { opacity: 0.7; }
+}
+.animate-tts-shimmer {
+  animation: tts-shimmer 1.8s ease-in-out infinite;
+}
+
+/* Voice input text color pulse */
+@keyframes voice-input-pulse {
+  0%, 100% { color: hsl(var(--primary)); }
+  50%       { color: hsl(var(--primary) / 0.6); }
+}
+.animate-voice-input {
+  animation: voice-input-pulse 1.5s ease-in-out infinite;
+}
+
+/* Interim transcript fade */
+@keyframes interim-fade {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-interim {
+  animation: interim-fade 0.18s ease-out both;
+}
+
+/* ──────────────────────────────────────────────────────────────
+   Respect des préférences d'accessibilité
+   ────────────────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   .ambient-grid,
   .logo3d-inner,
@@ -411,6 +470,11 @@
   .animate-border-flow,
   .animate-scanline,
   .animate-pulse-ring,
+  .animate-mic-ring,
+  .animate-tts-shimmer,
+  .animate-voice-input,
+  .animate-interim,
+  .voice-wave-enter,
   .stagger > * {
     animation: none !important;
   }

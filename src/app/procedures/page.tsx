@@ -8,6 +8,7 @@ import {
   Settings2,
   ChevronRight,
   ShieldCheck,
+  Layers,
   Zap,
   Loader2,
   AlertCircle,
@@ -68,6 +69,13 @@ export default function ProceduresListPage() {
             <FileText className="w-4 h-4 text-primary" />
             <span className="font-headline font-bold text-xs uppercase tracking-widest text-primary">Registre des Procédures</span>
           </div>
+          <Button 
+            variant="outline"
+            onClick={() => router.push('/procedures/templates')}
+            className="border-border text-muted-foreground font-bold uppercase text-[10px] h-9"
+          >
+            <Layers className="w-3.5 h-3.5 mr-2" /> Templates
+          </Button>
           <Button 
             onClick={() => router.push('/procedures/create')}
             className="bg-primary text-primary-foreground font-bold uppercase text-[10px] h-9 shadow-lg"

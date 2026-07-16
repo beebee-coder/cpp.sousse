@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
   try {
     const session = await getSessionFromCookie();
 
-    if (!session || session.user.role !== 'admin') {
+    if (!session?.user || session.user.role !== 'admin') {
       return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
     }
 

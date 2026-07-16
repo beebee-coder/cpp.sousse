@@ -21,7 +21,7 @@ export interface PlatformCapabilities {
 export function performHealthCheck() {
   const issues: string[] = [];
   if (!isBrowser) issues.push('ENV_SSR_DETECTE');
-  if (isDesktop && !(window as any).__TAURI_INVOKE__) issues.push('PONT_TAURI_INTROUVABLE');
+  if (isDesktop && !(window as any).__TAURI__) issues.push('PONT_TAURI_INTROUVABLE');
   
   return {
     healthy: issues.length === 0,

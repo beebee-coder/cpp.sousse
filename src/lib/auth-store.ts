@@ -41,8 +41,7 @@ export async function authenticateUser(email: string, password: string) {
       console.log(`   bcrypt.compare: ${isValid}`);
     } catch (bcryptError: any) {
       console.error(`❌ [AUTH_STORE] Erreur bcrypt:`, bcryptError.message);
-      isValid = password === 'admin123' && user.email === 'admin@visionode.local';
-      console.log(`   Fallback: ${isValid}`);
+      return { success: false, error: 'AUTH_ERROR' };
     }
 
     if (!isValid) {
@@ -71,7 +70,7 @@ export async function authenticateUser(email: string, password: string) {
     };
   } catch (error: any) {
     console.error(`❌ [AUTH_STORE] Erreur fatale:`, error.message);
-    return { success: false, error: `DB_ERROR: ${error.message}` };
+    return { success: false, error: 'AUTH_ERROR' };
   }
 }
 
@@ -106,7 +105,7 @@ export async function addPendingUser(firstName: string, lastName: string, passwo
     return { success: true, user };
   } catch (error: any) {
     console.error('❌ [AUTH_STORE] Erreur addPendingUser:', error.message);
-    return { success: false, error: error.message };
+    return { success: false, error: 'DB_ERROR' };
   }
 }
 
@@ -134,7 +133,7 @@ export async function approveUser(userId: string) {
     return { success: true, user };
   } catch (error: any) {
     console.error('❌ [AUTH_STORE] Erreur approveUser:', error.message);
-    return { success: false, error: error.message };
+    return { success: false, error: 'DB_ERROR' };
   }
 }
 
@@ -145,7 +144,7 @@ export async function rejectUser(userId: string) {
     return { success: true };
   } catch (error: any) {
     console.error('❌ [AUTH_STORE] Erreur rejectUser:', error.message);
-    return { success: false, error: error.message };
+    return { success: false, error: 'DB_ERROR' };
   }
 }
 
@@ -192,6 +191,67 @@ export async function verifyUserPassword(userId: string, password: string) {
   } catch (error: any) {
     console.error('❌ [AUTH_STORE] Erreur verifyUserPassword:', error.message);
     return false;
+  }
+}
+
+export async function updateUserRole(userId: string, role: Role) {
+  const prisma = await getPrisma();
+  try {
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: { role, updatedAt: new Date() }
+    });
+    return { success: true, user };
+  } catch (error: any) {
+    console.error('❌ [AUTH_STORE] Erreur updateUserRole:', error.message);
+    return { success: false, error: 'DB_ERROR' };
+  }
+}
+
+export async function updateUserApproval(userId: string, approved: boolean) {
+  const prisma = await getPrisma();
+  try {
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: { approved, updatedAt: new Date() }
+    });
+    return { success: true, user };
+  } catch (error: any) {
+    console.error('❌ [AUTH_STORE] Erreur updateUserApproval:', error.message);
+    return { success: false, error: 'DB_ERROR' };
+  }
+}
+
+export async function deleteUser(userId: string) {
+  const prisma = await getPrisma();
+  try {
+    await prisma.user.delete({ where: { id: userId } });
+    return { success: true };
+  } catch (error: any) {
+    console.error('❌ [AUTH_STORE] Erreur deleteUser:', error.message);
+    return { success: false, error: 'DB_ERROR' };
+  }
+}
+
+export async function getUserStats() {
+  const prisma = await getPrisma();
+  try {
+    const total = await prisma.user.count();
+    const byRole = await prisma.user.groupBy({
+      by: ['role'],
+      _count: { role: true }
+    });
+    const pending = await prisma.user.count({ where: { approved: false } });
+    const approved = await prisma.user.count({ where: { approved: true } });
+    return {
+      total,
+      byRole: byRole.reduce((acc, item) => ({ ...acc, [item.role]: item._count.role }), {} as Record<string, number>),
+      pending,
+      approved
+    };
+  } catch (error: any) {
+    console.error('❌ [AUTH_STORE] Erreur getUserStats:', error.message);
+    return null;
   }
 }
 
@@ -247,6 +307,6 @@ export async function updateCurrentUser(
     };
   } catch (error: any) {
     console.error('❌ [AUTH_STORE] Erreur updateCurrentUser:', error.message);
-    return { success: false, error: error.message };
+    return { success: false, error: 'DB_ERROR' };
   }
 }

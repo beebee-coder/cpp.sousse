@@ -186,14 +186,16 @@ export const postgresClient = {
   },
 
   async getCloudData(projectId: string) {
-    const { prisma } = await import('./prisma-client');
+    const { getPrismaClient } = await import('./prisma-client');
+    const prisma = await getPrismaClient();
     return prisma.knowledgeItem.findMany({
       orderBy: { createdAt: 'desc' }
     });
   },
 
   async upsertCloudData(items: any[]) {
-    const { prisma } = await import('./prisma-client');
+    const { getPrismaClient } = await import('./prisma-client');
+    const prisma = await getPrismaClient();
     for (const item of items) {
       const contentStr = typeof item.content === 'string' ? item.content : JSON.stringify(item.content);
       let parsed: any = {};

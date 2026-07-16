@@ -11,6 +11,7 @@ import { ModeAwareLayout } from '@/components/ModeAwareLayout';
 import { AuthGate } from '@/components/auth/AuthGate';
 import type { SessionUser } from '@/components/SessionProvider';
 import { LazyAmbientBackground } from '@/components/three/LazyAmbientBackground';
+import { ensureLocalDBInitialized } from '@/lib/db/local-db';
 
 const fontInter = Inter({ 
   subsets: ['latin'], 
@@ -45,6 +46,14 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const isDesktop = process.env.TAURI_ENV === 'true';
+
+  if (!isDesktop) {
+    try {
+      await ensureLocalDBInitialized();
+    } catch (e) {
+      console.warn('[LAYOUT] Initialisation .local-db ignorée (FS read-only):', e);
+    }
+  }
 
   let initialUser: SessionUser | undefined;
   if (!isDesktop) {

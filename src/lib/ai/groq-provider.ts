@@ -199,6 +199,6 @@ export async function chatWithGroqStream(
   options: Omit<GroqCompletionOptions, 'stream'> = {}
 ): Promise<GroqResult> {
   const client = getGroqClient();
-  const result = await callGroqWithRetry(client, messages, { ...options, stream: true });
+  const result = await callGroqWithRetry(client, messages, { ...options, stream: true, onChunk });
   return result;
 }

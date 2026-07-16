@@ -15,12 +15,14 @@
  */
 
 import { PrismaClient } from '@prisma/client';
-import { prisma as neonPrisma } from './prisma-client';
+import { getPrismaClient } from './prisma-client';
 
 let client: PrismaClient | null = null;
 
 export async function getPrisma(): Promise<PrismaClient> {
-  if (!client) client = neonPrisma;
+  if (!client) {
+    client = await getPrismaClient();
+  }
   return client;
 }
 

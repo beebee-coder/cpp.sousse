@@ -18,9 +18,7 @@ export async function proxy(request: NextRequest) {
     '/favicon.ico',
     '/images',
     '/installers',
-    '/api/download',
-    '/api/local-db',
-    '/api/registry'
+    '/api/download'
   ];
 
   if (publicPaths.some(path => pathname.startsWith(path))) {

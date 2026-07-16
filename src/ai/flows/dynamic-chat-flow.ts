@@ -10,6 +10,7 @@ type ChatInput = {
   history: ChatMessage[];
   message: string;
   mode?: 'web' | 'hybride' | 'locale';
+  userName?: string;
 };
 
 export async function dynamicChat(input: ChatInput) {
@@ -24,6 +25,7 @@ export async function dynamicChat(input: ChatInput) {
     history: input.history,
     mode: input.mode || 'web',
     online: true,
+    userName: input.userName,
   });
 
   console.log(`✅ [CHAT_LLM] [SUCCESS] [${ts}] Réponse générée par ${result.provider}.`);

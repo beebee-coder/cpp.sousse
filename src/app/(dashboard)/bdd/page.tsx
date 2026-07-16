@@ -65,11 +65,12 @@ export default function BDDPage() {
   const [mode, setMode] = useState<'web' | 'chroma' | 'locale'>('web');
   const [tree, setTree] = useState<FSNode[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  
+  const [isCloudMode, setIsCloudMode] = useState(false);
+
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [fileContent, setFileContent] = useState('');
   const [isEditing, setIsEditing] = useState(false);
-  
+
   const [newModal, setNewModal] = useState<{ isOpen: boolean; type: 'file' | 'folder'; parent: string | null }>({
     isOpen: false,
     type: 'file',
@@ -109,6 +110,8 @@ export default function BDDPage() {
   };
   const [renameValue, setRenameValue] = useState('');
 
+  const isReadOnly = isCloudMode && mode === 'web';
+
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -144,6 +147,7 @@ export default function BDDPage() {
     try {
       const res = await apiClient.get<any>('/api/registry');
       if (res.success && Array.isArray(res.tree)) {
+        setIsCloudMode(res.provider === 'cloud-db');
         setTree(prev => mergeTreeState(prev, res.tree));
       }
     } catch (e) {
@@ -186,6 +190,7 @@ export default function BDDPage() {
       }
     } catch (e) {
       setTree([]);
+      toast({ title: "Erreur de chargement ChromaDB", variant: "destructive" });
     } finally {
       setIsLoading(false);
     }
@@ -212,7 +217,7 @@ export default function BDDPage() {
       if (mode === 'web') refreshRegistry(true);
       else if (mode === 'chroma') refreshChroma();
       else if (mode === 'locale') {
-        apiClient.get('/api/local-db').then(() => refreshLocalDB()).catch(() => refreshLocalDB());
+        refreshLocalDB();
       }
     }
   }, [mode, mounted, refreshRegistry, refreshChroma, refreshLocalDB]);
@@ -410,16 +415,28 @@ export default function BDDPage() {
 
     let ok = 0;
     const failures: string[] = [];
+    const CONCURRENCY = 5;
 
-    for (const f of files) {
-      try {
-        const res = await apiClient.post<any>('/api/local-db', { action: 'index', path: f });
-        if (res.success) ok++;
-        else failures.push(`${f}: ${res.message || res.error}`);
-      } catch (e: any) {
-        failures.push(`${f}: ${e.message}`);
+    const processChunk = async (chunk: string[]) => {
+      const results = await Promise.allSettled(
+        chunk.map(f =>
+          apiClient.post<any>('/api/local-db', { action: 'index', path: f }).then(res => ({ f, res }))
+        )
+      );
+      for (const r of results) {
+        if (r.status === 'fulfilled') {
+          const { f, res } = r.value;
+          if (res.success) ok++;
+          else failures.push(`${f}: ${res.message || res.error}`);
+        } else {
+          failures.push(`unknown: ${r.reason}`);
+        }
+        setIndexing(prev => ({ ...prev, done: prev.done + 1 }));
       }
-      setIndexing(prev => ({ ...prev, done: prev.done + 1 }));
+    };
+
+    for (let i = 0; i < files.length; i += CONCURRENCY) {
+      await processChunk(files.slice(i, i + CONCURRENCY));
     }
 
     setIndexing({ id: null, label: '', done: 0, total: 0 });
@@ -486,7 +503,7 @@ export default function BDDPage() {
             {node.metadata?.indexed && <Database className="w-3 h-3 text-accent shrink-0" />}
             {node.size && <span className="text-[9px] text-muted-foreground/60 font-code">{(node.size / 1024).toFixed(1)}KB</span>}
           </div>
-          {(mode === 'web' || mode === 'locale') && (
+          {(mode === 'web' || mode === 'locale') && !isReadOnly && (
             <div className="hidden group-hover:flex items-center gap-0.5 ml-2">
               {node.type === 'folder' && (
                 <button onClick={(e) => { e.stopPropagation(); setNewModal({ isOpen: true, type: 'folder', parent: node.id }); }} title="Nouveau répertoire"><FolderPlus className="w-3 h-3 hover:text-primary" /></button>
@@ -507,6 +524,11 @@ export default function BDDPage() {
               <button onClick={(e) => { e.stopPropagation(); setNewModal({ isOpen: true, type: 'file', parent: node.id }); }} title="Nouveau fichier"><FilePlus className="w-3 h-3 hover:text-primary" /></button>
               <button onClick={(e) => { e.stopPropagation(); setRenameModal({ isOpen: true, path: node.id, oldName: node.name, type: node.type as any }); setRenameValue(node.name); }} title="Renommer"><Type className="w-3 h-3 hover:text-secondary" /></button>
               <button onClick={(e) => { e.stopPropagation(); deleteItem(node.id); }} title="Supprimer radicalement"><Trash2 className="w-3 h-3 hover:text-destructive" /></button>
+            </div>
+          )}
+          {(mode === 'web' || mode === 'locale') && isReadOnly && (
+            <div className="hidden group-hover:flex items-center gap-0.5 ml-2">
+              <span className="text-[8px] font-code text-muted-foreground/60 uppercase">lecture seule</span>
             </div>
           )}
           {mode === 'locale' && indexing.id === node.id && (
@@ -569,7 +591,7 @@ export default function BDDPage() {
             </div>
           </div>
           <div className="flex items-center gap-2 ml-auto">
-            {mode === 'web' && (
+            {mode === 'web' && !isReadOnly && (
               <Button
                 size="sm"
                 variant="outline"
@@ -617,13 +639,16 @@ export default function BDDPage() {
                 <div className="p-3 border-b border-border bg-black/40 flex items-center justify-between">
                   <span className="text-[11px] font-code uppercase text-white truncate max-w-[300px]">{selectedFile}</span>
                   <div className="flex gap-2">
-                    {selectedFile.endsWith('.json') && (
+                    {selectedFile.endsWith('.json') && !isReadOnly && (
                       <Button variant="ghost" size="sm" onClick={() => setIsEditing(!isEditing)} className="h-7 text-[9px] uppercase">
                         {isEditing ? <Eye className="w-3 h-3 mr-2" /> : <Edit3 className="w-3 h-3 mr-2" />}
                         {isEditing ? "Aperçu" : "Éditer"}
                       </Button>
                     )}
-                    {isEditing && <Button variant="secondary" size="sm" onClick={saveFileChanges} className="h-7 text-[9px] uppercase font-bold"><Save className="w-3 h-3 mr-2" /> Sauver</Button>}
+                    {isEditing && !isReadOnly && <Button variant="secondary" size="sm" onClick={saveFileChanges} className="h-7 text-[9px] uppercase font-bold"><Save className="w-3 h-3 mr-2" /> Sauver</Button>}
+                    {isReadOnly && (
+                      <span className="text-[9px] font-code text-muted-foreground/60 uppercase px-2">lecture seule</span>
+                    )}
                   </div>
                 </div>
                 <div className="flex-1 overflow-hidden relative">

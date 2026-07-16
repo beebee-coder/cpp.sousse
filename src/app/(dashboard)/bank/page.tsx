@@ -44,11 +44,80 @@ export default function BankPage() {
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
   const [cameras, setCameras] = useState<{ deviceId?: string; label?: string; facingMode?: string }[]>([]);
 
+  const [view, setView] = useState<'capture' | 'library'>('capture');
+  const [assets, setAssets] = useState<any[]>([]);
+  const [thumbs, setThumbs] = useState<Record<string, string>>({});
+  const [loadingLibrary, setLoadingLibrary] = useState(false);
+  const [deletingName, setDeletingName] = useState<string | null>(null);
+
+  const loadLibrary = async () => {
+    setLoadingLibrary(true);
+    try {
+      const res = await apiClient.get<any>('/api/bank?limit=200');
+      const items: any[] = res.items || [];
+      setAssets(items);
+      // Miniatures : URL cloud directe, sinon binaire servi par le Registre local.
+      const map: Record<string, string> = {};
+      await Promise.all(items.map(async (it) => {
+        if (it.url) { map[it.name] = it.url; return; }
+        if (it.path) {
+          try {
+            const r = await apiClient.get<any>(`/api/registry?path=${encodeURIComponent(it.path)}`);
+            if (r.success && r.content) map[it.name] = r.content;
+          } catch { /* ignore */ }
+        }
+      }));
+      setThumbs(map);
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e.message, variant: 'destructive' });
+    } finally {
+      setLoadingLibrary(false);
+    }
+  };
+
+  useEffect(() => {
+    if (view === 'library') loadLibrary();
+  }, [view]);
+
+  const handleDelete = async (name: string) => {
+    setDeletingName(name);
+    try {
+      const res = await apiClient.delete<any>(`/api/bank?name=${encodeURIComponent(name)}`);
+      if (res.success) {
+        toast({ title: 'Actif supprimé de la banque et du RAG' });
+        await loadLibrary();
+      } else {
+        throw new Error((res.error as string) || 'ECHEC_SUPPRESSION');
+      }
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e.message, variant: 'destructive' });
+    } finally {
+      setDeletingName(null);
+    }
+  };
+
   const videoRef = useRef<HTMLVideoElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recMimeRef = useRef<string>('video/webm');
   const chunksRef = useRef<Blob[]>([]);
+
+  // Choix d'un type MIME réellement supporté par MediaRecorder (Safari→mp4,
+  // Chrome/Firefox→webm) afin de ne pas forcer un conteneur incohérent avec
+  // les bytes réellement produits (ex: webm étiqueté video/mp4).
+  const pickRecorderMime = (): string => {
+    if (typeof MediaRecorder === 'undefined') return 'video/webm';
+    const candidates = ['video/mp4', 'video/webm', 'video/quicktime'];
+    for (const c of candidates) {
+      try {
+        if (MediaRecorder.isTypeSupported(c)) return c;
+      } catch {
+        // ignore
+      }
+    }
+    return 'video/webm';
+  };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -145,10 +214,14 @@ export default function BankPage() {
   const startRecording = () => {
     if (!streamRef.current) return;
     chunksRef.current = [];
-    const recorder = new MediaRecorder(streamRef.current);
+    const mimeType = pickRecorderMime();
+    recMimeRef.current = mimeType;
+    const recorder = mimeType
+      ? new MediaRecorder(streamRef.current, { mimeType })
+      : new MediaRecorder(streamRef.current);
     recorder.ondataavailable = e => chunksRef.current.push(e.data);
     recorder.onstop = () => {
-      const blob = new Blob(chunksRef.current, { type: 'video/mp4' });
+      const blob = new Blob(chunksRef.current, { type: recMimeRef.current || 'video/webm' });
       const reader = new FileReader();
       reader.onloadend = () => setCapturedData(reader.result as string);
       reader.readAsDataURL(blob);
@@ -222,13 +295,73 @@ export default function BankPage() {
             <div className="lg:hidden w-10" />
             <ImageIcon className="w-4 h-4 text-primary" />
             <span className="font-headline font-bold text-xs uppercase tracking-widest text-primary">Banque d'Images Industrielle</span>
+            <div className="hidden sm:flex bg-muted/30 p-1 rounded-sm border border-border ml-2">
+              <button onClick={() => setView('capture')} className={cn("px-3 py-1 text-[10px] font-bold uppercase rounded-sm transition-all", view === 'capture' ? "bg-primary text-primary-foreground shadow" : "text-muted-foreground hover:text-foreground")}>Capturer</button>
+              <button onClick={() => setView('library')} className={cn("px-3 py-1 text-[10px] font-bold uppercase rounded-sm transition-all", view === 'library' ? "bg-primary text-primary-foreground shadow" : "text-muted-foreground hover:text-foreground")}>Bibliothèque</button>
+            </div>
           </div>
           <Button variant="ghost" size="sm" onClick={() => router.back()} className="text-[10px] uppercase font-code">
             <ArrowLeft className="w-3.5 h-3.5 mr-2" /> Retour
           </Button>
         </header>
 
-        <div className="p-4 lg:p-8 max-w-6xl mx-auto w-full grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {view === 'library' ? (
+          <div className="p-4 lg:p-8 max-w-6xl mx-auto w-full">
+            {loadingLibrary ? (
+              <div className="flex items-center justify-center h-64 text-muted-foreground text-xs uppercase tracking-widest">
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Chargement…
+              </div>
+            ) : assets.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-64 text-muted-foreground text-xs uppercase tracking-widest gap-2">
+                <ImageIcon className="w-8 h-8 opacity-40" />
+                Aucun actif dans la banque
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                {assets.map((a) => (
+                  <Card key={a.name} className="overflow-hidden bg-card/40 border-border group">
+                    <div className="aspect-video bg-black relative">
+                      {thumbs[a.name] ? (
+                        a.type === 'video' ? (
+                          <video src={thumbs[a.name]} className="w-full h-full object-cover" muted />
+                        ) : (
+                          <img src={thumbs[a.name]} className="w-full h-full object-cover" alt={a.name} />
+                        )
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-muted-foreground">
+                          <ImageIcon className="w-6 h-6 opacity-30" />
+                        </div>
+                      )}
+                      <button
+                        onClick={() => handleDelete(a.name)}
+                        disabled={deletingName === a.name}
+                        className="absolute top-2 right-2 h-7 w-7 flex items-center justify-center rounded-sm bg-red-600/90 hover:bg-red-600 text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                        title="Supprimer"
+                      >
+                        {deletingName === a.name ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                    <div className="p-3 space-y-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[10px] font-bold uppercase text-primary truncate">{a.name}</span>
+                        <span className={cn("text-[8px] font-bold uppercase px-1.5 py-0.5 rounded-sm shrink-0", a.type === 'video' ? 'bg-secondary/20 text-secondary' : 'bg-primary/20 text-primary')}>{a.type}</span>
+                      </div>
+                      {a.description ? <p className="text-[9px] text-muted-foreground line-clamp-2">{a.description}</p> : null}
+                      {Array.isArray(a.tags) && a.tags.length > 0 ? (
+                        <div className="flex flex-wrap gap-1 pt-1">
+                          {a.tags.slice(0, 3).map((t: string, i: number) => (
+                            <span key={i} className="text-[8px] uppercase px-1.5 py-0.5 rounded-sm bg-muted/40 text-muted-foreground">{t}</span>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="p-4 lg:p-8 max-w-6xl mx-auto w-full grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Capture Zone */}
           <div className="space-y-4">
             <Card className="aspect-video bg-black border-primary/20 overflow-hidden relative shadow-2xl">
@@ -383,6 +516,7 @@ export default function BankPage() {
             </Card>
           </div>
         </div>
+        )}
       </main>
     </div>
   );

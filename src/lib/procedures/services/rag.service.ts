@@ -4,7 +4,7 @@
  */
 
 import { FullProcedure, ProcedureStep } from '../types';
-import { upsertDocuments as upsertChroma, searchAcrossCollections, SearchResult } from '@/lib/chroma';
+import { upsertDocuments as upsertChroma, searchAcrossCollections, getCollectionIds, deleteDocuments, SearchResult } from '@/lib/chroma';
 
 const IS_CLOUD = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
 
@@ -82,7 +82,7 @@ export class ProcedureRAGService {
     try {
       const results = await searchAcrossCollections(query, 5);
       if (procedureId) {
-        const filtered = results.filter(r => r.metadata?.procedureId === procedureId || !r.metadata?.procedureId);
+        const filtered = results.filter(r => r.metadata?.procedureId === procedureId);
         console.log(`✅ [RAG_VECTOR] [SEARCH_SUCCESS] ${filtered.length} résultats pertinents trouvés.`);
         return filtered;
       }
@@ -90,6 +90,35 @@ export class ProcedureRAGService {
     } catch (e) {
       console.error(`❌ [RAG_VECTOR] [SEARCH_ERROR] Échec recherche aide.`);
       return [];
+    }
+  }
+
+  /**
+   * Désindexe une procédure (chunks meta + étapes) du RAG [RAG_DELETE].
+   */
+  async removeProcedure(procedureId: string): Promise<void> {
+    console.log(`🧠 [RAG_DELETE] [INIT] Désindexation de la procédure : ${procedureId}`);
+    try {
+      if (IS_CLOUD) {
+        if (process.env.WEAVIATE_URL && process.env.WEAVIATE_API_KEY) {
+          try {
+            const { deleteKnowledgeItem } = await import('@/lib/weaviate/weaviate-knowledge');
+            await deleteKnowledgeItem(procedureId);
+            console.log(`✅ [RAG_DELETE] [CLOUD_SUCCESS] Procédure désindexée de Weaviate.`);
+          } catch (e: any) {
+            console.warn('⚠️ [RAG_DELETE] [CLOUD_ERROR]', e.message);
+          }
+        } else {
+          console.warn('⚠️ [RAG_DELETE] [CLOUD_SKIP] Weaviate non configuré, désindexation cloud ignorée.');
+        }
+      } else {
+        const ids = (await getCollectionIds('industrial_procedures'))
+          .filter(id => id === `proc-meta-${procedureId}` || id.startsWith(`proc-step-${procedureId}-`));
+        await deleteDocuments('industrial_procedures', ids);
+        console.log(`✅ [RAG_DELETE] [LOCAL_SUCCESS] ${ids.length} chunk(s) supprimé(s) de ChromaDB.`);
+      }
+    } catch (e: any) {
+      console.warn(`⚠️ [RAG_DELETE] [ERROR] Erreur non-fatale lors de la désindexation: ${e.message}`);
     }
   }
 }

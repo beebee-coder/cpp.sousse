@@ -112,8 +112,23 @@ export class ExecutionEngine {
     const currentStep = steps[this.state.currentStepIndex];
     if (!currentStep) return this.state;
 
-    const status: 'completed' | 'timeout' = elapsed > currentStep.duration.value ? 'timeout' : 'completed';
-    this.recordStepOutcome(currentStep, status, elapsed, hasAlarm);
+    const isTimeout = elapsed > currentStep.duration.value;
+    const stepStatus: 'completed' | 'timeout' = isTimeout ? 'timeout' : 'completed';
+    this.recordStepOutcome(currentStep, stepStatus, elapsed, hasAlarm);
+
+    if (isTimeout) {
+      const timeoutAction = currentStep.validation.timeout?.action || 'warn';
+      if (timeoutAction === 'abort') {
+        this.state.status = 'FAILED' as ExecutionStatus;
+        this.state.endTime = Date.now();
+        this.state.timedOutSteps.push(currentStep.id);
+        console.error(`[EXEC_ENGINE] [FAILED] Timeout sur "${currentStep.title}". Procédure interrompue.`);
+        return { ...this.state };
+      } else if (timeoutAction === 'warn') {
+        this.state.timedOutSteps.push(currentStep.id);
+        console.warn(`[EXEC_ENGINE] [TIMEOUT_WARN] "${currentStep.title}" dépasse la durée prévue.`);
+      }
+    }
 
     this.state.completedSteps.push(currentStep.id);
     console.log(`[EXEC_STEP] [DONE] Étape validée : ${currentStep.title}`);
@@ -209,6 +224,13 @@ export class ExecutionEngine {
     this.state.status = 'ABORTED' as ExecutionStatus;
     this.state.endTime = Date.now();
     console.error(`[EXEC_ENGINE] [ABORT] Procédure interrompue.`);
+    return { ...this.state };
+  }
+
+  fail(reason: string): ExecutionState {
+    this.state.status = 'FAILED' as ExecutionStatus;
+    this.state.endTime = Date.now();
+    console.error(`[EXEC_ENGINE] [FAIL] Échec système: ${reason}`);
     return { ...this.state };
   }
 

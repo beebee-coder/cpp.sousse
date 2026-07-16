@@ -58,7 +58,9 @@ export async function getSystemContextSummary() {
       const files = fs.readdirSync(LOCAL_DB_INDEX_CHROMA_DIR, { recursive: true, withFileTypes: false }) as string[];
       summary.localDBFiles = files.filter(f => f.endsWith('.json')).length;
     }
-  } catch (e) {}
+  } catch (e: any) {
+    console.warn('[CHROMA_SYSTEM_SUMMARY]', e.message);
+  }
   return summary;
 }
 
@@ -105,11 +107,13 @@ export function fallbackSemanticSearch(query: string, nResults = 5, componentFil
               type: data.type || (procedureId ? 'procedure' : 'text')
             },
             distance: 0,
-            score: Math.min(score / 100, 0.95)
+            score: Math.min(score / 100, 0.98)
           });
         }
       }
-    } catch (e) {}
+    } catch (e: any) {
+      console.warn('[CHROMA_INDEX_SCAN]', e.message);
+    }
   }
 
   if (fs.existsSync(REGISTRY_BANK_DIR)) {
@@ -134,7 +138,9 @@ export function fallbackSemanticSearch(query: string, nResults = 5, componentFil
           });
         }
       }
-    } catch (e) {}
+    } catch (e: any) {
+      console.warn('[CHROMA_INDEX_SCAN]', e.message);
+    }
   }
 
   if (fs.existsSync(LOCAL_DB_INDEX_CHROMA_DIR)) {
@@ -154,9 +160,9 @@ export function fallbackSemanticSearch(query: string, nResults = 5, componentFil
         return jsonFiles;
       };
 
-      const jsonFiles = scanForJson(LOCAL_DB_INDEX_CHROMA_DIR, 'INDEX_CHROMA');
+      const jsonFiles = scanForJson(LOCAL_DB_INDEX_CHROMA_DIR, '');
       for (const relFile of jsonFiles) {
-        const fullPath = path.join(REGISTRY_ROOT, relFile);
+        const fullPath = path.join(LOCAL_DB_INDEX_CHROMA_DIR, relFile);
         const content = fs.readFileSync(fullPath, 'utf8');
         let score = 0;
         if (content.toLowerCase().includes(lowerQuery)) score += 60;
@@ -173,19 +179,62 @@ export function fallbackSemanticSearch(query: string, nResults = 5, componentFil
               type: knowledgeType
             },
             distance: 0,
-            score: Math.min(score / 100, 0.95)
+            score: Math.min(score / 100, 0.98)
           });
         }
       }
-    } catch (e) {}
+    } catch (e: any) {
+      console.warn('[CHROMA_INDEX_SCAN]', e.message);
+    }
   }
 
   return results.sort((a, b) => b.score - a.score).slice(0, nResults);
 }
 
+/**
+ * Fonction d'embedding locale, déterministe et sans dépendance externe.
+ *
+ * Remplace l'ancien stub renvoyant des vecteurs de zéros (similarité cosinus
+ * sans sens). On utilise un sac-de-mots indexé par hachage sur 384 dimensions,
+ * L2-normalisé : deux textes partageant les mêmes tokens auront une forte
+ * similarité cosinus. Cela rend la recherche sémantique Chroma (col.query)
+ * réellement fonctionnelle si un vrai serveur Chroma est utilisé. Le stockage
+ * vectoriel embarqué (embedded-vector-store.ts) réplique exactement cette même
+ * fonction d'embedding et calcule une similarité cosinus à l'interrogation :
+ * les deux couches JS partagent donc le même scoring déterministe.
+ */
 export class LocalEmbeddingFunction {
+  private readonly dim = 384;
+
   async generate(texts: string[]): Promise<number[][]> {
-    return texts.map(() => new Array(384).fill(0));
+    return texts.map((t) => this.embed(t));
+  }
+
+  private embed(text: string): number[] {
+    const vec = new Array<number>(this.dim).fill(0);
+    const tokens = tokenize(text);
+    if (tokens.length === 0) return vec;
+
+    const counts = new Map<number, number>();
+    for (const tok of tokens) {
+      let h = 2166136261;
+      for (let i = 0; i < tok.length; i++) {
+        h = (h ^ tok.charCodeAt(i)) >>> 0;
+        h = (h * 16777619) >>> 0;
+      }
+      const bucket = h % this.dim;
+      counts.set(bucket, (counts.get(bucket) || 0) + 1);
+    }
+
+    let norm = 0;
+    for (const [bucket, count] of counts) {
+      vec[bucket] = count;
+      norm += count * count;
+    }
+    norm = Math.sqrt(norm) || 1;
+    for (let i = 0; i < this.dim; i++) vec[i] = vec[i] / norm;
+
+    return vec;
   }
 }
 
@@ -194,25 +243,32 @@ export function getLocalEmbedder() {
 }
 
 let _chromaClient: any = null;
+let chromaClientPromise: Promise<any> | null = null;
 
-/**
- * Client vectoriel local.
- * - Vercel (IS_CLOUD) : `null` → le RAG cloud (Neon / knowledgeItems) prend le relais.
- * - Station locale / EXE / hybride : stockage vectoriel EMBARQUÉ (sans serveur,
- *   sans Python), voir embedded-vector-store.ts. Aucune installation ni lancement
- *   de Chroma requis ; persistant sur disque et chargé à la volée.
- */
 export async function getChromaClient(): Promise<any> {
   if (IS_CLOUD) return null;
   if (_chromaClient) return _chromaClient;
-  try {
-    const { getEmbeddedChromaClient } = await import('./embedded-vector-store');
-    _chromaClient = await getEmbeddedChromaClient();
-  } catch (e) {
-    console.warn('[CHROMA] Stockage vectoriel embarqué indisponible :', (e as Error).message);
-    _chromaClient = null;
+
+  // Sérialisation par mémoïsation de promesse : en environnement JS mono-thread,
+  // affecter `chromaClientPromise` est atomique, donc tous les appels concurrents
+  // partagent la MÊME initialisation sans busy-wait ni verrou artificiel.
+  if (!chromaClientPromise) {
+    chromaClientPromise = (async () => {
+      try {
+        const { getEmbeddedChromaClient } = await import('./embedded-vector-store');
+        _chromaClient = await getEmbeddedChromaClient();
+        return _chromaClient;
+      } catch (e) {
+        console.warn('[CHROMA] Stockage vectoriel embarqué indisponible :', (e as Error).message);
+        _chromaClient = null;
+        // On réarme pour permettre une nouvelle tentative au prochain appel.
+        chromaClientPromise = null;
+        return null;
+      }
+    })();
   }
-  return _chromaClient;
+
+  return chromaClientPromise;
 }
 
 export async function listCollections() {
@@ -257,6 +313,33 @@ export async function upsertDocuments(collectionName: string, documents: Documen
     });
   } catch (e: any) {
     console.error(`❌ [CHROMA_UPSERT] ${e.message}`);
+  }
+}
+
+export async function getCollectionIds(collectionName: string): Promise<string[]> {
+  if (IS_CLOUD) return [];
+  try {
+    const client = await getChromaClient();
+    if (!client) return [];
+    const col = await client.getOrCreateCollection({ name: collectionName });
+    const res = await col.get({});
+    return res.ids ?? [];
+  } catch (e) {
+    console.error('❌ [CHROMA_GET_IDS]', e);
+    return [];
+  }
+}
+
+export async function deleteDocuments(collectionName: string, ids: string[]): Promise<void> {
+  if (IS_CLOUD || ids.length === 0) return;
+  try {
+    const client = await getChromaClient();
+    if (!client) return;
+    const col = await client.getOrCreateCollection({ name: collectionName });
+    await col.delete({ ids });
+    console.log(`🗑️ [CHROMA_DELETE] ${ids.length} document(s) supprimé(s) de '${collectionName}'`);
+  } catch (e: any) {
+    console.error(`❌ [CHROMA_DELETE_DOCS] ${e.message}`);
   }
 }
 
@@ -305,7 +388,9 @@ export async function searchAcrossCollections(query: string, nResults = 5): Prom
           });
         });
       }
-    } catch (e) {}
+    } catch (e: any) {
+      console.warn('[CHROMA_INDEX_SCAN]', e.message);
+    }
   }
 
   const unique = Array.from(new Map(mergedResults.map(r => [r.document.toLowerCase().trim(), r])).values());

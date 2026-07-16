@@ -300,18 +300,31 @@ export function DynamicProcedureForm({ onSubmit, isSaving }: DynamicProcedureFor
         console.log('[SYNC][APPLY] alarme : ignoré (valeur vide)');
       }
 
-      // ── Champs personnalisés (ProcedureFieldTemplate) — ajout sans doublons
+      // ── Champs personnalisés (ProcedureFieldTemplate) — ajout sans doublons + propagation MAJ
       const currentFields = step.fields || [];
       const mergedFields  = [...currentFields];
       configFieldTemplates.forEach((t: any) => {
-        if (!mergedFields.find(f => f.templateId === t.id)) {
+        const existing = mergedFields.find(f => f.templateId === t.id);
+        if (!existing) {
           mergedFields.push({
             templateId: t.id,
             name:       t.name,
             type:       t.type,
             value:      t.type === 'boolean' ? false : '',
             required:   t.required,
+            description: t.description ?? undefined,
+            options:     t.options ?? undefined,
           });
+        } else {
+          const idx = mergedFields.indexOf(existing);
+          mergedFields[idx] = {
+            ...existing,
+            name:       t.name,
+            type:       t.type,
+            required:   t.required,
+            description: t.description ?? undefined,
+            options:     t.options ?? undefined,
+          };
         }
       });
 

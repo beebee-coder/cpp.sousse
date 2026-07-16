@@ -4,6 +4,8 @@ export const revalidate = 0;
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db/prisma-client';
 
+const ALLOWED_TYPES = ['text', 'number', 'boolean', 'select'];
+
 export async function GET(req: NextRequest) {
   try {
     const templates = await prisma.procedureFieldTemplate.findMany({
@@ -25,13 +27,21 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Name and type are required' }, { status: 400 });
     }
 
+    if (!ALLOWED_TYPES.includes(type)) {
+      return NextResponse.json({ error: `Type invalide. Attendu: ${ALLOWED_TYPES.join(', ')}` }, { status: 400 });
+    }
+
+    if (type === 'select' && options !== undefined && !Array.isArray(options)) {
+      return NextResponse.json({ error: 'Le champ options doit être un tableau pour le type select' }, { status: 400 });
+    }
+
     const template = await prisma.procedureFieldTemplate.create({
       data: {
         name,
         type,
-        description,
-        options: options || null,
-        required: required || false,
+        description: description ?? null,
+        options: options ?? null,
+        required: Boolean(required) || false,
       },
     });
 

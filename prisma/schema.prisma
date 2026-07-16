@@ -45,15 +45,25 @@ model Procedure {
   steps          Json      // Stockage structuré des étapes CRF
   prerequisites  Json?
   authorId       String
-  author         User      @relation(fields: [authorId], references: [id])
+  author         User      @relation(fields: [authorId], references: [id], onDelete: Restrict)
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
   lastExecutedAt DateTime?
   executionCount Int       @default(0)
+  subcategory    String?
+  department     String?
+  version        String?
+  parameters     Json?
+  postExecution  Json?
+  metadata       Json?
+  mediaLibrary   Json?
 
-  executions     ProcedureExecution[]
+  executions     ProcedureExecution[] @relation("ProcedureToExecutions")
 
   @@map("procedures")
+  @@index([category])
+  @@index([status])
+  @@index([criticality])
 }
 
 model ProcedureExecution {
@@ -66,8 +76,8 @@ model ProcedureExecution {
   endTime       DateTime? @default(now())
   startTime     DateTime? @default(now())
   
-  operator      User      @relation(fields: [operatorId], references: [id])
-  procedure     Procedure @relation(fields: [procedureId], references: [id])
+  operator      User      @relation(fields: [operatorId], references: [id], onDelete: Restrict)
+  procedure     Procedure @relation("ProcedureToExecutions", fields: [procedureId], references: [id], onDelete: Cascade)
   
   @@map("procedure_executions")
 }
@@ -87,6 +97,23 @@ model KnowledgeItem {
   updatedAt DateTime @updatedAt
 
   @@map("knowledge_items")
+  @@index([category])
+}
+
+model ChatMessage {
+  id             String   @id @default(cuid())
+  conversationId String
+  userId         String
+  role           String
+  content        String
+  provider       String?
+  timestamp      DateTime @default(now())
+  media          Json?
+  procedureId    String?
+  source         String?
+
+  @@index([conversationId, userId])
+  @@map("chat_messages")
 }
 
 model ProcedureFieldTemplate {
