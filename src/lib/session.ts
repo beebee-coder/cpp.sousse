@@ -3,13 +3,21 @@ import { SignJWT, jwtVerify } from 'jose';
 import { authAudit } from '@/lib/auth-audit';
 
 const COOKIE_NAME = 'visionode-session';
-const SECRET = process.env.AUTH_SECRET;
 
-if (!SECRET) {
-  throw new Error('AUTH_SECRET environment variable is required');
+/**
+ * Le secret est résolu à la demande (et non plus au chargement du module) afin
+ * d'éviter qu'un `throw` au niveau racine ne fasse échouer le build Next.js
+ * (phase « Collecting page data ») quand AUTH_SECRET n'est pas encore défini
+ * (CI, preview, build hors-ligne). La validation survient uniquement lors de
+ * l'appel réel à une fonction de signature/vérification.
+ */
+function getEncodedSecret(): Uint8Array {
+  const secret = process.env.AUTH_SECRET;
+  if (!secret) {
+    throw new Error('AUTH_SECRET environment variable is required');
+  }
+  return new TextEncoder().encode(secret);
 }
-
-const encodedSecret = new TextEncoder().encode(SECRET);
 
 export interface SessionUser {
   id: string;
@@ -24,12 +32,12 @@ export interface SessionPayload {
 
 export async function createSessionCookie(user: SessionUser) {
   const cookieStore = await cookies();
-  
+
   const token = await new SignJWT({ user })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setExpirationTime('8h')
-    .sign(encodedSecret);
+    .sign(getEncodedSecret());
 
   cookieStore.set(COOKIE_NAME, token, {
     httpOnly: true,
@@ -38,7 +46,7 @@ export async function createSessionCookie(user: SessionUser) {
     path: '/',
     maxAge: 60 * 60 * 8, // 8 hours
   });
-  
+
   authAudit.success('SESSION_COOKIE_CREATED', {
     userId: user.id,
     role: user.role,
@@ -75,31 +83,31 @@ export async function createDesktopHandoffToken(
     .setExpirationTime('5m')
     .setIssuer('visionode-web')
     .setAudience('visionode-desktop')
-    .sign(encodedSecret);
+    .sign(getEncodedSecret());
 }
 
 export async function getSessionFromCookie(): Promise<SessionPayload | null> {
   const cookieStore = await cookies();
   const token = cookieStore.get(COOKIE_NAME)?.value;
-  
+
   if (!token) {
     authAudit.info('SESSION_NO_COOKIE', {});
     return null;
   }
-  
+
   try {
-    const { payload } = await jwtVerify(token, encodedSecret, {
+    const { payload } = await jwtVerify(token, getEncodedSecret(), {
       algorithms: ['HS256'],
     });
-    
+
     const session = payload as unknown as SessionPayload;
-    
+
     authAudit.info('SESSION_RESTORED', {
       userId: session.user.id,
       role: session.user.role,
       name: `${session.user.firstName} ${session.user.lastName}`,
     });
-    
+
     return session;
   } catch (error) {
     authAudit.warn('SESSION_INVALID_OR_EXPIRED', {
@@ -113,7 +121,7 @@ export async function getSessionFromCookie(): Promise<SessionPayload | null> {
 export async function getSessionFromToken(token: string): Promise<SessionPayload | null> {
   if (!token) return null;
   try {
-    const { payload } = await jwtVerify(token, encodedSecret, {
+    const { payload } = await jwtVerify(token, getEncodedSecret(), {
       algorithms: ['HS256'],
     });
     return payload as unknown as SessionPayload;

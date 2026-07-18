@@ -6,10 +6,7 @@ import { SignJWT } from 'jose';
 import { corsPreflight, withCors } from '@/lib/cors';
 
 const SECRET = process.env.AUTH_SECRET;
-if (!SECRET) {
-  throw new Error('AUTH_SECRET environment variable is required');
-}
-const encodedSecret = new TextEncoder().encode(SECRET);
+const encodedSecret = new TextEncoder().encode(SECRET || '');
 
 export async function OPTIONS(request: NextRequest) {
   return corsPreflight(request.headers.get('origin'));
