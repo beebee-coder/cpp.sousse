@@ -5,8 +5,7 @@
 
 import { FullProcedure, ProcedureStep } from '../types';
 import { upsertDocuments as upsertChroma, searchAcrossCollections, getCollectionIds, deleteDocuments, SearchResult } from '@/lib/chroma';
-
-const IS_CLOUD = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
+import { IS_CLOUD } from '@/lib/config/env';
 
 export class ProcedureRAGService {
   /**

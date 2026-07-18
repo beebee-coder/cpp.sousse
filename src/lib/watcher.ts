@@ -12,13 +12,11 @@ try {
 
 import { DocumentToAdd, getChromaClient, upsertDocuments } from './chroma';
 import { scanDirectoryToCollections } from './mapper';
+import { sanitizeCollectionName } from './local-indexer';
 
 let _watcher: any = null;
 
-function normalizeCollectionName(relDir: string) {
-  if (!relDir || relDir === '.' || relDir === path.sep) return 'root';
-  return relDir.split(path.sep).join('/');
-}
+const collectionNameFor = (relDir: string) => sanitizeCollectionName(relDir || '.');
 
 /**
  * Start a filesystem watcher that keeps the local Chroma collections in sync.
@@ -61,7 +59,7 @@ export function startFileSystemWatcher(rootDir: string, options?: { includeExten
 
       const relPath = path.relative(rootDir, absPath).split(path.sep).join('/');
       const collectionRelDir = path.relative(rootDir, path.dirname(absPath));
-      const collectionName = normalizeCollectionName(collectionRelDir);
+      const collectionName = collectionNameFor(collectionRelDir);
 
       const doc: DocumentToAdd = {
         id: relPath,
@@ -103,7 +101,7 @@ export function startFileSystemWatcher(rootDir: string, options?: { includeExten
     try {
       const relPath = path.relative(rootDir, absPath).split(path.sep).join('/');
       const collectionRelDir = path.relative(rootDir, path.dirname(absPath));
-      const collectionName = normalizeCollectionName(collectionRelDir);
+      const collectionName = collectionNameFor(collectionRelDir);
 
       try {
         const client: any = await getChromaClient();

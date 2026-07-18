@@ -1,6 +1,6 @@
 'use client';
 
-import { ModeBadge, ModeDetailCard } from '@/components/ModeIndicator';
+import { ModeDotIndicator, ModeDetailCard } from '@/components/ModeIndicator';
 import { useAppMode } from '@/hooks/use-app-mode';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
@@ -29,7 +29,7 @@ export default function ModeDemo() {
             <CardContent className="space-y-4">
               <div className="flex items-center gap-3">
                 <span className="text-sm text-slate-400">Badge:</span>
-                <ModeBadge />
+                <ModeDotIndicator />
               </div>
               <div className="space-y-2 text-sm">
                 <div>

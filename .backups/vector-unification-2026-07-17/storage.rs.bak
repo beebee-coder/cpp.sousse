@@ -92,7 +92,8 @@ impl VectorStore {
                 data TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_documents_origin ON documents(json_extract(metadata, '$.origin'));
-            CREATE INDEX IF NOT EXISTS idx_documents_path ON documents(json_extract(metadata, '$.file_path'));"
+            CREATE INDEX IF NOT EXISTS idx_documents_path ON documents(json_extract(metadata, '$.file_path'));
+            CREATE INDEX IF NOT EXISTS idx_documents_collection ON documents(json_extract(metadata, '$.collection'));"
         )?;
 
         let vocab = Mutex::new(Vocabulary::new(dimensions));
@@ -216,14 +217,24 @@ impl VectorStore {
         })
     }
 
-    pub fn search(&self, query: &str, top_k: usize) -> Result<Vec<SearchResult>, StoreError> {
+    pub fn search(&self, query: &str, top_k: usize, collection: Option<&str>) -> Result<Vec<SearchResult>, StoreError> {
         let vocab = self.lock_vocab()?;
         let conn = self.lock_conn()?;
 
         let tokens = tokenize_with_stems(query);
         let query_vector = compute_tfidf_vector(&tokens, &vocab);
 
-        let mut stmt = conn.prepare("SELECT id, content, metadata, chunk_index, created_at, vector FROM documents d JOIN embeddings e ON d.id = e.document_id")?;
+        let mut sql = String::from("SELECT id, content, metadata, chunk_index, created_at, vector FROM documents d JOIN embeddings e ON d.id = e.document_id");
+        let mut where_clauses = Vec::new();
+        if let Some(col) = collection {
+            where_clauses.push(format!("json_extract(d.metadata, '$.collection') = '{}'", col.replace("'", "''")));
+        }
+        if !where_clauses.is_empty() {
+            sql.push_str(" WHERE ");
+            sql.push_str(&where_clauses.join(" AND "));
+        }
+
+        let mut stmt = conn.prepare(&sql)?;
 
         let mut results: Vec<SearchResult> = Vec::new();
 
@@ -263,9 +274,6 @@ impl VectorStore {
             results.push(SearchResult { document: doc, score });
         }
 
-        // Score cosinus : plus élevé = plus pertinent. On trie en ordre
-        // DÉCROISSANT avant de tronquer, sinon `truncate(top_k)` conserve les
-        // documents les MOINS pertinents.
         results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
         results.truncate(top_k);
 
@@ -337,6 +345,97 @@ impl VectorStore {
             vocabulary_size: vocab.terms.len(),
             embedding_dimensions: self.dimensions,
         })
+    }
+
+    pub fn get_collections(&self) -> Result<Vec<String>, StoreError> {
+        let conn = self.lock_conn()?;
+        let mut stmt = conn.prepare("SELECT DISTINCT json_extract(metadata, '$.collection') as collection FROM documents WHERE json_extract(metadata, '$.collection') IS NOT NULL AND json_extract(metadata, '$.collection') != ''")?;
+        let rows = stmt.query_map([], |row| {
+            let col: Option<String> = row.get(0)?;
+            Ok(col)
+        })?;
+        let mut collections = Vec::new();
+        for row in rows.flatten() {
+            if let Some(col) = row {
+                collections.push(col);
+            }
+        }
+        collections.sort();
+        Ok(collections)
+    }
+
+    pub fn get_documents(&self, ids: &[String], collection: Option<&str>) -> Result<Vec<Document>, StoreError> {
+        let conn = self.lock_conn()?;
+        let mut clauses = Vec::new();
+        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+
+        if !ids.is_empty() {
+            clauses.push(format!("id IN ({})", ids.iter().map(|_| "?").collect::<Vec<_>>().join(",")));
+            for id in ids {
+                params.push(Box::new(id.clone()));
+            }
+        }
+
+        if let Some(col) = collection {
+            clauses.push(format!("json_extract(metadata, '$.collection') = '{}'", col.replace("'", "''")));
+        }
+
+        if clauses.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let sql = format!("SELECT id, content, metadata, chunk_index, created_at FROM documents WHERE {}", clauses.join(" AND "));
+
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map(rusqlite::params_from_iter(params), |row| {
+            let id: String = row.get(0)?;
+            let content: String = row.get(1)?;
+            let metadata_str: String = row.get(2)?;
+            let chunk_index: i32 = row.get(3)?;
+            let created_at: String = row.get(4)?;
+            let metadata: crate::vector_store::types::DocumentMetadata =
+                serde_json::from_str(&metadata_str).map_err(|e| {
+                    eprintln!("[VECTOR_STORE] Erreur parsing metadata: {} — doc_id={}", e, id);
+                    rusqlite::Error::FromSqlConversionFailure(1, rusqlite::types::Type::Text, Box::new(e))
+                })?;
+            Ok(Document {
+                id,
+                content,
+                metadata,
+                chunk_index: chunk_index as usize,
+                created_at,
+            })
+        })?;
+        let mut docs = Vec::new();
+        for row in rows.flatten() {
+            docs.push(row);
+        }
+        Ok(docs)
+    }
+
+    pub fn delete_documents(&self, ids: &[String], collection: Option<&str>) -> Result<usize, StoreError> {
+        let conn = self.lock_conn()?;
+        let mut clauses = Vec::new();
+        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+
+        if !ids.is_empty() {
+            clauses.push(format!("id IN ({})", ids.iter().map(|_| "?").collect::<Vec<_>>().join(",")));
+            for id in ids {
+                params.push(Box::new(id.clone()));
+            }
+        }
+
+        if let Some(col) = collection {
+            clauses.push(format!("json_extract(metadata, '$.collection') = '{}'", col.replace("'", "''")));
+        }
+
+        if clauses.is_empty() {
+            return Ok(0);
+        }
+
+        let sql = format!("DELETE FROM documents WHERE {}", clauses.join(" AND "));
+        let affected = conn.execute(&sql, rusqlite::params_from_iter(params))?;
+        Ok(affected)
     }
 }
 

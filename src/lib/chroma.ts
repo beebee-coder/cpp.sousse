@@ -5,6 +5,8 @@
 
 import path from 'path';
 import fs from 'fs';
+import { IS_CLOUD } from './config/env';
+import { tokenizeFr } from '@/lib/ai/tokenizer';
 
 export interface DocumentToAdd {
   id: string;
@@ -27,7 +29,9 @@ export interface SearchResult {
   score: number;
 }
 
-const REGISTRY_ROOT = path.join(process.cwd(), '.registry');
+// R1 — Aligné sur la racine Rust via REGISTRY_ROOT_OVERRIDE (Desktop).
+const REGISTRY_OVERRIDE = process.env.REGISTRY_ROOT_OVERRIDE?.trim();
+const REGISTRY_ROOT = REGISTRY_OVERRIDE ? REGISTRY_OVERRIDE : path.join(process.cwd(), '.registry');
 const REGISTRY_ITEMS_DIR = path.join(REGISTRY_ROOT, 'items');
 const REGISTRY_BANK_DIR = path.join(REGISTRY_ROOT, 'bank');
 const LOCAL_DB_INDEX_CHROMA_DIR = path.join(process.cwd(), '.local-db', 'INDEX_CHROMA');
@@ -35,10 +39,7 @@ const LOCAL_DB_INDEX_CHROMA_DIR = path.join(process.cwd(), '.local-db', 'INDEX_C
 // "Cloud" = Vercel serverless (FS read-only, pas de Chroma local).
 // Le build desktop (EXE Tauri) tourne en NODE_ENV=production mais reste une
 // STATION LOCALE : il utilise le stockage vectoriel EMBARQUÉ (sans serveur/
-// sans Python), voir embedded-vector-store.ts. On ne se base donc que sur VERCEL.
-const IS_CLOUD = process.env.VERCEL === '1';
-
-const STOP_WORDS = new Set(['le', 'la', 'les', 'de', 'du', 'des', 'un', 'une', 'et', 'en', 'ce', 'ces', 'pour', 'sur', 'dans', 'avec', 'est', 'sont']);
+// sans Python), voir embedded-vector-store.ts.
 
 export async function getSystemContextSummary() {
   const summary = {
@@ -65,13 +66,7 @@ export async function getSystemContextSummary() {
 }
 
 function tokenize(text: string): string[] {
-  return text
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .split(/\s+/)
-    .filter(word => word.length > 2 && !STOP_WORDS.has(word));
+  return tokenizeFr(text);
 }
 
 export function fallbackSemanticSearch(query: string, nResults = 5, componentFilter?: string): SearchResult[] {
@@ -194,14 +189,12 @@ export function fallbackSemanticSearch(query: string, nResults = 5, componentFil
 /**
  * Fonction d'embedding locale, déterministe et sans dépendance externe.
  *
- * Remplace l'ancien stub renvoyant des vecteurs de zéros (similarité cosinus
- * sans sens). On utilise un sac-de-mots indexé par hachage sur 384 dimensions,
- * L2-normalisé : deux textes partageant les mêmes tokens auront une forte
- * similarité cosinus. Cela rend la recherche sémantique Chroma (col.query)
- * réellement fonctionnelle si un vrai serveur Chroma est utilisé. Le stockage
- * vectoriel embarqué (embedded-vector-store.ts) réplique exactement cette même
- * fonction d'embedding et calcule une similarité cosinus à l'interrogation :
- * les deux couches JS partagent donc le même scoring déterministe.
+ * Implémentation bag-of-words hashé (FNV-1a) sur 384 dimensions, L2-normalisé.
+ * Ce n'est PAS un modèle Transformer comme all-MiniLM-L6-v2 : c'est un
+ * surrogate lexical qui permet une recherche par similarité cosinus locale
+ * sans réseau ni modèle lourd. Le stockage vectoriel embarqué
+ * (embedded-vector-store.ts) réplique exactement cette fonction pour que
+ * les deux couches JS partagent le même scoring déterministe.
  */
 export class LocalEmbeddingFunction {
   private readonly dim = 384;
@@ -247,11 +240,9 @@ let chromaClientPromise: Promise<any> | null = null;
 
 export async function getChromaClient(): Promise<any> {
   if (IS_CLOUD) return null;
+
   if (_chromaClient) return _chromaClient;
 
-  // Sérialisation par mémoïsation de promesse : en environnement JS mono-thread,
-  // affecter `chromaClientPromise` est atomique, donc tous les appels concurrents
-  // partagent la MÊME initialisation sans busy-wait ni verrou artificiel.
   if (!chromaClientPromise) {
     chromaClientPromise = (async () => {
       try {
@@ -261,7 +252,6 @@ export async function getChromaClient(): Promise<any> {
       } catch (e) {
         console.warn('[CHROMA] Stockage vectoriel embarqué indisponible :', (e as Error).message);
         _chromaClient = null;
-        // On réarme pour permettre une nouvelle tentative au prochain appel.
         chromaClientPromise = null;
         return null;
       }
@@ -296,6 +286,7 @@ export async function deleteCollection(name: string) {
 export async function getOrCreateCollection(name: string, embeddingFunction?: any) {
   if (IS_CLOUD) throw new Error("CHROMA_NOT_AVAILABLE_ON_CLOUD");
   const client = await getChromaClient();
+  if (!client) throw new Error("VECTOR_ENGINE_FAILED");
   return await client.getOrCreateCollection({ 
     name, 
     embeddingFunction: embeddingFunction || new LocalEmbeddingFunction() 
@@ -345,30 +336,26 @@ export async function deleteDocuments(collectionName: string, ids: string[]): Pr
 
 export async function semanticSearch(options: SearchOptions, embeddingFunction?: any): Promise<SearchResult[]> {
   if (IS_CLOUD) return [];
-  try {
-    const col = await getOrCreateCollection(options.collectionName, embeddingFunction);
-    const results = await col.query({
-      queryTexts: [options.query],
-      nResults: options.nResults || 5,
-      where: options.whereFilter
-    });
-    
-    const formatted: SearchResult[] = [];
-    if (results.ids[0]) {
-      results.ids[0].forEach((id: string, i: number) => {
-        formatted.push({
-          id,
-          document: String(results.documents[0][i]),
-          metadata: results.metadatas[0][i],
-          distance: Number(results.distances?.[0][i] || 0),
-          score: 1 - Number(results.distances?.[0][i] || 0)
-        });
+  const col = await getOrCreateCollection(options.collectionName, embeddingFunction);
+  const results = await col.query({
+    queryTexts: [options.query],
+    nResults: options.nResults || 5,
+    where: options.whereFilter
+  });
+
+  const formatted: SearchResult[] = [];
+  if (results.ids[0]) {
+    results.ids[0].forEach((id: string, i: number) => {
+      formatted.push({
+        id,
+        document: String(results.documents[0][i]),
+        metadata: results.metadatas[0][i],
+        distance: Number(results.distances?.[0][i] || 0),
+        score: 1 - Number(results.distances?.[0][i] || 0)
       });
-    }
-    return formatted;
-  } catch (e) {
-    return [];
+    });
   }
+  return formatted;
 }
 
 export async function searchAcrossCollections(query: string, nResults = 5): Promise<SearchResult[]> {
@@ -377,23 +364,31 @@ export async function searchAcrossCollections(query: string, nResults = 5): Prom
   mergedResults.push(...physical);
 
   if (!IS_CLOUD) {
+    const collectionErrors: { collection: string; error: string }[] = [];
     try {
       const collections = await listCollections();
       for (const c of collections) {
-        const results = await semanticSearch({ collectionName: c.name, query, nResults });
-        results.forEach(r => {
-          mergedResults.push({
-            ...r,
-            metadata: { ...r.metadata, origin: 'VEC_CHROMA' }
+        try {
+          const results = await semanticSearch({ collectionName: c.name, query, nResults });
+          results.forEach(r => {
+            mergedResults.push({
+              ...r,
+              metadata: { ...r.metadata, origin: 'VEC_CHROMA' }
+            });
           });
-        });
+        } catch (e: any) {
+          collectionErrors.push({ collection: c.name, error: e.message || String(e) });
+        }
       }
     } catch (e: any) {
-      console.warn('[CHROMA_INDEX_SCAN]', e.message);
+      console.error('[CHROMA_INDEX_SCAN]', e.message);
+    }
+    if (collectionErrors.length > 0) {
+      console.warn('[CHROMA_INDEX_SCAN] Erreurs par collection:', collectionErrors);
     }
   }
 
-  const unique = Array.from(new Map(mergedResults.map(r => [r.document.toLowerCase().trim(), r])).values());
+  const unique = Array.from(new Map(mergedResults.map(r => [r.id, r])).values());
   return unique.sort((a, b) => b.score - a.score).slice(0, nResults);
 }
 

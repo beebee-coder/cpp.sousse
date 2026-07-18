@@ -7,7 +7,7 @@
  */
 
 import { useAppMode } from '@/hooks/use-app-mode';
-import { ModeBadge, ModeDetailCard } from '@/components/ModeIndicator';
+import { ModeDotIndicator, ModeDetailCard } from '@/components/ModeIndicator';
 import { ModeLiveIndicator, ModeContextMenu } from '@/components/ModeLiveIndicator';
 import { ModeStatusWidget } from '@/components/ModeStatusWidget';
 
@@ -18,7 +18,7 @@ export function Example1_SimpleBadge() {
   return (
     <div className="p-4">
       <h3 className="text-lg font-bold mb-4">Simple Badge</h3>
-      <ModeBadge />
+      <ModeDotIndicator />
     </div>
   );
 }
@@ -154,7 +154,7 @@ export function Example6_DashboardOverview() {
         <div className="bg-slate-900 border border-slate-700 rounded p-4">
           <div className="text-sm text-slate-400 mb-2">Current Mode</div>
           <div className="flex items-center gap-2">
-            <ModeBadge />
+            <ModeDotIndicator />
           </div>
         </div>
 

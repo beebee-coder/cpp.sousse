@@ -28,14 +28,22 @@ const FALLBACK_MODEL = 'llama-3.1-8b-instant';
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_RETRIES = 2;
 const DEFAULT_RETRY_DELAY_MS = 1_000;
-const DEFAULT_MAX_TOKENS = 300;
+const DEFAULT_MAX_TOKENS = 500;
 
 function getGroqClient() {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey || apiKey === 'votre_cle_groq_ici') {
-    throw new Error('GROQ_API_KEY manquante ou invalide');
+    throw new GroqKeyMissingError();
   }
   return new Groq({ apiKey, timeout: DEFAULT_TIMEOUT_MS });
+}
+
+/** Erreur dédiée quand la clé Groq est absente — permet un repli RAG seul côté appelant. */
+export class GroqKeyMissingError extends Error {
+  constructor() {
+    super('GROQ_API_KEY manquante ou invalide');
+    this.name = 'GroqKeyMissingError';
+  }
 }
 
 function delay(ms: number) {

@@ -1,0 +1,100 @@
+import { invoke } from '@tauri-apps/api/core';
+import type { SearchResult } from './chroma';
+
+export interface TauriCollection {
+  name: string;
+  upsert(opts: { ids: string[]; documents: string[]; metadatas?: any[] }): Promise<void>;
+  get(opts?: { ids?: string[] }): Promise<{ ids: string[]; documents: string[]; metadatas: any[] }>;
+  query(opts?: { queryTexts?: string[]; nResults?: number; where?: Record<string, any> }): Promise<{ ids: string[][]; documents: string[][]; metadatas: any[][]; distances: number[][] }>;
+  delete(opts?: { ids?: string[] }): Promise<void>;
+  count(): Promise<number>;
+}
+
+export interface TauriVectorClient {
+  listCollections(): Promise<{ name: string }[]>;
+  getOrCreateCollection(name: string): Promise<TauriCollection>;
+  getCollection(name: string): Promise<TauriCollection>;
+  deleteCollection(name: string): Promise<void>;
+}
+
+function toTauriCollection(name: string): TauriCollection {
+  return {
+    name,
+    async upsert({ ids, documents, metadatas }: { ids: string[]; documents: string[]; metadatas?: any[] }) {
+      const payload = ids.map((id, i) => ({
+        id,
+        content: documents[i] || '',
+        metadata: metadatas?.[i] ?? {},
+        chunk_index: 0,
+        created_at: new Date().toISOString(),
+      }));
+      await invoke('vector_upsert', { collection: name, documents: payload });
+    },
+    async get(opts?: { ids?: string[] }): Promise<{ ids: string[]; documents: string[]; metadatas: any[] }> {
+      const docs = await invoke<any[]>('vector_get_documents', { collection: name, ids: opts?.ids });
+      return {
+        ids: docs.map((d: any) => d.id),
+        documents: docs.map((d: any) => d.content),
+        metadatas: docs.map((d: any) => d.metadata),
+      };
+    },
+    async count(): Promise<number> {
+      try {
+        const docs = await invoke<any[]>('vector_get_documents', { collection: name });
+        return Array.isArray(docs) ? docs.length : 0;
+      } catch {
+        return 0;
+      }
+    },
+    async query(opts?: { queryTexts?: string[]; nResults?: number; where?: Record<string, any> }): Promise<{ ids: string[][]; documents: string[][]; metadatas: any[][]; distances: number[][] }> {
+      const queryText = opts?.queryTexts?.[0] || '';
+      const nResults = opts?.nResults || 5;
+      const collectionFilter = opts?.where?.collection as string | undefined;
+      const output = await invoke('vector_search', { query: queryText, top_k: nResults, collection: collectionFilter ?? name }) as any;
+      const results: SearchResult[] = (output.results || []).map((r: any) => ({
+        id: r.id,
+        document: r.content,
+        metadata: {},
+        distance: 1 - r.score,
+        score: r.score,
+      }));
+      return {
+        ids: [results.map((r: SearchResult) => r.id)],
+        documents: [results.map((r: SearchResult) => r.document)],
+        metadatas: [results.map((r: SearchResult) => r.metadata)],
+        distances: [results.map((r: SearchResult) => r.distance)],
+      };
+    },
+    async delete(opts?: { ids?: string[] }): Promise<void> {
+      const ids = opts?.ids ?? [];
+      if (ids.length > 0) {
+        await invoke('vector_delete', { ids, collection: name });
+      }
+    },
+  };
+}
+
+export function getTauriVectorClient(): TauriVectorClient {
+  return {
+    async listCollections(): Promise<{ name: string }[]> {
+      const collections = await invoke<string[]>('vector_list_collections');
+      return collections.map((name) => ({ name }));
+    },
+    async getOrCreateCollection(name: string): Promise<TauriCollection> {
+      return toTauriCollection(name);
+    },
+    async getCollection(name: string): Promise<TauriCollection> {
+      return toTauriCollection(name);
+    },
+    async deleteCollection(name: string): Promise<void> {
+      const client = await getTauriVectorClient();
+      const collections = await client.listCollections();
+      const target = collections.find((c) => c.name === name);
+      if (!target) return;
+      const allDocs = await toTauriCollection(name).get();
+      if (allDocs.ids.length > 0) {
+        await invoke('vector_delete', { ids: allDocs.ids, collection: name });
+      }
+    },
+  };
+}

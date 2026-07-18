@@ -23,7 +23,8 @@ import {
   Keyboard,
   HelpCircle,
   ChevronDown,
-  ChevronRight as ChevronRightIcon
+  ChevronRight as ChevronRightIcon,
+  Upload
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
@@ -42,6 +43,9 @@ import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { isDesktop } from '@/lib/platform';
 import { syncEngine } from '@/lib/db/sync-engine';
+import { useAppMode } from '@/hooks/use-app-mode';
+import { useSession } from '@/components/SessionProvider';
+import { localDBBridge } from '@/lib/local-db-bridge';
 import { DynamicProcedureForm } from '@/components/procedures/forms/DynamicProcedureForm';
 
 interface QRPair {
@@ -61,6 +65,8 @@ type SmartField = 'question' | 'answer' | 'fileName' | 'description';
 export default function DatasetPage() {
   const { toast } = useToast();
   const router = useRouter();
+  const { user } = useSession();
+  const { localOnly, online } = useAppMode();
 
   const [mounted, setMounted] = useState(false);
 
@@ -80,12 +86,16 @@ export default function DatasetPage() {
   const [editAnswer, setEditAnswer] = useState('');
   const [showJsonPreview, setShowJsonPreview] = useState(false);
   const [justAddedId, setJustAddedId] = useState<string | null>(null);
+  const [savedCollections, setSavedCollections] = useState<{ name: string; path: string; pairs: number; description?: string }[]>([]);
+  const [isLoadingCollections, setIsLoadingCollections] = useState(false);
+  const [collectionError, setCollectionError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const questionInputRef = useRef<HTMLInputElement>(null);
   const answerInputRef = useRef<HTMLTextAreaElement>(null);
   const fileNameInputRef = useRef<HTMLInputElement>(null);
   const descriptionInputRef = useRef<HTMLInputElement>(null);
   const formCardRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const activeFieldRef = useRef(activeField);
   useEffect(() => {
@@ -152,6 +162,58 @@ export default function DatasetPage() {
     }
   }, [question, answer, toast]);
 
+  const loadSavedCollections = useCallback(async () => {
+    setIsLoadingCollections(true);
+    setCollectionError(null);
+    try {
+      const res = await apiClient.get<any>('/api/registry');
+      const tree: any[] = (res as any).tree || [];
+      const itemsFolder = tree.find((n: any) => n.name === 'items');
+      const files: any[] = itemsFolder?.children || [];
+      setSavedCollections(
+        files
+          .filter((f: any) => f.type === 'file')
+          .map((f: any) => ({
+            name: f.name,
+            path: f.id || `items/${f.name}`,
+            pairs: typeof f.metadata?.pairCount === 'number' ? f.metadata.pairCount : -1,
+            description: f.metadata?.category,
+          }))
+      );
+    } catch (e: any) {
+      setCollectionError(e?.message || 'Lecture des collections impossible');
+    } finally {
+      setIsLoadingCollections(false);
+    }
+  }, [toast]);
+
+  const loadCollection = useCallback(async (colPath: string) => {
+    try {
+      const res = await apiClient.get<any>(`/api/registry?path=${encodeURIComponent(colPath)}`);
+      if (!(res as any).success) throw new Error((res as any).error || 'Lecture impossible');
+      const rec = JSON.parse((res as any).content);
+      if (!Array.isArray(rec?.pairs)) throw new Error('Collection Q/R invalide');
+      setPairs(rec.pairs.map((p: any) => ({ id: `qr_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`, question: p.question, answer: p.answer })));
+      setFileName((rec.title || colPath.split('/').pop() || '').replace(/\.json$/i, ''));
+      setDescription(rec.description || '');
+      setActiveTab('qr');
+      toast({ title: 'Collection chargée', description: `${rec.pairs.length} paire(s) chargée(s) dans la session.` });
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'Chargement échoué', description: e.message });
+    }
+  }, [toast]);
+
+  const deleteCollection = useCallback(async (colPath: string) => {
+    try {
+      const res = await apiClient.delete<any>(`/api/registry?path=${encodeURIComponent(colPath)}`);
+      if (!(res as any).success) throw new Error((res as any).error || 'Suppression impossible');
+      toast({ title: 'Collection supprimée', description: colPath });
+      loadSavedCollections().catch(() => {});
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'Suppression échouée', description: e.message });
+    }
+  }, [toast]);
+
   const handleSend = useCallback(async () => {
     if (pairs.length === 0) {
       toast({
@@ -183,78 +245,137 @@ export default function DatasetPage() {
         registryPath: registryPath,
       };
 
-      const res = await apiClient.post('/api/registry', {
-        path: registryPath,
-        type: 'file',
-        content: JSON.stringify(sessionJSON, null, 2),
-      });
+      const isOfflineSave = localOnly || (!online && isDesktop);
 
-      if ((res as any).success) {
-        if (isDesktop) {
-          try {
-            await apiClient.post('/api/local-db', {
-              fileName: registryFileName,
-              content: JSON.stringify(sessionJSON, null, 2),
-              metadata: {
-                knowledgeType: 'qa',
-                cloudId: undefined,
-                tags: ['Q/R', 'entrainement', ...(description.trim() ? [description.trim()] : [])]
-              },
-              targetDir: 'items'
-            });
+      if (isOfflineSave && !isDesktop) {
+        toast({
+          variant: 'destructive',
+          title: 'Sauvegarde impossible',
+          description: localOnly
+            ? 'Le mode Locale uniquement est activé. La sauvegarde cloud est désactivée.'
+            : 'Aucune connexion détectée. Impossible de sauvegarder.',
+        });
+        return;
+      }
 
-            // Vectorisation immédiate dans Chroma (indexation du fichier fraîchement écrit)
-            // afin que la Q/R soit retrouvable par le RAG sans attendre une synchronisation manuelle.
+      let savedToCloud = false;
+      let savedToLocal = false;
+      let indexedChroma = false;
+      const indexErrors: string[] = [];
+
+      if (!isOfflineSave) {
+        const res = await apiClient.post('/api/registry', {
+          path: registryPath,
+          type: 'file',
+          content: JSON.stringify(sessionJSON, null, 2),
+        });
+
+        if ((res as any).success) {
+          savedToCloud = true;
+          if (isDesktop) {
             try {
               await apiClient.post('/api/local-db', {
-                action: 'index',
-                targetPath: `items/${registryFileName}`
+                fileName: registryFileName,
+                content: JSON.stringify(sessionJSON, null, 2),
+                metadata: {
+                  knowledgeType: 'qa',
+                  cloudId: (res as any).itemId,
+                  tags: ['Q/R', 'entrainement', ...(description.trim() ? [description.trim()] : [])]
+                },
+                targetDir: 'items'
               });
-            } catch (idxErr) {
-              console.warn('[DATASET] Échec indexation vectorielle Chroma :', idxErr);
+              savedToLocal = true;
+            } catch (e) {
+              console.warn('[DATASET] Erreur écriture BDD locale via API:', e);
             }
-          } catch (e) {
-            console.warn('[DATASET] Erreur écriture BDD locale :', e);
           }
+        } else {
+          throw new Error((res as any).error || 'Erreur inconnue');
         }
+      }
 
-        // (Non bloquant) Entraînement Weaviate Cloud pour la recherche sémantique des Q/R.
-        // Ignoré en cas d'erreur (ex : WEAVIATE non configuré) afin de ne pas faire échouer la sauvegarde.
+      if (isOfflineSave && isDesktop) {
         try {
-          await apiClient.post('/api/vector/ingest', {
-            items: pairs.map(p => ({ question: p.question, answer: p.answer })),
-            metadata: {
-              id: normalizedFileName,
-              title: normalizedFileName,
-              tags: ['Q/R', 'entrainement', ...(description.trim() ? [description.trim()] : [])],
-              category: 'General'
-            }
-          });
-        } catch (weaviateErr) {
-          console.warn('[DATASET] Entraînement Weaviate ignoré :', weaviateErr);
+          await localDBBridge.injectFile(
+            registryFileName,
+            JSON.stringify(sessionJSON, null, 2),
+            { knowledge_type: 'qa', tags: ['Q/R', 'entrainement', ...(description.trim() ? [description.trim()] : [])] },
+            'items'
+          );
+          savedToLocal = true;
+        } catch (e: any) {
           toast({
             variant: 'destructive',
-            title: 'Vectorisation Weaviate échouée',
-            description: 'Les paires Q/R sont sauvegardées mais ne seront pas retrouvées par le RAG sémantique cloud.',
+            title: 'Échec de sauvegarde locale',
+            description: e.message
           });
+          return;
         }
-
-        setPairs([]);
-        setJustAddedId(null);
-        setFileName('');
-        setDescription('');
-        setActiveField('question');
-        if (questionInputRef.current) {
-          questionInputRef.current.focus();
+        // Miroir de cohérence : on écrit aussi dans le Registre Physique
+        // (.registry/items) pour que l'intercepteur offline /api/registry et le
+        // repli lexical RAG (scan de .registry/items) restent synchronisés avec
+        // le miroir .local-db. Non bloquant (le miroir local a déjà réussi).
+        try {
+          const { upsertOfflineQA } = await import('@/lib/qr/offline-repo');
+          upsertOfflineQA({
+            type: 'qa',
+            title: sessionJSON.title,
+            description: sessionJSON.description,
+            pairs: sessionJSON.pairs,
+            createdAt: sessionJSON.createdAt || new Date().toISOString(),
+            registryPath: sessionJSON.registryPath,
+          });
+        } catch (e) {
+          console.warn('[DATASET] Miroir registre physique non bloquant :', e);
         }
-
-        toast({
-          title: 'Sauvegarde réussie',
-          description: `${pairs.length} paires Q/R enregistrées dans REGISTRE (${registryPath}).${isDesktop ? ' Copie locale + indexation vectorielle Chroma effectuées.' : ''}`
-        });
-      } else {
-        throw new Error((res as any).error || 'Erreur inconnue');
       }
+
+      // RAG — indexation Chroma (connexion RAG). Le miroir local est toujours
+      // indexé en desktop, QUE la sauvegarde soit cloud ou offline. L'ancien
+      // invoke('index_local_db') (commande Tauri non enregistrée) est remplacé
+      // par l'intercepteur offline /api/local-db {action:'index'} qui appelle
+      // réellement indexLocalDBFile (Chroma). Échec non bloquant mais signalé.
+      if (isDesktop && savedToLocal) {
+        try {
+          const idxRes = await apiClient.post('/api/local-db', {
+            action: 'index',
+            targetPath: `items/${registryFileName}`,
+          });
+          if ((idxRes as any).success) {
+            indexedChroma = true;
+          } else if ((idxRes as any).indexed === false) {
+            indexErrors.push((idxRes as any).message || 'Indexation Chroma différée');
+          }
+        } catch (idxErr: any) {
+          indexErrors.push(idxErr?.message || 'Échec indexation Chroma');
+        }
+      }
+
+      // Rafraîchit la liste des collections sauvegardées (UI).
+      loadSavedCollections().catch(() => {});
+
+      setPairs([]);
+      setJustAddedId(null);
+      setFileName('');
+      setDescription('');
+      setActiveField('question');
+      if (questionInputRef.current) {
+        questionInputRef.current.focus();
+      }
+
+      const saveTarget = savedToCloud ? 'REGISTRE cloud' : 'BDD Locale';
+      const extraInfo = isDesktop
+        ? (indexedChroma
+            ? ' Indexation Chroma effectuée — la collection est désormais interrogée par le chat RAG.'
+            : indexErrors.length
+              ? ` Enregistré localement, mais indexation Chroma non disponible (${indexErrors.join(' ; ')}).`
+              : ' Copie locale effectuée.')
+        : '';
+      toast({
+        title: 'Sauvegarde réussie',
+        description: `${pairs.length} paires Q/R enregistrées dans ${saveTarget} (${registryPath}).${extraInfo}`,
+        variant: indexErrors.length && !savedToCloud ? 'destructive' : 'default',
+      });
     } catch (e: any) {
       toast({
         variant: 'destructive',
@@ -380,6 +501,134 @@ export default function DatasetPage() {
     setPairs(prev => prev.filter(p => p.id !== id));
   }, []);
 
+  const normalizeQrPairs = useCallback((raw: any): QRPair[] => {
+    const out: QRPair[] = [];
+    const push = (q: any, a: any) => {
+      const question = typeof q === 'string' ? q.trim() : '';
+      const answer = typeof a === 'string' ? a.trim() : '';
+      if (question && answer) {
+        out.push({
+          id: `qr_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+          question,
+          answer,
+        });
+      }
+    };
+
+    if (Array.isArray(raw)) {
+      for (const item of raw) {
+        if (item && typeof item === 'object') {
+          if (typeof item.question === 'string' && typeof item.answer === 'string') {
+            push(item.question, item.answer);
+          } else if (typeof item.q === 'string' && typeof item.a === 'string') {
+            push(item.q, item.a);
+          } else if (typeof item.question === 'string' && typeof item.response === 'string') {
+            push(item.question, item.response);
+          }
+        }
+      }
+      return out;
+    }
+
+    if (raw && typeof raw === 'object') {
+      if (Array.isArray(raw.pairs)) {
+        for (const item of raw.pairs) {
+          if (item && typeof item === 'object') {
+            if (typeof item.question === 'string' && typeof item.answer === 'string') {
+              push(item.question, item.answer);
+            } else if (typeof item.q === 'string' && typeof item.a === 'string') {
+              push(item.q, item.a);
+            } else if (typeof item.question === 'string' && typeof item.response === 'string') {
+              push(item.question, item.response);
+            }
+          }
+        }
+        return out;
+      }
+      if (Array.isArray(raw.qa)) {
+        for (const item of raw.qa) {
+          if (item && typeof item === 'object') {
+            if (typeof item.question === 'string' && typeof item.answer === 'string') {
+              push(item.question, item.answer);
+            } else if (typeof item.q === 'string' && typeof item.a === 'string') {
+              push(item.q, item.a);
+            }
+          }
+        }
+        return out;
+      }
+      if (Array.isArray(raw.questions) && Array.isArray(raw.answers)) {
+        const len = Math.min(raw.questions.length, raw.answers.length);
+        for (let i = 0; i < len; i++) {
+          push(raw.questions[i], raw.answers[i]);
+        }
+        return out;
+      }
+    }
+
+    return out;
+  }, []);
+
+  const handleJsonUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith('.json')) {
+      toast({
+        variant: 'destructive',
+        title: 'Format invalide',
+        description: 'Veuillez sélectionner un fichier .json',
+      });
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast({
+        variant: 'destructive',
+        title: 'Fichier trop volumineux',
+        description: `La taille maximale autorisée est de 5 Mo. (${(file.size / 1024 / 1024).toFixed(1)} Mo reçus)`,
+      });
+      return;
+    }
+
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const normalized = normalizeQrPairs(parsed);
+
+      if (normalized.length === 0) {
+        toast({
+          variant: 'destructive',
+          title: 'Aucune paire Q/R détectée',
+          description: 'Le fichier JSON ne contient pas de paires question/réponse exploitables.',
+        });
+        return;
+      }
+
+      const baseName = file.name.replace(/\.json$/i, '');
+      setPairs(normalized);
+      setFileName(baseName);
+      setDescription('');
+      setActiveTab('qr');
+      setEditingId(null);
+      setEditQuestion('');
+      setEditAnswer('');
+
+      toast({
+        title: 'JSON importé',
+        description: `${normalized.length} paire(s) Q/R chargée(s) depuis ${file.name}.`,
+      });
+    } catch (err: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Échec de lecture JSON',
+        description: err?.message || 'Format JSON invalide.',
+      });
+    } finally {
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  }, [normalizeQrPairs, toast]);
+
   const handleStartEdit = useCallback((pair: QRPair) => {
     setEditingId(pair.id);
     setEditQuestion(pair.question);
@@ -424,9 +673,25 @@ export default function DatasetPage() {
         return;
       }
 
-      const userId = 'user-admin-001';
+      if (localOnly) {
+        toast({
+          title: 'Mode Locale uniquement',
+          description: 'La synchronisation cloud est désactivée (forcée en local).'
+        });
+        return;
+      }
+
+      if (!online) {
+        toast({
+          title: 'Hors-ligne',
+          description: 'Aucune connexion détectée. Impossible de synchroniser.'
+        });
+        return;
+      }
+
+      const userId = user?.id ?? 'user-anonymous';
       const projectId = 'project-001';
-      const result = await syncEngine.syncAll(userId, projectId);
+      const result = await syncEngine.syncAll(userId, projectId, localOnly);
 
       const parts = [
         `${result.injectedCount} item(s) transféré(s)`,
@@ -476,11 +741,80 @@ export default function DatasetPage() {
   const handleForgeSubmit = useCallback(async (data: any) => {
     setForgeSaving(true);
     try {
-      await new Promise(r => setTimeout(r, 1200));
-      console.log('🚀 [FORGE] Injection JSON structurelle :', data);
-      toast({ title: 'Forge Success', description: 'La procédure a été structurée et injectée dans le registre RAG.' });
+      const title = (data?.metadata?.title || data?.title || '').toString().trim();
+      if (!title) throw new Error('Le titre de la procédure est requis.');
+      const rawSteps: any[] = Array.isArray(data?.steps) ? data.steps : [];
+      if (rawSteps.length === 0) throw new Error('Ajoutez au moins une étape à la séquence.');
+
+      const meta = data?.metadata || {};
+      const code = (meta.code || `PROC-${Date.now().toString().slice(-6)}`).toUpperCase()
+        .replace(/[^A-Z0-9\-]/g, '');
+      const category = (meta.category || 'OPERATION').toUpperCase();
+      const criticality = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'].includes((meta.criticality || '').toUpperCase())
+        ? (meta.criticality as string).toUpperCase()
+        : 'MEDIUM';
+
+      const steps = rawSteps.map((s: any, i: number) => ({
+        id: s?.id || `step-${Date.now()}-${i}`,
+        order: i + 1,
+        title: (s?.title || `Étape ${i + 1}`).toString(),
+        description: s?.description || '',
+        action: {
+          type: s?.action?.type || 'confirmation',
+          instruction: (s?.action?.instruction || s?.title || `Exécuter : ${s?.title || `Étape ${i + 1}`}`).toString(),
+          ...(s?.action && typeof s.action === 'object' ? s.action : {}),
+        },
+        validation: {
+          conditions: Array.isArray(s?.validation?.conditions) && s.validation.conditions.length > 0
+            ? s.validation.conditions
+            : [{ id: `val-${Date.now()}-${i}`, type: 'manual', operator: '==', value: 0, description: '', displayName: '' }],
+          successExpression: s?.validation?.successExpression || 'status == OK',
+          ...(s?.validation && typeof s.validation === 'object' ? s.validation : {}),
+        },
+      }));
+
+      const payload = {
+        title,
+        code,
+        description: meta.description || data?.description || '',
+        category,
+        criticality,
+        status: 'PUBLISHED',
+        steps,
+        prerequisites: data?.prerequisites || { description: 'Audit standard', items: [] },
+        parameters: data?.parameters || null,
+        mediaLibrary: data?.mediaLibrary || null,
+        postExecution: data?.postExecution || null,
+        metadata: {
+          title,
+          code,
+          category,
+          department: meta.department || 'PRODUCTION',
+          criticality,
+          version: meta.version || '1.0.0',
+          author: meta.author || { id: 'local', name: 'Local Station', role: 'operator', department: '' },
+          approvers: meta.approvers || [],
+          tags: meta.tags || [],
+          language: meta.language || 'fr',
+        },
+      };
+
+      const res = await apiClient.post<any>('/api/procedures', payload);
+      if (!(res as any).success) {
+        throw new Error((res as any).message || (res as any).error || 'Échec de la forge.');
+      }
+
+      const target = (res as any).offline
+        ? 'Registre Physique local'
+        : (res as any).provider === 'LOCAL_REGISTRY'
+          ? 'Registre Physique local'
+          : 'Registre cloud';
+      toast({
+        title: 'Procédure forgée',
+        description: `« ${title} » enregistrée dans le ${target}. Visible dans le guide des procédures.`,
+      });
     } catch (e: any) {
-      toast({ variant: 'destructive', title: 'Forge Failure', description: e.message });
+      toast({ variant: 'destructive', title: 'Forge échouée', description: e.message });
     } finally {
       setForgeSaving(false);
     }
@@ -503,6 +837,10 @@ export default function DatasetPage() {
     }
   }, [pairs.length]);
 
+  useEffect(() => {
+    if (mounted) loadSavedCollections().catch(() => {});
+  }, [mounted, loadSavedCollections]);
+
   if (!mounted) return null;
 
   return (
@@ -518,6 +856,18 @@ export default function DatasetPage() {
           </div>
 
           <div className="flex items-center gap-2 ml-auto">
+            {(localOnly || (isDesktop && !online)) && (
+              <Badge
+                variant="outline"
+                className={cn(
+                  'text-[9px] font-code uppercase tracking-widest border-amber-500/40 text-amber-400 bg-amber-500/10',
+                  localOnly && 'animate-pulse'
+                )}
+                title={localOnly ? 'Mode Locale uniquement forcé' : 'Mode hors-ligne (Desktop)'}
+              >
+                {localOnly ? '⚡ Locale' : '⚡ Hors-ligne'}
+              </Badge>
+            )}
             <Button
               size="sm"
               variant="secondary"
@@ -599,6 +949,23 @@ export default function DatasetPage() {
                     <span className="text-[10px] font-code text-muted-foreground uppercase tracking-widest">
                       {pairs.length} paire{pairs.length > 1 ? 's' : ''}
                     </span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="h-7 gap-1.5 text-[9px] uppercase font-code text-muted-foreground hover:text-primary"
+                    >
+                      <Upload className="w-3 h-3" />
+                      Importer JSON
+                    </Button>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".json,application/json"
+                      className="hidden"
+                      onChange={handleJsonUpload}
+                    />
                   </div>
                 </div>
 
@@ -864,6 +1231,83 @@ export default function DatasetPage() {
                     </CardContent>
                   </Card>
                 )}
+
+                {/* Collections sauvegardées (chargées depuis /api/registry, intercepté offline) */}
+                <Card className="border-border/40 bg-card/30">
+                  <CardHeader className="space-y-1 pb-3 shrink-0">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <ListChecks className="w-4 h-4 text-secondary" />
+                        Collections sauvegardées
+                        {savedCollections.length > 0 && (
+                          <Badge variant="secondary" className="text-[9px] font-code uppercase">{savedCollections.length}</Badge>
+                        )}
+                      </CardTitle>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => loadSavedCollections().catch(() => {})}
+                        disabled={isLoadingCollections}
+                        className="h-7 gap-1 text-[9px] font-code text-muted-foreground uppercase"
+                      >
+                        {isLoadingCollections ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                        Rafraîchir
+                      </Button>
+                    </div>
+                    {collectionError && (
+                      <p className="text-[9px] font-code text-destructive/80 uppercase">{collectionError}</p>
+                    )}
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    {savedCollections.length === 0 ? (
+                      <div className="px-4 pb-4 pt-1 text-center">
+                        <p className="text-[10px] font-code text-muted-foreground/60 uppercase tracking-widest">
+                          {isLoadingCollections ? 'Chargement…' : 'Aucune collection Q/R sauvegardée pour l’instant.'}
+                        </p>
+                      </div>
+                    ) : (
+                      <ScrollArea className="max-h-60 px-4 pb-4">
+                        <div className="space-y-2">
+                          {savedCollections.map((col) => (
+                            <div
+                              key={col.path}
+                              className="flex items-center gap-3 p-2 rounded-sm border border-border/30 bg-card/40"
+                            >
+                              <FileJson className="w-4 h-4 text-primary shrink-0" />
+                              <div className="min-w-0 flex-1">
+                                <p className="text-xs font-code text-foreground/90 truncate">{col.name}</p>
+                                <p className="text-[9px] font-code text-muted-foreground/70">
+                                  {col.pairs >= 0 ? `${col.pairs} paire${col.pairs > 1 ? 's' : ''}` : 'Q/R'}
+                                  {col.description ? ` · ${col.description}` : ''}
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-0.5 shrink-0">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => loadCollection(col.path)}
+                                  className="h-7 w-7 text-muted-foreground hover:text-primary"
+                                  title="Charger dans la session"
+                                >
+                                  <FileText className="w-3 h-3" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => deleteCollection(col.path)}
+                                  className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                                  title="Supprimer"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </ScrollArea>
+                    )}
+                  </CardContent>
+                </Card>
               </div>
             </TabsContent>
 

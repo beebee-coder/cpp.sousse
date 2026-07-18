@@ -20,6 +20,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
+import { useAppMode } from '@/hooks/use-app-mode';
 import { cn } from '@/lib/utils';
 import { TiltCard } from '@/components/three/TiltCard';
 import { Logo3D } from '@/components/three/Logo3D';
@@ -34,6 +35,8 @@ export function DownloadApp() {
   const [msiAvail, setMsiAvail] = useState<boolean | null>(null);
   const [manifest, setManifest] = useState<{ windows?: { exe?: string; msi?: string } } | null>(null);
   const { toast } = useToast();
+  const { isDesktop, cloudSyncEnabled } = useAppMode();
+  const launchDisabled = isDesktop && !cloudSyncEnabled;
 
   // URLs résolues : Blob (manifest) en priorité, sinon fallback statique local.
   const exeUrl = manifest?.windows?.exe || '/installers/VisioNode_Setup_x64.exe';
@@ -82,6 +85,7 @@ export function DownloadApp() {
   };
 
   const handleLaunch = async () => {
+    if (isLaunching) return;
     setIsLaunching(true);
     try {
       const res = await fetch('/api/auth/desktop-token');
@@ -278,7 +282,7 @@ export function DownloadApp() {
               <p className="text-[10px] font-code text-muted-foreground mt-1">Connecte automatiquement la version Desktop installée sur cet appareil</p>
             </div>
             <Button
-              disabled={isLaunching}
+              disabled={isLaunching || launchDisabled}
               variant="glow"
               className="w-full font-headline font-bold uppercase text-xs h-12"
               onClick={handleLaunch}
@@ -287,7 +291,9 @@ export function DownloadApp() {
               Lancer et Connecter
             </Button>
             <span className="text-[8px] font-code text-muted-foreground uppercase">
-              Requiert l'application VisioNode installée sur cet appareil
+              {launchDisabled
+                ? "Mode local uniquement : connexion cloud requise pour le transfert de session"
+                : "Requiert l'application VisioNode installée sur cet appareil"}
             </span>
           </Card>
         </TiltCard>

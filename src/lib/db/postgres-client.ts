@@ -1,4 +1,4 @@
-import fs from 'fs';
+﻿import fs from 'fs';
 import path from 'path';
 
 /**
@@ -6,7 +6,14 @@ import path from 'path';
  * Version : Scan récursif pour synchronisation réelle de l'Explorateur BDD.
  */
 
-const REGISTRY_ROOT = path.join(process.cwd(), '.registry');
+const REGISTRY_ROOT = (() => {
+  // R1 — En Desktop, le launcher peut forcer la même racine physique que le
+  // moteur Rust via REGISTRY_ROOT_OVERRIDE (issue de get_registry_root) afin
+  // d'éviter toute divergence de chemin entre l'écriture JS et la lecture native.
+  const override = process.env.REGISTRY_ROOT_OVERRIDE?.trim();
+  if (override) return override;
+  return path.join(process.cwd(), '.registry');
+})();
 
 const ensureRegistry = () => {
   // Résilient au FS read-only (ex: Vercel serverless) : on ignore l'échec de création.
@@ -14,7 +21,7 @@ const ensureRegistry = () => {
     if (!fs.existsSync(REGISTRY_ROOT)) {
       fs.mkdirSync(REGISTRY_ROOT, { recursive: true });
     }
-    const dirs = ['items', 'bank', 'procedures'];
+    const dirs = ['items', 'bank', 'procedures', 'Alarmes'];
     dirs.forEach(dir => {
       const target = path.join(REGISTRY_ROOT, dir);
       if (!fs.existsSync(target)) fs.mkdirSync(target, { recursive: true });
@@ -101,8 +108,17 @@ export const postgresClient = {
       const buffer = fs.readFileSync(fullPath);
       return `data:${EXT_MIME[ext]};base64,${buffer.toString('base64')}`;
     }
-    
-    return fs.readFileSync(fullPath, 'utf8');
+
+    // R7 — Tout fichier dont l'extension n'est pas un texte/JSON connu est
+    // considéré comme binaire et renvoyé en base64 plutôt que lu en UTF-8
+    // (qui corromprait silencieusement un asset binaire hors table MIME).
+    const TEXT_EXT = new Set(['.json', '.txt', '.md', '.csv', '.xml', '.yml', '.yaml', '.html', '.css', '.js', '.ts', '.log']);
+    if (!TEXT_EXT.has(ext)) {
+      const buffer = fs.readFileSync(fullPath);
+      return `data:application/octet-stream;base64,${buffer.toString('base64')}`;
+    }
+
+    return fs.readFileSync(fullPath,'utf8');
   },
 
   async exists(relPath: string): Promise<boolean> {
@@ -119,7 +135,7 @@ export const postgresClient = {
       const metaPath = path.join(bankRoot, entry.name, 'metadata.json');
       if (!fs.existsSync(metaPath)) continue;
       try {
-        items.push(JSON.parse(fs.readFileSync(metaPath, 'utf8')));
+        items.push(JSON.parse(fs.readFileSync(metaPath,'utf8')));
       } catch {
         // metadata.json corrompu : ignoré
       }
@@ -133,14 +149,31 @@ export const postgresClient = {
     const fullPath = path.join(REGISTRY_ROOT, relPath);
     const dir = path.dirname(fullPath);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    
+
+    // R6 — Écriture atomique : on écrit dans un fichier temporaire puis on
+    // rename (opération atomique sur le même FS), évitant toute corruption
+    // JSON si deux écritures concurrentes (web→FS + locale) s'entrecroisent.
+    const tmpPath = `${fullPath}.${process.pid}.${Date.now()}.tmp`;
     if (content.startsWith('data:')) {
       const base64Data = content.split(',')[1];
-      fs.writeFileSync(fullPath, Buffer.from(base64Data, 'base64'));
+      fs.writeFileSync(tmpPath, Buffer.from(base64Data,'base64'));
     } else {
-      fs.writeFileSync(fullPath, content, 'utf8');
+      fs.writeFileSync(tmpPath, content,'utf8');
     }
+    fs.renameSync(tmpPath, fullPath);
     console.log(`💾 [REGISTRY_FS] [WRITE] [${ts}] Succès : ${relPath} (${content.length} bytes)`);
+  },
+
+  async saveBinary(relPath: string, buffer: Buffer) {
+    const ts = new Date().toLocaleTimeString();
+    ensureRegistry();
+    const fullPath = path.join(REGISTRY_ROOT, relPath);
+    const dir = path.dirname(fullPath);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    const tmpPath = `${fullPath}.${process.pid}.${Date.now()}.tmp`;
+    fs.writeFileSync(tmpPath, buffer);
+    fs.renameSync(tmpPath, fullPath);
+    console.log(`💾 [REGISTRY_FS] [WRITE] [${ts}] Succès (binaire) : ${relPath} (${buffer.length} bytes)`);
   },
 
   async createFolder(relPath: string) {

@@ -7,7 +7,9 @@ import { AlertCircle, Loader2, Database, Eye, EyeOff } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { useSession } from '@/components/SessionProvider';
 import { usePlatform } from '@/components/PlatformProvider';
+import { useAppMode } from '@/hooks/use-app-mode';
 import { localAuth } from '@/lib/auth/local-auth';
+import { clearRateLimit } from '@/lib/local-sql';
 import { Logo3D } from '@/components/three/Logo3D';
 
 /**
@@ -19,9 +21,11 @@ function SignInForm() {
   const searchParams = useSearchParams();
   const { refresh, login } = useSession();
   const { isDesktop } = usePlatform();
+  const { localOnly } = useAppMode();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [rateLimited, setRateLimited] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
@@ -30,13 +34,14 @@ function SignInForm() {
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     setError(null);
+    setRateLimited(false);
     setLoading(true);
 
     const ts = new Date().toLocaleTimeString();
     console.log(`🔐 [AUTH_FRONT] [INIT] [${ts}] Tentative de liaison pour : ${email}`);
 
     try {
-      const data = await apiClient.post<{ user?: any }>('/api/auth/signin', { email, password });
+      const data = await apiClient.post<{ user?: any }>('/api/auth/signin', { email, password, localOnly });
       setLoading(false);
 
       if (!data.success) {
@@ -49,6 +54,9 @@ function SignInForm() {
           message = "Base de données locale corrompue. Redémarrez l'application.";
         } else if (errorType === 'RATE_LIMITED') {
           message = "Trop de tentatives. Patientez avant de réessayer.";
+          setRateLimited(true);
+        } else if (errorType === 'LOCAL_ONLY') {
+          message = "Mode Locale uniquement : cet identifiant n'existe pas en base locale.";
         }
         setError(message);
         return;
@@ -60,9 +68,14 @@ function SignInForm() {
       // En mode desktop / local, la session est persistée côté client (SQLite
       // locale via l'intercepteur hybride) : on la conserve pour rester
       // connecté et on l'établit immédiatement sans repasser par le serveur.
-      if (isDesktop && u) {
+      // En mode Locale uniquement, on n'écrit PAS de session cloud desktop :
+      // la session reste strictement locale (source 'local').
+      if ((isDesktop || localOnly) && u) {
         localAuth.saveSession({ id: u.id, email: u.email, role: u.role });
-        login({ id: u.id, email: u.email, role: u.role, firstName: u.firstName, lastName: u.lastName }, { persist: true, source: 'local' });
+        login(
+          { id: u.id, email: u.email, role: u.role, firstName: u.firstName, lastName: u.lastName },
+          { persist: !localOnly, source: 'local' }
+        );
       }
 
       // Synchronise la session persistante AVANT la navigation pour éviter
@@ -129,7 +142,22 @@ function SignInForm() {
           {error && (
             <div className="flex items-start gap-3 p-3 rounded-md bg-destructive/10 border border-destructive/30 text-destructive animate-in fade-in zoom-in-95 duration-200">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-              <p className="text-[10px] font-code uppercase leading-tight font-bold">{error}</p>
+              <div className="flex-1">
+                <p className="text-[10px] font-code uppercase leading-tight font-bold">{error}</p>
+                {rateLimited && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      clearRateLimit(email);
+                      setRateLimited(false);
+                      setError(null);
+                    }}
+                    className="mt-2 text-[10px] font-bold uppercase tracking-widest underline-offset-4 hover:underline"
+                  >
+                    Réinitialiser le verrou
+                  </button>
+                )}
+              </div>
             </div>
           )}
 

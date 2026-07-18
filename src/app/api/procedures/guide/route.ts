@@ -42,9 +42,20 @@ function toDetail(p: any) {
   const meta = p.metadata || {};
   return {
     metadata: {
-      title: meta.title || p.title,
+      title: meta.title || p.title || 'Sans titre',
       code: String(meta.code || p.code || '').toUpperCase(),
+      category: String(meta.category || p.category || '—').toUpperCase(),
+      subcategory: meta.subcategory || '',
+      department: meta.department || '',
       criticality: String(meta.criticality || p.criticality || 'normal').toLowerCase(),
+      version: meta.version || '1.0.0',
+      author: meta.author || { id: 'local', name: 'Local Station', role: 'operator', department: '' },
+      approvers: meta.approvers || [],
+      tags: meta.tags || [],
+      language: meta.language || 'fr',
+      createdAt: meta.createdAt || new Date().toISOString(),
+      lastUpdated: meta.lastUpdated || new Date().toISOString(),
+      description: meta.description || p.description || '',
     },
     prerequisites: p.prerequisites || { items: [] },
     steps: p.steps || [],

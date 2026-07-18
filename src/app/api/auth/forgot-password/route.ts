@@ -5,7 +5,10 @@ import { getPrisma } from '@/lib/db';
 import { SignJWT } from 'jose';
 import { corsPreflight, withCors } from '@/lib/cors';
 
-const SECRET = process.env.AUTH_SECRET || 'dev-secret-change-me';
+const SECRET = process.env.AUTH_SECRET;
+if (!SECRET) {
+  throw new Error('AUTH_SECRET environment variable is required');
+}
 const encodedSecret = new TextEncoder().encode(SECRET);
 
 export async function OPTIONS(request: NextRequest) {

@@ -13,8 +13,13 @@ export type ChatMessage = {
     url: string;
   };
   procedureId?: string;
+  guideUrl?: string;
+  executeUrl?: string;
   source?: 'voice' | 'text';
   conversationId?: string;
+  sources?: string[];
+  ragResults?: any[];
+  confidence?: 'high' | 'medium' | 'low' | 'none';
 };
 
 export interface ChatStorage {

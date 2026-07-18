@@ -1,13 +1,5 @@
 
 # .vercelignore
-# Exclure ChromaDB uniquement lors du déploiement Vercel
-node_modules/chromadb/
-node_modules/chromadb/**
-**/chromadb/**
-chroma-data/
-*.db
-*.sqlite
-
 # Exclure les fichiers de build local
 src-tauri/
 out/

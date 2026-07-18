@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useRouter } from 'next/navigation';
+import { apiClient } from '@/lib/api-client';
 
 function cn(...classes: (string | boolean | undefined | null | false)[]) {
   return classes.filter(Boolean).join(' ');
@@ -28,11 +29,9 @@ export default function ProcedureGuidePage({ params }: { params: Promise<{ id: s
     const loadProcedure = async () => {
       setIsLoading(true);
       try {
-        const url = resolvedParams.id.includes('CRF')
-          ? `/api/procedures/guide?code=${encodeURIComponent(resolvedParams.id)}`
-          : `/api/procedures/guide?id=${encodeURIComponent(resolvedParams.id)}`;
-        const response = await fetch(url);
-        const data = await response.json();
+        const encoded = encodeURIComponent(resolvedParams.id);
+        const endpoint = `/api/procedures/guide?code=${encoded}&id=${encoded}`;
+        const data = await apiClient.get<any>(endpoint);
 
         if (data.success && data.procedure) {
           setProcedure(data.procedure);

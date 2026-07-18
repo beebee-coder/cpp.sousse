@@ -19,6 +19,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { apiClient } from '@/lib/api-client';
 
 type Template = {
   id: string;
@@ -60,10 +61,9 @@ export default function ProcedureTemplatesPage() {
     setIsLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/procedure-config-fields');
-      const data = await res.json();
-      if (!data.success) throw new Error('Erreur de chargement des templates');
-      setItems(data.items || []);
+      const res = await apiClient.get<{ success: boolean; items: Template[] }>('/api/procedure-config-fields');
+      if (!res.success) throw new Error(res.error || 'Erreur de chargement des templates');
+      setItems((res.items as Template[]) || []);
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -112,20 +112,9 @@ export default function ProcedureTemplatesPage() {
         options: form.type === 'select' ? parseOptions(form.optionsText) : null,
       };
       const res = editing
-        ? await fetch(`/api/procedure-config-fields/${editing.id}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-          })
-        : await fetch('/api/procedure-config-fields', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-          });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || 'Échec de l\'enregistrement');
-      }
+        ? await apiClient.patch<Template>(`/api/procedure-config-fields/${editing.id}`, payload)
+        : await apiClient.post<Template>('/api/procedure-config-fields', payload);
+      if (!res.success) throw new Error(res.error || 'Échec de l\'enregistrement');
       await fetchTemplates();
       startCreate();
     } catch (e: any) {
@@ -139,8 +128,8 @@ export default function ProcedureTemplatesPage() {
     if (!confirm('Supprimer ce template ? Les champs associés dans les procédures seront retirés.')) return;
     setError(null);
     try {
-      const res = await fetch(`/api/procedure-config-fields/${id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('Échec de la suppression');
+      const res = await apiClient.delete<{ success: boolean }>(`/api/procedure-config-fields/${id}`);
+      if (!res.success) throw new Error(res.error || 'Échec de la suppression');
       await fetchTemplates();
     } catch (e: any) {
       setError(e.message);

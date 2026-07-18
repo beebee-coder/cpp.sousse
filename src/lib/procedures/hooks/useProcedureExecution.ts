@@ -179,11 +179,13 @@ export function useProcedureExecution({ procedure, onComplete }: UseProcedureExe
   }, [engine]);
 
   const restart = useCallback(() => {
-    const newState = engine.start();
+    const freshEngine = new ExecutionEngine(procedure);
+    setEngine(freshEngine);
+    const newState = freshEngine.start();
     setState(newState);
     setElapsed(0);
     stepStartRef.current = Date.now();
-  }, [engine]);
+  }, [engine, procedure]);
 
   const exportJson = useCallback(() => {
     const report = {

@@ -66,6 +66,7 @@ class ApiClient {
   private async requestWithBody<T>(endpoint: string, method: string, data: any): Promise<ApiResponse<T>> {
     const url = resolveApiUrl(endpoint);
     const timestamp = new Date().toLocaleTimeString();
+    const params = this.extractParams(endpoint);
     try {
       const result = await executeHybridRequest<any, any>(url, data, async () => {
         const response = await this.fetchWithTimeout(url, {
@@ -80,7 +81,7 @@ class ApiClient {
         const json = await response.json().catch(() => ({}));
         if (!response.ok) return { success: false, error: json.error || json.message || `HTTP_${response.status}` };
         return json;
-      });
+      }, { method, params });
       return { ...result, timestamp, success: result.success ?? true } as ApiResponse<T>;
     } catch (error: any) {
       return { error: error.message, offline: true, timestamp, success: false } as any;
@@ -90,6 +91,7 @@ class ApiClient {
   async get<T>(endpoint: string): Promise<ApiResponse<T>> {
     const url = resolveApiUrl(endpoint);
     const timestamp = new Date().toLocaleTimeString();
+    const params = this.extractParams(endpoint);
     try {
       const result = await executeHybridRequest<any, any>(url, null, async () => {
         const response = await this.fetchWithTimeout(url, {
@@ -99,7 +101,7 @@ class ApiClient {
         const json = await response.json().catch(() => ({}));
         if (!response.ok) return { success: false, error: json.error || json.message };
         return json;
-      });
+      }, { method: 'GET', params, url: endpoint });
       return { ...result, timestamp, success: result.success ?? true } as ApiResponse<T>;
     } catch (error: any) {
       return { error: error.message, offline: true, timestamp, success: false } as any;
@@ -121,6 +123,7 @@ class ApiClient {
   async delete<T>(endpoint: string): Promise<ApiResponse<T>> {
     const url = resolveApiUrl(endpoint);
     const timestamp = new Date().toLocaleTimeString();
+    const params = this.extractParams(endpoint);
     try {
       const result = await executeHybridRequest<any, any>(url, null, async () => {
         const response = await this.fetchWithTimeout(url, {
@@ -130,11 +133,21 @@ class ApiClient {
         const json = await response.json().catch(() => ({}));
         if (!response.ok) return { success: false, error: json.error || json.message || 'ECHEC_SUPPRESSION' };
         return json;
-      });
+        }, { method: 'DELETE', params, url: endpoint });
       return { ...result, timestamp, success: result.success !== false } as ApiResponse<T>;
     } catch (error: any) {
       return { error: error.message, offline: true, timestamp, success: false } as any;
     }
+  }
+
+  /**
+   * Extrait l'ID final d'un chemin de type /api/procedures/{id} pour le
+   * transmettre aux intercepteurs Desktop (ex: route [id] offline).
+   */
+  private extractParams(endpoint: string): { id?: string } {
+    const clean = endpoint.split('?')[0];
+    const m = clean.match(/\/api\/procedures\/([^/]+)$/) || clean.match(/\/api\/procedure-config-fields\/([^/]+)$/);
+    return m ? { id: decodeURIComponent(m[1]) } : {};
   }
 }
 

@@ -1,0 +1,29 @@
+
+[package]
+name = "visionode"
+version = "1.0.0"
+description = "VisioNode Precision Engine Desktop"
+authors = ["CCP Industrial Vision"]
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-sql = { version = "2", features = ["sqlite"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", features = ["json"] }
+dotenvy = "0.15"
+tokio = { version = "1", features = ["full"] }
+chrono = "0.4"
+tauri-plugin-deep-link = "2.4.9"
+  rusqlite = { version = "0.32", features = ["bundled"] }
+  uuid = { version = "1.0", features = ["v4"] }
+  base64 = "0.22"
+
+[features]
+# default enables all features
+default = [ "custom-protocol" ]
+custom-protocol = [ "tauri/custom-protocol" ]

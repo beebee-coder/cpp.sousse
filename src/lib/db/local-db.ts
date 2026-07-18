@@ -1,4 +1,4 @@
-import fs from 'fs';
+﻿import fs from 'fs';
 import path from 'path';
 
 /**
@@ -26,6 +26,14 @@ const RESSOURCES_HUMAINES_DIR = path.join(LOCAL_DB_ROOT, 'ressources humaines');
 const BANK_DIR = path.join(LOCAL_DB_ROOT, 'bank');
 const MANIFEST_FILE = path.join(LOCAL_DB_ROOT, 'local-db-manifest.json');
 
+// R1 — Aligne la racine `.registry` sur la même que le moteur Rust en Desktop
+// (REGISTRY_ROOT_OVERRIDE, issu de get_registry_root) pour éviter toute
+// divergence de chemin entre l'écriture JS (seed/index) et la lecture native.
+const REGISTRY_ROOT_DIR = (() => {
+  const override = process.env.REGISTRY_ROOT_OVERRIDE?.trim();
+  return override ? override : path.join(process.cwd(), '.registry');
+})();
+
 export { LOCAL_DB_ROOT };
 
 interface LocalDBManifestEntry {
@@ -46,6 +54,8 @@ interface LocalDBManifest {
   version: string;
   /** Amorçage unique depuis le Registre physique (.registry) déjà effectué. */
   seededFromRegistry?: boolean;
+  /** Timestamp du registre au moment de la dernière indexation Chroma. */
+  registryLastIndexedAt?: string;
 }
 
 interface FSNode {
@@ -123,29 +133,24 @@ const withManifestLock = <T>(fn: () => T): T => {
     return fn();
   }
 
+  const lockBuffer = new SharedArrayBuffer(4);
+  const lockView = new Int32Array(lockBuffer);
+  Atomics.store(lockView, 0, 0);
+
   const deadline = Date.now() + 5000;
-  let fd: number | null = null;
   while (Date.now() < deadline) {
-    try {
-      fd = fs.openSync(MANIFEST_LOCK_FILE, 'wx');
-      break;
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
-      const end = Date.now() + 20;
-      while (Date.now() < end) {}
+    if (Atomics.compareExchange(lockView, 0, 0, 1) === 0) {
+      manifestLockDepth = 1;
+      try {
+        return fn();
+      } finally {
+        manifestLockDepth--;
+        Atomics.store(lockView, 0, 0);
+      }
     }
+    Atomics.wait(lockView, 0, 1, 50);
   }
-  if (fd === null) throw new Error('MANIFEST_LOCK_TIMEOUT');
-  manifestLockDepth = 1;
-  try {
-    return fn();
-  } finally {
-    manifestLockDepth--;
-    if (manifestLockDepth === 0) {
-      try { fs.closeSync(fd); } catch {}
-      try { fs.unlinkSync(MANIFEST_LOCK_FILE); } catch {}
-    }
-  }
+  throw new Error('MANIFEST_LOCK_TIMEOUT');
 };
 
 let initializationPromise: Promise<void> | null = null;
@@ -640,8 +645,6 @@ export const localDB = {
         return;
       }
 
-      const REGISTRY_ROOT = path.join(process.cwd(), '.registry');
-
       const walk = (dir: string, base: string) => {
         if (!fs.existsSync(dir)) return;
         for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -670,7 +673,7 @@ export const localDB = {
         }
       };
 
-      walk(REGISTRY_ROOT, '');
+      walk(REGISTRY_ROOT_DIR, '');
 
       manifest.seededFromRegistry = true;
       saveManifest(manifest);
@@ -687,8 +690,43 @@ export const localDB = {
       }
     }
 
+    try {
+      const stat = fs.statSync(REGISTRY_ROOT_DIR);
+      const manifest = loadManifest();
+      manifest.registryLastIndexedAt = new Date(stat.mtime).toISOString();
+      saveManifest(manifest);
+    } catch {
+      // ignore si .registry n'existe pas encore
+    }
+
     console.log(`✅ [LOCAL_DB] [SEED] Amorçage terminé : ${seeded} fichier(s) injecté(s), ${indexed ?? 0} vectorisé(s).`);
     return { seeded, indexed };
+  },
+
+  async ensureIndexedFromRegistry(): Promise<{ reindexed: boolean; indexed?: number }> {
+    ensureLocalDB();
+    if (process.env.VERCEL === '1') {
+      return { reindexed: false };
+    }
+
+    const registryStat = fs.statSync(REGISTRY_ROOT_DIR);
+    const manifest = loadManifest();
+    const lastIndexed = manifest.registryLastIndexedAt ? new Date(manifest.registryLastIndexedAt) : null;
+
+    if (lastIndexed && registryStat.mtime <= lastIndexed) {
+      return { reindexed: false };
+    }
+
+    try {
+      const { indexLocalDBFolder } = await import('@/lib/local-indexer');
+      const res = await indexLocalDBFolder('INDEX_CHROMA');
+      manifest.registryLastIndexedAt = new Date(registryStat.mtime).toISOString();
+      saveManifest(manifest);
+      return { reindexed: true, indexed: res.indexed };
+    } catch (e: any) {
+      console.warn('[LOCAL_DB] [REINDEX] Échec ré-indexation:', e.message);
+      return { reindexed: false };
+    }
   },
 
   /**
@@ -698,7 +736,6 @@ export const localDB = {
    */
   async mirrorRegistryStructure(): Promise<{ mirrored: string[] }> {
     ensureLocalDB();
-    const REGISTRY_ROOT = path.join(process.cwd(), '.registry');
     const mirrored: string[] = [];
 
     // Miroir dédié du dossier « bank » de la BDD Web (Registre) vers la BDD Locale.
@@ -726,7 +763,7 @@ export const localDB = {
       }
     };
 
-    const bankSrc = path.join(REGISTRY_ROOT, 'bank');
+    const bankSrc = path.join(REGISTRY_ROOT_DIR, 'bank');
     if (fs.existsSync(bankSrc)) {
       if (!fs.existsSync(BANK_DIR)) fs.mkdirSync(BANK_DIR, { recursive: true });
       mirrorBankSubtree(bankSrc, BANK_DIR);
@@ -741,7 +778,7 @@ export const localDB = {
       for (const item of items) {
         if (item.isDirectory()) {
           if (item.name.toLowerCase() === 'bank') continue;
-          const relPath = path.relative(REGISTRY_ROOT, path.join(dir, item.name)).replace(/\\/g, '/');
+          const relPath = path.relative(REGISTRY_ROOT_DIR, path.join(dir, item.name)).replace(/\\/g, '/');
           const mirrorPath = path.join(INDEX_CHROMA_DIR, relPath);
           if (!fs.existsSync(mirrorPath)) {
             fs.mkdirSync(mirrorPath, { recursive: true });
@@ -753,7 +790,7 @@ export const localDB = {
       }
     };
 
-    mirror(REGISTRY_ROOT);
+    mirror(REGISTRY_ROOT_DIR);
     return { mirrored };
   }
 };

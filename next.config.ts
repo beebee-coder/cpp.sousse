@@ -21,7 +21,6 @@ const nextConfig: NextConfig = {
       };
       if (!isServer) {
         config.externals = [...(config.externals || []), ...[
-          'chromadb',
           'weaviate-client',
           '@grpc/grpc-js',
           'nice-grpc',
@@ -36,7 +35,6 @@ const nextConfig: NextConfig = {
   // ✅ ws ajouté pour résoudre TypeError: bufferUtil.mask is not a function
   serverExternalPackages: [
     'onnxruntime-node', 
-    'chromadb', 
     'groq-sdk',
     'weaviate-client',
     '@grpc/grpc-js',

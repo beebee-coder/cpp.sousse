@@ -1,5 +1,6 @@
 import { GroqMessage } from './groq-provider';
 import { ragOrchestrator, type RAGResult } from './rag-orchestrator';
+import { ragHub } from './rag/hub';
 import { getSystemContextSummary } from '@/lib/chroma';
 
 export interface ChatContext {
@@ -36,7 +37,9 @@ export class ContextManager {
     userName?: string
   ): Promise<ChatContext> {
     const systemState = await getSystemContextSummary();
-    const ragResults = await ragOrchestrator.search(query, history);
+    // Recherche factorisée multi-connexions (RAGHub fan-out sur procedures/knowledge/bank).
+    const ragResults = await ragHub.search(query, history as any[]);
+    // Formatage/presentation délégué à l'orchestrateur historique (inchangé).
     const context = ragOrchestrator.formatContext(ragResults);
     const sources = ragOrchestrator.getSources(ragResults);
     const confidence = this.getConfidenceLabel(ragResults);
@@ -72,13 +75,24 @@ RÈGLES STRICTES:
 5. Si AUCUN_CONTEXTE ou CONFIANCE RAG: low/none, répondez que l'information n'est pas disponible dans la base de connaissances.`;
 
     const confidenceLine = `\nCONFIANCE RAG: ${confidence}.`;
+
+    // Banque médias : lorsqu'un actif Bank (image/vidéo) est pertinent, l'IA
+    // doit signaler qu'un visuel associé est disponible — l'UI l'affiche alors
+    // automatiquement (cf. chat-router : dérivation media depuis metadata bank).
+    const bankAssets = context.ragResults.filter(
+      r => r.metadata?.knowledgeType === 'bank'
+    );
+    const bankLine = bankAssets.length > 0
+      ? `\nBANQUE MÉDIAS: ${bankAssets.length} actif(s) visuel(s) lié(s) à la requête. Règle: si un actif Bank est pertinent pour la réponse, citez-le et signalez qu'une image/vidéo associée est disponible (l'aperçu s'affiche automatiquement).`
+      : '';
+
     const ragSection = context.context !== 'AUCUN_CONTEXTE'
       ? `\nCONTEXTE RÉCUPÉRÉ:\n${context.context}`
       : '\nCONTEXTE RÉCUPÉRÉ: Aucun résultat. Informez l\'utilisateur que la knowledge base ne contient pas cette information.';
 
     const stateSection = `\nÉTAT SYSTÈME: Mode=${context.mode}.`;
 
-    return `${basePrompt}${confidenceLine}${ragSection}${stateSection}`;
+    return `${basePrompt}${confidenceLine}${bankLine}${ragSection}${stateSection}`;
   }
 
   buildMessages(

@@ -6,8 +6,7 @@ import { getUserById } from '@/lib/auth-store';
 import { SignJWT } from 'jose';
 import { authAudit } from '@/lib/auth-audit';
 
-const SECRET = process.env.AUTH_SECRET || 'dev-secret-change-me';
-const encodedSecret = new TextEncoder().encode(SECRET);
+const SECRET = process.env.AUTH_SECRET;
 
 /**
  * GET /api/auth/magic-link
@@ -16,6 +15,13 @@ const encodedSecret = new TextEncoder().encode(SECRET);
  * /api/auth/verify-magic-link puisse les valider de façon identique.
  */
 export async function GET(request: NextRequest) {
+  if (!SECRET) {
+    authAudit.error('MAGIC_LINK_MISSING_SECRET', {});
+    return NextResponse.json({ success: false, error: 'Configuration serveur manquante' }, { status: 500 });
+  }
+
+  const encodedSecret = new TextEncoder().encode(SECRET);
+
   try {
     const session = await getSessionFromCookie();
     
@@ -45,7 +51,7 @@ export async function GET(request: NextRequest) {
 
     authAudit.info('MAGIC_LINK_GENERATED', { userId: user.id, role: user.role });
 
-    const deepLink = `visionode://login?token=${token}`;
+    const deepLink = `visionode://auth?token=${token}`;
 
     return NextResponse.json({ success: true, url: deepLink });
   } catch (err: any) {

@@ -149,6 +149,7 @@ export const POST = createHybridRoute<BankBody, any>({
             tags: (metadata?.tags as string[]) || [],
             mime,
             url: assetBlob.url,
+            path: assetPath,
             createdAt: finalMetadata.created_at,
           });
         } catch (weavErr: any) {

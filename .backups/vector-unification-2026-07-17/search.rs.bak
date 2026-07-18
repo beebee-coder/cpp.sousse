@@ -11,12 +11,12 @@ impl VectorSearchEngine {
         Self { store }
     }
 
-    pub fn search(&self, query: &str, top_k: usize) -> Result<Vec<SearchResult>, String> {
-        self.store.search(query, top_k).map_err(|e| e.to_string())
+    pub fn search(&self, query: &str, top_k: usize, collection: Option<&str>) -> Result<Vec<SearchResult>, String> {
+        self.store.search(query, top_k, collection).map_err(|e| e.to_string())
     }
 
     pub fn get_context_for_query(&self, query: &str, max_contexts: usize) -> String {
-        match self.search(query, max_contexts) {
+        match self.search(query, max_contexts, None) {
             Ok(results) => {
                 if results.is_empty() {
                     return String::new();

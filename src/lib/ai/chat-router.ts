@@ -2,7 +2,7 @@ import { GroqMessage } from './groq-provider';
 import { RAGResult } from './rag-orchestrator';
 import { toolRegistry, type ToolResult, buildToolDefinitionsMessage } from './tool-registry';
 import { contextManager } from './context-manager';
-import { chatWithGroq, chatWithGroqStream } from './groq-provider';
+import { chatWithGroq, chatWithGroqStream, GroqKeyMissingError } from './groq-provider';
 import { toolExecutor } from './tool-executor';
 import { parseToolCall } from './tool-registry';
 import { detectHybridCapabilities, getPreferredProvider, type HybridMode } from './hybrid-bridge';
@@ -25,6 +25,8 @@ export interface ChatOrchestratorResult {
   toolUsed?: string;
   media?: { type: 'image' | 'video'; url: string }[];
   procedureId?: string;
+  guideUrl?: string;
+  executeUrl?: string;
   tokensUsed?: number;
   sources: string[];
   ragResults: RAGResult[];
@@ -41,6 +43,24 @@ export class ChatOrchestrator {
 
     if (capabilities.canUseNativeGroq && input.mode !== 'web') {
       return await this.processWithNativeGroq(input, context, messages, capabilities);
+    }
+
+    // R2 — mode locale côté web (non-Tauri) : pas de Groq natif disponible et
+    // canUseCloudAPI=false en locale. On bascule sur un RAG lexical seul au lieu
+    // de tenter un appel cloud voué à l'échec (offline pur). Évite le blocage
+    // total en web+locale hors-ligne.
+    if (input.mode === 'locale' && !capabilities.canUseNativeGroq) {
+      const ragText = context.context && context.context !== 'AUCUN_CONTEXTE'
+        ? `D'après la base de connaissances locale :\n\n${context.context}`
+        : "Mode local : aucune information disponible dans la base de connaissances ne répond à votre question.";
+      return {
+        text: this.sanitizeResultText(ragText),
+        provider: 'RAG Local (sans Groq)',
+        model: 'offline-lexical',
+        sources: context.sources,
+        ragResults: context.ragResults,
+        confidence: context.confidence,
+      };
     }
 
     return await this.processWithCloudGroq(input, context, messages, capabilities);
@@ -68,7 +88,7 @@ export class ChatOrchestrator {
       const result = await chatWithGroq(groqMessages, {
         model: 'llama-3.3-70b-versatile',
         temperature: 0.1,
-        maxTokens: 300,
+        maxTokens: 500,
       });
 
       const text = this.sanitizeResultText(result.text);
@@ -103,10 +123,30 @@ export class ChatOrchestrator {
     ];
 
     let result;
-    if (input.onStreamChunk) {
-      result = await chatWithGroqStream(groqMessages, input.onStreamChunk, vercelAdapter.getGroqOptions());
-    } else {
-      result = await chatWithGroq(groqMessages, vercelAdapter.getGroqOptions());
+    try {
+      if (input.onStreamChunk) {
+        result = await chatWithGroqStream(groqMessages, input.onStreamChunk, vercelAdapter.getGroqOptions());
+      } else {
+        result = await chatWithGroq(groqMessages, vercelAdapter.getGroqOptions());
+      }
+    } catch (err: any) {
+      // R5 — Repli RAG seul : si la clé Groq est absente (web sans clé, ou
+      // panne d'auth), on ne lève pas d'erreur bloquante. On répond avec le
+      // contexte RAG lexical déjà récupéré plutôt que de rompre la liaison.
+      if (err instanceof GroqKeyMissingError || err?.name === 'GroqKeyMissingError') {
+        const ragText = context.context && context.context !== 'AUCUN_CONTEXTE'
+          ? `D'après la base de connaissances :\n\n${context.context}`
+          : "La clé d'API Groq n'est pas configurée et aucune information disponible dans la base de connaissances ne répond à votre question.";
+        return {
+          text: this.sanitizeResultText(ragText),
+          provider: 'RAG Local (sans Groq)',
+          model: 'offline-lexical',
+          sources: context.sources,
+          ragResults: context.ragResults,
+          confidence: context.confidence,
+        };
+      }
+      throw err;
     }
 
     const toolCall = parseToolCall(result.text);
@@ -122,18 +162,66 @@ export class ChatOrchestrator {
       }
     }
 
+    // ── Liaison JSON metadata → média affichable ──────────────────────────
+    // Si l'IA a trouvé une info dans un JSON metadata d'actif Bank, on propose
+    // l'affichage de l'image/vidéo associée (cloud: url directe ; local: binaire
+    // résolu via /api/registry depuis .local-db/.registry). Auto-proposition.
+    const bankMedia = await this.resolveBankMedia(context.ragResults);
+    const media = toolResult?.media && toolResult.media.length
+      ? toolResult.media
+      : bankMedia;
+
     return {
       text: this.sanitizeResultText(finalText),
       provider: result.provider,
       model: result.model,
       toolUsed: toolCall?.tool,
-      media: toolResult?.media,
+      media,
       procedureId: toolResult?.procedureId,
+      guideUrl: toolResult?.guideUrl,
+      executeUrl: toolResult?.executeUrl,
       tokensUsed: result.tokensUsed,
       sources: context.sources,
       ragResults: context.ragResults,
       confidence: context.confidence,
     };
+  }
+
+  /**
+   * Dérive les médias affichables depuis les résultats RAG Bank.
+   * Cloud : `metadata.url` (Vercel Blob). Local : `metadata.path` résolu via
+   * l'API /api/registry qui sert le binaire depuis .registry/.local-db.
+   */
+  private async resolveBankMedia(results: RAGResult[]): Promise<{ type: 'image' | 'video'; url: string }[]> {
+    const bankHits = results.filter(
+      r => (r.metadata as any)?.knowledgeType === 'bank' && ((r.metadata as any)?.url || (r.metadata as any)?.path)
+    );
+    if (bankHits.length === 0) return [];
+
+    const out: { type: 'image' | 'video'; url: string }[] = [];
+    for (const hit of bankHits.slice(0, 4)) {
+      const meta = hit.metadata as any;
+      const mediaType: 'image' | 'video' = meta.type === 'video' ? 'video' : 'image';
+
+      if (meta.url && /^https?:\/\//.test(meta.url)) {
+        out.push({ type: mediaType, url: meta.url });
+        continue;
+      }
+
+      if (meta.path) {
+        try {
+          const relPath = String(meta.path).replace(/^\/+/, '');
+          const res = await fetch(`/api/registry?path=${encodeURIComponent(relPath)}`);
+          const json = await res.json().catch(() => null);
+          if (json?.success && json.content) {
+            out.push({ type: mediaType, url: json.content });
+          }
+        } catch {
+          // média local non résolu : on ignore silencieusement
+        }
+      }
+    }
+    return out;
   }
 
   private buildNativeSystemPrompt(context: any): string {

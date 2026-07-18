@@ -5,8 +5,7 @@ import { createSessionCookie } from '@/lib/session';
 import { jwtVerify } from 'jose';
 import { authAudit } from '@/lib/auth-audit';
 
-const SECRET = process.env.AUTH_SECRET || 'dev-secret-change-me';
-const encodedSecret = new TextEncoder().encode(SECRET);
+const SECRET = process.env.AUTH_SECRET;
 
 /**
  * POST /api/auth/verify-magic-link
@@ -14,6 +13,13 @@ const encodedSecret = new TextEncoder().encode(SECRET);
  */
 export async function POST(request: NextRequest) {
   const ip = request.headers.get('x-forwarded-for') ?? request.headers.get('x-real-ip') ?? 'unknown';
+
+  if (!SECRET) {
+    authAudit.error('MAGIC_LINK_VERIFY_MISSING_SECRET', { ip });
+    return NextResponse.json({ success: false, message: 'Configuration serveur manquante' }, { status: 500 });
+  }
+
+  const encodedSecret = new TextEncoder().encode(SECRET);
 
   try {
     const body = await request.json();
@@ -49,7 +55,16 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, user });
   } catch (err: any) {
+    const isExpired = err?.code === 'ERR_JWT_EXPIRED';
     authAudit.error('MAGIC_LINK_VERIFY_ERROR', { error: err.message, ip });
-    return NextResponse.json({ success: false, message: 'Lien magique invalide ou expiré' }, { status: 401 });
+    return NextResponse.json(
+      {
+        success: false,
+        message: isExpired
+          ? 'Lien de connexion expiré. Relancez le transfert depuis l’application web.'
+          : 'Lien magique invalide ou expiré',
+      },
+      { status: 401 },
+    );
   }
 }

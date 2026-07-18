@@ -1,7 +1,9 @@
 import path from 'path';
 import fs from 'fs';
 import { localDB } from './db/local-db';
-import { upsertDocuments, getChromaClient, listCollections, deleteCollection, SearchResult } from './chroma';
+import { upsertDocuments, getChromaClient, listCollections, deleteCollection, SearchResult, fallbackSemanticSearch } from './chroma';
+import { getLastEvictionCount } from './embedded-vector-store';
+import { IS_CLOUD } from './config/env';
 
 /**
  * @fileOverview Indexation et vectorisation des fichiers de la BDD Locale.
@@ -12,7 +14,6 @@ import { upsertDocuments, getChromaClient, listCollections, deleteCollection, Se
 
 // "Cloud" = Vercel serverless uniquement. Le build desktop (EXE) est en
 // NODE_ENV=production mais reste local et doit vectoriser via Chroma.
-const IS_CLOUD = process.env.VERCEL === '1';
 
 const LOCAL_DB_ROOT = path.join(process.cwd(), '.local-db');
 const MIRROR_FILE = path.join(LOCAL_DB_ROOT, 'chroma-index.json');
@@ -59,7 +60,9 @@ const loadMirror = (): MirrorData => {
 const saveMirror = (data: MirrorData) => {
   try {
     if (!fs.existsSync(LOCAL_DB_ROOT)) fs.mkdirSync(LOCAL_DB_ROOT, { recursive: true });
-    fs.writeFileSync(MIRROR_FILE, JSON.stringify(data, null, 2), 'utf8');
+    const tmpPath = `${MIRROR_FILE}.${process.pid}.${Date.now()}.tmp`;
+    fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), 'utf8');
+    fs.renameSync(tmpPath, MIRROR_FILE);
   } catch (e) {
     console.warn('[LOCAL_INDEXER] Échec écriture miroir:', (e as Error).message);
   }
@@ -70,7 +73,7 @@ const saveMirror = (data: MirrorData) => {
  * Les caractères non alphanumériques sont normalisés en tirets afin de
  * respecter les contraintes de nommage ChromaDB tout en restant stable.
  */
-const sanitizeCollectionName = (dirPath: string): string => {
+export const sanitizeCollectionName = (dirPath: string): string => {
   const base = dirPath === '.' || dirPath === '' ? 'racine' : dirPath;
   const slug = base
     .toLowerCase()
@@ -82,22 +85,11 @@ const sanitizeCollectionName = (dirPath: string): string => {
   return name.length > 63 ? name.slice(0, 63) : name;
 };
 
-const STOP_WORDS = new Set([
-  'le', 'la', 'les', 'de', 'du', 'des', 'un', 'une', 'et', 'en', 'ce', 'ces', 'pour',
-  'sur', 'dans', 'avec', 'est', 'sont', 'au', 'aux', 'par', 'qui', 'que', 'quoi',
-  'ou', 'où', 'comment', 'pourquoi', 'mon', 'ma', 'mes', 'ton', 'ta', 'tes', 'le'
-]);
+import { tokenizeWithStems } from '@/lib/ai/tokenizer';
 
-/** Normalise et découpe un texte en tokens pertinents (sans mots vides). */
-export const tokenizeText = (text: string): string[] => {
-  return text
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/[^a-z0-9àâäéèêëïîôöùûüÿç\s]/g, ' ')
-    .split(/\s+/)
-    .filter(w => w.length > 2 && !STOP_WORDS.has(w));
-};
+/** Normalise et découpe un texte en tokens pertinents (sans mots vides).
+ * Délégue au tokeniseur FR canonique partagé (C1 — unication JS/Rust). */
+export const tokenizeText = (text: string): string[] => tokenizeWithStems(text);
 
 const chunkText = (text: string, maxChunk = 1200): string[] => {
   const clean = text.replace(/\r\n/g, '\n').trim();
@@ -126,7 +118,7 @@ const chunkText = (text: string, maxChunk = 1200): string[] => {
  * Indexe et vectorise un fichier de la BDD Locale vers ChromaDB.
  * La collection cible reproduit l'arborescence du fichier dans la BDD Locale.
  */
-export const indexLocalDBFile = async (relPath: string): Promise<{ success: boolean; collection?: string; chunkCount?: number; error?: string; message?: string }> => {
+export const indexLocalDBFile = async (relPath: string): Promise<{ success: boolean; collection?: string; chunkCount?: number; evicted?: number; error?: string; message?: string }> => {
   if (IS_CLOUD) return { success: false, error: 'CHROMA_CLOUD_UNSUPPORTED' };
 
   const fullPath = path.join(LOCAL_DB_ROOT, relPath);
@@ -202,7 +194,8 @@ export const indexLocalDBFile = async (relPath: string): Promise<{ success: bool
   });
   saveMirror(mirror);
 
-  return { success: true, collection, chunkCount: chunks.length };
+  const evicted = getLastEvictionCount();
+  return { success: true, collection, chunkCount: chunks.length, evicted };
 };
 
 /**
@@ -297,7 +290,10 @@ export const getIndexedDocumentContent = async (relPath: string): Promise<string
   try {
     const { getChromaClient } = await import('./chroma');
     const client = await getChromaClient();
-    if (!client) return null;
+    if (!client) {
+      console.warn(`[LOCAL_INDEXER] Contenu vectorisé indisponible (moteur null) pour ${relPath}.`);
+      return null;
+    }
     const collection = await client.getCollection({ name: entry.collection });
     const result = await collection.get({ ids: entry.ids });
     const docs: string[] = (result.documents || []).filter(Boolean) as string[];
@@ -383,10 +379,14 @@ export const searchChromaLocalDB = async (
   let client;
   try {
     client = await getChromaClient();
-  } catch {
-    return [];
+  } catch (e: any) {
+    console.warn('[LOCAL_INDEXER] Client vectoriel indisponible, repli scan FS :', e?.message || e);
+    return fallbackSemanticSearch(query, nResults);
   }
-  if (!client) return [];
+  if (!client) {
+    console.warn('[LOCAL_INDEXER] Aucun moteur vectoriel local, repli scan FS.');
+    return fallbackSemanticSearch(query, nResults);
+  }
 
   let collections: any[] = [];
   try {
@@ -400,37 +400,35 @@ export const searchChromaLocalDB = async (
   for (const c of collections) {
     try {
       const collection = await client.getCollection({ name: c.name });
-      const data = await collection.get();
-      const docs: string[] = (data.documents as string[]) || [];
-      const metas: any[] = (data.metadatas as any[]) || [];
-      const ids: string[] = (data.ids as string[]) || [];
+      // Requête via l'index cosinus du moteur (embedded ou Tauri) : pas de
+      // re-scan O(N) de toute la collection. La sur-pondération path-aware est
+      // déléguée au moteur via `where` (segments + nom de fichier).
+      const results = await collection.query({
+        queryTexts: [effectiveQuery],
+        nResults: nResults * 2,
+        where: {
+          parentDir: undefined,
+          pathSegments: queryTokens,
+          fileName: undefined,
+        },
+      });
 
-      docs.forEach((doc, i) => {
+      const ids: string[] = results.ids?.[0] || [];
+      const docs: string[] = results.documents?.[0] || [];
+      const metas: any[] = results.metadatas?.[0] || [];
+      const distances: number[] = results.distances?.[0] || [];
+
+      ids.forEach((id, i) => {
         const meta = metas[i] || {};
-        const text = String(doc || '');
-        const segments: string[] = Array.isArray(meta.pathSegments)
-          ? meta.pathSegments
-          : String(meta.parentDir || '').split('/').filter(Boolean);
-        const fileName = String(meta.fileName || meta.name || '');
-
-        const pathStr = [...segments, fileName].join(' ').toLowerCase();
-        const textLower = text.toLowerCase();
-
-        let score = 0;
-        for (const t of queryTokens) {
-          const tokenRegex = new RegExp(`\\b${t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
-          if (pathStr.match(tokenRegex)) score += 30;
-          if (fileName.toLowerCase().match(tokenRegex)) score += 10;
-          if (textLower.match(tokenRegex)) score += 8;
-        }
-
+        const dist = Number(distances[i] || 0);
+        const score = 1 - Math.max(0, Math.min(1, dist));
         if (score > 0) {
           scored.push({
-            id: ids[i],
-            document: text,
+            id,
+            document: String(docs[i] || ''),
             metadata: { ...meta, origin: 'VECTEURS_CHROMA' },
-            distance: 0,
-            score: Math.min(score / 100, 0.98)
+            distance: dist,
+            score: Math.min(score, 0.98),
           });
         }
       });

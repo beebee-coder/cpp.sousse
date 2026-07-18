@@ -22,6 +22,7 @@ import { TiltCard } from '@/components/three/TiltCard';
 import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { FullProcedure, ProcedureStep } from '@/lib/procedures/types';
+import { apiClient } from '@/lib/api-client';
 
 export default function ProceduresListPage() {
   const router = useRouter();
@@ -39,15 +40,14 @@ export default function ProceduresListPage() {
   const fetchProcedures = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch('/api/procedures');
-      const data = await res.json();
+      const data = await apiClient.get<any>('/api/procedures');
       if (data.success) {
         setProcedures(data.procedures || []);
       } else {
         throw new Error(data.message || "Erreur de chargement");
       }
     } catch (e: any) {
-      setError(e.message);
+      setError(e.message || "Erreur de liaison avec le registre.");
     } finally {
       setIsLoading(false);
     }

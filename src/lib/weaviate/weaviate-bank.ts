@@ -18,6 +18,8 @@ export interface BankAssetItem {
   tags: string[];
   mime: string;
   url?: string;
+  /** Chemin binaire relatif (ex: bank/nom/nom.jpg) pour résolution en mode local. */
+  path?: string;
   createdAt: string;
 }
 
@@ -54,6 +56,7 @@ export async function ensureBankCollection(): Promise<void> {
           { name: 'tags', dataType: 'text[]' as any },
           { name: 'mime', dataType: 'text' as any },
           { name: 'url', dataType: 'text' as any },
+          { name: 'path', dataType: 'text' as any },
           { name: 'createdAt', dataType: 'text' as any },
         ],
       });
@@ -67,6 +70,9 @@ export async function upsertBankAsset(item: BankAssetItem): Promise<string> {
   return withWeaviateClient(async client => {
     const collection = client.collections.get(COLLECTION_NAME);
 
+    const properties: any = { ...item };
+    if (!properties.path) delete properties.path;
+
     const existing = await collection.query.fetchObjects({
       filters: collection.filter.byProperty('assetId').equal(item.assetId),
       limit: 1,
@@ -74,12 +80,12 @@ export async function upsertBankAsset(item: BankAssetItem): Promise<string> {
 
     if (existing.objects.length > 0) {
       const uuid = existing.objects[0].uuid;
-      await collection.data.update({ id: uuid, properties: item as any });
+      await collection.data.update({ id: uuid, properties });
       console.log(`[WEAVIATE_BANK] ♻️ Mis à jour : ${item.assetId}`);
       return uuid as string;
     }
 
-    const uuid = await collection.data.insert({ properties: item as any });
+    const uuid = await collection.data.insert({ properties });
     console.log(`[WEAVIATE_BANK] ➕ Inséré : ${item.assetId} (${item.type})`);
     return uuid as string;
   });
@@ -144,6 +150,7 @@ export async function searchBankAssets(
         tags: obj.properties.tags ?? [],
         mime: obj.properties.mime ?? '',
         url: obj.properties.url ?? '',
+        path: obj.properties.path ?? '',
         createdAt: obj.properties.createdAt ?? '',
         score: deriveScore(obj.metadata),
       }));

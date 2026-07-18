@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic';
 export const revalidate = false;
 import { createHybridRoute } from '@/lib/api-route-creator';
-import { prisma } from '@/lib/db/prisma-client';
+import { getPrismaClient } from '@/lib/db/prisma-client';
 
 /**
  * API Route de Purge Cloud après Injection.
@@ -20,6 +20,7 @@ export const POST = createHybridRoute<{ ids: string[]; projectId: string }, any>
     console.log(`🗑️ [SYNC_PURGE_API] [INIT] [${ts}] Purge de ${ids.length} items demandée.`);
 
     try {
+      const prisma = await getPrismaClient();
       // Suppression des items de connaissances
       const knowledgePurge = await prisma.knowledgeItem.deleteMany({
         where: { id: { in: ids } }

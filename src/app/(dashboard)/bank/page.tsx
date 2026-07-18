@@ -23,6 +23,7 @@ import { useToast } from '@/hooks/use-toast';
 import { apiClient } from '@/lib/api-client';
 import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
+import { useAppMode } from '@/hooks/use-app-mode';
 
 // ✅ CORRECTION 1 : Forcer le rendu dynamique
 
@@ -31,6 +32,7 @@ import { cn } from '@/lib/utils';
 export default function BankPage() {
   const { toast } = useToast();
   const router = useRouter();
+  const { localOnly } = useAppMode();
   
   const [mounted, setMounted] = useState(false);
   const [mode, setMode] = useState<'image' | 'video'>('image');
@@ -53,6 +55,9 @@ export default function BankPage() {
   const loadLibrary = async () => {
     setLoadingLibrary(true);
     try {
+      // Tous les modes (web / hybride / locale) : la bibliothèque est servie
+      // par l'API. En mode locale/desktop offline, l'intercepteur /api/bank
+      // lit le miroir .local-db/.registry (aucun appel cloud).
       const res = await apiClient.get<any>('/api/bank?limit=200');
       const items: any[] = res.items || [];
       setAssets(items);
@@ -272,7 +277,10 @@ export default function BankPage() {
       });
 
       if (res.success) {
-        toast({ title: "Actif enregistré dans le Registre" });
+        toast({
+          title: res.offline ? "Actif enregistré (mode local)" : "Actif enregistré dans le Registre",
+          description: res.offline ? "Sauvegardé dans .registry/bank et indexé pour la recherche RAG." : undefined,
+        });
         router.push('/bdd');
       } else {
         const code = (res.error as string) || "ERREUR_INCONNUE";
@@ -295,6 +303,11 @@ export default function BankPage() {
             <div className="lg:hidden w-10" />
             <ImageIcon className="w-4 h-4 text-primary" />
             <span className="font-headline font-bold text-xs uppercase tracking-widest text-primary">Banque d'Images Industrielle</span>
+            {localOnly && (
+              <span className="hidden sm:flex items-center gap-1 px-2 py-0.5 rounded-sm bg-secondary/15 text-secondary text-[8px] font-bold uppercase border border-secondary/30">
+                <span className="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse" /> Mode Local
+              </span>
+            )}
             <div className="hidden sm:flex bg-muted/30 p-1 rounded-sm border border-border ml-2">
               <button onClick={() => setView('capture')} className={cn("px-3 py-1 text-[10px] font-bold uppercase rounded-sm transition-all", view === 'capture' ? "bg-primary text-primary-foreground shadow" : "text-muted-foreground hover:text-foreground")}>Capturer</button>
               <button onClick={() => setView('library')} className={cn("px-3 py-1 text-[10px] font-bold uppercase rounded-sm transition-all", view === 'library' ? "bg-primary text-primary-foreground shadow" : "text-muted-foreground hover:text-foreground")}>Bibliothèque</button>
@@ -302,6 +315,9 @@ export default function BankPage() {
           </div>
           <Button variant="ghost" size="sm" onClick={() => router.back()} className="text-[10px] uppercase font-code">
             <ArrowLeft className="w-3.5 h-3.5 mr-2" /> Retour
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => loadLibrary()} disabled={loadingLibrary} className="text-[10px] uppercase font-code">
+            <Loader2 className={cn("w-3.5 h-3.5 mr-2", loadingLibrary && "animate-spin")} /> Actualiser
           </Button>
         </header>
 
@@ -314,7 +330,10 @@ export default function BankPage() {
             ) : assets.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-64 text-muted-foreground text-xs uppercase tracking-widest gap-2">
                 <ImageIcon className="w-8 h-8 opacity-40" />
-                Aucun actif dans la banque
+                {localOnly ? "Aucun actif local" : "Aucun actif dans la banque"}
+                <span className="text-[9px] normal-case tracking-normal opacity-70">
+                  {localOnly ? "Capturez une image ou vidéo pour l'enregistrer localement." : "Capturez ou uploadez un actif pour démarrer."}
+                </span>
               </div>
             ) : (
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">

@@ -79,6 +79,14 @@ export function TopNavbar({ onMenuClick, health, mounted, isDesktop, role }: Top
         <StatusBadge status="online" label="DB" />
         <StatusBadge status={health?.healthy ? 'online' : 'alert'} label="SANTÉ" />
         {mounted && isDesktop && <StatusBadge status="online" label="LOCAL" />}
+        {session.degraded && (
+          <span
+            title="La base locale SQLite est indisponible (corrompue ou verrouillée). Vous avez été déconnecté par sécurité."
+            className="px-2 py-0.5 rounded-full text-[10px] font-medium border border-amber-500/50 bg-amber-500/10 text-amber-500 whitespace-nowrap"
+          >
+            ⚠ Mode dégradé — base locale indisponible
+          </span>
+        )}
       </div>
 
       <div className="flex-1" />

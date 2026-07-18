@@ -16,6 +16,7 @@ export interface ChatRequestBody {
   stream?: boolean;
   userId?: string;
   conversationId?: string;
+  online?: boolean;
 }
 
 function getSecurityHeaders() {
@@ -29,9 +30,14 @@ function getSecurityHeaders() {
 async function persistConversation(userId: string | undefined, conversationId: string | undefined, history: any[], userMessage: string, aiResult: { text: string; provider?: string }) {
   if (!userId || !conversationId) return;
   try {
+    // C4 — persistance idempotente : on upsert chaque message sur sa clé
+    // (conversationId, userId, clientId) au lieu de deleteMany+createMany.
+    // Le clientId stable évite les doublons et les races conditionnelles,
+    // et l'on ne supprime plus toute la conversation à chaque appel.
     const allMessages: any[] = [];
     for (const m of history) {
       allMessages.push({
+        clientId: m.id || null,
         conversationId,
         userId,
         role: m.role,
@@ -44,6 +50,7 @@ async function persistConversation(userId: string | undefined, conversationId: s
       });
     }
     allMessages.push({
+      clientId: `user-${conversationId}-${Date.now()}`,
       conversationId,
       userId,
       role: 'user',
@@ -51,6 +58,7 @@ async function persistConversation(userId: string | undefined, conversationId: s
       timestamp: new Date(),
     });
     allMessages.push({
+      clientId: `model-${conversationId}-${Date.now()}`,
       conversationId,
       userId,
       role: 'model',
@@ -59,8 +67,21 @@ async function persistConversation(userId: string | undefined, conversationId: s
       timestamp: new Date(),
     });
 
-    await prisma.chatMessage.deleteMany({ where: { conversationId, userId } });
-    await prisma.chatMessage.createMany({ data: allMessages });
+    for (const msg of allMessages) {
+      await prisma.chatMessage.upsert({
+        where: { conversationId_userId_clientId: { conversationId, userId, clientId: msg.clientId } },
+        create: msg,
+        update: {
+          role: msg.role,
+          content: msg.content,
+          provider: msg.provider,
+          timestamp: msg.timestamp,
+          media: msg.media,
+          procedureId: msg.procedureId,
+          source: msg.source,
+        },
+      });
+    }
   } catch (e) {
     console.warn('[CHAT_API] Persistence failed:', e);
   }
@@ -80,6 +101,18 @@ export async function POST(req: Request) {
     const headerMode = req.headers.get('X-App-Mode') as 'web' | 'hybride' | 'locale' | null;
     const mode = body.mode || headerMode || 'web';
 
+    // C5 — état réseau réel transmis par le client (useAppMode.online) au lieu
+    // de forcer `online: true`. Le header X-Network-Online sert de repli.
+    const headerOnline = req.headers.get('X-Network-Online');
+    const online =
+      typeof body.online === 'boolean'
+        ? body.online
+        : headerOnline === '0'
+          ? false
+          : headerOnline === '1'
+            ? true
+            : true;
+
     const session = await getSessionFromCookie();
     const userName = session?.user ? `${session.user.firstName} ${session.user.lastName}` : undefined;
 
@@ -87,7 +120,7 @@ export async function POST(req: Request) {
       message: body.message,
       history: body.history || [],
       mode,
-      online: true,
+      online,
       userId: session?.user?.id,
       userName,
       onStreamChunk: undefined as ((chunk: string) => void) | undefined,

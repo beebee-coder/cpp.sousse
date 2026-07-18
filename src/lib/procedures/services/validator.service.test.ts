@@ -1,17 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import { validateProcedurePayload } from './validator.service';
+import { validateProcedurePayload, validateProcedureStructure } from './validator.service';
 
 describe('validateProcedurePayload', () => {
   it('should validate a correct procedure payload', () => {
     const payload = {
-      metadata: {
-        title: 'Procédure de Test',
-        code: 'PROC-TEST-01',
-        category: 'OPERATION',
-        department: 'PRODUCTION',
-        criticality: 'HIGH',
-        version: '1.0.0'
-      },
+      title: 'Procédure de Test',
+      code: 'PROC-TEST-01',
+      category: 'OPERATION',
+      criticality: 'HIGH',
+      status: 'DRAFT',
       steps: [
         {
           id: 'step-1',
@@ -36,27 +33,24 @@ describe('validateProcedurePayload', () => {
     expect(validateProcedurePayload(payload)).toBeNull();
   });
 
-  it('should return error if metadata is missing', () => {
+  it('should return error if title is missing', () => {
     const payload = {
+      code: 'TEST',
+      category: 'OP',
       steps: [],
-      prerequisites: {}
+      prerequisites: { description: 'x', items: [] }
     };
 
-    expect(validateProcedurePayload(payload)).toContain('metadata');
+    expect(validateProcedurePayload(payload)).toContain('title');
   });
 
   it('should return error if steps is not an array', () => {
     const payload = {
-      metadata: {
-        title: 'Test',
-        code: 'TEST',
-        category: 'OP',
-        department: 'DEP',
-        criticality: 'MED',
-        version: '1.0'
-      },
+      title: 'Test',
+      code: 'TEST',
+      category: 'OP',
       steps: 'not-an-array',
-      prerequisites: {}
+      prerequisites: { description: 'x', items: [] }
     };
 
     expect(validateProcedurePayload(payload)).toContain('steps');
@@ -64,24 +58,40 @@ describe('validateProcedurePayload', () => {
 
   it('should return error if steps are missing required fields', () => {
     const payload = {
-      metadata: {
-        title: 'Test',
-        code: 'TEST',
-        category: 'OP',
-        department: 'DEP',
-        criticality: 'MED',
-        version: '1.0'
-      },
+      title: 'Test',
+      code: 'TEST',
+      category: 'OP',
       steps: [
         {
           id: 'step-1',
-          // order is missing
+          order: 1,
           title: 'Step 1'
         }
       ],
-      prerequisites: {}
+      prerequisites: { description: 'x', items: [] }
     };
 
-    expect(validateProcedurePayload(payload)).toContain('order');
+    expect(validateProcedurePayload(payload)).toContain('action');
+  });
+});
+
+describe('validateProcedureStructure', () => {
+  it('should validate a correct procedure object', () => {
+    const procedure = {
+      title: 'Proc Test',
+      code: 'PROC-01',
+      category: 'OP',
+      steps: [{ id: 's1', order: 1, title: 'A', action: {}, validation: {} }]
+    };
+    expect(validateProcedureStructure(procedure)).toBeNull();
+  });
+
+  it('should return error if procedure is null', () => {
+    expect(validateProcedureStructure(null)).toContain('manquante');
+  });
+
+  it('should return error if no steps', () => {
+    const procedure = { title: 'T', code: 'C', category: 'OP', steps: [] };
+    expect(validateProcedureStructure(procedure)).toContain('Au moins une étape');
   });
 });

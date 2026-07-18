@@ -1,71 +1,28 @@
+import { CreateProcedureSchema } from '../validators/procedure.validator';
+
 export function validateProcedurePayload(payload: unknown): string | null {
-  if (!payload || typeof payload !== 'object') {
-    return 'Payload invalide: objet attendu.';
+  const result = CreateProcedureSchema.safeParse(payload);
+  if (!result.success) {
+    const first = result.error.errors[0];
+    return first ? `Validation failed: ${first.path.join('.')} — ${first.message}` : 'Validation failed';
   }
+  return null;
+}
 
-  const data = payload as Record<string, unknown>;
+export function validateProcedureStructure(procedure: any): string | null {
+  if (!procedure) return 'Procedure manquante';
+  if (!procedure.title || typeof procedure.title !== 'string') return 'Title requis';
+  if (!procedure.code || typeof procedure.code !== 'string') return 'Code requis';
+  if (!procedure.category || typeof procedure.category !== 'string') return 'Category requise';
+  if (!Array.isArray(procedure.steps) || procedure.steps.length === 0) return 'Au moins une étape requise';
 
-  if (!data.metadata || typeof data.metadata !== 'object') {
-    return 'Champ metadata requis et objet attendu.';
-  }
-
-  const meta = data.metadata as Record<string, unknown>;
-
-  if (!meta.title || typeof meta.title !== 'string') {
-    return 'metadata.title requis (string).';
-  }
-  if (!meta.code || typeof meta.code !== 'string') {
-    return 'metadata.code requis (string).';
-  }
-  if (!meta.category || typeof meta.category !== 'string') {
-    return 'metadata.category requis (string).';
-  }
-  if (!meta.department || typeof meta.department !== 'string') {
-    return 'metadata.department requis (string).';
-  }
-  if (!meta.criticality || typeof meta.criticality !== 'string') {
-    return 'metadata.criticality requis (string).';
-  }
-  if (!meta.version || typeof meta.version !== 'string') {
-    return 'metadata.version requis (string).';
-  }
-
-  if (!Array.isArray(data.steps)) {
-    return 'steps requis (array).';
-  }
-
-  for (const step of data.steps) {
-    if (!step || typeof step !== 'object') {
-      return 'Chaque step doit être un objet.';
-    }
-    const s = step as Record<string, unknown>;
-    if (!s.id || typeof s.id !== 'string') {
-      return 'Chaque step nécessite un id (string).';
-    }
-    if (typeof s.order !== 'number') {
-      return `Step ${s.id}: order requis (number).`;
-    }
-    if (!s.title || typeof s.title !== 'string') {
-      return `Step ${s.id}: title requis (string).`;
-    }
-    if (!s.action || typeof s.action !== 'object') {
-      return `Step ${s.id}: action requis (object).`;
-    }
-    if (!s.validation || typeof s.validation !== 'object') {
-      return `Step ${s.id}: validation requis (object).`;
-    }
-  }
-
-  if (!data.prerequisites || typeof data.prerequisites !== 'object') {
-    return 'prerequisites requis (object).';
-  }
-
-  if (data.postExecution !== undefined && data.postExecution !== null && typeof data.postExecution !== 'object') {
-    return 'postExecution doit être un objet.';
-  }
-
-  if (data.parameters !== undefined && data.parameters !== null && typeof data.parameters !== 'object') {
-    return 'parameters doit être un objet.';
+  for (const step of procedure.steps) {
+    if (!step || typeof step !== 'object') return 'Chaque step doit être un objet';
+    if (!step.id || typeof step.id !== 'string') return `Step missing id`;
+    if (typeof step.order !== 'number') return `Step ${step.id}: order requis (number)`;
+    if (!step.title || typeof step.title !== 'string') return `Step ${step.id}: title requis`;
+    if (!step.action || typeof step.action !== 'object') return `Step ${step.id}: action requis (object)`;
+    if (!step.validation || typeof step.validation !== 'object') return `Step ${step.id}: validation requis (object)`;
   }
 
   return null;

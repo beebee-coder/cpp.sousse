@@ -1,5 +1,6 @@
 import { searchChromaLocalDB } from '@/lib/local-indexer';
 import { searchAcrossCollections } from '@/lib/chroma';
+import { tokenizeWithStems } from '@/lib/ai/tokenizer';
 import type { ChatMessage } from '@/lib/chat-storage/types';
 
 export interface RAGResult {
@@ -65,7 +66,29 @@ export class RAGOrchestrator {
     const isCloud = process.env.VERCEL === '1';
     const weaviateConfigured = process.env.WEAVIATE_URL && process.env.WEAVIATE_API_KEY;
     if (isCloud && !weaviateConfigured) {
-      console.warn('[CHAT_RAG] [WEAVIATE_MISSING] WEAVIATE_URL/WEAVIATE_API_KEY absents en mode cloud — étages 4 et 4b désactivés, RAG dégradé.');
+      console.warn('[CHAT_RAG] [WEAVIATE_MISSING] WEAVIATE_URL/WEAVIATE_API_KEY absents en mode cloud — étages 4 et 4b désactivés. Repli lexical explicite activé (stage R).');
+    }
+
+    // C2 — Repli lexical explicite : en mode cloud sans Weaviate (ou quand les
+    // étages vectoriels ne renvoient rien), le stage 1 (searchChromaLocalDB)
+    // est mort silencieusement. On scanne le registre FS local pour garantir
+    // un RAG non vide au lieu d'un contexte AUCUN_CONTEXTE systématique.
+    if (results.length === 0 || !weaviateConfigured) {
+      try {
+        const stageR = await searchRegistryLexicalFallback(query, historyTexts);
+        for (const r of stageR) addResult(r);
+      } catch (e: any) {
+        console.error('[CHAT_RAG] [LEXICAL_FALLBACK] Error:', e.message);
+      }
+      // C6 — Enrichissement procédural dédié (guidage pas-à-pas) : on
+      // l'ajoute dès que le contexte est pauvre, même si Weaviate répond,
+      // car il cible spécifiquement les `procedure.json` du registre.
+      try {
+        const stageP = await searchProceduresInRegistry(query, historyTexts);
+        for (const r of stageP) addResult(r);
+      } catch (e: any) {
+        console.error('[CHAT_RAG] [PROCEDURE_REGISTRY] Error:', e.message);
+      }
     }
     if (results.length < this.maxResults && weaviateConfigured) {
       try {
@@ -253,9 +276,23 @@ const scoreItemAgainstQuery = (
 const collectRegistryFallbackItems = (existingTitles: Set<string>): ScoredItem[] => {
   const items: ScoredItem[] = [];
   try {
-    const REGISTRY_ITEMS = require('path').join(process.cwd(), '.registry', 'items');
+    // R1 — Aligne la racine `.registry` sur la même que le moteur Rust en
+    // Desktop (REGISTRY_ROOT_OVERRIDE) plutôt que sur process.cwd() seul.
+    const REGISTRY_OVERRIDE = process.env.REGISTRY_ROOT_OVERRIDE?.trim();
+    const REGISTRY_ROOT = REGISTRY_OVERRIDE
+      ? REGISTRY_OVERRIDE
+      : require('path').join(process.cwd(), '.registry');
+    const REGISTRY_ITEMS = require('path').join(REGISTRY_ROOT, 'items');
     if (!require('fs').existsSync(REGISTRY_ITEMS)) return items;
     const files = require('fs').readdirSync(REGISTRY_ITEMS).filter((f: string) => f.toLowerCase().endsWith('.json'));
+    if (files.length === 0) {
+      // R2 — En serverless (Vercel) le FS n'est pas déployé : le vide est
+      // normal, mais on le trace pour diagnostic. En local/hybride, un
+      // `.registry/items` vide signale un seed manquant → warning explicite.
+      const mode = process.env.VERCEL === '1' ? 'CLOUD' : 'LOCAL/HYBRIDE';
+      console.warn(`[CHAT_RAG] [REGISTRY_FALLBACK] ${mode} : .registry/items vide — RAG lexical local sans résultats.`);
+      return items;
+    }
     for (const file of files) {
       try {
         const parsed = JSON.parse(require('fs').readFileSync(require('path').join(REGISTRY_ITEMS, file), 'utf8'));
@@ -285,8 +322,12 @@ const collectRegistryFallbackItems = (existingTitles: Set<string>): ScoredItem[]
 };
 
 const searchKnowledgeItemsWeb = async (query: string, history: string[] = []): Promise<RAGResult[]> => {
+  if (process.env.VERCEL !== '1') {
+    return [];
+  }
+
   const effectiveQuery = [...history.slice(-4), query].filter(Boolean).join(' ');
-  const queryTokens = tokenizeText(effectiveQuery);
+  const queryTokens = tokenizeWithStems(effectiveQuery);
   if (queryTokens.length === 0) return [];
 
   const dbItems: ScoredItem[] = [];
@@ -334,6 +375,12 @@ const searchKnowledgeItemsWeb = async (query: string, history: string[] = []): P
   const fallbackItems = collectRegistryFallbackItems(existingTitles);
   const allItems = [...dbItems, ...fallbackItems];
 
+  // R2 — Si la table knowledgeItem (cloud) ET le fallback FS sont vides, le
+  // RAG web renverra un contexte vide. On le signale explicitement pour ne
+  // pas masquer un seed manquant côté Vercel.
+  if (allItems.length === 0) {
+    console.warn('[CHAT_RAG] [WEB_SEARCH] Aucun élément RAG (DB vide + fallback FS vide) — vérifiez le seed Prisma de .registry.');
+  }
   const scored: RAGResult[] = [];
   for (const item of allItems) {
     const result = scoreItemAgainstQuery(item, queryTokens);
@@ -356,10 +403,129 @@ const searchKnowledgeItemsWeb = async (query: string, history: string[] = []): P
   return scored.sort((a, b) => b.score - a.score).slice(0, 5);
 };
 
-function tokenizeText(text: string): string[] {
-  return text
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .split(' ')
-    .filter(Boolean);
-}
+/**
+ * C2 — Repli lexical explicite (stage R). Scanne le registre FS local
+ * (`.registry/items`) et score lexicalement contre la requête avec le
+ * tokeniseur FR canonique. Garantit un RAG non vide en mode cloud sans
+ * Weaviate (où searchChromaLocalDB est mort et les stages 4/4b désactivés).
+ */
+const searchRegistryLexicalFallback = async (query: string, history: string[] = []): Promise<RAGResult[]> => {
+  const effectiveQuery = [...history.slice(-4), query].filter(Boolean).join(' ');
+  const queryTokens = tokenizeWithStems(effectiveQuery);
+  if (queryTokens.length === 0) return [];
+
+  const items = collectRegistryFallbackItems(new Set<string>());
+  if (items.length === 0) return [];
+
+  const scored: RAGResult[] = [];
+  for (const item of items) {
+    const result = scoreItemAgainstQuery(item, queryTokens);
+    if (!result) continue;
+    scored.push({
+      id: item.id,
+      document: result.document,
+      metadata: {
+        origin: 'REGISTRY_LEXICAL_FALLBACK',
+        title: item.title,
+        category: item.category ?? undefined,
+        tags: item.tags || [],
+        knowledgeType: result.knowledgeType as any,
+      },
+      score: result.score * 0.9,
+    });
+  }
+
+  return scored.sort((a, b) => b.score - a.score).slice(0, 6);
+};
+
+/**
+ * C6 — Étage RAG dédié aux PROCÉDURES INDUSTRIELLES (`.registry/procedures/**`).
+ * Contrairement au stage R (généraliste sur `.registry/items`), il cible
+ * précisément les fichiers `procedure.json` et score la requête contre le titre,
+ * le code, les étapes (titre/description/action), les prérequis et les alarmes.
+ * Fournit à l'IA un contexte de GUIDAGE PAS-À-PAS plutôt qu'une simple
+ * correspondance documentaire, utile quand l'utilisateur demande « comment
+ * démarrer la pompe CRF » ou « que faire si l'alarme CFI-001 ».
+ */
+const searchProceduresInRegistry = async (query: string, history: string[] = []): Promise<RAGResult[]> => {
+  const effectiveQuery = [...history.slice(-4), query].filter(Boolean).join(' ');
+  const queryTokens = tokenizeWithStems(effectiveQuery);
+  if (queryTokens.length === 0) return [];
+
+  const items: ScoredItem[] = [];
+  try {
+    const REGISTRY_OVERRIDE = process.env.REGISTRY_ROOT_OVERRIDE?.trim();
+    const REGISTRY_ROOT = REGISTRY_OVERRIDE
+      ? REGISTRY_OVERRIDE
+      : require('path').join(process.cwd(), '.registry');
+    const PROC_DIR = require('path').join(REGISTRY_ROOT, 'procedures');
+    if (!require('fs').existsSync(PROC_DIR)) return [];
+
+    const walk = (dir: string): string[] => {
+      const out: string[] = [];
+      for (const ent of require('fs').readdirSync(dir, { withFileTypes: true })) {
+        const abs = require('path').join(dir, ent.name);
+        if (ent.isDirectory()) out.push(...walk(abs));
+        else if (ent.name.toLowerCase() === 'procedure.json') out.push(abs);
+      }
+      return out;
+    };
+
+    for (const file of walk(PROC_DIR)) {
+      try {
+        const parsed = JSON.parse(require('fs').readFileSync(file, 'utf8'));
+        const meta = parsed?.metadata || {};
+        const steps = Array.isArray(parsed?.steps) ? parsed.steps : [];
+        const prereq = parsed?.prerequisites?.items || [];
+        const alarms = steps.flatMap((s: any) => Array.isArray(s?.alarms) ? s.alarms : []);
+        const title = meta.title || file;
+        const code = meta.code || '';
+        const category = meta.category || 'procedure';
+        // Contexte procédural dense : titre + code + chaque étape + alarmes.
+        const docParts: string[] = [
+          `PROCÉDURE ${code} — ${title}`,
+          `Catégorie: ${category}`,
+          ...prereq.map((p: any) => `PRÉREQUIS: ${p.description || p.id}`),
+          ...steps.map((s: any, i: number) =>
+            `ÉTAPE ${i + 1}: ${s.title || ''} — ${s.description || ''} ${s.action?.instruction || ''}`),
+          ...alarms.map((a: any) => `ALARME ${a.code || ''}: ${a.description || ''} → remède: ${a.remedy?.title || ''}`),
+        ];
+        items.push({
+          id: `proc:${code || file}`,
+          title,
+          type: 'procedure',
+          question: null,
+          answer: null,
+          tags: Array.isArray(meta.tags) ? meta.tags : [],
+          category,
+          content: docParts.join('\n'),
+          origin: 'REGISTRY_PROCEDURE',
+        });
+      } catch {
+        continue;
+      }
+    }
+  } catch {
+    // FS indisponible (serverless Vercel) : l'étage cloud (stage 3) couvre.
+  }
+  if (items.length === 0) return [];
+
+  const scored: RAGResult[] = [];
+  for (const item of items) {
+    const result = scoreItemAgainstQuery(item, queryTokens);
+    if (!result) continue;
+    scored.push({
+      id: item.id,
+      document: result.document,
+      metadata: {
+        origin: item.origin,
+        title: item.title,
+        category: item.category ?? undefined,
+        tags: item.tags || [],
+        knowledgeType: 'procedure',
+      },
+      score: result.score,
+    });
+  }
+  return scored.sort((a, b) => b.score - a.score).slice(0, 4);
+};

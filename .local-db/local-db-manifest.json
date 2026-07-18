@@ -1,12 +1,12 @@
 {
   "files": [
     {
-      "id": "1784243553206_btorl8q",
+      "id": "1784331061370_l88lh1e",
       "originalName": "search-doc.json",
       "resolvedPath": "INDEX_CHROMA/search-doc.json",
       "type": "json",
       "knowledgeType": "qa",
-      "timestamp": 1784243553206,
+      "timestamp": 1784331061370,
       "size": 8,
       "tags": [
         "tag1",
@@ -14,7 +14,8 @@
       ]
     }
   ],
-  "lastSync": "2026-07-16T23:22:33.361Z",
+  "lastSync": "2026-07-18T15:33:19.623Z",
   "version": "1.0.0",
-  "seededFromRegistry": true
+  "seededFromRegistry": true,
+  "registryLastIndexedAt": "2026-07-10T12:26:24.400Z"
 }

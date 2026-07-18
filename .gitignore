@@ -90,9 +90,6 @@ temp/
 .genkit/
 *.genkit
 
-# ChromaDB (données vectorielles locales)
-data/chromadb/
-
 # Données locales hybrides / registre physique
 # Le squelette texte + dossiers du .registry est déployé (source de vérité cloud / Vercel)
 # afin que `prisma/seed.ts` le resynchronise vers Neon au build.

@@ -3,50 +3,33 @@
 
 use serde::{Deserialize, Serialize};
 use std::env;
-use std::sync::Arc;
 use dotenvy::dotenv;
 use reqwest::StatusCode;
+use tauri::Emitter;
 
-#[derive(Serialize, Deserialize)]
-struct ChatMessage {
-    role: String,
-    content: String,
+#[derive(Serialize, Deserialize, Clone)]
+pub struct ChatMessage {
+    pub role: String,
+    pub content: String,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct ChatOutput {
+  pub text: String,
+  pub provider: String,
 }
 
 #[derive(Serialize, Deserialize)]
-struct ChatOutput {
-    text: String,
-    provider: String,
+pub struct ToolCall {
+    pub tool: String,
+    pub params: serde_json::Value,
 }
 
-#[derive(Serialize, Deserialize)]
-struct SearchOutput {
-    results: Vec<SearchResultItem>,
-    total: usize,
-}
-
-#[derive(Serialize, Deserialize)]
-struct SearchResultItem {
-    id: String,
-    content: String,
-    score: f32,
-    metadata: SearchMetadata,
-}
-
-#[derive(Serialize, Deserialize)]
-struct SearchMetadata {
-    origin: String,
-    file_name: Option<String>,
-    parent_dir: Option<String>,
-    file_path: String,
-}
-
-#[derive(Serialize, Deserialize)]
-struct IndexStatsOutput {
-    total_documents: usize,
-    total_chunks: usize,
-    vocabulary_size: usize,
-    embedding_dimensions: usize,
+#[derive(Serialize, Deserialize, Clone)]
+pub struct StreamChunk {
+  pub chunk: String,
+  pub done: bool,
+  pub result: Option<ChatOutput>,
 }
 
 use tauri::Manager;
@@ -54,9 +37,7 @@ use tauri_plugin_sql::{Builder, Migration, MigrationKind};
 
 mod vector_store;
 mod offline_generator;
-use vector_store::{VectorStore, DocumentIndexer};
-use vector_store::search::VectorSearchEngine;
-use vector_store::types::Document;
+mod local_db;
 
 const LOCAL_DB_URL: &str = "sqlite:visionode.sqlite";
 const GROQ_TIMEOUT_SECS: u64 = 30;
@@ -71,19 +52,29 @@ const LOCAL_DB_ROOT: &str = ".local-db";
 ///   2. le `app_data_dir` (emplacement historique du natif)
 /// et on retourne le premier qui existe, sinon le dossier exe (création).
 fn resolve_local_db_root<T: tauri::Manager<tauri::Wry>>(app: &T) -> std::path::PathBuf {
-    // 1. Dossier parent de l'exécutable (cwd de l'app packagée EXE) :
-    //    en production le frontend Next écrit dans `process.cwd()/.local-db`.
+    resolve_root_inner(app, LOCAL_DB_ROOT)
+}
+
+/// R1 — Résout le répertoire `.registry` PHYSIQUE avec EXACTEMENT la même
+/// stratégie racine que `.local-db`. Sans ça, si `.local-db` est résolu via
+/// `app_data_dir`, l'ancien code (`resolve_local_db_root().parent()`) pointait
+/// le `.registry` dans le mauvais répertoire parent → divergence entre l'écriture
+/// JS (`process.cwd()/.registry`) et la lecture Rust (tools natifs). On cherche
+/// donc `.registry` au même niveau que `.local-db`, jamais via un `parent()` aveugle.
+fn resolve_registry_root<T: tauri::Manager<tauri::Wry>>(app: &T) -> std::path::PathBuf {
+    resolve_root_inner(app, ".registry")
+}
+
+fn resolve_root_inner<T: tauri::Manager<tauri::Wry>>(app: &T, leaf: &str) -> std::path::PathBuf {
     if let Ok(exe_path) = env::current_exe() {
         if let Some(exe_dir) = exe_path.parent() {
-            let exe_root = exe_dir.join(LOCAL_DB_ROOT);
+            let exe_root = exe_dir.join(leaf);
             if exe_root.exists() {
                 return exe_root;
             }
-            // 2. Remonte l'arborescence depuis l'exe (cas dev : target/debug → racine projet)
-            //    pour trouver un `.local-db` existant écrit par le frontend Next.
             let mut cur = Some(exe_dir.to_path_buf());
             while let Some(dir) = cur {
-                let candidate = dir.join(LOCAL_DB_ROOT);
+                let candidate = dir.join(leaf);
                 if candidate.exists() {
                     return candidate;
                 }
@@ -91,18 +82,24 @@ fn resolve_local_db_root<T: tauri::Manager<tauri::Wry>>(app: &T) -> std::path::P
             }
         }
     }
-    // 3. Emplacement historique du natif (app_data_dir).
     if let Ok(app_data_dir) = app.path().app_data_dir() {
-        let data_root = app_data_dir.join(LOCAL_DB_ROOT);
+        let data_root = app_data_dir.join(leaf);
         if data_root.exists() {
             return data_root;
         }
     }
-    // Par défaut : dossier parent de l'exécutable (cohérent avec le frontend).
     env::current_exe()
         .ok()
-        .and_then(|p| p.parent().map(|d| d.join(LOCAL_DB_ROOT)))
-        .unwrap_or_else(|| std::path::PathBuf::from(LOCAL_DB_ROOT))
+        .and_then(|p| p.parent().map(|d| d.join(leaf)))
+        .unwrap_or_else(|| std::path::PathBuf::from(leaf))
+}
+
+/// Expose la racine `.registry` résolue côté Rust afin que le launcher / serveur
+/// Next puisse s'aligner (via REGISTRY_ROOT_OVERRIDE) sur le MÊME répertoire
+/// physique que les tools natifs (correction R1).
+#[tauri::command]
+fn get_registry_root(app: tauri::AppHandle) -> String {
+    resolve_registry_root(&app).to_string_lossy().to_string()
 }
 
 #[tauri::command]
@@ -125,26 +122,6 @@ fn local_migrations() -> Vec<Migration> {
             kind: MigrationKind::Up,
         },
     ]
-}
-
-#[tauri::command]
-async fn index_local_db(app: tauri::AppHandle) -> Result<IndexStatsOutput, String> {
-    let store = get_vector_store(&app)?;
-    let db_root = resolve_local_db_root(&app);
-
-    let stats = tokio::task::spawn_blocking(move || {
-        let indexer = DocumentIndexer::new(store, db_root.to_string_lossy().to_string());
-        indexer.index_local_db()
-    })
-    .await
-    .map_err(|e| format!("Indexation annulée: {}", e))??;
-
-    Ok(IndexStatsOutput {
-        total_documents: stats.total_documents,
-        total_chunks: stats.total_chunks,
-        vocabulary_size: stats.vocabulary_size,
-        embedding_dimensions: stats.embedding_dimensions,
-    })
 }
 
 fn is_retryable_status(status: StatusCode) -> bool {
@@ -234,26 +211,407 @@ async fn call_groq(
     }
 }
 
+async fn call_groq_stream(
+    client: &reqwest::Client,
+    groq_key: &str,
+    messages: Vec<serde_json::Value>,
+    app: &tauri::AppHandle,
+) -> Result<ChatOutput, String> {
+    let timeout = std::time::Duration::from_secs(GROQ_TIMEOUT_SECS);
+
+    let res = client
+        .post("https://api.groq.com/openai/v1/chat/completions")
+        .header("Authorization", format!("Bearer {}", groq_key))
+        .header("Content-Type", "application/json")
+        .timeout(timeout)
+        .json(&serde_json::json!({
+            "model": "llama-3.3-70b-versatile",
+            "messages": messages,
+            "temperature": 0.1,
+            "max_tokens": 300,
+            "stream": true
+        }))
+        .send()
+        .await;
+
+    match res {
+        Ok(response) => {
+            let status = response.status();
+            if !status.is_success() {
+                let err_text = response.text().await.unwrap_or_default();
+                return Err(format!("ERREUR_API_GROQ (HTTP {}): {}", status, err_text));
+            }
+
+            let mut full_text = String::new();
+            let mut stream = response.bytes_stream();
+            use futures_util::StreamExt;
+
+            while let Some(chunk_result) = stream.next().await {
+                match chunk_result {
+                    Ok(chunk) => {
+                        let text = String::from_utf8_lossy(&chunk);
+                        for line in text.lines() {
+                            if let Some(data) = line.strip_prefix("data: ") {
+                                if data.trim() == "[DONE]" {
+                                    continue;
+                                }
+                                if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
+                                    if let Some(delta) = json["choices"][0]["delta"]["content"].as_str() {
+                                        full_text.push_str(delta);
+                                        let _ = app.emit("chat-stream-chunk", StreamChunk {
+                                            chunk: delta.to_string(),
+                                            done: false,
+                                            result: None,
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        return Err(format!("ERREUR_STREAM: {}", e));
+                    }
+                }
+            }
+
+            let _ = app.emit("chat-stream-chunk", StreamChunk {
+                chunk: String::new(),
+                done: true,
+                result: Some(ChatOutput {
+                    text: full_text.clone(),
+                    provider: "GROQ/LLAMA-3.3 (NATIF STREAM)".to_string(),
+                }),
+            });
+
+            Ok(ChatOutput {
+                text: full_text,
+                provider: "GROQ/LLAMA-3.3 (NATIF STREAM)".to_string(),
+            })
+        }
+        Err(e) => {
+            let err_msg = if e.is_timeout() {
+                format!("Timeout {}s dépassé", GROQ_TIMEOUT_SECS)
+            } else {
+                format!("ERREUR_RESEAU : {}", e)
+            };
+            Err(err_msg)
+        }
+    }
+}
+
+fn build_tool_definitions() -> serde_json::Value {
+    serde_json::json!([
+        {
+            "name": "list_procedures",
+            "description": "Lister les procédures industrielles disponibles",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "category": { "type": "string", "description": "Filtrer par catégorie" },
+                    "limit": { "type": "number", "description": "Nombre max de résultats" }
+                }
+            }
+        },
+        {
+            "name": "search_bank",
+            "description": "Rechercher dans la banque d'images et vidéos",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": { "type": "string", "description": "Requête de recherche" },
+                    "type": { "type": "string", "enum": ["image", "video", "all"] }
+                },
+                "required": ["query"]
+            }
+        },
+        {
+            "name": "search_knowledge",
+            "description": "Rechercher dans la base de connaissances",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": { "type": "string", "description": "Requête de recherche" },
+                    "category": { "type": "string", "description": "Catégorie" }
+                },
+                "required": ["query"]
+            }
+        },
+        {
+            "name": "analyze_image",
+            "description": "Analyser une image industrielle",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "imageUrl": { "type": "string", "description": "URL de l'image" },
+                    "prompt": { "type": "string", "description": "Instruction d'analyse" }
+                },
+                "required": ["imageUrl"]
+            }
+        }
+    ])
+}
+
+fn execute_tool(name: &str, params: &serde_json::Value, app: &tauri::AppHandle) -> Result<String, String> {
+    match name {
+        "list_procedures" => {
+            let registry_dir = resolve_registry_root(app);
+            let items_dir = registry_dir.join("items");
+            if !items_dir.exists() {
+                return Ok("Aucune procédure disponible.".to_string());
+            }
+            let files = std::fs::read_dir(&items_dir)
+                .map_err(|e| e.to_string())?
+                .filter_map(|e| e.ok())
+                .filter(|e| e.path().extension().map(|ext| ext == "json").unwrap_or(false))
+                .collect::<Vec<_>>();
+
+            let limit = params.get("limit").and_then(|v| v.as_u64()).unwrap_or(10) as usize;
+            let category_filter = params.get("category").and_then(|v| v.as_str());
+
+            let mut results = Vec::new();
+            for file in files.iter().take(limit * 2) {
+                if let Ok(content) = std::fs::read_to_string(file.path()) {
+                    if let Ok(data) = serde_json::from_str::<serde_json::Value>(&content) {
+                        let category = data.get("category").and_then(|v| v.as_str()).unwrap_or("");
+                        if let Some(cat) = category_filter {
+                            if !category.eq_ignore_ascii_case(cat) {
+                                continue;
+                            }
+                        }
+                        let fallback_name = file.file_name().to_str().unwrap_or("").to_string();
+                        let title = data.get("title").and_then(|v| v.as_str()).unwrap_or(&fallback_name);
+                        let code = data.get("code").and_then(|v| v.as_str()).unwrap_or("");
+                        results.push(format!("[{}] {} — {}", code, title, category));
+                    }
+                }
+            }
+            Ok(if results.is_empty() {
+                "Aucune procédure trouvée.".to_string()
+            } else {
+                results.join("\n")
+            })
+        }
+        "search_bank" => {
+            let query = params.get("query").and_then(|v| v.as_str()).unwrap_or("");
+            let registry_dir = resolve_registry_root(app);
+            let bank_dir = registry_dir.join("bank");
+            if !bank_dir.exists() {
+                return Ok("Aucun média disponible.".to_string());
+            }
+            let folders = std::fs::read_dir(&bank_dir).map_err(|e| e.to_string())?;
+            let mut results = Vec::new();
+            for folder in folders.filter_map(|e| e.ok()) {
+                let meta_path = folder.path().join("metadata.json");
+                if let Ok(content) = std::fs::read_to_string(&meta_path) {
+                    if let Ok(data) = serde_json::from_str::<serde_json::Value>(&content) {
+                        let name = data.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                        let desc = data.get("description").and_then(|v| v.as_str()).unwrap_or("");
+                        let search_space = format!("{} {}", name, desc).to_lowercase();
+                        if search_space.contains(&query.to_lowercase()) || query.is_empty() {
+                            let kind = data.get("type").and_then(|v| v.as_str()).unwrap_or("asset");
+                            results.push(format!("[{}] {} — {}", kind, name, desc));
+                        }
+                    }
+                }
+            }
+            Ok(if results.is_empty() {
+                "Aucun média trouvé.".to_string()
+            } else {
+                results.join("\n")
+            })
+        }
+        "search_knowledge" => {
+            let query = params.get("query").and_then(|v| v.as_str()).unwrap_or("");
+            let registry_dir = resolve_registry_root(app);
+            let items_dir = registry_dir.join("items");
+            if !items_dir.exists() {
+                return Ok("Aucune connaissance disponible.".to_string());
+            }
+            let files = std::fs::read_dir(&items_dir).map_err(|e| e.to_string())?;
+            let mut results = Vec::new();
+            for file in files.filter_map(|e| e.ok()).take(20) {
+                if let Ok(content) = std::fs::read_to_string(file.path()) {
+                    if let Ok(data) = serde_json::from_str::<serde_json::Value>(&content) {
+                        let title = data.get("title").and_then(|v| v.as_str()).unwrap_or("");
+                        let question = data.get("pairs").and_then(|v| v.as_array()).and_then(|arr| arr.first()).and_then(|v| v.get("question")).and_then(|v| v.as_str()).unwrap_or("");
+                        let answer = data.get("pairs").and_then(|v| v.as_array()).and_then(|arr| arr.first()).and_then(|v| v.get("answer")).and_then(|v| v.as_str()).unwrap_or("");
+                        let search_space = format!("{} {} {}", title, question, answer).to_lowercase();
+                        if search_space.contains(&query.to_lowercase()) || query.is_empty() {
+                            let kind = data.get("type").and_then(|v| v.as_str()).unwrap_or("doc");
+                            let doc_text = if question.is_empty() { title.to_string() } else { format!("Q: {}\nR: {}", question, answer) };
+                            results.push(format!("[{}] {}", kind, doc_text));
+                        }
+                    }
+                }
+            }
+            Ok(if results.is_empty() {
+                "Aucune connaissance trouvée.".to_string()
+            } else {
+                results.join("\n")
+            })
+        }
+        "analyze_image" => {
+            let image_url = params.get("imageUrl").and_then(|v| v.as_str()).unwrap_or("");
+            let prompt = params.get("prompt").and_then(|v| v.as_str()).unwrap_or("Analyse industrielle");
+            Ok(format!("Analyse visuelle demandée pour: {} avec prompt: {}", image_url, prompt))
+        }
+        _ => Err(format!("Outil inconnu: {}", name)),
+    }
+}
+
 /// Réponse 100% locale (sans Groq) : utilise le générateur léger embarqué qui
 /// synthétise les passages RAG les plus pertinents. Aucune dépendance réseau.
-fn offline_generate(rag_docs: &[Document], query: &str) -> ChatOutput {
-    let text = offline_generator::OfflineGenerator::generate(rag_docs, query);
+fn offline_generate(docs: Vec<crate::vector_store::types::Document>, query: &str) -> ChatOutput {
+    let text = offline_generator::OfflineGenerator::generate(&docs, query);
     ChatOutput {
         text,
         provider: "VISIONODE_LOCAL (offline, modèle léger RAG)".to_string(),
     }
 }
 
-fn get_vector_store(app: &tauri::AppHandle) -> Result<Arc<VectorStore>, String> {
-    let state = app.state::<Arc<VectorStore>>();
-    Ok(state.inner().clone())
+/// Récupère les documents localement indexés pertinents pour la requête.
+fn load_offline_documents<T: tauri::Manager<tauri::Wry>>(app: &T, query: &str) -> Vec<crate::vector_store::types::Document> {
+    use crate::vector_store::embedding::tokenize_with_stems;
+
+    let root = resolve_local_db_root(app);
+    let mirror_path = root.join("chroma-index.json");
+    let raw_mirror = match std::fs::read_to_string(&mirror_path) {
+        Ok(r) => r,
+        Err(_) => return Vec::new(),
+    };
+    let mirror: serde_json::Value = match serde_json::from_str(&raw_mirror) {
+        Ok(v) => v,
+        Err(_) => return Vec::new(),
+    };
+    let entries = match mirror.get("entries").and_then(|e| e.as_array()) {
+        Some(e) => e,
+        None => return Vec::new(),
+    };
+
+    let query_tokens: std::collections::HashSet<String> = tokenize_with_stems(query).into_iter().collect();
+    if query_tokens.is_empty() {
+        return Vec::new();
+    }
+
+    const MAX_DOCS: usize = 5;
+    const MAX_BYTES: usize = 32_000;
+    let mut scored: Vec<(usize, crate::vector_store::types::Document)> = Vec::new();
+
+    for entry in entries {
+        let rel_path = match entry.get("relPath").and_then(|v| v.as_str()) {
+            Some(p) => p.to_string(),
+            None => continue,
+        };
+        let full = root.join(&rel_path);
+        let content = match std::fs::read_to_string(&full) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        if content.trim().is_empty() {
+            continue;
+        }
+        let parent_dir = std::path::Path::new(&rel_path)
+            .parent()
+            .and_then(|p| p.to_str())
+            .map(|s| s.to_string());
+        let file_name = std::path::Path::new(&rel_path)
+            .file_name()
+            .and_then(|p| p.to_str())
+            .map(|s| s.to_string());
+
+        let ctokens = tokenize_with_stems(&content);
+        let overlaps = ctokens.iter().filter(|t| query_tokens.contains(*t)).count();
+        if overlaps == 0 {
+            continue;
+        }
+
+        let snippet = if content.len() > MAX_BYTES {
+            content.chars().take(MAX_BYTES).collect::<String>()
+        } else {
+            content
+        };
+
+        // R6 — score lexical (miroir du JS scoreItemAgainstQuery) : pondère par
+        // la densité de tokens communs pour trier les docs les plus pertinents
+        // en premier, alignant la pertinence Desktop sur le chemin web.
+        let score = overlaps * 100 / ctokens.len().max(1);
+        scored.push((
+            score,
+            crate::vector_store::types::Document {
+                content: snippet,
+                metadata: crate::vector_store::types::DocumentMetadata {
+                    parent_dir,
+                    file_name,
+                    origin: "LOCAL_DB".to_string(),
+                },
+            },
+        ));
+    }
+
+    scored.sort_by(|a, b| b.0.cmp(&a.0));
+    scored.into_iter().take(MAX_DOCS).map(|(_, d)| d).collect()
+}
+
+fn parse_tool_call(text: &str) -> Option<ToolCall> {
+    // C3 — tolère le JSON d'appel d'outil n'importe où dans la réponse
+    // (texte avant/après), et non plus strictement en début de chaîne.
+    // Recherche le premier bloc objet JSON équilibré contenant la clé "tool".
+    let start = text.find('{')?;
+    let bytes = text.as_bytes();
+    let mut depth: i32 = 0;
+    let mut in_string = false;
+    let mut escape = false;
+    let mut end: Option<usize> = None;
+
+    for i in start..text.len() {
+        let c = bytes[i] as char;
+        if escape {
+            escape = false;
+            continue;
+        }
+        if c == '\\' {
+            if in_string {
+                escape = true;
+            }
+            continue;
+        }
+        if c == '"' {
+            in_string = !in_string;
+            continue;
+        }
+        if in_string {
+            continue;
+        }
+        if c == '{' {
+            depth += 1;
+        } else if c == '}' {
+            depth -= 1;
+            if depth == 0 {
+                end = Some(i + 1);
+                break;
+            }
+        }
+    }
+
+    let end = end?;
+    let slice = &text[start..end];
+    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(slice) {
+        if let Some(tool) = parsed.get("tool").and_then(|v| v.as_str()) {
+            return Some(ToolCall {
+                tool: tool.to_string(),
+                params: parsed.get("params").cloned().unwrap_or(serde_json::Value::Null),
+            });
+        }
+    }
+    None
 }
 
 #[tauri::command]
 async fn chat_with_ia(
     app: tauri::AppHandle,
     message: String,
-    history: Vec<ChatMessage>
+    history: Vec<ChatMessage>,
+    stream: bool,
 ) -> Result<ChatOutput, String> {
     if let Ok(exe_path) = env::current_exe() {
         if let Some(exe_dir) = exe_path.parent() {
@@ -280,30 +638,19 @@ async fn chat_with_ia(
         .or_else(|_| env::var("NEXT_PUBLIC_GROQ_API_KEY"))
         .unwrap_or_default();
 
-    let store = get_vector_store(&app)?;
-    let search_engine = VectorSearchEngine::new(store.clone());
-    let context = search_engine.get_context_for_query(&message, 3);
-    let rag_docs: Vec<Document> = search_engine
-        .search(&message, 5)
-        .unwrap_or_default()
-        .into_iter()
-        .map(|r| r.document)
-        .collect();
+    let tool_definitions = build_tool_definitions();
+    let tools_json = serde_json::to_string(&tool_definitions).unwrap_or_default();
+    let system_content = format!(
+        "Vous êtes VisioNode Core (Natif), l'IA de contrôle industriel CCP. Réponses techniques en français.\n\nOUTILS DISPONIBLES (utilisez le format JSON pour demander leur exécution) :\n{}\n\nRÈGLES D'UTILISATION :\n- Si l'utilisateur demande une action liée à un outil, répondez avec un JSON de la forme : {{\"tool\": \"nom_outil\", \"params\": {{...}}}}\n- Si aucune action n'est requise, répondez normalement en texte.",
+        tools_json
+    );
 
     let groq_available = !groq_key.is_empty() && groq_key != "votre_cle_groq_ici";
     if !groq_available {
         eprintln!("⚠️ [NATIVE_GROQ] Clé Groq absente — génération 100% locale (modèle léger RAG).");
-        return Ok(offline_generate(&rag_docs, &message));
+        let docs = load_offline_documents(&app, &message);
+        return Ok(offline_generate(docs, &message));
     }
-
-    let timestamp = chrono::Local::now().format("%H:%M:%S").to_string();
-    eprintln!("🚀 [{}] [NATIVE_GROQ] Traitement de la commande LPU...", timestamp);
-
-    let system_content = if context.is_empty() {
-        "Vous êtes VisioNode Core (Natif), l'IA de contrôle industriel CCP. Réponses techniques en français.".to_string()
-    } else {
-        format!("Vous êtes VisioNode Core (Natif), l'IA de contrôle industriel CCP. Réponses techniques en français.\n\nCONTEXTE RÉCUPÉRÉ:\n{}", context)
-    };
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(GROQ_TIMEOUT_SECS))
@@ -332,87 +679,50 @@ async fn chat_with_ia(
     }
     messages.push(serde_json::json!({"role": "user", "content": message}));
 
-    match call_groq_with_retry(client, &groq_key, messages).await {
-        Ok(output) => {
-            eprintln!("✅ [{}] [SUCCÈS] Réponse générée par Groq Natif (avec RAG local).", timestamp);
-            Ok(ChatOutput {
-                text: output.text,
-                provider: format!("{} + RAG Local", output.provider),
-            })
-        },
-        Err(e) => {
-            eprintln!("❌ [{}] [ERREUR] {}", timestamp, e);
-            Err(e)
+    let timestamp = chrono::Local::now().format("%H:%M:%S").to_string();
+
+    if stream {
+        match call_groq_stream(&client, &groq_key, messages, &app).await {
+            Ok(output) => {
+                eprintln!("✅ [{}] [SUCCÈS] Réponse générée par Groq Natif (stream).", timestamp);
+                Ok(ChatOutput {
+                    text: output.text,
+                    provider: format!("{} + RAG Local", output.provider),
+                })
+            }
+            Err(e) => {
+                eprintln!("❌ [{}] [ERREUR] {}", timestamp, e);
+                Err(e)
+            }
+        }
+    } else {
+        match call_groq_with_retry(client, &groq_key, messages).await {
+            Ok(mut output) => {
+                if let Some(tool_call) = parse_tool_call(&output.text) {
+                    eprintln!("🔧 [NATIVE_TOOL] Exécution outil: {}", tool_call.tool);
+                    match execute_tool(&tool_call.tool, &tool_call.params, &app) {
+                        Ok(tool_result) => {
+                            output.text = tool_result;
+                            output.provider = format!("{} + OUTIL:{}", output.provider, tool_call.tool);
+                        }
+                        Err(tool_err) => {
+                            output.text = format!("[Outil {}] Erreur: {}", tool_call.tool, tool_err);
+                            output.provider = format!("{} + OUTIL:{}", output.provider, tool_call.tool);
+                        }
+                    }
+                }
+                eprintln!("✅ [{}] [SUCCÈS] Réponse générée par Groq Natif (avec RAG local).", timestamp);
+                Ok(ChatOutput {
+                    text: output.text,
+                    provider: format!("{} + RAG Local", output.provider),
+                })
+            }
+            Err(e) => {
+                eprintln!("❌ [{}] [ERREUR] {}", timestamp, e);
+                Err(e)
+            }
         }
     }
-}
-
-#[tauri::command]
-fn search_documents(app: tauri::AppHandle, query: String, top_k: Option<usize>) -> Result<SearchOutput, String> {
-    let store = get_vector_store(&app)?;
-    let engine = VectorSearchEngine::new(store);
-    let results = engine.search(&query, top_k.unwrap_or(10))?;
-
-    let items: Vec<SearchResultItem> = results.into_iter().map(|r| {
-        SearchResultItem {
-            id: r.document.id,
-            content: r.document.content,
-            score: r.score,
-            metadata: SearchMetadata {
-                origin: r.document.metadata.origin,
-                file_name: r.document.metadata.file_name,
-                parent_dir: r.document.metadata.parent_dir,
-                file_path: r.document.metadata.file_path,
-            },
-        }
-    }).collect();
-
-    Ok(SearchOutput {
-        total: items.len(),
-        results: items,
-    })
-}
-
-#[tauri::command]
-fn get_vector_stats(app: tauri::AppHandle) -> Result<IndexStatsOutput, String> {
-    let store = get_vector_store(&app)?;
-    let stats = store.get_stats().map_err(|e| e.to_string())?;
-    Ok(IndexStatsOutput {
-        total_documents: stats.total_documents,
-        total_chunks: stats.total_chunks,
-        vocabulary_size: stats.vocabulary_size,
-        embedding_dimensions: stats.embedding_dimensions,
-    })
-}
-
-#[tauri::command]
-fn clear_vector_index(app: tauri::AppHandle) -> Result<(), String> {
-    let store = get_vector_store(&app)?;
-    store.clear().map_err(|e| e.to_string())?;
-    store.reset_vocab();
-    Ok(())
-}
-
-fn init_vector_store(app: &tauri::App) -> Result<Arc<VectorStore>, String> {
-    // On stocke vectors.db AU MÊME endroit que le `.local-db` résolu pour
-    // l'indexation (resolve_local_db_root), afin d'éviter la divergence entre
-    // l'emplacement de scan (cwd de l'EXE) et celui de la DB d'embeddings
-    // (app_data_dir) en mode hybride / packaging EXE.
-    let db_root = resolve_local_db_root(app);
-    std::fs::create_dir_all(&db_root).ok();
-    let vector_path = db_root.join("vectors");
-
-    // Dimensions TF-IDF du store Rust (SQLite). NB : indépendant du store JS
-    // embarqué (embedded-vector-store.ts, 384 dims bag-of-words hashé) — les deux
-    // moteurs ne partagent PAS d'embeddings binaires, chacun ré-indexe son corpus.
-    const RUST_TFIDF_DIMENSIONS: usize = 256;
-    let store = VectorStore::new(vector_path, RUST_TFIDF_DIMENSIONS)
-        .map_err(|e| format!("Failed to initialize vector store: {}", e))?;
-
-    store.load_vocabulary()
-        .map_err(|e| format!("Failed to load vocabulary: {}", e))?;
-
-    Ok(Arc::new(store))
 }
 
 fn main() {
@@ -423,43 +733,20 @@ fn main() {
                 .add_migrations(LOCAL_DB_URL, local_migrations())
                 .build(),
         )
-        .setup(|app| {
-            let store = init_vector_store(app)?;
-            let store_for_index = store.clone();
-            app.manage(store);
-            eprintln!("✅ [VECTOR_STORE] Initialisé (dim=256, SQLite local)");
-
-            let db_root = resolve_local_db_root(app);
-
-            tauri::async_runtime::spawn_blocking(move || {
-                if !db_root.exists() {
-                    eprintln!("[INDEX_AUTO] Répertoire {} absent, indexation ignorée.", db_root.display());
-                    return;
-                }
-
-                eprintln!("[INDEX_AUTO] Indexation automatique de {}...", db_root.display());
-                let indexer = DocumentIndexer::new(store_for_index, db_root.to_string_lossy().to_string());
-
-                match indexer.index_local_db() {
-                    Ok(stats) => {
-                        eprintln!("[INDEX_AUTO] Indexation terminée: {} docs, {} chunks, {} termes",
-                            stats.total_documents, stats.total_chunks, stats.vocabulary_size);
-                    }
-                    Err(e) => {
-                        eprintln!("[INDEX_AUTO] Erreur indexation: {}", e);
-                    }
-                }
-            });
-
+        .setup(|_app| {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             chat_with_ia,
-            index_local_db,
-            search_documents,
-            get_vector_stats,
-            clear_vector_index,
-            get_local_db_root
+            get_local_db_root,
+            get_registry_root,
+            local_db::local_db_tree,
+            local_db::local_db_read,
+            local_db::local_db_write,
+            local_db::local_db_delete,
+            local_db::local_db_rename,
+            local_db::local_db_create_folder,
+            local_db::local_db_inject
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

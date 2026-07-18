@@ -48,6 +48,14 @@ export interface LocalSignInResult {
   user: LocalSessionUser;
 }
 
+export interface LocalSignInFailure {
+  success: false;
+  errorType: 'RATE_LIMITED' | 'USER_NOT_FOUND' | 'DB_CORRUPTED' | 'UNKNOWN';
+  retryAfter?: number;
+}
+
+export type LocalSignInOutcome = LocalSignInResult | LocalSignInFailure;
+
 const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
 const RATE_LIMIT_MAX_ATTEMPTS = 5;
 const RATE_LIMIT_STORAGE_KEY = 'visionode_rate_limit';
@@ -135,15 +143,15 @@ export function clearRateLimit(email: string): void {
  * Authentification locale (offline). Renvoie le payload de session si succès,
  * sinon null (le caller bascule alors sur le cloud).
  */
-export async function localSignIn(email: string, password: string): Promise<LocalSignInResult | null> {
+export async function localSignIn(email: string, password: string): Promise<LocalSignInOutcome> {
   const db = await getLocalDb();
-  if (!db) return null;
+  if (!db) return { success: false, errorType: 'DB_CORRUPTED' };
 
   try {
     const rateCheck = checkRateLimit(email);
     if (rateCheck.blocked) {
       console.warn(`[LOCAL_SQL] Rate limit atteint pour ${email}. Réessayez dans ${rateCheck.retryAfter}s.`);
-      return null;
+      return { success: false, errorType: 'RATE_LIMITED', retryAfter: rateCheck.retryAfter };
     }
 
     const rows = await db.select(
@@ -153,16 +161,16 @@ export async function localSignIn(email: string, password: string): Promise<Loca
     const u = rows && rows[0];
     if (!u) {
       recordFailedAttempt(email);
-      return null;
+      return { success: false, errorType: 'USER_NOT_FOUND' };
     }
     if (!u.approved) {
-      return null;
+      return { success: false, errorType: 'USER_NOT_FOUND' };
     }
 
     const ok = await bcrypt.compare(password, u.password);
     if (!ok) {
       recordFailedAttempt(email);
-      return null;
+      return { success: false, errorType: 'USER_NOT_FOUND' };
     }
 
     clearRateLimit(email);
@@ -179,7 +187,7 @@ export async function localSignIn(email: string, password: string): Promise<Loca
     };
   } catch (e) {
     console.error('[LOCAL_SQL] Erreur localSignIn:', e);
-    return null;
+    return { success: false, errorType: 'UNKNOWN' };
   }
 }
 
@@ -191,9 +199,18 @@ const LOCAL_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
  */
 export async function validateLocalSession(stored: { id: string; email: string; expiresAt?: number } | null): Promise<LocalSessionUser | null> {
   if (!stored?.id || !stored?.email) return null;
-  if (stored.expiresAt && Date.now() > stored.expiresAt) return null;
+  // TTL : une session sans expiresAt (ou expirée) est considérée invalide.
+  // localAuth.saveSession garantit expiresAt ; s'il manque, on refuse par sécurité.
+  // NB : localAuth.getCurrentSession() purge déjà les sessions expirées avant
+  // d'appeler cette fonction, donc cette vérification est une seconde ligne de
+  // défense cohérente avec la logique de purge TTL 30 jours de local-auth.ts.
+  if (!stored.expiresAt || Date.now() > stored.expiresAt) return null;
 
   const db = await getLocalDb();
+  // En mode Locale, si la DB locale est indisponible (corrompue/verrouillée) la
+  // session ne peut PAS être validée de façon fiable. On refuse plutôt que de
+  // trust une session sans révocation effective : l'utilisateur est déconnecté
+  // et un indicateur "Mode dégradé — base locale indisponible" l'explique (UI).
   if (!db) return null;
 
   try {
@@ -234,10 +251,19 @@ export async function upsertLocalUser(u: {
 
   const existing = await db.select('SELECT id FROM users WHERE email = ?', [email]);
   if (existing.length > 0) {
-    await db.execute(
-      `UPDATE users SET firstName=?, lastName=?, role=?, approved=?, updatedAt=datetime('now') WHERE email=?`,
-      [u.firstName ?? '', u.lastName ?? '', u.role, u.approved ? 1 : 0, email]
-    );
+    // On resync toujours approved (et le hash si fourni) pour éviter un
+    // lockout offline après un changement côté cloud (mot de passe / approbation).
+    if (u.password) {
+      await db.execute(
+        `UPDATE users SET firstName=?, lastName=?, role=?, approved=?, password=?, updatedAt=datetime('now') WHERE email=?`,
+        [u.firstName ?? '', u.lastName ?? '', u.role, u.approved ? 1 : 0, u.password, email]
+      );
+    } else {
+      await db.execute(
+        `UPDATE users SET firstName=?, lastName=?, role=?, approved=?, updatedAt=datetime('now') WHERE email=?`,
+        [u.firstName ?? '', u.lastName ?? '', u.role, u.approved ? 1 : 0, email]
+      );
+    }
   } else if (u.password) {
     await db.execute(
       `INSERT INTO users (id, email, firstName, lastName, password, role, approved, createdAt, updatedAt)

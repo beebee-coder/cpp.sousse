@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
+import { apiClient } from '@/lib/api-client';
 
 interface ProcedureSummary {
   id: string;
@@ -48,8 +49,7 @@ export default function ProcedureGuideListPage() {
     setIsLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/procedures/guide?list=true');
-      const data = await res.json();
+      const data = await apiClient.get<any>('/api/procedures/guide?list=true');
       if (data.success && Array.isArray(data.procedures)) {
         const sorted = [...data.procedures].sort((a: ProcedureSummary, b: ProcedureSummary) => {
           if (a.code === 'CRF-START-001') return -1;

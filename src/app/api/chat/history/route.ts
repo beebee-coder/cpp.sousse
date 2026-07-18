@@ -85,21 +85,35 @@ export async function POST(req: Request) {
       });
     }
 
-    await prisma.chatMessage.deleteMany({ where: { conversationId, userId: session.user.id } });
-
-    const data = messages.map((m) => ({
-      conversationId,
-      userId: session.user.id,
-      role: m.role,
-      content: m.content,
-      provider: m.provider || null,
-      timestamp: new Date(m.timestamp || Date.now()),
-      media: m.media || null,
-      procedureId: m.procedureId || null,
-      source: m.source || null,
-    }));
-
-    await prisma.chatMessage.createMany({ data });
+    // C4 — persistance idempotente : upsert sur (conversationId, userId, clientId)
+    // au lieu de deleteMany+createMany, pour éviter doublons et races.
+    for (const m of messages) {
+      const clientId = m.id || `hist-${conversationId}-${m.timestamp || Date.now()}`;
+      await prisma.chatMessage.upsert({
+        where: { conversationId_userId_clientId: { conversationId, userId: session.user.id, clientId } },
+        create: {
+          clientId,
+          conversationId,
+          userId: session.user.id,
+          role: m.role,
+          content: m.content,
+          provider: m.provider || null,
+          timestamp: new Date(m.timestamp || Date.now()),
+          media: m.media || null,
+          procedureId: m.procedureId || null,
+          source: m.source || null,
+        },
+        update: {
+          role: m.role,
+          content: m.content,
+          provider: m.provider || null,
+          timestamp: new Date(m.timestamp || Date.now()),
+          media: m.media || null,
+          procedureId: m.procedureId || null,
+          source: m.source || null,
+        },
+      });
+    }
 
     return new Response(JSON.stringify({ success: true }), {
       status: 200,

@@ -71,7 +71,7 @@ export function ModeLiveIndicator({ className, variant = 'minimal' }: ModeLiveIn
  * Mode-aware context menu / dropdown
  */
 export function ModeContextMenu() {
-  const { mode, online, isDesktop, localOnly, setLocalOnly, isReady } = useAppMode();
+  const { mode, online, isDesktop, isReady } = useAppMode();
 
   if (!isReady) return null;
 
@@ -83,20 +83,6 @@ export function ModeContextMenu() {
         <div>Desktop: {isDesktop ? 'Oui' : 'Non'}</div>
         <div>Online: {online ? 'Oui 🟢' : 'Non 🔴'}</div>
       </div>
-
-      {isDesktop && (
-        <div className="pt-2 border-t border-slate-700">
-          <label className="flex items-center gap-2 cursor-pointer hover:bg-slate-800/50 p-1 rounded transition-colors">
-            <input
-              type="checkbox"
-              checked={localOnly}
-              onChange={(e) => setLocalOnly(e.target.checked)}
-              className="w-3 h-3"
-            />
-            <span className="text-xs">Forcer mode local</span>
-          </label>
-        </div>
-      )}
     </div>
   );
 }

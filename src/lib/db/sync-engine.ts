@@ -1,5 +1,7 @@
 import { SyncState } from './types';
 import { apiClient } from '../api-client';
+import { isDesktop } from '../platform';
+import { localDBBridge } from '../local-db-bridge';
 
 interface SyncResult {
   injectedCount: number;
@@ -39,6 +41,18 @@ export const syncEngine = {
 
   async getManifest(): Promise<{ files: { cloudId?: string; resolvedPath: string }[] }> {
     try {
+      if (isDesktop) {
+        const tree = await localDBBridge.getTree();
+        const files: { cloudId?: string; resolvedPath: string }[] = [];
+        const walk = (nodes: any[]) => {
+          for (const n of nodes) {
+            if (n.metadata?.cloudId) files.push({ cloudId: n.metadata.cloudId, resolvedPath: n.id });
+            if (n.children) walk(n.children);
+          }
+        };
+        walk(tree);
+        return { files };
+      }
       const { localDB } = await import('./local-db');
       const manifest = await localDB.getManifest();
       return { files: (manifest.files || []).map((f: any) => ({ cloudId: f.cloudId, resolvedPath: f.resolvedPath })) };
@@ -51,7 +65,11 @@ export const syncEngine = {
     return manifest.files.some(f => f.cloudId === cloudId);
   },
 
-  async downloadAndInjectPhase(userId: string, projectId: string): Promise<SyncResult> {
+  async downloadAndInjectPhase(userId: string, projectId: string, localOnly?: boolean): Promise<SyncResult> {
+    if (localOnly) {
+      return { injectedCount: 0, vectorizedCount: 0, failedItems: [], skippedDuplicates: 0, purgedCount: 0 };
+    }
+
     const ts = new Date().toLocaleTimeString();
     console.log(`📡 [SYNC_DOWN] [INIT] [${ts}] Début de la phase d'injection.`);
 
@@ -75,7 +93,7 @@ export const syncEngine = {
       return { injectedCount: 0, vectorizedCount: 0, failedItems: [], skippedDuplicates: 0, purgedCount: 0 };
     }
 
-    let manifest = await this.getManifest();
+    let manifest = isDesktop ? await localDBBridge.getTree() : [];
     const successIds: string[] = [];
     const failedItems: string[] = [];
     let skippedDuplicates = 0;
@@ -86,7 +104,15 @@ export const syncEngine = {
 
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
-          if (this.isAlreadySynced(manifest, item.id)) {
+          if (isDesktop) {
+            const alreadyInLocal = manifest.some(f => f.id === item.id || f.metadata?.cloudId === item.id);
+            if (alreadyInLocal) {
+              skippedDuplicates++;
+              console.log(`⏭️ [SYNC_SKIP] Item déjà synchronisé : ${item.id}`);
+              injected = true;
+              break;
+            }
+          } else if (this.isAlreadySynced(await this.getManifest(), item.id)) {
             skippedDuplicates++;
             console.log(`⏭️ [SYNC_SKIP] Item déjà synchronisé : ${item.id}`);
             injected = true;
@@ -114,26 +140,35 @@ export const syncEngine = {
           const fileName = registryDir.length > 1 ? registryDir[registryDir.length - 1] : `${knowledgeType}_${item.id}.json`;
           const targetDir = registryDir.length > 1 ? registryDir.slice(0, -1).join('/') : 'items';
 
-          await apiClient.post('/api/registry', {
-            path: regPath,
-            type: 'file',
-            content: JSON.stringify(parsed, null, 2)
-          });
+          if (isDesktop) {
+            await localDBBridge.injectFile(
+              fileName,
+              JSON.stringify(parsed, null, 2),
+              { knowledge_type: knowledgeType, cloud_id: item.id, tags: item.tags || [title] },
+              knowledgeType === 'procedure' ? `procedures/${item.id}` : targetDir
+            );
+          } else {
+            await apiClient.post('/api/registry', {
+              path: regPath,
+              type: 'file',
+              content: JSON.stringify(parsed, null, 2)
+            });
 
-          await apiClient.post('/api/local-db', {
-            fileName,
-            content: JSON.stringify(parsed, null, 2),
-            metadata: {
-              knowledgeType,
-              cloudId: item.id,
-              tags: item.tags || [title]
-            },
-            targetDir: knowledgeType === 'procedure'
-              ? `procedures/${item.id}`
-              : targetDir
-          });
+            await apiClient.post('/api/local-db', {
+              fileName,
+              content: JSON.stringify(parsed, null, 2),
+              metadata: {
+                knowledgeType,
+                cloudId: item.id,
+                tags: item.tags || [title]
+              },
+              targetDir: knowledgeType === 'procedure'
+                ? `procedures/${item.id}`
+                : targetDir
+            });
+          }
 
-          manifest = await this.getManifest();
+          manifest = isDesktop ? await localDBBridge.getTree() : manifest;
           successIds.push(item.id);
           console.log(`✅ [SYNC_LOCAL_DB] [DONE] Item injecté : ${fileName}`);
           injected = true;
@@ -155,16 +190,32 @@ export const syncEngine = {
     let purgedCount = 0;
     if (successIds.length > 0) {
       const activeCloudIds = new Set<string>(successIds);
-      const toPurge = manifest.files.filter(f => f.cloudId && !activeCloudIds.has(f.cloudId));
 
-      for (const entry of toPurge) {
-        try {
-          const { localDB } = await import('./local-db');
-          await localDB.deleteItem(entry.resolvedPath);
-          purgedCount++;
-          console.log(`🗑️ [SYNC_PURGE_LOCAL] Élément local supprimé : ${entry.resolvedPath}`);
-        } catch (e: any) {
-          console.warn(`⚠️ [SYNC_PURGE_LOCAL] Échec suppression ${entry.resolvedPath} :`, e.message);
+      if (isDesktop) {
+        const tree = await localDBBridge.getTree();
+        const toPurge = tree.filter(f => f.metadata?.cloudId && !activeCloudIds.has(f.metadata.cloudId));
+        for (const entry of toPurge) {
+          try {
+            await localDBBridge.deleteItem(entry.id);
+            purgedCount++;
+            console.log(`🗑️ [SYNC_PURGE_LOCAL] Élément local supprimé : ${entry.id}`);
+          } catch (e: any) {
+            console.warn(`⚠️ [SYNC_PURGE_LOCAL] Échec suppression ${entry.id} :`, e.message);
+          }
+        }
+      } else {
+        const manifest = await this.getManifest();
+        const toPurge = manifest.files.filter(f => f.cloudId && !activeCloudIds.has(f.cloudId));
+
+        for (const entry of toPurge) {
+          try {
+            const { localDB } = await import('./local-db');
+            await localDB.deleteItem(entry.resolvedPath);
+            purgedCount++;
+            console.log(`🗑️ [SYNC_PURGE_LOCAL] Élément local supprimé : ${entry.resolvedPath}`);
+          } catch (e: any) {
+            console.warn(`⚠️ [SYNC_PURGE_LOCAL] Échec suppression ${entry.resolvedPath} :`, e.message);
+          }
         }
       }
     }
@@ -198,6 +249,13 @@ export const syncEngine = {
 
   async vectorizeLocalItems(folder: 'items' | 'procedures' | 'INDEX_CHROMA/items' = 'INDEX_CHROMA/items'): Promise<{ success: boolean; indexed?: number; errors?: string[] }> {
     if (typeof window === 'undefined') return { success: false, errors: ['Server environment'] };
+    // La vectorisation via local-indexer s'appuie sur le module Node `fs`, qui
+    // n'existe pas en mode web (navigateur). Elle n'est donc possible qu'en
+    // poste de bureau (Tauri/Node) où `fs` est disponible. En web, on court-circuite
+    // proprement pour ne pas provoquer l'erreur « fs.existsSync is not a function ».
+    if (!isDesktop) {
+      return { success: true, indexed: 0 };
+    }
 
     try {
       const { indexLocalDBFolder } = await import('@/lib/local-indexer');
@@ -208,21 +266,28 @@ export const syncEngine = {
     }
   },
 
-  async syncAll(userId: string, projectId: string): Promise<SyncResult> {
+  async syncAll(userId: string, projectId: string, localOnly?: boolean): Promise<SyncResult> {
     const state = await this.getSyncState(userId);
-    state.status = 'syncing';
-    await this.saveSyncState(state);
-
     try {
-      const injectResult = await this.downloadAndInjectPhase(userId, projectId);
+      state.status = 'syncing';
+      await this.saveSyncState(state);
 
-      // Phase de vectorisation séparée
+      let injectResult: SyncResult = { injectedCount: 0, vectorizedCount: 0, failedItems: [], skippedDuplicates: 0, purgedCount: 0 };
+      if (!localOnly) {
+        injectResult = await this.downloadAndInjectPhase(userId, projectId, localOnly);
+      }
+
       let vectorResult: { success: boolean; indexed?: number; errors?: string[] } = { success: true, indexed: 0 };
-      try {
-        vectorResult = await this.vectorizeLocalItems('INDEX_CHROMA/items');
-      } catch (e: any) {
-        console.warn('[SYNC] Vectorisation échouée (non fatal):', e.message);
-        vectorResult = { success: false, errors: [e.message] };
+      // En mode local pur, la phase de vectorisation (Chroma/embedded) n'est pas
+      // relancée à chaque sync : l'indexation est déclenchée à la volée par le
+      // frontend (watcher / indexation manuelle) et non par le moteur de sync cloud.
+      if (!localOnly) {
+        try {
+          vectorResult = await this.vectorizeLocalItems('INDEX_CHROMA/items');
+        } catch (e: any) {
+          console.warn('[SYNC] Vectorisation échouée (non fatal):', e.message);
+          vectorResult = { success: false, errors: [e.message] };
+        }
       }
 
       if (vectorResult.success) {
@@ -235,7 +300,7 @@ export const syncEngine = {
       state.pendingDownloads = 0;
       await this.saveSyncState(state);
 
-      const result = {
+      const result: SyncResult = {
         ...injectResult,
         vectorizedCount: vectorResult.indexed || 0,
       };

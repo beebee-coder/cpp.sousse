@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic';
 export const revalidate = false;
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/db/prisma-client';
+import { getPrismaClient } from '@/lib/db/prisma-client';
 
 /**
  * Route de download pour la synchronisation multi-environnement (Delta Sync).
@@ -10,6 +10,7 @@ import { prisma } from '@/lib/db/prisma-client';
  */
 export async function POST(request: NextRequest) {
   try {
+    const prisma = await getPrismaClient();
     const body = await request.json();
     const { lastSync, scope = 'all' } = body as {
       userId?: string;

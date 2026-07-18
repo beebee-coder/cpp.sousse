@@ -234,10 +234,12 @@ export const POST = createHybridRoute<{ path: string; type: 'file' | 'folder'; c
           category: parsedContent?.category || 'General',
         };
 
-        // Déduplication : mise à jour si un item de même titre+type existe déjà,
-        // sinon création. Évite la prolifération de doublons à chaque sauvegarde.
+        // R3 — Déduplication par CHEMIN COMPLET (tag regpath:) et non plus par
+        // titre+type. Deux fichiers de même nom dans des dossiers différents
+        // (ex: items/alarme.json vs sous-dossier/alarme.json) conservent ainsi
+        // leur hiérarchie propre côté cloud au lieu de s'écraser mutuellement.
         const existing = await prisma.knowledgeItem.findFirst({
-          where: { title: title.trim(), type: knowledgeType },
+          where: { tags: { has: regPathTag } },
           orderBy: { createdAt: 'desc' },
         });
         const item = existing

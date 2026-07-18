@@ -7,19 +7,29 @@ import { isDesktop } from '@/lib/platform';
 import { useAppMode } from '@/hooks/use-app-mode';
 import { useSession } from '@/components/SessionProvider';
 
+interface StreamChunk {
+  chunk: string;
+  done: boolean;
+  result?: {
+    text: string;
+    provider: string;
+  };
+}
+
 export function useChat(onAiResponse?: (text: string) => void) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [currentProvider, setCurrentProvider] = useState<string>('VEILLE');
   const [isStreaming, setIsStreaming] = useState(false);
   const storage = getChatStorage();
-  const { mode, online } = useAppMode();
+  const { mode, online, localOnly } = useAppMode();
   const { user } = useSession();
   const abortControllerRef = useRef<AbortController | null>(null);
   const streamBufferRef = useRef<string>('');
   const messagesRef = useRef<ChatMessage[]>([]);
   const conversationIdRef = useRef<string>(crypto.randomUUID());
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const streamingEnabled = isDesktop;
 
   useEffect(() => {
     messagesRef.current = messages;
@@ -31,7 +41,7 @@ export function useChat(onAiResponse?: (text: string) => void) {
         const local = await storage.loadHistory(user?.id, conversationIdRef.current);
         if (local.length > 0) setMessages(local);
 
-        if (online && user?.id && conversationIdRef.current) {
+        if (online && !localOnly && user?.id && conversationIdRef.current) {
           try {
             const res = await fetch(`/api/chat/history?conversationId=${encodeURIComponent(conversationIdRef.current)}`);
             if (res.ok) {
@@ -101,6 +111,26 @@ export function useChat(onAiResponse?: (text: string) => void) {
     return sanitizeChunk(text).trim();
   };
 
+  /**
+   * R4 — Finalise le dernier message modèle du stream natif avec le buffer
+   * accumulé. Garantit qu'un message ne reste pas vide si l'event Rust
+   * `done` n'arrive pas (flux interrompu). À appeler en fin de invoke.
+   */
+  const commitNativeMessage = useCallback((provider?: string) => {
+    const text = streamBufferRef.current;
+    setMessages(prev => {
+      const updated = [...prev];
+      const last = updated[updated.length - 1];
+      if (last && last.role === 'model' && !last.content.trim()) {
+        last.content = text ? sanitizeOutput(text) : 'Réponse interrompue (flux natif).';
+        if (provider) last.provider = provider;
+        last.timestamp = Date.now();
+      }
+      messagesRef.current = updated;
+      return updated;
+    });
+  }, []);
+
   const sendMessage = useCallback(async (content: string, source?: 'voice' | 'text') => {
     const sanitized = sanitizeInput(content);
     if (!sanitized || isLoading) return;
@@ -130,24 +160,158 @@ export function useChat(onAiResponse?: (text: string) => void) {
       if (isDesktop && mode === 'locale') {
         console.log(`📡 [CHAT] [STEP] Mode locale: appel Tauri natif uniquement.`);
         const { invoke } = await import('@tauri-apps/api/core');
-        data = await invoke('chat_with_ia', {
-          message: sanitized,
-          history,
-        }) as any;
+        const { listen } = await import('@tauri-apps/api/event');
+        
+        let nativeStreamUnlisten: (() => void) | undefined;
+        try {
+          if (streamingEnabled) {
+            setIsStreaming(true);
+            const aiMsgId = crypto.randomUUID();
+            const aiMsg: ChatMessage = {
+              id: aiMsgId,
+              role: 'model',
+              content: '',
+              provider: 'Groq LPU + Pro-Search (natif)',
+              timestamp: Date.now(),
+              conversationId: conversationIdRef.current,
+            };
+            setMessages(prev => {
+              const updated = [...prev, aiMsg];
+              messagesRef.current = updated;
+              return updated;
+            });
+
+            nativeStreamUnlisten = await listen<string>('chat-stream-chunk', (event) => {
+              const chunk: StreamChunk = JSON.parse(event.payload);
+              if (!chunk.done && chunk.chunk) {
+                streamBufferRef.current += chunk.chunk;
+                setMessages(prev => {
+                  const updated = [...prev];
+                  const last = updated[updated.length - 1];
+                  if (last && last.role === 'model') {
+                    last.content = streamBufferRef.current;
+                  }
+                  messagesRef.current = updated;
+                  return updated;
+                });
+              } else if (chunk.done && chunk.result) {
+                const resultChunk = chunk.result;
+                streamBufferRef.current = resultChunk.text;
+                setMessages(prev => {
+                  const updated = [...prev];
+                  const last = updated[updated.length - 1];
+                  if (last && last.role === 'model') {
+                    last.content = sanitizeOutput(resultChunk.text);
+                    last.provider = resultChunk.provider;
+                    last.timestamp = Date.now();
+                  }
+                  messagesRef.current = updated;
+                  return updated;
+                });
+              }
+            });
+          }
+
+          data = await invoke('chat_with_ia', {
+            message: sanitized,
+            history,
+            stream: streamingEnabled,
+          }) as any;
+
+          commitNativeMessage((data as any)?.provider);
+
+          if (!streamingEnabled) {
+            console.log(`✅ [CHAT] [SUCCESS] Réponse générée par ${(data as any).provider} (natif).`);
+          }
+        } finally {
+          if (nativeStreamUnlisten) {
+            nativeStreamUnlisten();
+          }
+        }
       } else if (isDesktop && mode === 'hybride') {
         console.log(`📡 [CHAT] [STEP] Mode hybride: tentative natif puis fallback cloud.`);
         try {
           const { invoke } = await import('@tauri-apps/api/core');
-          data = await invoke('chat_with_ia', {
-            message: sanitized,
-            history,
-          }) as any;
-          console.log(`✅ [CHAT] [SUCCESS] Réponse générée par ${data.provider} (natif).`);
+          const { listen } = await import('@tauri-apps/api/event');
+          
+          let nativeStreamUnlisten: (() => void) | undefined;
+          try {
+            if (streamingEnabled) {
+              setIsStreaming(true);
+              const aiMsgId = crypto.randomUUID();
+              const aiMsg: ChatMessage = {
+                id: aiMsgId,
+                role: 'model',
+                content: '',
+                provider: 'Groq LPU + Pro-Search (natif)',
+                timestamp: Date.now(),
+                conversationId: conversationIdRef.current,
+              };
+              setMessages(prev => {
+                const updated = [...prev, aiMsg];
+                messagesRef.current = updated;
+                return updated;
+              });
+
+              nativeStreamUnlisten = await listen<string>('chat-stream-chunk', (event) => {
+                const chunk: StreamChunk = JSON.parse(event.payload);
+                if (!chunk.done && chunk.chunk) {
+                  streamBufferRef.current += chunk.chunk;
+                  setMessages(prev => {
+                    const updated = [...prev];
+                    const last = updated[updated.length - 1];
+                    if (last && last.role === 'model') {
+                      last.content = streamBufferRef.current;
+                    }
+                    messagesRef.current = updated;
+                    return updated;
+                  });
+              } else if (chunk.done && chunk.result) {
+                const resultChunk = chunk.result;
+                streamBufferRef.current = resultChunk.text;
+                setMessages(prev => {
+                  const updated = [...prev];
+                  const last = updated[updated.length - 1];
+                  if (last && last.role === 'model') {
+                    last.content = sanitizeOutput(resultChunk.text);
+                    last.provider = resultChunk.provider;
+                    last.timestamp = Date.now();
+                  }
+                    messagesRef.current = updated;
+                    return updated;
+                  });
+                }
+              });
+            }
+
+            data = await invoke('chat_with_ia', {
+              message: sanitized,
+              history,
+              stream: streamingEnabled,
+            }) as any;
+
+            commitNativeMessage((data as any)?.provider);
+
+            if (!streamingEnabled) {
+              console.log(`✅ [CHAT] [SUCCESS] Réponse générée par ${(data as any).provider} (natif).`);
+            }
+          } finally {
+            if (nativeStreamUnlisten) {
+              nativeStreamUnlisten();
+            }
+          }
         } catch (nativeError: any) {
           console.warn(`⚠️ [CHAT] [FALLBACK] Natif échoué (${nativeError.message}), bascule cloud...`);
+          if (localOnly) {
+            throw new Error('Mode local uniquement : bascule cloud désactivée.');
+          }
           if (!online) {
             throw new Error('Mode hybride hors-ligne: impossible de basculer vers le cloud.');
           }
+          // R3 — transparence : le RAG local Rust n'est pas transmis au cloud,
+          // qui reconstruit son propre RAG JS. On signale la dégradation à
+          // l'utilisateur plutôt que de basculer silencieusement.
+          setCurrentProvider('Groq LPU + Pro-Search (cloud) [fallback natif]');
           data = await callCloudAPI(sanitized, history, mode);
         }
       } else {
@@ -162,6 +326,11 @@ export function useChat(onAiResponse?: (text: string) => void) {
         provider: data.provider,
         media: data.media,
         procedureId: data.procedureId,
+        guideUrl: data.guideUrl,
+        executeUrl: data.executeUrl,
+        sources: data.sources,
+        ragResults: data.ragResults,
+        confidence: data.confidence,
         timestamp: Date.now(),
         conversationId: conversationIdRef.current,
       };
@@ -174,6 +343,11 @@ export function useChat(onAiResponse?: (text: string) => void) {
           last.provider = data.provider;
           last.media = data.media;
           last.procedureId = data.procedureId;
+          last.guideUrl = data.guideUrl;
+          last.executeUrl = data.executeUrl;
+          last.sources = data.sources;
+          last.ragResults = data.ragResults;
+          last.confidence = data.confidence;
           last.timestamp = Date.now();
         } else {
           updated.push(aiMsg);
@@ -205,11 +379,12 @@ export function useChat(onAiResponse?: (text: string) => void) {
   }, [isLoading, storage, onAiResponse, isDesktop, mode, online, user?.id]);
 
   const callCloudAPI = async (message: string, history: any[], mode: string) => {
-    const res = await fetch('/api/chat', {
+    const fetchPromise = fetch('/api/chat', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'X-App-Mode': mode,
+        'X-Network-Online': online ? '1' : '0',
       },
       body: JSON.stringify({
         message,
@@ -218,9 +393,16 @@ export function useChat(onAiResponse?: (text: string) => void) {
         stream: true,
         userId: user?.id,
         conversationId: conversationIdRef.current,
+        online,
       }),
       signal: abortControllerRef.current?.signal,
     });
+
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error('Délai de requête cloud dépassé (30s)')), 30000);
+    });
+
+    const res = await Promise.race([fetchPromise, timeoutPromise]);
 
     if (!res.ok) {
       const errText = await res.text();
@@ -232,7 +414,19 @@ export function useChat(onAiResponse?: (text: string) => void) {
       return await handleStreamResponse(res);
     }
 
-    return await res.json();
+    const data = await res.json();
+    return {
+      text: sanitizeOutput(data.text),
+      provider: data.provider,
+      model: data.model,
+      procedureId: data.procedureId,
+      guideUrl: data.guideUrl,
+      executeUrl: data.executeUrl,
+      sources: data.sources,
+      ragResults: data.ragResults,
+      confidence: data.confidence,
+      media: data.media,
+    };
   };
 
   const handleStreamResponse = async (res: Response): Promise<any> => {
@@ -247,6 +441,11 @@ export function useChat(onAiResponse?: (text: string) => void) {
     let provider = 'Groq LPU + Pro-Search (stream)';
     let model = 'llama-3.3-70b-versatile';
     let procedureId: string | undefined;
+    let guideUrl: string | undefined;
+    let executeUrl: string | undefined;
+    let sources: string[] | undefined;
+    let ragResults: any[] | undefined;
+    let confidence: 'high' | 'medium' | 'low' | 'none' | undefined;
     let buffer = '';
 
     const aiMsg: ChatMessage = {
@@ -302,6 +501,11 @@ export function useChat(onAiResponse?: (text: string) => void) {
               provider = parsed.result.provider || provider;
               model = parsed.result.model || model;
               procedureId = parsed.result.procedureId || procedureId;
+              guideUrl = parsed.result.guideUrl || guideUrl;
+              executeUrl = parsed.result.executeUrl || executeUrl;
+              sources = parsed.result.sources || sources;
+              ragResults = parsed.result.ragResults || ragResults;
+              confidence = parsed.result.confidence || confidence;
             }
           } catch {
             // ignore parse errors on incomplete stream chunks
@@ -316,6 +520,11 @@ export function useChat(onAiResponse?: (text: string) => void) {
           last.content = sanitizeOutput(fullText);
           last.provider = provider;
           last.procedureId = procedureId;
+          last.guideUrl = guideUrl;
+          last.executeUrl = executeUrl;
+          last.sources = sources;
+          last.ragResults = ragResults;
+          last.confidence = confidence;
           last.timestamp = Date.now();
         }
         messagesRef.current = updated;
@@ -327,6 +536,11 @@ export function useChat(onAiResponse?: (text: string) => void) {
         provider,
         model,
         procedureId,
+        guideUrl,
+        executeUrl,
+        sources,
+        ragResults,
+        confidence,
       };
     } finally {
       reader.releaseLock();

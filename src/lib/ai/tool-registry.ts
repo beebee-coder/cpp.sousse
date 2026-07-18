@@ -16,6 +16,8 @@ export interface ToolResult {
     url: string;
   }[];
   procedureId?: string;
+  guideUrl?: string;
+  executeUrl?: string;
 }
 
 export class ToolRegistry {
@@ -75,16 +77,70 @@ RÈGLES D'UTILISATION :
 }
 
 export function parseToolCall(text: string): { tool: string; params: any } | null {
+  if (!text) return null;
   try {
-    const cleaned = text.trim();
-    if (!cleaned.startsWith('{')) return null;
+    // C3 — tolère le JSON d'appel d'outil n'importe où dans la réponse
+    // (texte avant/après), et non plus strictement en début de chaîne.
+    // Recherche le premier bloc objet JSON contenant une clé "tool".
+    const firstBrace = text.indexOf('{');
+    if (firstBrace === -1) return null;
 
-    const parsed = JSON.parse(cleaned);
-    if (parsed.tool && typeof parsed.tool === 'string') {
+    // Tente d'abord le parse direct à partir de la première accolade.
+    const candidate = text.slice(firstBrace);
+    const parsed = JSON.parse(candidate);
+    if (parsed && parsed.tool && typeof parsed.tool === 'string') {
       return { tool: parsed.tool, params: parsed.params || {} };
     }
     return null;
   } catch {
+    // Parse direct échoué (accolade déséquilibrée / JSON partiel) : on
+    // extrait le plus grand sous-objet JSON équilibré contenant "tool".
+    try {
+      const match = extractToolObject(text);
+      if (match && match.tool && typeof match.tool === 'string') {
+        return { tool: match.tool, params: match.params || {} };
+      }
+    } catch {
+      /* ignore */
+    }
     return null;
   }
+}
+
+/** Extrait le premier objet JSON équilibré contenant une clé `tool`. */
+function extractToolObject(text: string): { tool: string; params: any } | null {
+  const start = text.indexOf('{');
+  if (start === -1) return null;
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = start; i < text.length; i++) {
+    const c = text[i];
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (c === '\\') {
+      escape = true;
+      continue;
+    }
+    if (c === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (c === '{') depth++;
+    else if (c === '}') {
+      depth--;
+      if (depth === 0) {
+        const slice = text.slice(start, i + 1);
+        const parsed = JSON.parse(slice);
+        if (parsed && parsed.tool && typeof parsed.tool === 'string') {
+          return { tool: parsed.tool, params: parsed.params || {} };
+        }
+        return null;
+      }
+    }
+  }
+  return null;
 }

@@ -114,8 +114,123 @@ export function registerAppTools() {
     }
   };
 
+  const readProcedureTool: AppTool = {
+    name: 'read_procedure',
+    description: "Lire une procédure industrielle stockée dans le Registre physique (.registry/procedures/{code}/procedure.json). Renvoie le guidage pas-à-pas (prérequis, étapes, alarmes, remèdes). Utilise si l'utilisateur demande 'lis la procédure X', 'affiche les étapes de ...', 'que faire pour la procédure CRF-START-001'.",
+    parameters: {
+      type: 'object',
+      properties: {
+        code: { type: 'string', description: "Code de la procédure, ex: CRF-START-001 (insensible à la casse/format)" },
+        title: { type: 'string', description: "Titre ou partie du titre si le code est inconnu" }
+      }
+    },
+    execute: async (params) => {
+      try {
+        const code = (params.code as string || '').toString().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+        const titleQuery = (params.title as string || '').toLowerCase();
+
+        // 1. Mode local/hybride : lecture directe du Registre physique.
+        const REGISTRY_OVERRIDE = process.env.REGISTRY_ROOT_OVERRIDE?.trim();
+        const REGISTRY_ROOT = REGISTRY_OVERRIDE
+          ? REGISTRY_OVERRIDE
+          : require('path').join(process.cwd(), '.registry');
+        const PROC_DIR = require('path').join(REGISTRY_ROOT, 'procedures');
+
+        const candidates: string[] = [];
+        if (require('fs').existsSync(PROC_DIR)) {
+          for (const entry of require('fs').readdirSync(PROC_DIR, { withFileTypes: true })) {
+            if (!entry.isDirectory()) continue;
+            const procPath = require('path').join(PROC_DIR, entry.name, 'procedure.json');
+            if (require('fs').existsSync(procPath)) candidates.push(procPath);
+          }
+        }
+
+        let chosen: any = null;
+        for (const p of candidates) {
+          let parsed: any = null;
+          try { parsed = JSON.parse(require('fs').readFileSync(p, 'utf8')); } catch { continue; }
+          const meta = parsed?.metadata || {};
+          const metaCode = (meta.code || '').toString().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+          const metaTitle = (meta.title || '').toString().toLowerCase();
+          if (code && (metaCode.includes(code) || p.toLowerCase().includes(code))) { chosen = parsed; break; }
+          if (titleQuery && metaTitle.includes(titleQuery)) { chosen = parsed; break; }
+        }
+
+        // 2. Fallback cloud (web) : recherche dans knowledgeItem par tag regpath.
+        if (!chosen) {
+          try {
+            const { getPrismaClient } = await import('@/lib/db/prisma-client');
+            const prisma = await getPrismaClient();
+            const items = await prisma.knowledgeItem.findMany({
+              where: { tags: { has: 'regpath:procedures' }, type: 'procedure' },
+              take: 50,
+            });
+            for (const it of items) {
+              let parsed: any = null;
+              try { parsed = typeof it.content === 'string' ? JSON.parse(it.content) : it.content; } catch { continue; }
+              const meta = parsed?.metadata || {};
+              const metaCode = (meta.code || '').toString().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+              const metaTitle = (meta.title || '').toString().toLowerCase();
+              if (code && (metaCode.includes(code))) { chosen = parsed; break; }
+              if (titleQuery && metaTitle.includes(titleQuery)) { chosen = parsed; break; }
+            }
+          } catch { /* cloud indisponible */ }
+        }
+
+        if (!chosen) {
+          return { success: false, error: `Procédure introuvable${code ? ` pour le code "${params.code}"` : ''}.` };
+        }
+
+        const meta = chosen.metadata || {};
+        const steps = Array.isArray(chosen.steps) ? chosen.steps : [];
+        const prereq = chosen.prerequisites?.items || [];
+        const alarms = steps.flatMap((s: any) => Array.isArray(s.alarms) ? s.alarms : []);
+
+        const lines: string[] = [];
+        lines.push(`# ${meta.code || ''} — ${meta.title || 'Procédure'}`);
+        lines.push(`Catégorie: ${meta.category || 'N/A'} | Criticité: ${meta.criticality || 'N/A'} | Version: ${meta.version || 'N/A'}`);
+        if (prereq.length) {
+          lines.push('\n## Prérequis');
+          for (const pr of prereq) lines.push(`- ${pr.displayName || pr.id} : ${pr.description || ''} (${pr.manualCheckInstruction || 'vérification manuelle'})`);
+        }
+        if (steps.length) {
+          lines.push('\n## Étapes (guidage pas-à-pas)');
+          steps.forEach((s: any, i: number) => {
+            lines.push(`\n${i + 1}. ${s.title || ''} — ${s.subtitle || ''}`);
+            if (s.description) lines.push(`   ${s.description}`);
+            if (s.action?.instruction) lines.push(`   Action: ${s.action.instruction}`);
+            const stepAlarms = Array.isArray(s.alarms) ? s.alarms : [];
+            for (const a of stepAlarms) {
+              lines.push(`   ⚠️ Alarme ${a.code || ''} (${a.severity || ''}): ${a.description || ''}`);
+              if (a.remedy?.steps?.length) lines.push(`      Remède: ${a.remedy.steps.join(' → ')}`);
+            }
+          });
+        }
+        if (alarms.length) {
+          lines.push('\n## Alarmes & remèdes');
+          for (const a of alarms) {
+            lines.push(`- ${a.code || ''} (${a.severity || ''}): ${a.description || ''} → ${a.remedy?.title || ''}`);
+          }
+        }
+
+        return {
+          success: true,
+          data: { text: lines.join('\n') || 'Procédure vide.' },
+          procedureId: meta.code,
+          // Lien direct vers le Guide IA (Procedure Guide) — exploité par le
+          // chat pour lancer le guidage pas-à-pas depuis la conversation.
+          guideUrl: `/procedures/guide/${encodeURIComponent(meta.code)}`,
+          executeUrl: `/procedures/${encodeURIComponent(meta.code)}/execute`,
+        };
+      } catch (e: any) {
+        return { success: false, error: `Erreur lecture procédure: ${e.message}` };
+      }
+    }
+  };
+
   toolRegistry.register(procedureTool);
   toolRegistry.register(bankTool);
   toolRegistry.register(knowledgeTool);
   toolRegistry.register(visionTool);
+  toolRegistry.register(readProcedureTool);
 }

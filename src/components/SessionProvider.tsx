@@ -1,10 +1,11 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback, useRef, type ReactNode } from 'react';
 import { usePlatform } from '@/components/PlatformProvider';
 import { localAuth } from '@/lib/auth/local-auth';
 import { validateLocalSession } from '@/lib/local-sql';
 import { getDesktopSession, saveDesktopSession, clearDesktopSession } from '@/lib/desktop-session';
+import { LOCAL_ONLY_KEY } from '@/hooks/use-app-mode';
 
 export interface SessionUser {
   id: string;
@@ -33,6 +34,10 @@ interface SessionContextValue {
   pendingCount: number;
   status: SessionStatus;
   source?: SessionSource;
+  /** Vrai quand une session locale existe en mémoire mais que la base SQLite
+   * locale est indisponible (corrompue/verrouillée) : l'utilisateur est
+   * déconnecté et l'UI doit afficher "Mode dégradé — base locale indisponible". */
+  degraded: boolean;
   refresh: () => Promise<void>;
   /** Établit une session (utilisé par le handoff web→desktop). */
   login: (user: SessionUser, opts?: { persist?: boolean; source?: SessionSource }) => void;
@@ -66,6 +71,32 @@ export function SessionProvider({
   const [pendingCount, setPendingCount] = useState(0);
   const [status, setStatus] = useState<SessionStatus>(initialUser ? 'authenticated' : 'loading');
   const [source, setSource] = useState<SessionSource | undefined>(initialUser ? 'server' : undefined);
+  const [degraded, setDegraded] = useState(false);
+
+  const cloudLoginJustCalledRef = useRef(false);
+
+  // Restaure la session depuis la base SQLite locale. Détecte le cas "Mode dégradé"
+  // (session locale en mémoire mais base SQLite indisponible) pour l'indiquer à l'UI.
+  const restoreLocal = useCallback(async () => {
+    const stored = localAuth.getCurrentSession();
+    const validated = await validateLocalSession(stored);
+    if (validated) {
+      localAuth.saveSession(validated);
+      setUser(validated);
+      setSource('local');
+      setStatus('authenticated');
+      setDegraded(false);
+    } else {
+      const hadSession = !!stored?.id && !!stored?.email;
+      localAuth.clearSession();
+      clearDesktopSession();
+      setUser(undefined);
+      setSource(undefined);
+      setStatus('unauthenticated');
+      // Session locale présente mais base locale illisible → mode dégradé.
+      setDegraded(hadSession);
+    }
+  }, []);
 
   const load = useCallback(async () => {
     // Le desktop n'a pas d'API locale : on ne sonde pas /api/auth/me.
@@ -90,48 +121,86 @@ export function SessionProvider({
   // Restauration de la session sur desktop (une fois la plateforme résolue).
   useEffect(() => {
     if (!isReady || initialUser || !isDesktop) return;
+
+    if (cloudLoginJustCalledRef.current) {
+      cloudLoginJustCalledRef.current = false;
+      return;
+    }
+
+    // Mode Locale uniquement : on ignore toute session cloud persistée et on
+    // restaure uniquement depuis la base SQLite locale (validateLocalSession).
+    const localOnlyActive =
+      typeof localStorage !== 'undefined' && localStorage.getItem(LOCAL_ONLY_KEY) === '1';
+
+    if (localOnlyActive) {
+      void restoreLocal();
+      return;
+    }
+
     const cloud = getDesktopSession();
     if (cloud?.id) {
       setUser(cloud as SessionUser);
       setSource('cloud');
       setStatus('authenticated');
     } else {
-      (async () => {
-        const stored = localAuth.getCurrentSession();
-        const validated = await validateLocalSession(stored);
-        if (validated) {
-          localAuth.saveSession(validated);
-          setUser(validated);
-          setSource('local');
-          setStatus('authenticated');
-        } else {
-          localAuth.clearSession();
-          setUser(undefined);
-          setSource(undefined);
-          setStatus('unauthenticated');
-        }
-      })();
+      void restoreLocal();
     }
-  }, [isReady, initialUser, isDesktop]);
+  }, [isReady, initialUser, isDesktop, restoreLocal]);
 
   useEffect(() => {
     if (isReady) void load();
   }, [load, isReady]);
 
+  // Sécurité : si la plateforme n'est jamais résolue (cas hybride/desktop
+  // bloqué au montage), on ne laisse pas l'UI coincée indéfiniment en 'loading'.
+  useEffect(() => {
+    const id = setTimeout(() => {
+      setStatus((s) => (s === 'loading' ? 'unauthenticated' : s));
+    }, 5000);
+    return () => clearTimeout(id);
+  }, []);
+
   const login = useCallback((u: SessionUser, opts?: { persist?: boolean; source?: SessionSource }) => {
+    if (opts?.source === 'cloud') {
+      cloudLoginJustCalledRef.current = true;
+    }
+    setDegraded(false);
     setUser(u);
     setSource(opts?.source ?? 'cloud');
     setStatus('authenticated');
-    if (opts?.persist !== false) saveDesktopSession(u);
+    // En mode Locale uniquement (source 'local'), on n'écrit PAS de session
+    // cloud persistée sur desktop : la session doit rester strictement locale.
+    if (opts?.persist === true && opts?.source !== 'local') saveDesktopSession(u);
   }, []);
 
   const logout = useCallback(() => {
     clearDesktopSession();
+    try {
+      localStorage.removeItem(LOCAL_ONLY_KEY);
+    } catch {
+      /* ignore */
+    }
     if (isDesktop) {
       const local = localAuth.getCurrentSession();
-      setUser(local ?? undefined);
-      setStatus(local ? 'authenticated' : 'unauthenticated');
-      setSource(local ? 'local' : undefined);
+      // En mode Locale uniquement, un logout réel doit déconnecter : on purge
+      // la session locale et on ne reconnecte pas automatiquement.
+      const localOnlyActive =
+        typeof localStorage !== 'undefined' && localStorage.getItem(LOCAL_ONLY_KEY) === '1';
+      if (localOnlyActive) {
+        localAuth.clearSession();
+        setDegraded(false);
+        setUser(undefined);
+        setStatus('unauthenticated');
+        setSource(undefined);
+      } else if (local) {
+        setUser(local);
+        setStatus('authenticated');
+        setSource('local');
+      } else {
+        setUser(undefined);
+        setStatus('unauthenticated');
+        setSource(undefined);
+      }
     } else {
       setUser(undefined);
       setStatus('unauthenticated');
@@ -145,6 +214,12 @@ export function SessionProvider({
       setPendingCount(0);
       return;
     }
+    try {
+      if (typeof localStorage !== 'undefined' && localStorage.getItem('visionode-mode-local-only') === '1') {
+        setPendingCount(0);
+        return;
+      }
+    } catch {}
     const fetchPending = async () => {
       try {
         const res = await fetch('/api/auth/pending-count', { headers: { Accept: 'application/json' } });
@@ -160,7 +235,7 @@ export function SessionProvider({
   }, [user?.role]);
 
   return (
-    <SessionContext.Provider value={{ user, role: user?.role, pendingCount, status, source, refresh: load, login, logout }}>
+    <SessionContext.Provider value={{ user, role: user?.role, pendingCount, status, source, degraded, refresh: load, login, logout }}>
       {children}
     </SessionContext.Provider>
   );

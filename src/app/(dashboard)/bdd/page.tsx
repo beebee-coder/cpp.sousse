@@ -28,8 +28,14 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
+import { isDesktop } from '@/lib/platform';
+import { useAppMode } from '@/hooks/use-app-mode';
+import { useSession } from '@/components/SessionProvider';
+import { localDBBridge, type FSNode as BridgeFSNode, type InjectResult } from '@/lib/local-db-bridge';
+import { indexLocalDBFile, indexLocalDBFolder } from '@/lib/local-indexer';
 import { apiClient } from '@/lib/api-client';
 import { useToast } from '@/hooks/use-toast';
+import { useEvictionToast } from '@/hooks/use-eviction-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { useRouter } from 'next/navigation';
 
@@ -60,12 +66,27 @@ interface FSNode {
 
 export default function BDDPage() {
   const { toast } = useToast();
+  useEvictionToast();
   const router = useRouter();
+  const { user } = useSession();
+  const { localOnly } = useAppMode();
   const [mounted, setMounted] = useState(false);
   const [mode, setMode] = useState<'web' | 'chroma' | 'locale'>('web');
   const [tree, setTree] = useState<FSNode[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isCloudMode, setIsCloudMode] = useState(false);
+
+  // Synchronisation de l'onglet UI avec le flag global localOnly :
+  //  - localOnly actif sur desktop → on bascule sur l'onglet "locale" (source SQLite réelle).
+  //  - web pur (pas de SQLite/Tauri) → l'onglet "locale" est impossible, on force "web".
+  // Cela évite le conflit entre l'axe UI (`mode`) et le flag `useAppMode.localOnly`.
+  useEffect(() => {
+    if (localOnly && isDesktop) {
+      setMode('locale');
+    } else if (!isDesktop && mode === 'locale') {
+      setMode('web');
+    }
+  }, [localOnly, isDesktop, mode]);
 
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [fileContent, setFileContent] = useState('');
@@ -143,6 +164,10 @@ export default function BDDPage() {
   }, []);
 
   const refreshRegistry = useCallback(async (isInitial = false) => {
+    if (mode === 'locale' && (!isDesktop || localOnly)) {
+      if (!isInitial) toast({ title: "Mode locale : registre cloud indisponible", variant: "destructive" });
+      return;
+    }
     setIsLoading(true);
     try {
       const res = await apiClient.get<any>('/api/registry');
@@ -158,6 +183,20 @@ export default function BDDPage() {
   }, [toast, mergeTreeState]);
 
   const refreshChroma = useCallback(async () => {
+    // En mode WEB hors-ligne, il n'existe AUCUN moteur vectoriel local côté
+    // navigateur : le fetch cloud échouerait après ~15 s d'attente. On court-
+    // circuite immédiatement avec un message explicite (pas de faux "erreur
+    // réseau" après timeout).
+    if (!isDesktop && !navigator.onLine) {
+      setIsLoading(false);
+      setTree([]);
+      toast({ title: "ChromaDB indisponible", description: "Le moteur vectoriel local nécessite l'application desktop (mode hybride/locale).", variant: "destructive" });
+      return;
+    }
+    // L'onglet ChromaDB est accessible en local (moteur embarqué JS en web,
+    // moteur Rust natif en desktop) ainsi qu'en hybride. Il n'est bloqué
+    // QUE côté cloud (Vercel) où le moteur local n'existe pas — l'API
+    // /api/vector/collections renvoie alors une erreur capturée ci-dessous.
     setIsLoading(true);
     try {
       const res = await apiClient.get<any>('/api/vector/collections');
@@ -199,33 +238,40 @@ export default function BDDPage() {
   const refreshLocalDB = useCallback(async () => {
     setIsLoading(true);
     try {
-      const res = await apiClient.get<any>('/api/local-db');
-      if (res && res.success && Array.isArray(res.tree)) {
-        setTree(prev => mergeTreeState(prev, res.tree));
-      } else {
-        setTree([]);
-      }
-    } catch (e) {
+      const tree = await localDBBridge.getTree();
+      setTree(tree);
+    } catch (e: any) {
       setTree([]);
+      if (mode === 'locale') toast({ title: "Erreur chargement BDD locale", description: e.message, variant: "destructive" });
     } finally {
       setIsLoading(false);
     }
-  }, [mergeTreeState]);
+  }, [mode, toast]);
 
   useEffect(() => {
-    if (mounted) {
-      if (mode === 'web') refreshRegistry(true);
-      else if (mode === 'chroma') refreshChroma();
-      else if (mode === 'locale') {
+    if (!mounted) return;
+    if (mode === 'web') {
+      refreshRegistry(true);
+    } else if (mode === 'chroma') {
+      if (isDesktop && !localOnly) {
+        refreshChroma();
+      } else {
+        setTree([]);
+        toast({ title: "Mode locale : ChromaDB cloud indisponible", variant: "destructive" });
+      }
+    } else if (mode === 'locale') {
+      if (isDesktop) {
         refreshLocalDB();
+      } else {
+        setTree([]);
+        toast({ title: "BDD Locale indisponible en mode Web", variant: "destructive" });
       }
     }
-  }, [mode, mounted, refreshRegistry, refreshChroma, refreshLocalDB]);
+  }, [mode, mounted, refreshRegistry, refreshChroma, refreshLocalDB, isDesktop, localOnly, toast]);
 
   const handleFileClick = async (node: FSNode) => {
     if (node.id === selectedFile) return;
     if (node.type === 'file') {
-      // Nœud issu de l'arborescence miroir ChromaDB (BDD Locale indexée)
       if (mode === 'chroma' && node.metadata?.relPath) {
         try {
           const res = await apiClient.get<any>(`/api/vector/documents?relPath=${encodeURIComponent(node.metadata.relPath)}`);
@@ -242,19 +288,17 @@ export default function BDDPage() {
         return;
       }
       try {
-        let res;
+        let content: string;
         if (mode === 'locale') {
-          res = await apiClient.get<any>(`/api/local-db?path=${encodeURIComponent(node.id)}`);
+          content = await localDBBridge.getFile(node.id);
         } else {
-          res = await apiClient.get<any>(`/api/registry?path=${encodeURIComponent(node.id)}`);
+          const res = await apiClient.get<any>(`/api/registry?path=${encodeURIComponent(node.id)}`);
+          if (!res.success) throw new Error(res.error);
+          content = res.content;
         }
-        if (res.success) {
-          setSelectedFile(node.id);
-          setFileContent(res.content);
-          setIsEditing(false);
-        } else {
-          throw new Error(res.error);
-        }
+        setSelectedFile(node.id);
+        setFileContent(content);
+        setIsEditing(false);
       } catch (e: any) {
         toast({ title: "Fichier indisponible", description: "Il a peut-être été supprimé.", variant: "destructive" });
         if (mode === 'locale') refreshLocalDB();
@@ -284,17 +328,13 @@ export default function BDDPage() {
     }
 
     try {
-      let res;
       if (mode === 'locale') {
-        res = await apiClient.delete<any>(`/api/local-db?path=${encodeURIComponent(id)}`);
+        await localDBBridge.deleteItem(id);
       } else {
-        res = await apiClient.delete<any>(`/api/registry?path=${encodeURIComponent(id)}`);
+        const res = await apiClient.delete<any>(`/api/registry?path=${encodeURIComponent(id)}`);
+        if (!res.success) throw new Error(res.error || "Erreur serveur");
       }
-      if (res.success) {
-        toast({ title: "Élément supprimé du disque" });
-      } else {
-        throw new Error(res.error || "Erreur serveur");
-      }
+      toast({ title: "Élément supprimé du disque" });
     } catch (error: any) {
       setTree(previousTree);
       toast({ 
@@ -308,6 +348,10 @@ export default function BDDPage() {
   // Suppression d'un nœud (répertoire ou fichier) dans Vecteurs ChromaDB
   const deleteChromaNode = async (node: FSNode) => {
     if (!confirm(`Supprimer définitivement "${node.id}" de Vecteurs ChromaDB ?`)) return;
+    if (!isDesktop || localOnly) {
+      toast({ title: "Mode locale : suppression ChromaDB désactivée", variant: "destructive" });
+      return;
+    }
     try {
       let res;
       if (node.type === 'collection') {
@@ -330,16 +374,19 @@ export default function BDDPage() {
   const saveFileChanges = async () => {
     if (!selectedFile) return;
     try {
-      const endpoint = mode === 'locale' ? '/api/local-db' : '/api/registry';
-      const res = await apiClient.put(endpoint, { path: selectedFile, content: fileContent });
-      if (res.success) {
-        setIsEditing(false);
-        toast({ title: "Modification sauvegardée" });
-        if (mode === 'locale') refreshLocalDB();
-        else refreshRegistry();
+      if (mode === 'locale') {
+        await localDBBridge.writeFile(selectedFile, fileContent);
+      } else {
+        const endpoint = '/api/registry';
+        const res = await apiClient.put(endpoint, { path: selectedFile, content: fileContent });
+        if (!res.success) throw new Error(res.error || "Erreur sauvegarde");
       }
+      setIsEditing(false);
+      toast({ title: "Modification sauvegardée" });
+      if (mode === 'locale') refreshLocalDB();
+      else refreshRegistry();
     } catch (e: any) {
-      toast({ title: "Erreur sauvegarde", variant: "destructive" });
+      toast({ title: "Erreur sauvegarde", description: e.message, variant: "destructive" });
     }
   };
 
@@ -348,19 +395,25 @@ export default function BDDPage() {
     const path = newModal.parent ? `${newModal.parent}/${newName}` : newName;
     const finalPath = newModal.type === 'file' && !path.endsWith('.json') ? `${path}.json` : path;
     try {
-      const endpoint = mode === 'locale' ? '/api/local-db' : '/api/registry';
-      const res = await apiClient.post(endpoint, { 
-        path: finalPath, 
-        type: newModal.type, 
-        content: '{}' 
-      });
-      if (res.success) {
-        setNewModal({ ...newModal, isOpen: false });
-        setNewName('');
-        toast({ title: "Création réussie" });
-        if (mode === 'locale') refreshLocalDB();
-        else refreshRegistry();
+      if (mode === 'locale') {
+        if (newModal.type === 'folder') {
+          await localDBBridge.createFolder(finalPath);
+        } else {
+          await localDBBridge.writeFile(finalPath, '{}');
+        }
+      } else {
+        const res = await apiClient.post('/api/registry', { 
+          path: finalPath, 
+          type: newModal.type, 
+          content: '{}' 
+        });
+        if (!res.success) throw new Error(res.error || "Erreur création");
       }
+      setNewModal({ ...newModal, isOpen: false });
+      setNewName('');
+      toast({ title: "Création réussie" });
+      if (mode === 'locale') refreshLocalDB();
+      else refreshRegistry();
     } catch (e: any) {
       toast({ title: "Erreur", description: e.message, variant: "destructive" });
     }
@@ -369,16 +422,18 @@ export default function BDDPage() {
   const handleRename = async () => {
     if (!renameValue.trim()) return;
     try {
-      const endpoint = mode === 'locale' ? '/api/local-db' : '/api/registry';
-      const res = await apiClient.patch(endpoint, { path: renameModal.path, newName: renameValue });
-      if (res.success) {
-        setRenameModal({ ...renameModal, isOpen: false });
-        toast({ title: "Renommé avec succès" });
-        if (mode === 'locale') await refreshLocalDB();
-        else await refreshRegistry();
+      if (mode === 'locale') {
+        await localDBBridge.renameItem(renameModal.path, renameValue);
+      } else {
+        const res = await apiClient.patch('/api/registry', { path: renameModal.path, newName: renameValue });
+        if (!res.success) throw new Error(res.error || "Erreur renommage");
       }
+      setRenameModal({ ...renameModal, isOpen: false });
+      toast({ title: "Renommé avec succès" });
+      if (mode === 'locale') await refreshLocalDB();
+      else await refreshRegistry();
     } catch (e: any) {
-      toast({ title: "Erreur lors du renommage", variant: "destructive" });
+      toast({ title: "Erreur lors du renommage", description: e.message, variant: "destructive" });
     }
   };
 
@@ -387,11 +442,14 @@ export default function BDDPage() {
     setIndexing({ id: relPath, label: relPath, done: 0, total: 1 });
     toast({ title: "Vectorisation démarrée", description: `Indexation de ${relPath}…` });
     try {
-      const res = await apiClient.post<any>('/api/local-db', { action: 'index', path: relPath });
-      if (res.success) {
-        toast({ title: "✅ Fichier vectorisé avec succès", description: `${relPath} → Vecteurs ChromaDB (${res.chunkCount} chunks)` });
+      const result = await indexLocalDBFile(relPath);
+      if (result.success) {
+        toast({ title: "✅ Fichier vectorisé avec succès", description: `${relPath} → Vecteurs ChromaDB (${result.chunkCount} chunks)` });
+        if (result.evicted && result.evicted > 0) {
+          toast({ title: "⚠️ Contexte vectorisé évincé", description: `${result.evicted} document(s) retiré(s) par la limite LRU (50k docs / 50 Mo).`, variant: "destructive" });
+        }
       } else {
-        throw new Error(res.message || res.error || "Échec de l'indexation");
+        throw new Error(result.error || result.message || "Échec de l'indexation");
       }
     } catch (e: any) {
       toast({ title: "❌ Échec de la vectorisation", description: e.message, variant: "destructive" });
@@ -417,26 +475,30 @@ export default function BDDPage() {
     const failures: string[] = [];
     const CONCURRENCY = 5;
 
-    const processChunk = async (chunk: string[]) => {
-      const results = await Promise.allSettled(
-        chunk.map(f =>
-          apiClient.post<any>('/api/local-db', { action: 'index', path: f }).then(res => ({ f, res }))
-        )
-      );
-      for (const r of results) {
-        if (r.status === 'fulfilled') {
-          const { f, res } = r.value;
-          if (res.success) ok++;
-          else failures.push(`${f}: ${res.message || res.error}`);
-        } else {
-          failures.push(`unknown: ${r.reason}`);
+    try {
+      const processChunk = async (chunk: string[]) => {
+        const results = await Promise.allSettled(
+          chunk.map(f =>
+            indexLocalDBFile(f).then(res => ({ f, res }))
+          )
+        );
+        for (const r of results) {
+          if (r.status === 'fulfilled') {
+            const { f, res } = r.value;
+            if (res.success) ok++;
+            else failures.push(`${f}: ${res.error || res.message || 'ERREUR'}`);
+          } else {
+            failures.push(`${r.reason}`);
+          }
+          setIndexing(prev => ({ ...prev, done: prev.done + 1 }));
         }
-        setIndexing(prev => ({ ...prev, done: prev.done + 1 }));
-      }
-    };
+      };
 
-    for (let i = 0; i < files.length; i += CONCURRENCY) {
-      await processChunk(files.slice(i, i + CONCURRENCY));
+      for (let i = 0; i < files.length; i += CONCURRENCY) {
+        await processChunk(files.slice(i, i + CONCURRENCY));
+      }
+    } catch (e: any) {
+      failures.push(`global: ${e.message}`);
     }
 
     setIndexing({ id: null, label: '', done: 0, total: 0 });
@@ -575,16 +637,20 @@ export default function BDDPage() {
               <Button
                 size="sm"
                 variant={mode === 'locale' ? 'default' : 'ghost'}
-                onClick={() => setMode('locale')}
-                className={cn("h-7 px-3 text-[9px] font-bold uppercase", mode === 'locale' ? "bg-primary text-primary-foreground hover:bg-primary/95" : "text-muted-foreground hover:text-white hover:bg-white/5")}
+                disabled={!isDesktop}
+                onClick={() => isDesktop && setMode('locale')}
+                title={isDesktop ? undefined : "BDD Locale indisponible en mode Web (pas de SQLite)"}
+                className={cn("h-7 px-3 text-[9px] font-bold uppercase disabled:opacity-40 disabled:cursor-not-allowed", mode === 'locale' ? "bg-primary text-primary-foreground hover:bg-primary/95" : "text-muted-foreground hover:text-white hover:bg-white/5")}
               >
                 BDD Locale
               </Button>
               <Button
                 size="sm"
                 variant={mode === 'chroma' ? 'default' : 'ghost'}
-                onClick={() => setMode('chroma')}
-                className={cn("h-7 px-3 text-[9px] font-bold uppercase", mode === 'chroma' ? "bg-primary text-primary-foreground hover:bg-primary/95" : "text-muted-foreground hover:text-white hover:bg-white/5")}
+                disabled={isDesktop && localOnly}
+                onClick={() => !(isDesktop && localOnly) && setMode('chroma')}
+                title={isDesktop && localOnly ? "ChromaDB indisponible en mode Locale (desktop)" : undefined}
+                className={cn("h-7 px-3 text-[9px] font-bold uppercase disabled:opacity-40 disabled:cursor-not-allowed", mode === 'chroma' ? "bg-primary text-primary-foreground hover:bg-primary/95" : "text-muted-foreground hover:text-white hover:bg-white/5")}
               >
                 ChromaDB
               </Button>

@@ -20,7 +20,14 @@ import {
   Radio,
   Pause,
   Play,
-  Command
+  Command,
+  FileText,
+  Database,
+  Cloud,
+  Info,
+  ChevronDown,
+  ExternalLink,
+  BookOpen
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -166,6 +173,121 @@ function CountdownRing({ seconds, total = 3, onCancel }: { seconds: number; tota
         >
           <span className="text-[10px] font-bold leading-none">×</span>
         </button>
+      )}
+    </div>
+  );
+}
+
+/* ─── Source Attribution Block ───────────────────────────────────── */
+type ConfidenceLevel = 'high' | 'medium' | 'low' | 'none';
+
+function MessageAttribution({ message, onNavigate }: { message: any; onNavigate?: (url: string) => void }) {
+  const [expanded, setExpanded] = useState(false);
+  const hasSources = message.sources && message.sources.length > 0;
+  const hasRag = message.ragResults && message.ragResults.length > 0;
+  const confidence = (message.confidence || 'none') as ConfidenceLevel;
+  const hasConfidence = confidence !== 'none';
+
+  if (!hasSources && !hasRag && !hasConfidence) return null;
+
+  const confidenceConfig: Record<ConfidenceLevel, { label: string; className: string }> = {
+    high: { label: 'Haute confiance', className: 'text-emerald-400 border-emerald-400/30 bg-emerald-500/5' },
+    medium: { label: 'Confiance moyenne', className: 'text-yellow-400 border-yellow-400/30 bg-yellow-500/5' },
+    low: { label: 'Faible confiance', className: 'text-orange-400 border-orange-400/30 bg-orange-500/5' },
+    none: { label: 'Aucune confiance', className: 'text-muted-foreground border-border bg-muted/5' },
+  };
+
+  const originConfig: Record<string, { icon: any; label: string; color: string }> = {
+    REGISTRY_PROCEDURE: { icon: BookOpen, label: 'Procédure', color: 'text-primary border-primary/30 bg-primary/5' },
+    REGISTRY_ITEM: { icon: FileText, label: 'Document', color: 'text-secondary border-secondary/30 bg-secondary/5' },
+    LOCAL_DB: { icon: Database, label: 'DB Locale', color: 'text-blue-400 border-blue-400/30 bg-blue-500/5' },
+    CHROMA_LOCAL_DB: { icon: Database, label: 'Chroma', color: 'text-purple-400 border-purple-400/30 bg-purple-500/5' },
+    WEAVIATE_CLOUD: { icon: Cloud, label: 'Cloud', color: 'text-cyan-400 border-cyan-400/30 bg-cyan-500/5' },
+  };
+
+  const defaultOrigin = { icon: Info, label: 'Source', color: 'text-muted-foreground border-border bg-muted/5' };
+
+  const handleNavigate = (url: string) => {
+    if (onNavigate) onNavigate(url);
+    else window.open(url, '_blank');
+  };
+
+  return (
+    <div className="mt-2 space-y-1.5">
+      <div className="flex items-center gap-2 flex-wrap">
+        {hasConfidence && (
+          <span className={cn('text-[8px] font-code font-bold uppercase tracking-wider px-1.5 py-0.5 border rounded-sm', confidenceConfig[confidence].className)}>
+            {confidenceConfig[confidence].label}
+          </span>
+        )}
+        {message.provider && (
+          <span className="text-[8px] font-code text-muted-foreground uppercase tracking-wider">
+            via {message.provider}
+          </span>
+        )}
+        {message.procedureId && (
+          <>
+            <button
+              onClick={() => handleNavigate(`/procedures/guide/${encodeURIComponent(message.procedureId)}`)}
+              className="text-[8px] font-code text-secondary uppercase tracking-wider hover:underline flex items-center gap-1"
+            >
+              <BookOpen className="w-2.5 h-2.5" />
+              Guide IA {message.procedureId}
+            </button>
+            <button
+              onClick={() => handleNavigate(message.executeUrl || `/procedures/${message.procedureId}/execute`)}
+              className="text-[8px] font-code text-primary uppercase tracking-wider hover:underline flex items-center gap-1"
+            >
+              <ExternalLink className="w-2.5 h-2.5" />
+              Exécuter {message.procedureId}
+            </button>
+          </>
+        )}
+        {hasSources && (
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className="text-[8px] font-code text-muted-foreground uppercase tracking-wider hover:text-foreground flex items-center gap-1 transition-colors"
+          >
+            <ChevronDown className={cn('w-2.5 h-2.5 transition-transform', expanded ? 'rotate-180' : '')} />
+            {expanded ? 'Masquer' : 'Afficher'} les sources ({message.sources.length})
+          </button>
+        )}
+      </div>
+
+      {expanded && hasRag && (
+        <div className="space-y-1.5 pl-1 border-l border-border/50">
+          {message.ragResults.map((r: any, idx: number) => {
+            const origin = r.metadata?.origin || 'UNKNOWN';
+            const cfg = originConfig[origin] || defaultOrigin;
+            const Icon = cfg.icon;
+            const title = r.metadata?.title || r.metadata?.fileName || r.metadata?.parentDir || origin;
+            const score = r.score ? `${Math.round(r.score * 100)}%` : '';
+            const isProcedure = origin === 'REGISTRY_PROCEDURE';
+            // Le RAG procedures expose l'id sous la forme `proc:{CODE}` ; on en
+            // dérive le code pour router vers le Guide IA (Procedure Guide).
+            const procCode = isProcedure
+              ? (r.id?.startsWith('proc:') ? r.id.slice(5) : (r.metadata?.title || r.id))
+              : null;
+            const linkUrl = procCode ? `/procedures/guide/${encodeURIComponent(procCode)}` : null;
+
+            return (
+              <div
+                key={idx}
+                className={cn('flex items-center gap-2 text-[9px] font-code uppercase border rounded-sm px-2 py-1 transition-colors', cfg.color)}
+              >
+                <Icon className="w-3 h-3 shrink-0" />
+                {linkUrl ? (
+                  <button onClick={() => handleNavigate(linkUrl)} className="truncate hover:underline text-left flex-1">
+                    {title}
+                  </button>
+                ) : (
+                  <span className="truncate flex-1 text-left">{title}</span>
+                )}
+                {score && <span className="shrink-0 opacity-70">{score}</span>}
+              </div>
+            );
+          })}
+        </div>
       )}
     </div>
   );
@@ -528,27 +650,30 @@ export default function ChatPage() {
                           </div>
                         )}
 
-                        {/* Per-message TTS button + provider badge */}
-                        {voice.isSupported && (
-                          <div className="mt-3 flex justify-between items-center">
-                            <button
-                              onClick={() => { console.log('[CHAT:SPEAK_MESSAGE]', { text: m.content.slice(0, 120) }); voice.speak(m.content); }}
-                              title="Lire ce message"
-                              className={cn(
-                                'p-1.5 hover:bg-primary/10 rounded-sm flex items-center gap-1 transition-opacity',
-                                isCurrentlySpeaking ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-                              )}
-                            >
-                              <Volume2 className="w-3 h-3 text-muted-foreground hover:text-primary transition-colors" />
-                            </button>
-                            {m.provider && (
-                              <Badge variant="outline" className="text-[8px] bg-background font-code border-primary/30 py-0.5 uppercase text-primary">
-                                {m.provider}
-                              </Badge>
-                            )}
-                          </div>
-                        )}
-                      </div>
+                         {/* Per-message TTS button + provider badge */}
+                         {voice.isSupported && (
+                           <div className="mt-3 flex justify-between items-center">
+                             <button
+                               onClick={() => { console.log('[CHAT:SPEAK_MESSAGE]', { text: m.content.slice(0, 120) }); voice.speak(m.content); }}
+                               title="Lire ce message"
+                               className={cn(
+                                 'p-1.5 hover:bg-primary/10 rounded-sm flex items-center gap-1 transition-opacity',
+                                 isCurrentlySpeaking ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                               )}
+                             >
+                               <Volume2 className="w-3 h-3 text-muted-foreground hover:text-primary transition-colors" />
+                             </button>
+                             {m.provider && (
+                               <Badge variant="outline" className="text-[8px] bg-background font-code border-primary/30 py-0.5 uppercase text-primary">
+                                 {m.provider}
+                               </Badge>
+                             )}
+                           </div>
+                         )}
+
+                         {/* RAG source attribution */}
+                         {m.role === 'model' && <MessageAttribution message={m} />}
+                       </div>
                     </div>
                   </div>
                   );

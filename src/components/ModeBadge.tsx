@@ -58,11 +58,14 @@ const MODE_CONFIG: Record<AppMode, ModeStyle> = {
 };
 
 export function ModeBadge({ menuPlacement = 'bottom' }: { menuPlacement?: 'bottom' | 'top' }) {
-  const { mode, isDesktop, online, localOnly, setLocalOnly } = useAppMode();
+  const { mode, isDesktop, online, localOnly, setLocalOnly, cloudSyncEnabled } = useAppMode();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const cfg = MODE_CONFIG[mode];
   const { Icon } = cfg;
+
+  // Le badge de bascule desktop n'a de sens que sur l'application installée (Tauri).
+  if (!isDesktop) return null;
 
   useEffect(() => {
     if (!open) return;
@@ -128,7 +131,7 @@ export function ModeBadge({ menuPlacement = 'bottom' }: { menuPlacement?: 'botto
               setOpen(false);
             }}
             className={cn(
-              'w-full flex items-center gap-2 px-2 py-2 rounded-md text-left transition-colors',
+              'w-full flex items-center gap-2 px-2 py-2 rounded-md text-left transition-colors disabled:opacity-40 disabled:cursor-not-allowed',
               !localOnly ? 'bg-primary/10 text-primary' : 'hover:bg-muted/60 text-foreground'
             )}
           >
@@ -157,16 +160,13 @@ export function ModeBadge({ menuPlacement = 'bottom' }: { menuPlacement?: 'botto
             {localOnly && <Check className="w-3.5 h-3.5 shrink-0" />}
           </button>
 
-          {!isDesktop && (
-            <p className="px-2 pt-1 text-[8px] font-code uppercase text-muted-foreground/60 leading-tight">
-              Disponible sur l'application installée (Tauri).
-            </p>
-          )}
-          {!online && isDesktop && (
-            <p className="px-2 pt-1 text-[8px] font-code uppercase text-destructive/80 leading-tight">
-              Aucune connexion détectée.
-            </p>
-          )}
+          <p className="px-2 pt-1 text-[8px] font-code uppercase text-muted-foreground/60 leading-tight">
+            {cloudSyncEnabled
+              ? 'Synchronisation cloud active.'
+              : localOnly
+                ? 'Synchronisation cloud suspendue (mode locale).'
+                : 'Aucune connexion détectée.'}
+          </p>
         </div>
       )}
     </div>

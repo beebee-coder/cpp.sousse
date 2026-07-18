@@ -3,9 +3,12 @@ import { SignJWT, jwtVerify } from 'jose';
 import { authAudit } from '@/lib/auth-audit';
 
 const COOKIE_NAME = 'visionode-session';
-const SECRET = process.env.AUTH_SECRET || 'dev-secret-change-me';
+const SECRET = process.env.AUTH_SECRET;
 
-// encode secret as Uint8Array
+if (!SECRET) {
+  throw new Error('AUTH_SECRET environment variable is required');
+}
+
 const encodedSecret = new TextEncoder().encode(SECRET);
 
 export interface SessionUser {

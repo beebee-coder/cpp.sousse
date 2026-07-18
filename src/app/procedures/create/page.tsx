@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { DynamicProcedureForm } from '@/components/procedures/forms/DynamicProcedureForm';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
+import { apiClient } from '@/lib/api-client';
 
 export default function CreateProcedurePage() {
   const router = useRouter();
@@ -26,20 +27,16 @@ export default function CreateProcedurePage() {
   const handleSave = async (data: any) => {
     setIsSaving(true);
     try {
-      const res = await fetch('/api/procedures', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
+      const res = await apiClient.post<any>('/api/procedures', data);
       
-      if (res.ok) {
-        toast({ title: "Procédure enregistrée", description: "L'actif est prêt pour la revue." });
+      if (res.success) {
+        toast({ title: "Procédure enregistrée", description: res.offline ? "Sauvegardée dans le Registre local." : "L'actif est prêt pour la revue." });
         router.push('/procedures');
       } else {
-        throw new Error("Erreur de sauvegarde");
+        throw new Error(res.message || "Erreur de sauvegarde");
       }
-    } catch (e) {
-      toast({ title: "Échec", description: "Vérifiez les champs requis.", variant: "destructive" });
+    } catch (e: any) {
+      toast({ title: "Échec", description: e.message || "Vérifiez les champs requis.", variant: "destructive" });
     } finally {
       setIsSaving(false);
     }

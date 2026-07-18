@@ -9,7 +9,7 @@ import { useAppMode } from '@/hooks/use-app-mode';
  * Hybride : design fusion/bridge
  * Locale : design offline/batterie
  */
-export function ModeBadge() {
+export function ModeDotIndicator() {
   const { mode, isReady, online } = useAppMode();
 
   if (!isReady) return null;
@@ -68,7 +68,7 @@ export function ModeBadge() {
  * Card infos détaillées du mode (optionnel - pour dashboard)
  */
 export function ModeDetailCard() {
-  const { mode, online, localOnly, setLocalOnly } = useAppMode();
+  const { mode, online } = useAppMode();
 
   const details = {
     web: {
@@ -115,20 +115,6 @@ export function ModeDetailCard() {
           </div>
         ))}
       </div>
-      
-      {mode === 'hybride' && (
-        <div className="mt-4 pt-4 border-t border-purple-500/30">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={localOnly}
-              onChange={(e) => setLocalOnly(e.target.checked)}
-              className="w-4 h-4 rounded"
-            />
-            <span className="text-xs font-medium">Forcer mode locale uniquement</span>
-          </label>
-        </div>
-      )}
     </div>
   );
 }

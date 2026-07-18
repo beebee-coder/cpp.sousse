@@ -1,4 +1,4 @@
-import dotenv from 'dotenv';
+﻿import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
@@ -79,7 +79,9 @@ async function main() {
         });
       }
 
-      const REGISTRY_ROOT = path.join(process.cwd(), '.registry');
+      // R1 — Aligné sur la racine Rust via REGISTRY_ROOT_OVERRIDE (Desktop).
+      const REGISTRY_OVERRIDE = process.env.REGISTRY_ROOT_OVERRIDE?.trim();
+      const REGISTRY_ROOT = REGISTRY_OVERRIDE ? REGISTRY_OVERRIDE : path.join(process.cwd(), '.registry');
       const { json: registryFiles, nonJson } = walkRegistry(REGISTRY_ROOT);
       console.log(`📂 [SEED] ${registryFiles.length} fichier(s) JSON détecté(s) dans .registry.`);
       if (nonJson > 0) {

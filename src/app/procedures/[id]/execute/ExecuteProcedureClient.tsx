@@ -14,6 +14,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useRouter } from 'next/navigation';
 import { FullProcedure } from '@/lib/procedures/types';
+import { apiClient } from '@/lib/api-client';
 
 export default function ExecuteProcedurePage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter();
@@ -26,12 +27,16 @@ export default function ExecuteProcedurePage({ params }: { params: Promise<{ id:
     const loadProcedure = async () => {
       setIsLoading(true);
       try {
-        const response = await fetch('/api/procedures');
-        const data = await response.json();
+        const data = await apiClient.get<any>('/api/procedures');
 
         if (data.success && data.procedures && data.procedures.length > 0) {
-          const target = resolvedParams.id
-            ? data.procedures.find((p: any) => p.id === resolvedParams.id)
+          const lookup = String(resolvedParams.id || '').trim();
+          // Résolution tolérante : par id EXACT d'abord, puis par code (Web ou
+          // Local, le code étant stable contrairement à l'_id offline généré).
+          const target = lookup
+            ? data.procedures.find((p: any) => p.id === lookup) ||
+              data.procedures.find((p: any) => String(p.code || '').toUpperCase() === lookup.toUpperCase()) ||
+              data.procedures.find((p: any) => String(p.code || '').toUpperCase().includes(lookup.toUpperCase()))
             : data.procedures[0];
 
           if (target) {
@@ -40,7 +45,7 @@ export default function ExecuteProcedurePage({ params }: { params: Promise<{ id:
             throw new Error("Actif introuvable");
           }
         } else {
-          throw new Error("Registre vide");
+          throw new Error(data.offline ? "Registre local vide" : "Registre vide");
         }
       } catch (e: any) {
         setError(e.message || "Erreur de liaison avec le registre.");

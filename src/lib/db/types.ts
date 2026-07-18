@@ -64,6 +64,8 @@ export interface SyncState {
   pendingUploads: number;
   pendingDownloads: number;
   status: 'idle' | 'syncing' | 'error';
+  /** Vrai quand l'utilisateur a forcé le mode « Locale uniquement » côté UI. */
+  localOnly?: boolean;
 }
 
 export type SyncProfile = 'admin-pc' | 'admin-mobile' | 'user-web' | 'user-local-web';

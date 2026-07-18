@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ModeBadge } from '@/components/ModeIndicator';
+import { ModeDotIndicator } from '@/components/ModeIndicator';
 
 export default function DemoIndex() {
   const demos = [
@@ -26,7 +26,7 @@ export default function DemoIndex() {
         {/* Header */}
         <div className="text-center mb-12">
           <div className="flex justify-center mb-4">
-            <ModeBadge />
+            <ModeDotIndicator />
           </div>
           <h1 className="text-4xl font-bold text-white mb-2">
             Mode System Demos

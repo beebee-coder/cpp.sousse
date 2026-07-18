@@ -8,6 +8,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { RefreshCw, CheckCircle2, AlertCircle, Clock, CloudDownload, Upload, Wifi } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useAppMode } from '@/hooks/use-app-mode';
 
 interface SyncState {
   lastSync: string | null;
@@ -23,6 +24,7 @@ interface SyncPanelProps {
 }
 
 export function SyncPanel({ userId, className }: SyncPanelProps) {
+  const { online, localOnly } = useAppMode();
   const [syncState, setSyncState] = useState<SyncState>({
     lastSync: null,
     status: 'idle',
@@ -30,6 +32,8 @@ export function SyncPanel({ userId, className }: SyncPanelProps) {
     downloadedCount: 0,
   });
   const [isAnimating, setIsAnimating] = useState(false);
+
+  const cloudDisabled = localOnly || !online;
 
   // Charger l'état de sync depuis localStorage au montage
   useEffect(() => {
@@ -48,6 +52,14 @@ export function SyncPanel({ userId, className }: SyncPanelProps) {
 
   const triggerSync = useCallback(async () => {
     if (syncState.status === 'syncing') return;
+    if (localOnly) {
+      setSyncState((prev) => ({ ...prev, status: 'error', errorMessage: 'Liaison cloud désactivée (mode locale uniquement).' }));
+      return;
+    }
+    if (!online) {
+      setSyncState((prev) => ({ ...prev, status: 'error', errorMessage: 'Aucune connexion détectée.' }));
+      return;
+    }
 
     setIsAnimating(true);
     setSyncState((prev) => ({ ...prev, status: 'syncing', errorMessage: undefined }));
@@ -177,7 +189,7 @@ export function SyncPanel({ userId, className }: SyncPanelProps) {
       {/* Bouton de sync */}
       <button
         onClick={triggerSync}
-        disabled={syncState.status === 'syncing'}
+        disabled={syncState.status === 'syncing' || cloudDisabled}
         className={cn(
           'w-full flex items-center justify-center gap-2 py-2 px-4 rounded text-xs font-bold uppercase tracking-widest transition-all duration-200',
           'border border-primary/30 bg-primary/10 text-primary',

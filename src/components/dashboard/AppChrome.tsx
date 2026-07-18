@@ -4,6 +4,7 @@ import { createContext, useContext, useState, type ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
 import { DashboardSidebar } from '@/components/dashboard/Sidebar';
 import { ModeBadge } from '@/components/ModeBadge';
+import { usePlatform } from '@/components/PlatformProvider';
 
 interface DashboardNavValue {
   mobileOpen: boolean;
@@ -32,6 +33,7 @@ export function useDashboardNav(): DashboardNavValue | null {
 export function AppChrome({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { isDesktop, isReady } = usePlatform();
 
   // Pas de chrome latéral sur les écrans d'authentification.
   if (pathname.startsWith('/auth')) {
@@ -53,10 +55,12 @@ export function AppChrome({ children }: { children: ReactNode }) {
           {children}
         </div>
 
-        {/* Badge de mode épinglé en bas à droite */}
-        <div className="fixed bottom-4 right-4 z-40 w-56 max-w-[calc(100vw-2rem)] pointer-events-auto">
-          <ModeBadge menuPlacement="top" />
-        </div>
+        {/* Badge de mode épinglé en bas à droite (desktop installé uniquement) */}
+        {isReady && isDesktop && (
+          <div className="fixed bottom-4 right-4 z-40 w-56 max-w-[calc(100vw-2rem)] pointer-events-auto">
+            <ModeBadge menuPlacement="top" />
+          </div>
+        )}
       </div>
     </DashboardNavContext.Provider>
   );
