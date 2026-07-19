@@ -31,6 +31,7 @@ import {
   DEFAULT_PROCEDURE_DEFAULTS,
   ProcedureDefaults,
 } from '@/lib/procedures/config';
+import { normalizeTemplateOptions } from '@/lib/procedures/offline-repo';
 import {
   Select,
   SelectContent,
@@ -313,7 +314,7 @@ export function DynamicProcedureForm({ onSubmit, isSaving }: DynamicProcedureFor
             value:      t.type === 'boolean' ? false : '',
             required:   t.required,
             description: t.description ?? undefined,
-            options:     t.options ?? undefined,
+            options:     normalizeTemplateOptions(t.options) ?? undefined,
           });
         } else {
           const idx = mergedFields.indexOf(existing);
@@ -323,7 +324,7 @@ export function DynamicProcedureForm({ onSubmit, isSaving }: DynamicProcedureFor
             type:       t.type,
             required:   t.required,
             description: t.description ?? undefined,
-            options:     t.options ?? undefined,
+            options:     normalizeTemplateOptions(t.options) ?? undefined,
           };
         }
       });

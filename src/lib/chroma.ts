@@ -6,7 +6,7 @@
 import path from 'path';
 import fs from 'fs';
 import { IS_CLOUD } from './config/env';
-import { tokenizeFr } from '@/lib/ai/tokenizer';
+import { tokenizeWithStems } from '@/lib/ai/tokenizer';
 
 export interface DocumentToAdd {
   id: string;
@@ -66,7 +66,7 @@ export async function getSystemContextSummary() {
 }
 
 function tokenize(text: string): string[] {
-  return tokenizeFr(text);
+  return tokenizeWithStems(text);
 }
 
 export function fallbackSemanticSearch(query: string, nResults = 5, componentFilter?: string): SearchResult[] {

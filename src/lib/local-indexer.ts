@@ -232,6 +232,63 @@ export const indexLocalDBFolder = async (dirRelPath: string): Promise<{ success:
   return { success: true, indexed, errors };
 };
 
+export interface FolderIndexProgress {
+  done: number;
+  total: number;
+}
+
+/**
+ * Variante d'`indexLocalDBFolder` avec suivi de progression.
+ * `onProgress(done, total)` est appelé après chaque fichier traité,
+ * permettant à l'UI d'afficher une barre/ligne de progression.
+ */
+export const indexLocalDBFolderWithProgress = async (
+  dirRelPath: string,
+  onProgress?: (p: FolderIndexProgress) => void
+): Promise<{ success: boolean; indexed?: number; errors?: string[]; error?: string }> => {
+  if (IS_CLOUD) return { success: false, error: 'CHROMA_CLOUD_UNSUPPORTED' };
+
+  const fullDir = path.join(LOCAL_DB_ROOT, dirRelPath);
+  if (!fs.existsSync(fullDir) || !fs.statSync(fullDir).isDirectory()) {
+    return { success: false, error: 'DOSSIER_INTROUVABLE' };
+  }
+
+  // Comptage préalable des fichiers texte indexables pour le total.
+  let total = 0;
+  const count = (dir: string) => {
+    for (const item of fs.readdirSync(dir, { withFileTypes: true })) {
+      const abs = path.join(dir, item.name);
+      if (item.isDirectory()) count(abs);
+      else if (TEXT_EXT.includes(path.extname(item.name).toLowerCase())) total++;
+    }
+  };
+  count(fullDir);
+
+  let done = 0;
+  let indexed = 0;
+  const errors: string[] = [];
+
+  const walk = async (dir: string, rel: string) => {
+    const items = fs.readdirSync(dir, { withFileTypes: true });
+    for (const item of items) {
+      const abs = path.join(dir, item.name);
+      const r = path.posix.join(rel, item.name).replace(/\\/g, '/');
+      if (item.isDirectory()) {
+        await walk(abs, r);
+      } else if (TEXT_EXT.includes(path.extname(item.name).toLowerCase())) {
+        const res = await indexLocalDBFile(r);
+        if (res.success) indexed++;
+        else errors.push(`${r}: ${res.error || 'ERREUR'}`);
+        done++;
+        onProgress?.({ done, total });
+      }
+    }
+  };
+
+  await walk(fullDir, dirRelPath);
+  return { success: true, indexed, errors };
+};
+
 /**
  * Reconstruit l'arborescence miroir (BDD Locale → ChromaDB) en reproduisant
  * EXACTEMENT la structure complète de la BDD Locale (tous les dossiers et

@@ -59,6 +59,39 @@ async function main() {
 
       console.log(`✅ [SEED] Admin configuré : ${admin.email}`);
 
+      // ── Champs de configuration (Attributs Personnalisés) par défaut ──────
+      // Permet une expérience immédiate et cohérente web ↔ offline.
+      const DEFAULT_CONFIG_FIELDS = [
+        { name: 'Pression de consigne', type: 'number', description: 'Pression cible en bar', required: true },
+        { name: 'Température', type: 'number', description: 'Température mesurée en °C', required: false },
+        { name: 'État vanne', type: 'select', description: 'Position de la vanne', required: false, options: ['Ouvert', 'Fermé', 'Maintenance'] },
+        { name: 'Validation opérateur', type: 'boolean', description: 'Confirmaction manuelle requise', required: false },
+        { name: 'Observation', type: 'text', description: 'Note libre de l\'opérateur', required: false },
+      ];
+
+      for (const f of DEFAULT_CONFIG_FIELDS) {
+        const id = `seed-cf-${f.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+        await tx.procedureFieldTemplate.upsert({
+          where: { id },
+          update: {
+            name: f.name,
+            type: f.type,
+            description: f.description ?? null,
+            options: (f as any).options ?? null,
+            required: f.required,
+          },
+          create: {
+            id,
+            name: f.name,
+            type: f.type,
+            description: f.description ?? null,
+            options: (f as any).options ?? null,
+            required: f.required,
+          },
+        });
+      }
+      console.log(`✅ [SEED] ${DEFAULT_CONFIG_FIELDS.length} champ(s) de configuration par défaut créé(s).`);
+
       const baseKnowledge = [
         {
           id: 'seed-k-epi-crf',

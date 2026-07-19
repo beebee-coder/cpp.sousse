@@ -196,6 +196,55 @@ export function deleteOfflineTemplate(id: string): boolean {
   return false;
 }
 
+/**
+ * Amorce le Registre offline avec les champs de configuration par défaut
+ * (cohérents avec le seed cloud) UNIQUEMENT si aucun template n'existe
+ * déjà. Idempotent : ne touche jamais aux templates créés par l'utilisateur.
+ */
+export const DEFAULT_OFFLINE_TEMPLATES: OfflineTemplateRecord[] = [
+  { id: 'seed-cf-pression-de-consigne', name: 'Pression de consigne', type: 'number', description: 'Pression cible en bar', options: null, required: true, createdAt: '', updatedAt: '' },
+  { id: 'seed-cf-temperature', name: 'Température', type: 'number', description: 'Température mesurée en °C', options: null, required: false, createdAt: '', updatedAt: '' },
+  { id: 'seed-cf-etat-vanne', name: 'État vanne', type: 'select', description: 'Position de la vanne', options: ['Ouvert', 'Fermé', 'Maintenance'], required: false, createdAt: '', updatedAt: '' },
+  { id: 'seed-cf-validation-operateur', name: 'Validation opérateur', type: 'boolean', description: 'Confirmation manuelle requise', options: null, required: false, createdAt: '', updatedAt: '' },
+  { id: 'seed-cf-observation', name: 'Observation', type: 'text', description: 'Note libre de l\'opérateur', options: null, required: false, createdAt: '', updatedAt: '' },
+];
+
+export function ensureDefaultTemplates(): void {
+  try {
+    if (listOfflineTemplates().length > 0) return;
+    const now = new Date().toISOString();
+    for (const t of DEFAULT_OFFLINE_TEMPLATES) {
+      upsertOfflineTemplate({ ...t, createdAt: now, updatedAt: now });
+    }
+  } catch {
+    /* FS read-only : ignoré */
+  }
+}
+
+/**
+ * Normalise les options d'un template en tableau de chaînes (string[]),
+ * unique format de stockage. Tolère : string[], string séparée par
+ * sauts de ligne, objets {value,label}, ou null/undefined → null.
+ */
+export function normalizeTemplateOptions(input: any): string[] | null {
+  if (input === null || input === undefined) return null;
+  if (typeof input === 'string') {
+    const lines = input.split('\n').map((l) => l.trim()).filter(Boolean);
+    return lines.length > 0 ? lines : null;
+  }
+  if (Array.isArray(input)) {
+    const out = input
+      .map((o: any) => {
+        if (typeof o === 'string') return o;
+        if (o && typeof o === 'object') return o.value ?? o.label ?? null;
+        return null;
+      })
+      .filter((v: any): v is string => typeof v === 'string' && v.length > 0);
+    return out.length > 0 ? out : null;
+  }
+  return null;
+}
+
 let templateChangeListeners: Array<() => void> = [];
 export function onTemplatesChanged(cb: () => void): () => void {
   templateChangeListeners.push(cb);

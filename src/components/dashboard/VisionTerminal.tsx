@@ -13,9 +13,32 @@ import { PlaceHolderImages } from '@/lib/placeholder-images';
 import { cn } from '@/lib/utils';
 import { apiClient } from '@/lib/api-client';
 
+/**
+ * Exécute un appel API avec un nombre limité de tentatives automatiques.
+ * Aligné sur le timeout du client (15 s) : on ne relance que sur erreur
+ * réseau/timeout, avec un court back-off.
+ */
+async function postWithRetry<T>(endpoint: string, body: any, retries = 1): Promise<T & { error?: unknown }> {
+  let lastErr: any = null;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await apiClient.post<T>(endpoint, body);
+      if ((res as any)?.error) throw new Error(String((res as any).error));
+      return res as T & { error?: unknown };
+    } catch (err: any) {
+      lastErr = err;
+      if (attempt < retries) {
+        await new Promise((r) => setTimeout(r, 800 * (attempt + 1)));
+      }
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
+}
+
 export function VisionTerminal() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [docsError, setDocsError] = useState<string | null>(null);
   const [result, setResult] = useState<VisionAssistantDescriptionOutput | null>(null);
   const [docs, setDocs] = useState<VisualDocumentRetrievalOutput | null>(null);
   const [currentImage, setCurrentImage] = useState<string>("");
@@ -33,31 +56,44 @@ export function VisionTerminal() {
     if (!currentImage) return;
     setIsAnalyzing(true);
     setError(null);
+    setDocsError(null);
     const timestamp = new Date().toLocaleTimeString();
 
-    try {
-      console.log(`📡 [${timestamp}] [CLIENT_UPLINK] Transmission vers le centre de vision...`);
-      
-      const analysis = await apiClient.post<VisionAssistantDescriptionOutput>('/api/vision/description', {
-        photoDataUri: currentImage
-      });
-      if (analysis.error) throw new Error(String(analysis.error));
-      setResult(analysis);
-      
-      const retrieved = await apiClient.post<VisualDocumentRetrievalOutput>('/api/vision/retrieval', {
-        imageDataUri: currentImage
-      });
-      if (retrieved.error) throw new Error(String(retrieved.error));
-      setDocs(retrieved);
+    console.log(`📡 [${timestamp}] [CLIENT_UPLINK] Transmission vers le centre de vision...`);
 
-      console.log(`✅ [${timestamp}] [CLIENT_SUCCESS] Analyse et RAG terminés avec succès.`);
-    } catch (err: any) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error(`❌ [${timestamp}] [CLIENT_ERROR] Liaison interrompue : ${msg}`);
+    // Description et RAG sont désormais indépendants : l'échec de l'un
+    // n'invalide plus le résultat de l'autre. On les exécute en parallèle,
+    // chacun avec son propre retry et sa propre gestion d'erreur.
+    const [analysisRes, retrievalRes] = await Promise.allSettled([
+      postWithRetry<VisionAssistantDescriptionOutput>('/api/vision/description', {
+        photoDataUri: currentImage,
+      }),
+      postWithRetry<VisualDocumentRetrievalOutput>('/api/vision/retrieval', {
+        imageDataUri: currentImage,
+      }),
+    ]);
+
+    if (analysisRes.status === 'fulfilled') {
+      setResult(analysisRes.value);
+    } else {
+      const msg = analysisRes.reason instanceof Error ? analysisRes.reason.message : String(analysisRes.reason);
+      console.error(`❌ [${timestamp}] [CLIENT_ERROR] Analyse échouée : ${msg}`);
       setError(msg || "Échec de liaison pendant l'analyse.");
-    } finally {
-      setIsAnalyzing(false);
     }
+
+    if (retrievalRes.status === 'fulfilled') {
+      setDocs(retrievalRes.value);
+    } else {
+      const msg = retrievalRes.reason instanceof Error ? retrievalRes.reason.message : String(retrievalRes.reason);
+      console.error(`❌ [${timestamp}] [CLIENT_ERROR] RAG échoué : ${msg}`);
+      setDocsError(msg || "Registre RAG indisponible.");
+    }
+
+    if (analysisRes.status === 'fulfilled' || retrievalRes.status === 'fulfilled') {
+      console.log(`✅ [${timestamp}] [CLIENT_SUCCESS] Analyse terminée (description ou RAG disponible).`);
+    }
+
+    setIsAnalyzing(false);
   };
 
   const cycleImage = () => {
@@ -72,6 +108,7 @@ export function VisionTerminal() {
       setResult(null);
       setDocs(null);
       setError(null);
+      setDocsError(null);
     }
   };
 
@@ -209,6 +246,13 @@ export function VisionTerminal() {
                   </div>
                 ))}
               </div>
+            </div>
+          ) : docsError ? (
+            <div className="h-full flex flex-col items-center justify-center text-destructive/70 py-6 sm:py-8 gap-2">
+              <AlertTriangle className="w-5 h-5 sm:w-6 sm:h-6" />
+              <p className="font-code text-[8px] sm:text-[9px] uppercase tracking-widest text-center">
+                Registre indisponible
+              </p>
             </div>
           ) : (
             <div className="h-full flex flex-col items-center justify-center text-muted-foreground/30 py-6 sm:py-8">

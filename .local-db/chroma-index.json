@@ -9,7 +9,7 @@
       "ids": [
         "INDEX_CHROMA/bank/test/metadata.json#0"
       ],
-      "indexedAt": "2026-07-18T11:41:08.634Z"
+      "indexedAt": "2026-07-19T10:29:22.460Z"
     },
     {
       "relPath": "INDEX_CHROMA/bank/test1/metadata.json",
@@ -19,7 +19,17 @@
       "ids": [
         "INDEX_CHROMA/bank/test1/metadata.json#0"
       ],
-      "indexedAt": "2026-07-18T11:41:08.640Z"
+      "indexedAt": "2026-07-19T10:29:22.464Z"
+    },
+    {
+      "relPath": "INDEX_CHROMA/bank/test_11/metadata.json",
+      "name": "metadata.json",
+      "parentDir": "INDEX_CHROMA/bank/test_11",
+      "collection": "locdb-index-chroma-bank-test-11",
+      "ids": [
+        "INDEX_CHROMA/bank/test_11/metadata.json#0"
+      ],
+      "indexedAt": "2026-07-19T10:29:22.467Z"
     },
     {
       "relPath": "INDEX_CHROMA/items/niveau-condenseur.json",
@@ -29,7 +39,7 @@
       "ids": [
         "INDEX_CHROMA/items/niveau-condenseur.json#0"
       ],
-      "indexedAt": "2026-07-18T11:41:08.643Z"
+      "indexedAt": "2026-07-19T10:29:22.472Z"
     },
     {
       "relPath": "INDEX_CHROMA/items/rag_qr_2026-07-15T14-56-03-057Z.json",
@@ -39,7 +49,7 @@
       "ids": [
         "INDEX_CHROMA/items/rag_qr_2026-07-15T14-56-03-057Z.json#0"
       ],
-      "indexedAt": "2026-07-18T11:41:08.650Z"
+      "indexedAt": "2026-07-19T10:29:22.479Z"
     },
     {
       "relPath": "INDEX_CHROMA/procedures/crf-start-001/procedure.json",
@@ -72,7 +82,7 @@
         "INDEX_CHROMA/procedures/crf-start-001/procedure.json#22",
         "INDEX_CHROMA/procedures/crf-start-001/procedure.json#23"
       ],
-      "indexedAt": "2026-07-18T11:41:08.669Z"
+      "indexedAt": "2026-07-19T10:29:22.500Z"
     },
     {
       "relPath": "INDEX_CHROMA/search-doc.json",
@@ -82,17 +92,7 @@
       "ids": [
         "INDEX_CHROMA/search-doc.json#0"
       ],
-      "indexedAt": "2026-07-18T11:41:08.673Z"
-    },
-    {
-      "relPath": "bank/test_11/metadata.json",
-      "name": "metadata.json",
-      "parentDir": "bank/test_11",
-      "collection": "locdb-bank-test-11",
-      "ids": [
-        "bank/test_11/metadata.json#0"
-      ],
-      "indexedAt": "2026-07-18T15:11:53.379Z"
+      "indexedAt": "2026-07-19T10:29:22.504Z"
     }
   ]
 }

@@ -236,6 +236,58 @@ export async function validateLocalSession(stored: { id: string; email: string; 
 }
 
 /** Insert/Sync d'un utilisateur dans la DB locale (appelé par la sync cloud→local). */
+export async function updateLocalUserProfile(id: string, update: {
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  newPassword?: string;
+}): Promise<LocalSessionUser | null> {
+  const db = await getLocalDb();
+  if (!db) return null;
+
+  try {
+    const sets: string[] = ['firstName=?', 'lastName=?', 'updatedAt=datetime(\'now\')'];
+    const values: any[] = [update.firstName ?? '', update.lastName ?? ''];
+
+    if (update.email) {
+      sets.push('email=?');
+      values.push(update.email.toLowerCase().trim());
+    }
+
+    if (update.newPassword) {
+      const hashed = await bcrypt.hash(update.newPassword, 12);
+      sets.push('password=?');
+      values.push(hashed);
+    }
+
+    values.push(id);
+
+    await db.execute(
+      `UPDATE users SET ${sets.join(', ')} WHERE id=?`,
+      values
+    );
+
+    const rows = await db.select(
+      'SELECT id, firstName, lastName, email, role, approved FROM users WHERE id = ?',
+      [id]
+    );
+    const u = rows && rows[0];
+    if (!u) return null;
+
+    return {
+      id: u.id,
+      firstName: u.firstName ?? '',
+      lastName: u.lastName ?? '',
+      email: u.email,
+      role: u.role,
+      approved: !!u.approved,
+    };
+  } catch (e) {
+    console.error('[LOCAL_SQL] Erreur updateLocalUserProfile:', e);
+    return null;
+  }
+}
+
 export async function upsertLocalUser(u: {
   id: string;
   email: string;

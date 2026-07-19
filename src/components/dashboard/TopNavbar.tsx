@@ -6,16 +6,20 @@ import { StatusBadge } from '@/components/dashboard/StatusBadge';
 import { ProfilePhotoMenu } from '@/components/dashboard/ProfilePhotoMenu';
 import { useSession } from '@/components/SessionProvider';
 import { useDashboardNav } from '@/components/dashboard/AppChrome';
+import { apiClient } from '@/lib/api-client';
+
+import { useAppMode, type AppMode } from '@/hooks/use-app-mode';
 
 interface TopNavbarProps {
   onMenuClick?: () => void;
   health?: { healthy: boolean; issues: string[] } | null;
   mounted: boolean;
   isDesktop: boolean;
+  mode?: AppMode;
   role?: string;
 }
 
-export function TopNavbar({ onMenuClick, health, mounted, isDesktop, role }: TopNavbarProps) {
+export function TopNavbar({ onMenuClick, health, mounted, isDesktop, mode, role }: TopNavbarProps) {
   const session = useSession();
   const nav = useDashboardNav();
   const resolvedRole = role ?? session.role;
@@ -26,12 +30,8 @@ export function TopNavbar({ onMenuClick, health, mounted, isDesktop, role }: Top
   const handleSaveImage = async (image: string | null) => {
     if (image === null) return;
     try {
-      const res = await fetch('/api/auth/me', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image }),
-      });
-      if (res.ok) {
+      const res = await apiClient.patch<any>('/api/auth/me', { image });
+      if (res.success) {
         await session.refresh();
       }
     } catch (e) {
@@ -78,7 +78,8 @@ export function TopNavbar({ onMenuClick, health, mounted, isDesktop, role }: Top
         <StatusBadge status="online" label="AWS" />
         <StatusBadge status="online" label="DB" />
         <StatusBadge status={health?.healthy ? 'online' : 'alert'} label="SANTÉ" />
-        {mounted && isDesktop && <StatusBadge status="online" label="LOCAL" />}
+        {mounted && isDesktop && mode !== 'hybride' && <StatusBadge status="online" label="OFFLINE" />}
+        {mounted && isDesktop && mode === 'hybride' && <StatusBadge status="online" label="HYBRIDE" />}
         {session.degraded && (
           <span
             title="La base locale SQLite est indisponible (corrompue ou verrouillée). Vous avez été déconnecté par sécurité."

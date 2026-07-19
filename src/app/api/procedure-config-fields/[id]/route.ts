@@ -1,4 +1,16 @@
 //src/app/api/procedure-config-fields/[id]/route.ts
+/**
+ * Route CLOUD (mode Web / Hybride en ligne) pour un champ de configuration.
+ * Source de vérité : Prisma (procedure_field_templates).
+ *
+ * NOTE DECOUPAGE : en mode « Locale uniquement » ou en repli Desktop offline,
+ * l'appel est intercepté par `offlineInterceptors` (api-hybrid.ts) qui opère
+ * sur le Registre Physique `.registry/procedure-templates/{id}.json`. Les deux
+ * magasins sont volontairement découplés (pas de sync bidirectionnelle auto) ;
+ * la suppression cloud nettoie les templateId orphelins DANS Prisma, et la
+ * suppression offline (offline-repo.deleteOfflineTemplate) fait de même DANS
+ * le registre local. Ne pas attendre de propagation croisée.
+ */
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db/prisma-client';
 

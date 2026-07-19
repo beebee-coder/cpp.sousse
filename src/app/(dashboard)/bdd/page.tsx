@@ -31,6 +31,7 @@ import { cn } from '@/lib/utils';
 import { isDesktop } from '@/lib/platform';
 import { useAppMode } from '@/hooks/use-app-mode';
 import { useSession } from '@/components/SessionProvider';
+import { setBddSelection, clearBddSelection } from '@/lib/bdd-selection-store';
 import { localDBBridge, type FSNode as BridgeFSNode, type InjectResult } from '@/lib/local-db-bridge';
 import { indexLocalDBFile, indexLocalDBFolder } from '@/lib/local-indexer';
 import { apiClient } from '@/lib/api-client';
@@ -69,17 +70,33 @@ export default function BDDPage() {
   useEvictionToast();
   const router = useRouter();
   const { user } = useSession();
-  const { localOnly } = useAppMode();
+  const { mode: appMode, localOnly } = useAppMode();
   const [mounted, setMounted] = useState(false);
   const [mode, setMode] = useState<'web' | 'chroma' | 'locale'>('web');
   const [tree, setTree] = useState<FSNode[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isCloudMode, setIsCloudMode] = useState(false);
 
-  // Synchronisation de l'onglet UI avec le flag global localOnly :
-  //  - localOnly actif sur desktop → on bascule sur l'onglet "locale" (source SQLite réelle).
-  //  - web pur (pas de SQLite/Tauri) → l'onglet "locale" est impossible, on force "web".
-  // Cela évite le conflit entre l'axe UI (`mode`) et le flag `useAppMode.localOnly`.
+  // Disponibilité des arborescences selon le mode applicatif :
+  //  - web     : uniquement « BDD Web (Registre) » ; les autres inactives.
+  //  - locale  : « BDD Locale » + « ChromaDB » ; « BDD Web » inactive.
+  //  - hybride : les trois arborescences affichées et activées.
+  const webEnabled = appMode === 'web' || appMode === 'hybride';
+  const localeEnabled = appMode === 'locale' || appMode === 'hybride';
+  const chromaEnabled = appMode === 'locale' || appMode === 'hybride';
+
+  // Alignement de l'onglet UI avec le mode applicatif :
+  //  - on interdit un onglet désactivé par le mode courant ;
+  //  - web pur (pas de SQLite/Tauri) → l'onglet "locale" est impossible.
+  useEffect(() => {
+    if (!webEnabled && mode === 'web') setMode(localeEnabled ? 'locale' : 'chroma');
+    else if (!localeEnabled && mode === 'locale') setMode(webEnabled ? 'web' : 'chroma');
+    else if (!chromaEnabled && mode === 'chroma') setMode(webEnabled ? 'web' : 'locale');
+  }, [appMode, webEnabled, localeEnabled, chromaEnabled, mode]);
+
+  // Synchronisation de l'onglet UI avec le flag global localOnly (Desktop) :
+  //  - localOnly actif sur desktop → on bascule sur l'onglet "locale".
+  //  - web pur → l'onglet "locale" est impossible, on force "web".
   useEffect(() => {
     if (localOnly && isDesktop) {
       setMode('locale');
@@ -132,6 +149,33 @@ export default function BDDPage() {
   const [renameValue, setRenameValue] = useState('');
 
   const isReadOnly = isCloudMode && mode === 'web';
+
+  // Résout un nœud de l'arbre par son id (pour publier la sélection
+  // courante vers le panneau de sync de la barre latérale).
+  const findNodeById = useCallback((nodes: FSNode[], id: string): FSNode | null => {
+    for (const n of nodes) {
+      if (n.id === id) return n;
+      if (n.children) {
+        const found = findNodeById(n.children, id);
+        if (found) return found;
+      }
+    }
+    return null;
+  }, []);
+
+  // Publie la sélection courante vers le store partagé (utilisé par le
+  // bouton « Vectoriser la sélection » du SyncPanel, mode hybride). On ne
+  // publie qu'en onglet « BDD Locale » : l'indexation locale opère sur le
+  // FS .local-db, donc un id d'onglet Web/Chroma ne serait pas valide.
+  useEffect(() => {
+    if (selectedFile && mode === 'locale') {
+      const node = findNodeById(tree, selectedFile);
+      setBddSelection({ relPath: selectedFile, type: node?.type ?? 'file' });
+    } else {
+      clearBddSelection();
+    }
+    return () => clearBddSelection();
+  }, [selectedFile, mode, tree, findNodeById]);
 
   useEffect(() => {
     setMounted(true);
@@ -629,17 +673,19 @@ export default function BDDPage() {
               <Button
                 size="sm"
                 variant={mode === 'web' ? 'default' : 'ghost'}
-                onClick={() => setMode('web')}
-                className={cn("h-7 px-3 text-[9px] font-bold uppercase", mode === 'web' ? "bg-primary text-primary-foreground hover:bg-primary/95" : "text-muted-foreground hover:text-white hover:bg-white/5")}
+                disabled={!webEnabled}
+                onClick={() => webEnabled && setMode('web')}
+                title={webEnabled ? undefined : "BDD Web indisponible en mode Locale (accès au Registre cloud requis)"}
+                className={cn("h-7 px-3 text-[9px] font-bold uppercase disabled:opacity-40 disabled:cursor-not-allowed", mode === 'web' ? "bg-primary text-primary-foreground hover:bg-primary/95" : "text-muted-foreground hover:text-white hover:bg-white/5")}
               >
                 BDD Web (Registre)
               </Button>
               <Button
                 size="sm"
                 variant={mode === 'locale' ? 'default' : 'ghost'}
-                disabled={!isDesktop}
-                onClick={() => isDesktop && setMode('locale')}
-                title={isDesktop ? undefined : "BDD Locale indisponible en mode Web (pas de SQLite)"}
+                disabled={!localeEnabled}
+                onClick={() => localeEnabled && setMode('locale')}
+                title={localeEnabled ? undefined : "BDD Locale indisponible en mode Web (pas de SQLite)"}
                 className={cn("h-7 px-3 text-[9px] font-bold uppercase disabled:opacity-40 disabled:cursor-not-allowed", mode === 'locale' ? "bg-primary text-primary-foreground hover:bg-primary/95" : "text-muted-foreground hover:text-white hover:bg-white/5")}
               >
                 BDD Locale
@@ -647,9 +693,9 @@ export default function BDDPage() {
               <Button
                 size="sm"
                 variant={mode === 'chroma' ? 'default' : 'ghost'}
-                disabled={isDesktop && localOnly}
-                onClick={() => !(isDesktop && localOnly) && setMode('chroma')}
-                title={isDesktop && localOnly ? "ChromaDB indisponible en mode Locale (desktop)" : undefined}
+                disabled={!chromaEnabled}
+                onClick={() => chromaEnabled && setMode('chroma')}
+                title={chromaEnabled ? undefined : "ChromaDB indisponible en mode Web (moteur vectoriel local requis)"}
                 className={cn("h-7 px-3 text-[9px] font-bold uppercase disabled:opacity-40 disabled:cursor-not-allowed", mode === 'chroma' ? "bg-primary text-primary-foreground hover:bg-primary/95" : "text-muted-foreground hover:text-white hover:bg-white/5")}
               >
                 ChromaDB

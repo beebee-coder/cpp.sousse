@@ -20,6 +20,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { apiClient } from '@/lib/api-client';
+import { normalizeTemplateOptions, renderTemplateOptions } from '@/lib/procedures/options';
 
 type Template = {
   id: string;
@@ -48,6 +49,7 @@ export default function ProcedureTemplatesPage() {
   const [items, setItems] = useState<Template[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [offlineNotice, setOfflineNotice] = useState<string | null>(null);
   const [editing, setEditing] = useState<Template | null>(null);
   const [form, setForm] = useState({ ...emptyForm });
   const [saving, setSaving] = useState(false);
@@ -61,11 +63,18 @@ export default function ProcedureTemplatesPage() {
     setIsLoading(true);
     setError(null);
     try {
-      const res = await apiClient.get<{ success: boolean; items: Template[] }>('/api/procedure-config-fields');
+      const res = await apiClient.get<{ success: boolean; items: Template[]; offline?: boolean; provider?: string }>('/api/procedure-config-fields');
       if (!res.success) throw new Error(res.error || 'Erreur de chargement des templates');
       setItems((res.items as Template[]) || []);
+      if (res.offline) {
+        setError(null);
+        setOfflineNotice(`Source locale (${res.provider || 'Registre Physique'}) — les modifications sont hors-ligne.`);
+      } else {
+        setOfflineNotice(null);
+      }
     } catch (e: any) {
-      setError(e.message);
+      setError(e.message || 'Erreur de chargement des templates');
+      setItems([]);
     } finally {
       setIsLoading(false);
     }
@@ -88,7 +97,7 @@ export default function ProcedureTemplatesPage() {
       type: t.type,
       description: t.description ?? '',
       required: t.required,
-      optionsText: Array.isArray(t.options) ? t.options.map((o: any) => (typeof o === 'object' ? o.label ?? o.value : o)).join('\n') : '',
+      optionsText: renderTemplateOptions(t.options).map((o) => o.label).join('\n'),
     });
   };
 
@@ -154,6 +163,15 @@ export default function ProcedureTemplatesPage() {
           </Button>
         </header>
 
+        {offlineNotice && (
+          <div className="px-6 lg:px-8 pt-4">
+            <div className="p-2 border border-primary/30 bg-primary/10 rounded text-[10px] font-code text-primary flex items-center gap-2">
+              <RefreshCw className="w-3 h-3" />
+              {offlineNotice}
+            </div>
+          </div>
+        )}
+
         <div className="p-6 lg:p-8 max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Formulaire */}
           <Card className="p-5 h-fit lg:col-span-1 border-primary/20 bg-black/30 space-y-4">
@@ -216,8 +234,11 @@ export default function ProcedureTemplatesPage() {
             </label>
 
             {error && (
-              <div className="p-2 border border-destructive/40 bg-destructive/10 rounded text-[10px] font-code text-destructive">
-                {error}
+              <div className="p-2 border border-destructive/40 bg-destructive/10 rounded text-[10px] font-code text-destructive flex items-center justify-between gap-2">
+                <span>{error}</span>
+                <Button variant="ghost" size="sm" className="h-6 text-[9px] uppercase border-border" onClick={fetchTemplates}>
+                  <RefreshCw className="w-3 h-3 mr-1" /> Réessayer
+                </Button>
               </div>
             )}
 
@@ -267,11 +288,11 @@ export default function ProcedureTemplatesPage() {
                       </div>
                     </div>
 
-                    {t.type === 'select' && Array.isArray(t.options) && (
+                    {t.type === 'select' && renderTemplateOptions(t.options).length > 0 && (
                       <div className="flex flex-wrap gap-1">
-                        {t.options.map((o: any, i: number) => (
-                          <span key={i} className="text-micro font-code bg-secondary/10 text-secondary border border-secondary/30 rounded px-1.5 py-0.5">
-                            {typeof o === 'object' ? o.label ?? o.value : o}
+                        {renderTemplateOptions(t.options).map((o) => (
+                          <span key={o.value} className="text-micro font-code bg-secondary/10 text-secondary border border-secondary/30 rounded px-1.5 py-0.5">
+                            {o.label}
                           </span>
                         ))}
                       </div>

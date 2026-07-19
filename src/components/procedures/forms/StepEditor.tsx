@@ -31,6 +31,7 @@ import {
   VALVE_OPERATIONS,
   SPEED_MODES,
 } from '@/lib/procedures/config';
+import { normalizeTemplateOptions, renderTemplateOptions } from '@/lib/procedures/options';
 import { apiClient } from '@/lib/api-client';
 
 type StepField = 'title' | 'description' | 'subtitle' | 'duration' | 'actionType' | 'actionTarget' | 'actionLabel';
@@ -530,6 +531,7 @@ export function StepEditor({
 
                             templates.forEach((t: any) => {
                               const existing = currentFields.find((f) => f.templateId === t.id);
+                              const normOptions = normalizeTemplateOptions(t.options) ?? undefined;
                               if (!existing) {
                                 newFields.push({
                                   templateId: t.id,
@@ -538,7 +540,7 @@ export function StepEditor({
                                   value: t.type === 'boolean' ? false : '',
                                   required: t.required,
                                   description: t.description ?? undefined,
-                                  options: t.options ?? undefined,
+                                  options: normOptions,
                                 });
                               } else {
                                 // Propager les modifications du template sur le champ existant
@@ -549,7 +551,7 @@ export function StepEditor({
                                   type: t.type,
                                   required: t.required,
                                   description: t.description ?? undefined,
-                                  options: t.options ?? undefined,
+                                  options: normOptions,
                                 };
                               }
                             });
@@ -582,13 +584,11 @@ export function StepEditor({
                                 className="h-8 bg-black/40 text-[10px] border-border rounded px-2"
                               >
                                 <option value="">— Sélectionner —</option>
-                                {Array.isArray(field.options)
-                                  ? field.options.map((opt: any, oIdx: number) => (
-                                      <option key={oIdx} value={typeof opt === 'object' ? opt.value : opt}>
-                                        {typeof opt === 'object' ? opt.label ?? opt.value : opt}
-                                      </option>
-                                    ))
-                                  : null}
+                                {renderTemplateOptions(field.options).map((opt) => (
+                                  <option key={opt.value} value={opt.value}>
+                                    {opt.label}
+                                  </option>
+                                ))}
                               </select>
                             ) : field.type === 'boolean' ? (
                               <div className="flex items-center h-8">

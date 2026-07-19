@@ -63,7 +63,13 @@ function readRegistryItems(existingTitles: Set<string>): LexicalScorable[] {
 }
 
 async function searchCloudKnowledge(query: string, history: string[]): Promise<LexicalScorable[]> {
-  if (process.env.VERCEL !== '1') return [];
+  // Anciennement gated par `process.env.VERCEL === '1'`. Or la base de
+  // connaissances (knowledgeItem) vit dans Neon et est alimentée par le seed
+  // et la route /api/registry — y compris en dev web local où DATABASE_URL
+  // est défini. On interroge donc Prisma dès qu'une URL de base est disponible
+  // (et pas uniquement sur Vercel), ce qui rend la recherche RAG fonctionnelle
+  // en local comme en production.
+  if (!process.env.DATABASE_URL && !process.env.POSTGRES_URL && !process.env.POSTGRES_PRISMA_URL) return [];
   const queryTokens = tokenizeQuery(query, history);
   if (queryTokens.length === 0) return [];
 

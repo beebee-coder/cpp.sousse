@@ -13,17 +13,29 @@ export interface VisionAssistantDescriptionOutput {
   description: string;
   categories: string[];
   objects: string[];
+  degraded?: boolean;
+  provider?: string;
+}
+
+/**
+ * Réponse dégradée cohérente, renvoyée quand la clé GROQ est absente ou que
+ * l'appel au nœud Groq échoue. On ne lève plus d'exception bloquante : la
+ * fonctionnalité reste stable dans les trois modes (web / hybride / locale).
+ */
+function degradedDescription(detectedDescription: string): VisionAssistantDescriptionOutput {
+  return {
+    description: `Analyse automatique de la source visuelle contenant : ${detectedDescription}. Liaison opérationnelle mais en mode dégradé (sans modèle de vision).`,
+    categories: ["Industrie", "Contrôle visuel"],
+    objects: ["Composant", "Interface de contrôle"],
+    degraded: true,
+    provider: 'local-fallback'
+  };
 }
 
 export async function visionAssistantDescription(
   input: VisionAssistantDescriptionInput
 ): Promise<VisionAssistantDescriptionOutput> {
   const timestamp = new Date().toLocaleTimeString();
-  
-  if (!process.env.GROQ_API_KEY) {
-    console.error(`❌ [${timestamp}] [ERREUR_CRITIQUE] Clé GROQ_API_KEY manquante.`);
-    throw new Error("ERREUR_LIAISON_GROQ : Clé API non configurée.");
-  }
 
   // Détecter si c'est l'un des placeholders connus de l'interface
   let detectedDescription = "un composant industriel inconnu";
@@ -34,6 +46,13 @@ export async function visionAssistantDescription(
     detectedDescription = "un système de pompe centrifuge industrielle de couleur verte monté sur socle béton avec moteur électrique et brides de raccordement";
   } else if (uri.includes("factory1") || uri.includes("factory-floor")) {
     detectedDescription = "une ligne de production automatisée moderne avec bras robotiques de manipulation et convoyeur à bande";
+  }
+
+  // Clé absente : au lieu de lever une erreur bloquante, on renvoie la réponse
+  // dégradée (le fallback est désormais réellement atteignable).
+  if (!process.env.GROQ_API_KEY) {
+    console.warn(`⚠️ [${timestamp}] [MODE_DÉGRADÉ] Clé GROQ_API_KEY manquante → réponse dégradée.`);
+    return degradedDescription(detectedDescription);
   }
 
   console.log(`⚡ [${timestamp}] [NODE_GROQ] Analyse visuelle simulée pour : ${detectedDescription}`);
@@ -65,16 +84,12 @@ Ne renvoyez rien d'autre que du JSON valide.`;
     const text = completion.choices[0]?.message?.content;
     if (text) {
       console.log(`✅ [${timestamp}] [SUCCÈS] Analyse visuelle générée par le nœud Groq.`);
-      return JSON.parse(text) as VisionAssistantDescriptionOutput;
+      return { ...(JSON.parse(text) as VisionAssistantDescriptionOutput), provider: 'groq' };
     }
   } catch (err: any) {
     console.error(`❌ [${timestamp}] [ERREUR] Échec du nœud Groq :`, err.message);
   }
 
   // Fallback en cas d'erreur de parsing ou d'API
-  return {
-    description: `Analyse automatique de la source visuelle contenant : ${detectedDescription}. Liaison opérationnelle mais en mode dégradé (sans modèle de vision).`,
-    categories: ["Industrie", "Contrôle visuel"],
-    objects: ["Composant", "Interface de contrôle"]
-  };
+  return degradedDescription(detectedDescription);
 }

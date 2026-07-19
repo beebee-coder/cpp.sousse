@@ -76,7 +76,7 @@ export default async function RootLayout({
   return (
     <html lang="fr" className="dark">
       <body className={`${fontInter.variable} ${fontSpaceGrotesk.variable} ${fontSourceCodePro.variable} font-body antialiased selection:bg-primary/30 selection:text-primary`}>
-        <PlatformProvider>
+        <PlatformProvider initialIsDesktop={isDesktop}>
           <SessionProvider initialUser={initialUser}>
             <ModeAwareLayout>
               <LazyAmbientBackground />

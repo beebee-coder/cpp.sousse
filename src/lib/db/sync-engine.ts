@@ -247,6 +247,96 @@ export const syncEngine = {
     };
   },
 
+  /**
+   * Réconciliation bidirectionnelle des champs de configuration (Attributs
+   * Personnalisés) entre le cloud Prisma et le Registre Physique offline
+   * (.registry/procedure-templates). Déclenchée en hybride EN LIGNE uniquement.
+   *  - cloud → offline : upsert des templates cloud absents/localement
+   *    périmés dans le registre (par id).
+   *  - offline → cloud : push des templates offline pas encore présents
+   *    côté cloud (par id).
+   * Idempotent (clé = templateId), ne supprime rien.
+   */
+  async syncConfigFields(localOnly?: boolean): Promise<{ pushedToCloud: number; pulledToLocal: number; failed: string[] }> {
+    if (localOnly || typeof window === 'undefined') {
+      return { pushedToCloud: 0, pulledToLocal: 0, failed: [] };
+    }
+
+    const { listOfflineTemplates, upsertOfflineTemplate, normalizeTemplateOptions } = await import('../procedures/offline-repo');
+    const failed: string[] = [];
+    let pushedToCloud = 0;
+    let pulledToLocal = 0;
+
+    let cloudItems: any[] = [];
+    try {
+      const res = await apiClient.get<{ success: boolean; items: any[] }>('/api/procedure-config-fields');
+      cloudItems = res.items ?? [];
+    } catch (e: any) {
+      console.warn('[SYNC_CONFIG] Cloud injoignable, repli offline seul :', e.message);
+      return { pushedToCloud: 0, pulledToLocal: 0, failed: ['cloud_unreachable'] };
+    }
+
+    const cloudById = new Map(cloudItems.map((c) => [c.id, c]));
+    const offlineItems = listOfflineTemplates();
+    const offlineById = new Map(offlineItems.map((o) => [o.id, o]));
+
+    // cloud → offline : tout template cloud est miroir dans le registre.
+    for (const c of cloudItems) {
+      try {
+        const local = offlineById.get(c.id);
+        const cloudUpdated = new Date(c.updatedAt || c.createdAt || 0).getTime();
+        const localUpdated = new Date(local?.updatedAt || local?.createdAt || 0).getTime();
+        if (!local || cloudUpdated > localUpdated) {
+          upsertOfflineTemplate({
+            id: c.id,
+            name: c.name,
+            type: c.type,
+            description: c.description ?? null,
+            options: normalizeTemplateOptions(c.options),
+            required: Boolean(c.required),
+            createdAt: c.createdAt || new Date().toISOString(),
+            updatedAt: c.updatedAt || new Date().toISOString(),
+          });
+          pulledToLocal++;
+        }
+      } catch (e: any) {
+        failed.push(`pull:${c.id}`);
+      }
+    }
+
+    // offline → cloud : push des templates offline absents du cloud.
+    for (const o of offlineItems) {
+      if (cloudById.has(o.id)) continue;
+      try {
+        const res = await apiClient.post<any>('/api/procedure-config-fields', {
+          name: o.name,
+          type: o.type,
+          description: o.description ?? undefined,
+          options: o.options ?? undefined,
+          required: o.required,
+        });
+        if (res && res.success !== false && !res.error) {
+          pushedToCloud++;
+          // Aligne l'id offline sur l'id cloud renvoyé (si différent).
+          if (res.id && res.id !== o.id) {
+            try {
+              const { deleteOfflineTemplate } = await import('../procedures/offline-repo');
+              deleteOfflineTemplate(o.id);
+              upsertOfflineTemplate({ ...o, id: res.id });
+            } catch { /* non fatal */ }
+          }
+        } else {
+          failed.push(`push:${o.id}`);
+        }
+      } catch (e: any) {
+        failed.push(`push:${o.id}`);
+      }
+    }
+
+    console.log(`🔄 [SYNC_CONFIG] pull=${pulledToLocal} push=${pushedToCloud} failed=${failed.length}`);
+    return { pushedToCloud, pulledToLocal, failed };
+  },
+
   async vectorizeLocalItems(folder: 'items' | 'procedures' | 'INDEX_CHROMA/items' = 'INDEX_CHROMA/items'): Promise<{ success: boolean; indexed?: number; errors?: string[] }> {
     if (typeof window === 'undefined') return { success: false, errors: ['Server environment'] };
     // La vectorisation via local-indexer s'appuie sur le module Node `fs`, qui
@@ -275,6 +365,17 @@ export const syncEngine = {
       let injectResult: SyncResult = { injectedCount: 0, vectorizedCount: 0, failedItems: [], skippedDuplicates: 0, purgedCount: 0 };
       if (!localOnly) {
         injectResult = await this.downloadAndInjectPhase(userId, projectId, localOnly);
+      }
+
+      // Réconciliation des champs de configuration (Attributs Personnalisés)
+      // entre cloud et registre offline, en hybride en ligne uniquement.
+      let configSync = { pushedToCloud: 0, pulledToLocal: 0, failed: [] as string[] };
+      if (!localOnly) {
+        try {
+          configSync = await this.syncConfigFields(localOnly);
+        } catch (e: any) {
+          console.warn('[SYNC] Réconciliation config fields échouée (non fatal):', e.message);
+        }
       }
 
       let vectorResult: { success: boolean; indexed?: number; errors?: string[] } = { success: true, indexed: 0 };

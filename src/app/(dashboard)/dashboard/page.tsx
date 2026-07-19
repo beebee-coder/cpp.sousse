@@ -5,6 +5,7 @@ import { TopNavbar } from '@/components/dashboard/TopNavbar';
 import { CommandPalette } from '@/components/dashboard/CommandPalette';
 import { useState, useEffect } from 'react';
 import { usePlatform } from '@/components/PlatformProvider';
+import { useAppMode } from '@/hooks/use-app-mode';
 import { useSession } from '@/components/SessionProvider';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -29,6 +30,7 @@ export default function DashboardPage() {
   const [mounted, setMounted] = useState(false);
   const [health, setHealth] = useState<{ healthy: boolean; issues: string[] } | null>(null);
   const { isDesktop } = usePlatform();
+  const { mode } = useAppMode();
   const { role, user } = useSession();
 
   useEffect(() => {
@@ -60,6 +62,7 @@ export default function DashboardPage() {
         health={health}
         mounted={mounted}
         isDesktop={isDesktop}
+        mode={mode}
         role={role}
       />
 
@@ -71,7 +74,7 @@ export default function DashboardPage() {
             <div>
               <h2 className="font-headline text-xl lg:text-2xl font-bold tracking-tight mb-1 uppercase">Centre de Commandement</h2>
               <p className="text-xs text-muted-foreground font-code">
-                {mounted ? (isDesktop ? 'NATIF' : 'CLOUD').toUpperCase() : 'CHARGEMENT...'} | NOMINAL | {role?.toUpperCase() ?? 'USER'}
+                 {mounted ? mode.toUpperCase() : 'CHARGEMENT...'} | NOMINAL | {role?.toUpperCase() ?? 'USER'}
               </p>
             </div>
             <div className="text-left sm:text-right font-code">
@@ -142,7 +145,7 @@ export default function DashboardPage() {
         <footer className="h-8 border-t border-border bg-black/40 hidden sm:flex items-center justify-between px-6 text-[9px] font-code text-muted-foreground uppercase tracking-widest shrink-0">
           <div className="flex gap-6">
             <span>Uptime : 14j 05h</span>
-            <span>Mode : {mounted ? (isDesktop ? 'NATIF' : 'WEB') : '...'}</span>
+            <span>Mode : {mounted ? mode.toUpperCase() : '...'}</span>
           </div>
           <div className="flex gap-4">
             <span className="text-secondary">AI PIPE : PRÊT</span>

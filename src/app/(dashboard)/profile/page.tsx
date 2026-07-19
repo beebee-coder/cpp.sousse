@@ -7,6 +7,8 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { useState, useEffect, useRef } from 'react';
 import { usePlatform } from '@/components/PlatformProvider';
+import { useAppMode } from '@/hooks/use-app-mode';
+import { apiClient } from '@/lib/api-client';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { TiltCard } from '@/components/three/TiltCard';
@@ -30,6 +32,7 @@ export default function ProfilePage() {
   const [health, setHealth] = useState<{ healthy: boolean; issues: string[] } | null>(null);
   const [role, setRole] = useState<string | undefined>(undefined);
   const { isDesktop } = usePlatform();
+  const { mode, localOnly } = useAppMode();
 
   const [profile, setProfile] = useState<ProfileUser | null>(null);
   const [form, setForm] = useState({ firstName: '', lastName: '', email: '' });
@@ -51,12 +54,12 @@ export default function ProfilePage() {
 
     const loadSession = async () => {
       try {
-        const response = await fetch('/api/auth/me');
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
+        const res = await apiClient.get<any>('/api/auth/me');
+        if (!res.success) {
+          setMessage({ type: 'error', text: res.error === 'RÉSEAU_INDISPONIBLE' ? 'Cloud indisponible. Vérifiez votre connexion.' : 'Session invalide. Veuillez vous reconnecter.' });
+          return;
         }
-        const data = await response.json();
-        const user = (data.user ?? data.session?.user) as ProfileUser | undefined;
+        const user = (res.user ?? res.session?.user) as ProfileUser | undefined;
         if (user) {
           setProfile(user);
           setRole(user.role);
@@ -65,10 +68,10 @@ export default function ProfilePage() {
             lastName: user.lastName ?? '',
             email: user.email ?? '',
           });
-        } else if (!data.session) {
+        } else {
           setMessage({ type: 'error', text: 'Session invalide. Veuillez vous reconnecter.' });
         }
-      } catch (err) {
+      } catch {
         setMessage({ type: 'error', text: 'Impossible de charger le profil. Vérifiez votre connexion.' });
       }
     };
@@ -161,35 +164,29 @@ export default function ProfilePage() {
       currentPassword: passwords.current || undefined,
       newPassword: passwords.next || undefined,
     };
-    if (imageData !== null) body.image = imageData;
+    if (imageData !== null && !localOnly) body.image = imageData;
 
     try {
-      const res = await fetch('/api/auth/me', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
+      const res = await apiClient.patch<any>('/api/auth/me', body);
+      if (!res.success) {
         const errMap: Record<string, string> = {
           EMAIL_ALREADY_EXISTS: 'Cet e-mail est déjà utilisé.',
           INVALID_CURRENT_PASSWORD: 'Mot de passe actuel incorrect.',
           USER_NOT_FOUND: 'Utilisateur introuvable.',
-          INVALID_EMAIL: 'Format d’e-mail invalide.',
+          INVALID_EMAIL: "Format d'e-mail invalide.",
           WEAK_PASSWORD: 'Le mot de passe doit contenir au moins 8 caractères.',
           INVALID_IMAGE: 'Image invalide (JPG/PNG/WebP, < 500 Ko).',
           UNAUTHENTICATED: 'Session expirée. Veuillez vous reconnecter.',
         };
-        setMessage({ type: 'error', text: errMap[data.error] ?? 'Échec de la mise à jour.' });
+        setMessage({ type: 'error', text: errMap[res.error] ?? 'Échec de la mise à jour.' });
         return;
       }
-      const data = await res.json();
-      if (data.success) {
-        setProfile(data.user);
-        setRole(data.user.role);
+      if (res.user) {
+        setProfile(res.user);
+        setRole(res.user.role);
         setImageData(null);
         setPasswords({ current: '', next: '', confirm: '' });
-        setMessage({ type: 'success', text: 'Profil mis à jour avec succès.' });
+        setMessage({ type: 'success', text: res.message?.includes('localement') ? res.message : 'Profil mis à jour avec succès.' });
       } else {
         setMessage({ type: 'error', text: 'Échec de la mise à jour.' });
       }
@@ -208,6 +205,7 @@ export default function ProfilePage() {
         health={health}
         mounted={mounted}
         isDesktop={isDesktop}
+        mode={mode}
         role={role}
       />
 
@@ -217,8 +215,13 @@ export default function ProfilePage() {
             <div className="shrink-0">
               <h2 className="font-headline text-xl lg:text-2xl font-bold tracking-tight mb-1 uppercase">Profil Utilisateur</h2>
               <p className="text-xs text-muted-foreground font-code">
-                {mounted ? (isDesktop ? 'NATIF' : 'CLOUD').toUpperCase() : 'CHARGEMENT...'} | COMPTE | {role?.toUpperCase() ?? 'USER'}
+                {mounted ? mode.toUpperCase() : 'CHARGEMENT...'} | COMPTE | {role?.toUpperCase() ?? 'USER'}
               </p>
+              {localOnly && (
+                <p className="text-xs text-amber-500 font-code mt-1">
+                  Mode local uniquement — les modifications sont sauvegardées localement et ne sont pas synchronisées avec le cloud.
+                </p>
+              )}
             </div>
 
             {message && (
@@ -347,7 +350,7 @@ export default function ProfilePage() {
                     <p className="text-[9px] text-muted-foreground uppercase tracking-widest mb-1 flex items-center gap-1">
                       {isDesktop ? <Cpu className="w-3 h-3" /> : <Cloud className="w-3 h-3" />} Mode
                     </p>
-                    <p className="text-[11px] font-code text-primary font-bold">{mounted ? (isDesktop ? 'NATIF' : 'CLOUD') : '...'}</p>
+                     <p className="text-[11px] font-code text-primary font-bold">{mounted ? mode.toUpperCase() : '...'}</p>
                   </div>
                   <div>
                     <p className="text-[9px] text-muted-foreground uppercase tracking-widest mb-1 flex items-center gap-1">
@@ -397,7 +400,7 @@ export default function ProfilePage() {
               </Button>
               <button
                 onClick={async () => {
-                  await fetch('/api/auth/signout', { method: 'POST' });
+                  await apiClient.post('/api/auth/signout', {});
                   window.location.href = '/auth/signin';
                 }}
                 className="ml-auto flex items-center gap-2 rounded-md border border-border px-3 py-2 text-xs hover:bg-muted/60 transition-colors"

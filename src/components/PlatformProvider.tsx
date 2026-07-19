@@ -10,18 +10,22 @@ interface PlatformContextType {
   isReady: boolean;
 }
 
+interface PlatformProviderProps {
+  children: React.ReactNode;
+  initialIsDesktop?: boolean;
+}
+
 const PlatformContext = createContext<PlatformContextType | undefined>(undefined);
 
-export function PlatformProvider({ children }: { children: React.ReactNode }) {
+export function PlatformProvider({ children, initialIsDesktop = false }: PlatformProviderProps) {
   const [platformData, setPlatformData] = useState<PlatformContextType>({
-    isDesktop: false,
-    platform: 'Vercel Web',
+    isDesktop: initialIsDesktop,
+    platform: initialIsDesktop ? 'Tauri Natif' : 'Vercel Web',
     capabilities: [],
     isReady: false,
   });
 
   useEffect(() => {
-    // Only run on client
     const info = getPlatformInfo();
     setPlatformData({
       ...info,

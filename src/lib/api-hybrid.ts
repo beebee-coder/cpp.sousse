@@ -1,7 +1,8 @@
 // src/lib/api-hybrid.ts
 import path from 'path';
 import { isDesktop } from './platform';
-import { localSignIn, upsertLocalUser } from './local-sql';
+import { localSignIn, upsertLocalUser, validateLocalSession, updateLocalUserProfile } from './local-sql';
+import { localAuth } from './auth/local-auth';
 
 const WEB_FETCH_TIMEOUT_MS = 15000;
 
@@ -106,14 +107,59 @@ const desktopInterceptors: Record<string, (body: any, webFetch: () => Promise<an
       return { success: false, message: `Échec indexation: ${e.message}`, provider: 'LOCAL_PERSISTENCE', error: 'VECTOR_ENGINE_FAILED' };
     }
   },
-  '/api/vision/description': async () => ({
-    description: "Analyse visuelle simulée (EXE) — mode dégradé sans modèle vision natif.",
-    categories: ["Industrie", "Offline"],
-    objects: ["Capteur", "Panneau", "Schéma"],
-    provider: 'LOCAL_VISION',
-    degraded: true,
-    message: "Aucun modèle vision local disponible. Connectez un modèle cloud pour une analyse réelle."
-  }),
+  // Analyse visuelle : on ne renvoie le mock dégradé QUE si le poste est en
+  // mode « Locale uniquement ». En mode Hybride (Tauri en ligne) on relaie
+  // l'appel réel vers le cloud (webFetch) pour rester cohérent avec le RAG
+  // (/api/vision/retrieval) qui, lui, part réellement vers Groq.
+  '/api/vision/description': async (body: any, webFetch: () => Promise<any>) => {
+    const localOnly = typeof body?.localOnly === 'boolean'
+      ? body.localOnly
+      : typeof localStorage !== 'undefined' && localStorage.getItem('visionode-mode-local-only') === '1';
+
+    if (!localOnly) {
+      try {
+        return await withTimeout(webFetch());
+      } catch (e: any) {
+        console.warn('[HYBRID_BRIDGE] Vision cloud indisponible → repli mock local:', e?.message);
+        // Repli sur le mock dégradé si le cloud est injoignable (réseau coupé).
+      }
+    }
+
+    return {
+      description: "Analyse visuelle simulée (EXE) — mode dégradé sans modèle vision natif.",
+      categories: ["Industrie", "Offline"],
+      objects: ["Capteur", "Panneau", "Schéma"],
+      provider: 'LOCAL_VISION',
+      degraded: true,
+      offline: true,
+      message: "Aucun modèle vision local disponible. Connectez un modèle cloud pour une analyse réelle."
+    };
+  },
+  // RAG visuel : intercepteur symétrique à la description. En mode Locale
+  // uniquement (ou cloud injoignable), on renvoie un registre dégradé cohérent
+  // au lieu de laisser l'appel échouer sur timeout et bloquer tout le flux.
+  '/api/vision/retrieval': async (body: any, webFetch: () => Promise<any>) => {
+    const localOnly = typeof body?.localOnly === 'boolean'
+      ? body.localOnly
+      : typeof localStorage !== 'undefined' && localStorage.getItem('visionode-mode-local-only') === '1';
+
+    if (!localOnly) {
+      try {
+        return await withTimeout(webFetch());
+      } catch (e: any) {
+        console.warn('[HYBRID_BRIDGE] RAG visuel cloud indisponible → repli local:', e?.message);
+      }
+    }
+
+    return {
+      componentDescription: "REGISTRE LOCAL (MODE DÉGRADÉ)",
+      relevantDocuments: [],
+      provider: 'LOCAL_VISION_RAG',
+      degraded: true,
+      offline: true,
+      message: "Aucun registre RAG cloud disponible en mode local."
+    };
+  },
   // ── Procedure CRUD (offline) ─────────────────────────────────────────────
   // En Desktop offline, l'API Next répond STATIC_EXPORT : on bascule sur le
   // Registre Physique (.registry/procedures/*.json) côté webview. Mode web :
@@ -345,90 +391,12 @@ const desktopInterceptors: Record<string, (body: any, webFetch: () => Promise<an
     }
   },
   // ── Local DB mirror (offline) ────────────────────────────────────────────
-  // ── Procedure Templates (offline) ───────────────────────────────────────
-  // En Desktop offline, l'API Next répond STATIC_EXPORT : on bascule sur le
-  // Registre Physique (.registry/procedure-templates/{id}.json). Gère
-  // GET (liste), POST (création), PATCH (édition) et DELETE (suppression +
-  // nettoyage des templateId orphelins dans les procédures). Mode web :
-  // cette route n'est pas interceptée → fetch cloud normal (Prisma).
-  '/api/procedure-config-fields': async (body: any, webFetch: () => Promise<any>, ctx?: { method?: string; params?: any }) => {
-    const method = ctx?.method || (body && Object.keys(body).length ? 'POST' : 'GET');
-    const ALLOWED_TYPES = ['text', 'number', 'boolean', 'select'];
-    if (method === 'GET') {
-      try {
-        const { listOfflineTemplates } = await import('./procedures/offline-repo');
-        const items = listOfflineTemplates();
-        return { success: true, items, provider: 'LOCAL_REGISTRY', offline: true };
-      } catch (e: any) {
-        return { success: false, items: [], error: 'LECTURE_TEMPLATES_ECHEC', message: e.message };
-      }
-    }
-    if (method === 'POST') {
-      try {
-        const { name, type, description, options, required } = body || {};
-        if (!name || !type) return { success: false, error: 'Name and type are required' };
-        if (!ALLOWED_TYPES.includes(type)) {
-          return { success: false, error: `Type invalide. Attendu: ${ALLOWED_TYPES.join(', ')}` };
-        }
-        if (type === 'select' && options !== undefined && !Array.isArray(options)) {
-          return { success: false, error: 'Le champ options doit être un tableau pour le type select' };
-        }
-        const { upsertOfflineTemplate } = await import('./procedures/offline-repo');
-        const now = new Date().toISOString();
-        const record: any = {
-          id: `TPL-${Date.now().toString(36)}`,
-          name,
-          type,
-          description: description ?? null,
-          options: options ?? null,
-          required: Boolean(required) || false,
-          createdAt: now,
-          updatedAt: now,
-        };
-        upsertOfflineTemplate(record);
-        return { ...record, provider: 'LOCAL_REGISTRY', offline: true };
-      } catch (e: any) {
-        return { success: false, error: 'ERREUR_INTERNE_TEMPLATE', message: e.message };
-      }
-    }
-    return { success: false, error: 'METHODE_NON_SUPPORTER' };
-  },
-  '/api/procedure-config-fields/[id]': async (body: any, webFetch: () => Promise<any>, ctx?: { method?: string; params?: any }) => {
-    const method = ctx?.method || 'GET';
-    const id = ctx?.params?.id;
-    const { getOfflineTemplate, upsertOfflineTemplate, deleteOfflineTemplate } = await import('./procedures/offline-repo');
-    if (method === 'GET') {
-      const tpl = getOfflineTemplate(id);
-      if (!tpl) return { success: false, message: 'Template introuvable', status: 404 };
-      return { ...tpl, provider: 'LOCAL_REGISTRY', offline: true };
-    }
-    if (method === 'PATCH') {
-      const existing = getOfflineTemplate(id);
-      if (!existing) return { success: false, error: 'TEMPLATE_NOT_FOUND' };
-      const ALLOWED_TYPES = ['text', 'number', 'boolean', 'select'];
-      const { name, type, description, options, required } = body || {};
-      if (type !== undefined && !ALLOWED_TYPES.includes(type)) {
-        return { success: false, error: `Type invalide. Attendu: ${ALLOWED_TYPES.join(', ')}` };
-      }
-      const updated: any = {
-        ...existing,
-        name: name !== undefined ? name : existing.name,
-        type: type !== undefined ? type : existing.type,
-        description: description !== undefined ? description ?? null : existing.description,
-        options: options !== undefined ? options ?? null : existing.options,
-        required: required !== undefined ? Boolean(required) : existing.required,
-        updatedAt: new Date().toISOString(),
-      };
-      upsertOfflineTemplate(updated);
-      return { ...updated, provider: 'LOCAL_REGISTRY', offline: true };
-    }
-    if (method === 'DELETE') {
-      const ok = deleteOfflineTemplate(id);
-      if (!ok) return { success: false, error: 'TEMPLATE_NOT_FOUND' };
-      return { success: true, provider: 'LOCAL_REGISTRY', offline: true };
-    }
-    return { success: false, error: 'METHODE_NON_SUPPORTER' };
-  },
+  // ── Procedure Config Fields (offline) ───────────────────────────────────
+  // DÉPLACÉ vers `offlineInterceptors` (voir bas de fichier). Le CRUD des
+  // champs de configuration bascule sur le Registre Physique uniquement en
+  // mode « Locale uniquement » (localOnly) ou en repli Desktop offline, et
+  // rejoint le cloud Prisma en hybride EN LIGNE. Il n'est plus intercepté
+  // inconditionnellement ici (ancienne divergence hybride → cloud ignoré).
   // ── Dataset / Q&A (offline) ──────────────────────────────────────────────
   // En Desktop offline, l'API Next répond STATIC_EXPORT : on bascule sur le
   // Registre Physique (.registry/items/*.json) côté webview, calqué sur le
@@ -523,6 +491,111 @@ const desktopInterceptors: Record<string, (body: any, webFetch: () => Promise<an
         itemId: `items/${safeFileName}`,
         updated: !!existing,
         path: registryPath,
+        provider: 'LOCAL_REGISTRY',
+        offline: true,
+      };
+    } catch (e: any) {
+      return { success: false, error: 'ERREUR_INTERNE_QR', message: e.message };
+    }
+  },
+  // ── Knowledge Base (Q/R sémantique) offline ───────────────────────────────
+  // En Desktop offline, l'API Next répond STATIC_EXPORT : on bascule sur le
+  // Registre Physique (.registry/items/*.json) côté webview, au même titre que
+  // /api/registry. GET = liste des items Q/R ; POST = création/mise à jour.
+  // Mode web : cette route n'est pas interceptée → fetch cloud normal (Prisma).
+  // Sans cet intercepteur, la création/lecture des Q/R en mode Locale échouait
+  // sur un fetch cloud (timeout 15 s) car /api/knowledge n'avait pas de repli
+  // offline (cf. analyse de stabilité Knowledge Base).
+  '/api/knowledge': async (body: any, webFetch: () => Promise<any>, ctx?: { method?: string; params?: any; url?: string }) => {
+    const method = ctx?.method || (body && Object.keys(body).length ? 'POST' : 'GET');
+
+    if (method === 'GET') {
+      try {
+        const { listOfflineQA } = await import('./qr/offline-repo');
+        const items = listOfflineQA().map((rec: any) => ({
+          id: `items/${rec.registryPath?.split('/').pop() || `${rec.title}.json`}`,
+          type: rec.type || 'qa',
+          title: rec.title || '',
+          question: rec.pairs?.[0]?.question || null,
+          answer: rec.pairs?.map((p: any) => p.answer).filter(Boolean).join('\n\n') || null,
+          tags: rec.tags || [],
+          category: rec.category || rec.description || 'General',
+          content: JSON.stringify(rec),
+          createdAt: rec.createdAt || new Date().toISOString(),
+          origin: 'LOCAL_REGISTRY',
+        }));
+        return { success: true, items, provider: 'LOCAL_REGISTRY', offline: true };
+      } catch (e: any) {
+        return { success: false, items: [], error: 'LECTURE_CONNAISSANCES_ECHEC', message: e.message };
+      }
+    }
+
+    if (method === 'DELETE') {
+      try {
+        const { deleteOfflineQA } = await import('./qr/offline-repo');
+        const url: string =
+          (ctx as any)?.url ||
+          (typeof window !== 'undefined' ? window.location.href : '') ||
+          '';
+        const qp = new URLSearchParams(url.includes('?') ? url.split('?')[1] : '');
+        const targetPath = qp.get('path') || body?.path || '';
+        const name = targetPath.split('/').filter(Boolean).pop() || targetPath;
+        if (!name) return { success: false, error: 'PATH_REQUIRED' };
+        const ok = deleteOfflineQA(name.replace(/\.json$/i, ''));
+        if (!ok) return { success: false, error: 'ELEMENT_INTROUVABLE' };
+        return { success: true, provider: 'LOCAL_REGISTRY', offline: true };
+      } catch (e: any) {
+        return { success: false, error: 'SUPPRESSION_ECHEC', message: e.message };
+      }
+    }
+
+    // POST (création / mise à jour)
+    try {
+      const { upsertOfflineQA, getOfflineQA } = await import('./qr/offline-repo');
+      const { type, title, question, answer, tags, category } = body || {};
+      if (!title || !type) {
+        return { success: false, error: 'TITRE_ET_TYPE_REQUIS' };
+      }
+      if (type === 'qa') {
+        const q = typeof question === 'string' ? question.trim() : '';
+        const a = typeof answer === 'string' ? answer.trim() : '';
+        if (!q || !a) {
+          return { success: false, error: 'QUESTION_ET_REPONSE_REQUISES' };
+        }
+      }
+
+      const safeBase = (title.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-') || 'qr-collection');
+      const registryPath = body?.registryPath || `items/${safeBase}.json`;
+      const existing = getOfflineQA(registryPath.split('/').pop() || `${safeBase}.json`);
+
+      const record: any = {
+        type: 'qa',
+        title: title.trim(),
+        description: category || 'General',
+        category: category || 'General',
+        tags: Array.isArray(tags) ? tags : [],
+        pairs: Array.isArray((body as any).pairs)
+          ? (body as any).pairs
+          : [{ question: question?.trim() || '', answer: answer?.trim() || '' }],
+        registryPath,
+        createdAt: existing?.createdAt || new Date().toISOString(),
+      };
+      upsertOfflineQA(record);
+
+      return {
+        success: true,
+        item: {
+          id: registryPath,
+          type: 'qa',
+          title: record.title,
+          question: record.pairs[0]?.question || null,
+          answer: record.pairs.map((p: any) => p.answer).filter(Boolean).join('\n\n') || null,
+          tags: record.tags,
+          category: record.category,
+          createdAt: record.createdAt,
+          origin: 'LOCAL_REGISTRY',
+        },
+        updated: !!existing,
         provider: 'LOCAL_REGISTRY',
         offline: true,
       };
@@ -760,6 +833,80 @@ const desktopInterceptors: Record<string, (body: any, webFetch: () => Promise<an
       return { success: false, error: 'VECTOR_OFFLINE_FAILED', details: e.message, collections: [], mirrorTree: [] };
     }
   },
+  '/api/auth/me': async (body: any, webFetch: () => Promise<any>, ctx?: { method?: string; params?: any }) => {
+    const method = (ctx?.method || 'GET').toUpperCase();
+    const localOnly = typeof localStorage !== 'undefined' && localStorage.getItem('visionode-mode-local-only') === '1';
+
+    if (method === 'GET') {
+      const stored = localAuth.getCurrentSession();
+      const localUser = stored ? await validateLocalSession(stored) : null;
+
+      if (localOnly) {
+        if (!localUser) return { session: null, user: null, offline: true };
+        return { session: null, user: localUser, offline: true };
+      }
+
+      try {
+        const cloudResult = await withTimeout(webFetch());
+        if (cloudResult && typeof cloudResult === 'object' && cloudResult.success === false) {
+          if (localUser) return { session: null, user: localUser, offline: true };
+          return cloudResult;
+        }
+        return cloudResult;
+      } catch (e: any) {
+        if (localUser) return { session: null, user: localUser, offline: true };
+        return { session: null, user: null, offline: true, error: 'RÉSEAU_INDISPONIBLE' };
+      }
+    }
+
+    if (method === 'PATCH') {
+      if (localOnly) {
+        const stored = localAuth.getCurrentSession();
+        if (!stored) return { success: false, error: 'UNAUTHENTICATED' };
+
+        const { firstName, lastName, email, newPassword } = body || {};
+
+        if (newPassword && !body?.currentPassword) {
+          return { success: false, error: 'INVALID_CURRENT_PASSWORD' };
+        }
+
+        const updated = await updateLocalUserProfile(stored.id, {
+          firstName,
+          lastName,
+          email,
+          newPassword,
+        });
+
+        if (!updated) {
+          return { success: false, error: 'UPDATE_FAILED' };
+        }
+
+        return { success: true, user: updated, offline: true };
+      }
+
+      try {
+        const cloudResult = await withTimeout(webFetch());
+        if (cloudResult && typeof cloudResult === 'object' && cloudResult.success === false) {
+          return cloudResult;
+        }
+        return cloudResult;
+      } catch (e: any) {
+        const stored = localAuth.getCurrentSession();
+        if (!stored) return { success: false, error: 'UNAUTHENTICATED', errorType: 'NETWORK_DOWN' };
+
+        const { firstName, lastName, email } = body || {};
+        const updated = await updateLocalUserProfile(stored.id, { firstName, lastName, email });
+
+        if (!updated) {
+          return { success: false, error: 'UPDATE_FAILED', errorType: 'NETWORK_DOWN' };
+        }
+
+        return { success: true, user: updated, offline: true, message: 'Profil mis à jour localement (cloud indisponible).' };
+      }
+    }
+
+    return { success: false, error: 'METHODE_NON_SUPPORTER' };
+  },
   '/api/auth/signin': async (body: any, webFetch: () => Promise<any>) => {
     const email = body?.email;
     if (!email) {
@@ -848,6 +995,110 @@ function toPathname(input: string): string {
   return input.split('?')[0];
 }
 
+/**
+ * Résout le flag localOnly SANS race condition (cf. /api/auth/signin) :
+ *  - priorité au flag explicite transmis par le frontend (source de vérité) ;
+ *  - repli sur le flag localStorage « visionode-mode-local-only ».
+ * Normalisé en booléen pour ne plus relire localStorage par la suite.
+ */
+function resolveLocalOnly(body: any): boolean {
+  if (body && typeof body.localOnly === 'boolean') return body.localOnly;
+  if (typeof localStorage !== 'undefined' && localStorage.getItem('visionode-mode-local-only') === '1') {
+    if (body) body.localOnly = true;
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Intercepteurs OFFLINE : déclenchés dès que l'app est en mode « Locale
+ * uniquement » (localOnly), quel que soit le mode (Web local / Hybride
+ * offline / Desktop offline). Ils court-circuitent l'API cloud et
+ * répondent depuis le Registre Physique / le moteur local. Ils NE doivent
+ * PAS s'exécuter en mode hybride EN LIGNE, où l'on doit rejoindre le cloud.
+ */
+const offlineInterceptors: Record<string, (body: any, webFetch: () => Promise<any>, ctx?: { method?: string; params?: any }) => Promise<any>> = {
+  '/api/procedure-config-fields': async (body: any, _webFetch: () => Promise<any>, ctx?: { method?: string; params?: any }) => {
+    const method = ctx?.method || (body && Object.keys(body).length ? 'POST' : 'GET');
+    const ALLOWED_TYPES = ['text', 'number', 'boolean', 'select'];
+    if (method === 'GET') {
+      try {
+        const { listOfflineTemplates, ensureDefaultTemplates } = await import('./procedures/offline-repo');
+        ensureDefaultTemplates();
+        const items = listOfflineTemplates();
+        return { success: true, items, provider: 'LOCAL_REGISTRY', offline: true };
+      } catch (e: any) {
+        return { success: false, items: [], error: 'LECTURE_TEMPLATES_ECHEC', message: e.message };
+      }
+    }
+    if (method === 'POST') {
+      try {
+        const { name, type, description, options, required } = body || {};
+        if (!name || !type) return { success: false, error: 'Name and type are required' };
+        if (!ALLOWED_TYPES.includes(type)) {
+          return { success: false, error: `Type invalide. Attendu: ${ALLOWED_TYPES.join(', ')}` };
+        }
+        if (type === 'select' && options !== undefined && !Array.isArray(options)) {
+          return { success: false, error: 'Le champ options doit être un tableau pour le type select' };
+        }
+        const { upsertOfflineTemplate, normalizeTemplateOptions } = await import('./procedures/offline-repo');
+        const now = new Date().toISOString();
+        const record: any = {
+          id: `TPL-${Date.now().toString(36)}`,
+          name,
+          type,
+          description: description ?? null,
+          options: normalizeTemplateOptions(options),
+          required: Boolean(required) || false,
+          createdAt: now,
+          updatedAt: now,
+        };
+        upsertOfflineTemplate(record);
+        return { ...record, provider: 'LOCAL_REGISTRY', offline: true };
+      } catch (e: any) {
+        return { success: false, error: 'ERREUR_INTERNE_TEMPLATE', message: e.message };
+      }
+    }
+    return { success: false, error: 'METHODE_NON_SUPPORTER' };
+  },
+  '/api/procedure-config-fields/[id]': async (body: any, _webFetch: () => Promise<any>, ctx?: { method?: string; params?: any }) => {
+    const method = ctx?.method || 'GET';
+    const id = ctx?.params?.id;
+      const { getOfflineTemplate, upsertOfflineTemplate, deleteOfflineTemplate, normalizeTemplateOptions } = await import('./procedures/offline-repo');
+      if (method === 'GET') {
+        const tpl = getOfflineTemplate(id);
+        if (!tpl) return { success: false, message: 'Template introuvable', status: 404 };
+        return { ...tpl, provider: 'LOCAL_REGISTRY', offline: true };
+      }
+      if (method === 'PATCH') {
+        const existing = getOfflineTemplate(id);
+        if (!existing) return { success: false, error: 'TEMPLATE_NOT_FOUND' };
+        const ALLOWED_TYPES = ['text', 'number', 'boolean', 'select'];
+        const { name, type, description, options, required } = body || {};
+        if (type !== undefined && !ALLOWED_TYPES.includes(type)) {
+          return { success: false, error: `Type invalide. Attendu: ${ALLOWED_TYPES.join(', ')}` };
+        }
+        const updated: any = {
+          ...existing,
+          name: name !== undefined ? name : existing.name,
+          type: type !== undefined ? type : existing.type,
+          description: description !== undefined ? description ?? null : existing.description,
+          options: options !== undefined ? normalizeTemplateOptions(options) : existing.options,
+          required: required !== undefined ? Boolean(required) : existing.required,
+          updatedAt: new Date().toISOString(),
+        };
+      upsertOfflineTemplate(updated);
+      return { ...updated, provider: 'LOCAL_REGISTRY', offline: true };
+    }
+    if (method === 'DELETE') {
+      const ok = deleteOfflineTemplate(id);
+      if (!ok) return { success: false, error: 'TEMPLATE_NOT_FOUND' };
+      return { success: true, provider: 'LOCAL_REGISTRY', offline: true };
+    }
+    return { success: false, error: 'METHODE_NON_SUPPORTER' };
+  },
+};
+
 export async function executeHybridRequest<TReq, TRes>(
   path: string,
   body: TReq,
@@ -856,9 +1107,33 @@ export async function executeHybridRequest<TReq, TRes>(
 ): Promise<TRes> {
   const cleanPath = toPathname(path);
 
+  // 1. Mode « Locale uniquement » (localOnly) : on court-circuite TOUJOURS
+  //    le cloud (Web local, Hybride offline, Desktop offline) via le registre
+  //    physique / moteur local. C'est le contrat du mode local.
+  const localOnly = resolveLocalOnly(body);
+  if (localOnly && offlineInterceptors[cleanPath]) {
+    console.log(`🔌 [HYBRID_BRIDGE] Interception OFFLINE (localOnly) : ${cleanPath}`);
+    return (await offlineInterceptors[cleanPath](body, webFetch, ctx)) as TRes;
+  }
+
+  // 2. Pont hybride Desktop (vector/vision/auth) : moteurs locaux embarqués,
+  //    actifs uniquement sous Tauri, avec repli cloud si non localOnly.
   if (isDesktop && desktopInterceptors[cleanPath]) {
     console.log(`🔌 [HYBRID_BRIDGE] Interception EXE : ${cleanPath}`);
-    return await desktopInterceptors[cleanPath](body, webFetch, ctx);
+    return (await desktopInterceptors[cleanPath](body, webFetch, ctx)) as TRes;
+  }
+
+  // 3. Sinon : fetch réel vers le cloud. En Desktop (hybride OU offline), si
+  //    l'appel cloud échoue (réseau coupé / STATIC_EXPORT), on repli
+  //    silencieusement sur le registre offline pour les routes concernées —
+  //    cohérent avec le comportement des procédures/registry en Desktop.
+  if (isDesktop && offlineInterceptors[cleanPath]) {
+    try {
+      return await webFetch();
+    } catch (e: any) {
+      console.warn(`[HYBRID_BRIDGE] Cloud indisponible → repli offline : ${cleanPath}`);
+      return (await offlineInterceptors[cleanPath](body, webFetch, ctx)) as TRes;
+    }
   }
 
   console.log(`🌐 [HYBRID_BRIDGE] Fetch réel : ${cleanPath}`);
