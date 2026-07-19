@@ -262,6 +262,7 @@ export default function DatasetPage() {
       let savedToLocal = false;
       let indexedChroma = false;
       const indexErrors: string[] = [];
+      let cloudError: string | null = null;
 
       if (!isOfflineSave) {
         const res = await apiClient.post('/api/registry', {
@@ -290,7 +291,27 @@ export default function DatasetPage() {
             }
           }
         } else {
-          throw new Error((res as any).error || 'Erreur inconnue');
+          cloudError = (res as any).error || 'Erreur inconnue';
+          console.warn(`[DATASET] Sauvegarde cloud échouée (${cloudError}), tentative de repli local...`);
+          try {
+            const localRes = await apiClient.post('/api/local-db', {
+              fileName: registryFileName,
+              content: JSON.stringify(sessionJSON, null, 2),
+              metadata: {
+                knowledgeType: 'qa',
+                tags: ['Q/R', 'entrainement', ...(description.trim() ? [description.trim()] : [])]
+              },
+              targetDir: 'items'
+            });
+            if ((localRes as any).success) {
+              savedToLocal = true;
+            }
+          } catch (localErr: any) {
+            console.warn('[DATASET] Repli local échoué:', localErr);
+          }
+          if (!savedToLocal) {
+            throw new Error(cloudError);
+          }
         }
       }
 
@@ -363,18 +384,21 @@ export default function DatasetPage() {
         questionInputRef.current.focus();
       }
 
-      const saveTarget = savedToCloud ? 'REGISTRE cloud' : 'BDD Locale';
-      const extraInfo = isDesktop
-        ? (indexedChroma
-            ? ' Indexation Chroma effectuée — la collection est désormais interrogée par le chat RAG.'
-            : indexErrors.length
-              ? ` Enregistré localement, mais indexation Chroma non disponible (${indexErrors.join(' ; ')}).`
-              : ' Copie locale effectuée.')
-        : '';
+      const saveTarget = savedToCloud ? 'REGISTRE cloud' : (savedToLocal ? 'BDD Locale' : 'aucune cible');
+      const cloudFailed = cloudError && savedToLocal;
+      const extraInfo = cloudFailed
+        ? ' (cloud indisponible, données sauvegardées localement)'
+        : isDesktop
+          ? (indexedChroma
+              ? ' Indexation Chroma effectuée — la collection est désormais interrogée par le chat RAG.'
+              : indexErrors.length
+                ? ` Enregistré localement, mais indexation Chroma non disponible (${indexErrors.join(' ; ')}).`
+                : ' Copie locale effectuée.')
+          : '';
       toast({
-        title: 'Sauvegarde réussie',
+        title: cloudFailed ? 'Sauvegarde locale (repli)' : 'Sauvegarde réussie',
         description: `${pairs.length} paires Q/R enregistrées dans ${saveTarget} (${registryPath}).${extraInfo}`,
-        variant: indexErrors.length && !savedToCloud ? 'destructive' : 'default',
+        variant: (!savedToCloud && !savedToLocal) ? 'destructive' : (cloudFailed ? 'default' : 'default'),
       });
     } catch (e: any) {
       toast({
