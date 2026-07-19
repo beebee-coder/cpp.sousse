@@ -501,11 +501,25 @@ export default function DatasetPage() {
     setPairs(prev => prev.filter(p => p.id !== id));
   }, []);
 
+  const serializeAnswer = (value: any): string | null => {
+    if (typeof value === 'string') return value.trim() || null;
+    if (value && typeof value === 'object') {
+      const parts: string[] = [];
+      for (const [k, v] of Object.entries(value)) {
+        if (v !== null && v !== undefined && v !== '') {
+          parts.push(`${k}: ${v}`);
+        }
+      }
+      return parts.length > 0 ? parts.join('\n') : null;
+    }
+    return null;
+  };
+
   const normalizeQrPairs = useCallback((raw: any): QRPair[] => {
     const out: QRPair[] = [];
     const push = (q: any, a: any) => {
       const question = typeof q === 'string' ? q.trim() : '';
-      const answer = typeof a === 'string' ? a.trim() : '';
+      const answer = serializeAnswer(a);
       if (question && answer) {
         out.push({
           id: `qr_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
@@ -515,17 +529,46 @@ export default function DatasetPage() {
       }
     };
 
-    if (Array.isArray(raw)) {
-      for (const item of raw) {
-        if (item && typeof item === 'object') {
-          if (typeof item.question === 'string' && typeof item.answer === 'string') {
-            push(item.question, item.answer);
-          } else if (typeof item.q === 'string' && typeof item.a === 'string') {
-            push(item.q, item.a);
-          } else if (typeof item.question === 'string' && typeof item.response === 'string') {
-            push(item.question, item.response);
+    const parseItem = (item: any) => {
+      if (!item || typeof item !== 'object') return;
+      if (typeof item.question === 'string') {
+        const answer =
+          typeof item.answer === 'string' ? item.answer
+          : typeof item.response === 'string' ? item.response
+          : typeof item.reponse === 'string' ? item.reponse
+          : typeof item.a === 'string' ? item.a
+          : (item.answer ?? item.reponse ?? item.response);
+        if (typeof answer === 'string' && answer.trim()) {
+          push(item.question, answer);
+          return;
+        }
+        if (answer && typeof answer === 'object') {
+          push(item.question, answer);
+          return;
+        }
+      }
+      if (Array.isArray(item.alarmes)) {
+        for (const alarme of item.alarmes) {
+          if (alarme && typeof alarme === 'object' && typeof alarme.question === 'string') {
+            const answer =
+              typeof alarme.answer === 'string' ? alarme.answer
+              : typeof alarme.response === 'string' ? alarme.response
+              : typeof alarme.reponse === 'string' ? alarme.reponse
+              : typeof alarme.a === 'string' ? alarme.a
+              : (alarme.answer ?? alarme.reponse ?? alarme.response);
+            if (typeof answer === 'string' && answer.trim()) {
+              push(alarme.question, answer);
+            } else if (answer && typeof answer === 'object') {
+              push(alarme.question, answer);
+            }
           }
         }
+      }
+    };
+
+    if (Array.isArray(raw)) {
+      for (const item of raw) {
+        parseItem(item);
       }
       return out;
     }
@@ -533,27 +576,13 @@ export default function DatasetPage() {
     if (raw && typeof raw === 'object') {
       if (Array.isArray(raw.pairs)) {
         for (const item of raw.pairs) {
-          if (item && typeof item === 'object') {
-            if (typeof item.question === 'string' && typeof item.answer === 'string') {
-              push(item.question, item.answer);
-            } else if (typeof item.q === 'string' && typeof item.a === 'string') {
-              push(item.q, item.a);
-            } else if (typeof item.question === 'string' && typeof item.response === 'string') {
-              push(item.question, item.response);
-            }
-          }
+          parseItem(item);
         }
         return out;
       }
       if (Array.isArray(raw.qa)) {
         for (const item of raw.qa) {
-          if (item && typeof item === 'object') {
-            if (typeof item.question === 'string' && typeof item.answer === 'string') {
-              push(item.question, item.answer);
-            } else if (typeof item.q === 'string' && typeof item.a === 'string') {
-              push(item.q, item.a);
-            }
-          }
+          parseItem(item);
         }
         return out;
       }
