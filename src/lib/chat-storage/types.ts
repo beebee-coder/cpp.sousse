@@ -26,4 +26,14 @@ export interface ChatStorage {
   saveHistory(messages: ChatMessage[], userId?: string, conversationId?: string): Promise<void>;
   loadHistory(userId?: string, conversationId?: string): Promise<ChatMessage[]>;
   clearHistory(userId?: string, conversationId?: string): Promise<void>;
+  listConversations(userId?: string): Promise<ChatConversation[]>;
+  deleteConversation(userId?: string, conversationId?: string): Promise<void>;
 }
+
+export type ChatConversation = {
+  id: string;
+  title: string;
+  messageCount: number;
+  updatedAt: number;
+  preview?: string;
+};

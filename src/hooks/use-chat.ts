@@ -16,24 +16,70 @@ interface StreamChunk {
   };
 }
 
+export type ChatConversation = {
+  id: string;
+  title: string;
+  messageCount: number;
+  updatedAt: number;
+  preview?: string;
+};
+
 export function useChat(onAiResponse?: (text: string) => void) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [currentProvider, setCurrentProvider] = useState<string>('VEILLE');
   const [isStreaming, setIsStreaming] = useState(false);
+  const [conversationId, setConversationId] = useState<string>(crypto.randomUUID());
+  const [conversations, setConversations] = useState<ChatConversation[]>([]);
   const storage = getChatStorage();
   const { mode, online, localOnly } = useAppMode();
   const { user } = useSession();
   const abortControllerRef = useRef<AbortController | null>(null);
   const streamBufferRef = useRef<string>('');
   const messagesRef = useRef<ChatMessage[]>([]);
-  const conversationIdRef = useRef<string>(crypto.randomUUID());
+  const conversationIdRef = useRef<string>(conversationId);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const streamingEnabled = isDesktop;
 
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
+
+  /* ── synchronise la ref conversationId avec l'état ─────────────── */
+  useEffect(() => {
+    conversationIdRef.current = conversationId;
+  }, [conversationId]);
+
+  /* ── liste des conversations (historique par session) ─────────── */
+  const refreshConversations = useCallback(async () => {
+    const local = storage.listConversations(user?.id);
+    const localList = await local;
+
+    try {
+      if (online && !localOnly && user?.id) {
+        const res = await fetch('/api/chat/history');
+        if (res.ok) {
+          const data = await res.json();
+          const cloudConvs: ChatConversation[] = (data.conversations || []).map((c: any) => ({
+            id: c.conversationId,
+            title: deriveTitle(c.conversationId, []),
+            messageCount: c._count?.messages ?? 0,
+            updatedAt: c.updatedAt ? new Date(c.updatedAt).getTime() : Date.now(),
+          }));
+          const merged = mergeConversations(localList, cloudConvs);
+          setConversations(merged);
+          return;
+        }
+      }
+    } catch {
+      // cloud indisponible, on garde le local
+    }
+    setConversations(localList);
+  }, [storage, user?.id, online, localOnly]);
+
+  useEffect(() => {
+    refreshConversations();
+  }, [refreshConversations]);
 
   useEffect(() => {
     const loadHistory = async () => {
@@ -135,6 +181,7 @@ export function useChat(onAiResponse?: (text: string) => void) {
     const sanitized = sanitizeInput(content);
     if (!sanitized || isLoading) return;
 
+    const wasEmpty = messagesRef.current.length === 0;
     const ts = new Date().toLocaleTimeString();
     console.log(`🤖 [CHAT] [INIT] [${ts}] Envoi message : "${sanitized.slice(0, 30)}..."`);
 
@@ -375,8 +422,11 @@ export function useChat(onAiResponse?: (text: string) => void) {
     } finally {
       setIsLoading(false);
       setIsStreaming(false);
+      if (wasEmpty) {
+        refreshConversations();
+      }
     }
-  }, [isLoading, storage, onAiResponse, isDesktop, mode, online, user?.id]);
+  }, [isLoading, storage, onAiResponse, isDesktop, mode, online, user?.id, refreshConversations]);
 
   const callCloudAPI = async (message: string, history: any[], mode: string) => {
     const fetchPromise = fetch('/api/chat', {
@@ -552,9 +602,80 @@ export function useChat(onAiResponse?: (text: string) => void) {
     setMessages([]);
     messagesRef.current = [];
     storage.clearHistory(user?.id, conversationIdRef.current);
-    conversationIdRef.current = crypto.randomUUID();
+    const nextId = crypto.randomUUID();
+    conversationIdRef.current = nextId;
+    setConversationId(nextId);
     setCurrentProvider('VEILLE');
-  }, [storage, user?.id]);
+    refreshConversations();
+  }, [storage, user?.id, refreshConversations]);
+
+  /* ── sélectionne une conversation existante ──────────────────── */
+  const selectConversation = useCallback(async (id: string) => {
+    if (id === conversationIdRef.current) return;
+    if (abortControllerRef.current) abortControllerRef.current.abort();
+    conversationIdRef.current = id;
+    setConversationId(id);
+    setCurrentProvider('VEILLE');
+    setMessages([]);
+    messagesRef.current = [];
+    try {
+      const local = await storage.loadHistory(user?.id, id);
+      if (local.length > 0) {
+        setMessages(local);
+        return;
+      }
+      if (online && !localOnly && user?.id) {
+        const res = await fetch(`/api/chat/history?conversationId=${encodeURIComponent(id)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.messages && data.messages.length > 0) {
+            const cloudMessages = data.messages.map((m: any) => ({
+              id: m.id,
+              role: m.role,
+              content: m.content,
+              provider: m.provider,
+              timestamp: new Date(m.timestamp).getTime(),
+              media: m.media,
+              procedureId: m.procedureId,
+              source: m.source,
+              conversationId: m.conversationId,
+            }));
+            setMessages(cloudMessages);
+            await storage.saveHistory(cloudMessages, user.id, id);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[CHAT] Erreur chargement conversation:', e);
+    }
+  }, [storage, user?.id, online, localOnly]);
+
+  /* ── crée une nouvelle conversation vide ─────────────────────── */
+  const newConversation = useCallback(() => {
+    clearChat();
+  }, [clearChat]);
+
+  /* ── supprime une conversation ───────────────────────────────── */
+  const deleteConversation = useCallback(async (id: string) => {
+    if (abortControllerRef.current) abortControllerRef.current.abort();
+    storage.deleteConversation(user?.id, id);
+    if (online && !localOnly && user?.id) {
+      try {
+        await fetch(`/api/chat/history?conversationId=${encodeURIComponent(id)}`, { method: 'DELETE' });
+      } catch {
+        // suppression cloud best-effort
+      }
+    }
+    if (id === conversationIdRef.current) {
+      const nextId = crypto.randomUUID();
+      conversationIdRef.current = nextId;
+      setConversationId(nextId);
+      setMessages([]);
+      messagesRef.current = [];
+      setCurrentProvider('VEILLE');
+    }
+    refreshConversations();
+  }, [storage, user?.id, online, localOnly, refreshConversations]);
 
   return {
     messages,
@@ -564,5 +685,32 @@ export function useChat(onAiResponse?: (text: string) => void) {
     isStreaming,
     currentProvider,
     mode,
+    conversationId,
+    conversations,
+    selectConversation,
+    newConversation,
+    deleteConversation,
+    refreshConversations,
   };
+}
+
+/* ── helpers de dérivation de titre / fusion d'historiques ─────── */
+function deriveTitle(conversationId: string, messages: { content?: string }[]): string {
+  const firstUser = messages.find(m => m.content && m.content.trim());
+  if (firstUser?.content) {
+    const t = firstUser.content.trim().slice(0, 40);
+    return t.length < firstUser.content.trim().length ? `${t}…` : t;
+  }
+  return `Session ${conversationId.slice(0, 8)}`;
+}
+
+function mergeConversations(local: ChatConversation[], cloud: ChatConversation[]): ChatConversation[] {
+  const map = new Map<string, ChatConversation>();
+  for (const c of local) map.set(c.id, c);
+  for (const c of cloud) {
+    const existing = map.get(c.id);
+    if (!existing) map.set(c.id, c);
+    else map.set(c.id, { ...existing, messageCount: Math.max(existing.messageCount, c.messageCount) });
+  }
+  return Array.from(map.values()).sort((a, b) => b.updatedAt - a.updatedAt);
 }

@@ -1,4 +1,4 @@
-import { registerAppTools } from '@/lib/ai/tools';
+import { registerAppTools } from '@/lib/ai';
 
 registerAppTools();
 

@@ -215,9 +215,15 @@ export class ChatOrchestrator {
           const json = await res.json().catch(() => null);
           if (json?.success && json.content) {
             out.push({ type: mediaType, url: json.content });
+          } else {
+            // Fallback : on expose le chemin brut pour que l'UI puisse
+            // tenter un affichage direct (ne pas perdre le média).
+            out.push({ type: mediaType, url: `/api/registry?path=${encodeURIComponent(relPath)}` });
           }
         } catch {
-          // média local non résolu : on ignore silencieusement
+          if (meta.path) {
+            out.push({ type: mediaType, url: `/api/registry?path=${encodeURIComponent(String(meta.path).replace(/^\/+/, ''))}` });
+          }
         }
       }
     }

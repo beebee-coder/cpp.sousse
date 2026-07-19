@@ -20,4 +20,10 @@ export function getSharedHistoryKey(userId?: string, conversationId?: string): s
   return parts.join('_');
 }
 
+export function getConversationsKey(userId?: string): string {
+  const parts = [SHARED_HISTORY_KEY, 'conversations'];
+  if (userId) parts.push(userId);
+  return parts.join('_');
+}
+
 export { MAX_MESSAGES };

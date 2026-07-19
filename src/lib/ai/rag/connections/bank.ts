@@ -42,7 +42,8 @@ const bankConnection: RAGConnection = {
             distance: 0,
           }));
       } catch (e: any) {
-        console.error('[RAG_CONN:bank] Weaviate échec:', e.message);
+        // Échec Weaviate remonté au hub parent (trace consolidé) ; on
+        // continue vers le fallback web/local ci-dessous.
       }
     }
 
@@ -88,7 +89,7 @@ const bankConnection: RAGConnection = {
           }
         }
       } catch (e: any) {
-        console.error('[RAG_CONN:bank] API web échec:', e?.message || e);
+        // Échec API web remonté au hub parent.
       }
     }
 
@@ -114,7 +115,7 @@ const bankConnection: RAGConnection = {
         };
       });
     } catch (e: any) {
-      console.error('[RAG_CONN:bank] fallback lexical échec:', e.message);
+      // Échec fallback lexical remonté au hub parent (trace consolidé).
       return [];
     }
   },

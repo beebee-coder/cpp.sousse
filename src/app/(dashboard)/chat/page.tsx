@@ -16,7 +16,6 @@ import {
   Volume2,
   VolumeX,
   ImageIcon,
-  Timer,
   Radio,
   Pause,
   Play,
@@ -27,13 +26,18 @@ import {
   Info,
   ChevronDown,
   ExternalLink,
-  BookOpen
+  BookOpen,
+  MessageSquarePlus,
+  History,
+  PanelLeft,
+  X
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
 import { useChat } from '@/hooks/use-chat';
 import { useVoice } from '@/hooks/use-voice';
 import { cn } from '@/lib/utils';
@@ -293,6 +297,149 @@ function MessageAttribution({ message, onNavigate }: { message: any; onNavigate?
   );
 }
 
+/* ─── History Sidebar (sessions) ──────────────────────────────── */
+function HistorySidebar({ open, onClose, conversations, conversationId, onSelect, onNew, onDelete }: {
+  open: boolean;
+  onClose: () => void;
+  conversations: any[];
+  conversationId: string;
+  onSelect: (id: string) => void;
+  onNew: () => void;
+  onDelete: (id: string) => void;
+}) {
+  const [deleting, setDeleting] = useState<string | null>(null);
+
+  const handleDelete = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    setDeleting(id);
+    await onDelete(id);
+    setDeleting(null);
+  };
+
+  return (
+    <aside className={cn(
+      'w-64 shrink-0 border-r border-border bg-card/20 flex flex-col h-full overflow-hidden transition-all duration-200',
+      open ? 'flex' : 'hidden'
+    )}>
+      <div className="h-16 px-3 flex items-center justify-between border-b border-border shrink-0">
+        <div className="flex items-center gap-2">
+          <History className="w-4 h-4 text-primary" />
+          <span className="font-headline font-bold text-[10px] uppercase tracking-widest text-primary">
+            Sessions
+          </span>
+        </div>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={onNew}
+            title="Nouvelle session"
+            className="h-7 w-7 flex items-center justify-center rounded-sm border border-border/50 text-muted-foreground hover:border-primary/40 hover:text-primary transition-colors"
+          >
+            <MessageSquarePlus className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={onClose}
+            title="Masquer le historique"
+            className="h-7 w-7 flex items-center justify-center rounded-sm border border-border/50 text-muted-foreground hover:text-foreground lg:hidden transition-colors"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+
+      <ScrollArea className="flex-1">
+        <div className="p-2 space-y-1">
+          {conversations.length === 0 && (
+            <p className="text-[9px] font-code text-muted-foreground uppercase tracking-wider px-2 py-4 text-center opacity-50">
+              Aucune session sauvegardée
+            </p>
+          )}
+          {conversations.map((c) => {
+            const isActive = c.id === conversationId;
+            return (
+              <button
+                key={c.id}
+                onClick={() => onSelect(c.id)}
+                className={cn(
+                  'w-full text-left rounded-sm border px-3 py-2 transition-colors group relative',
+                  isActive
+                    ? 'bg-primary/10 border-primary/40'
+                    : 'border-transparent hover:bg-muted/40 hover:border-border/50'
+                )}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className={cn(
+                    'text-[10px] font-code uppercase tracking-wide truncate flex-1',
+                    isActive ? 'text-primary' : 'text-foreground/80'
+                  )}>
+                    {c.title}
+                  </span>
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    onClick={(e) => handleDelete(e, c.id)}
+                    title="Supprimer la session"
+                    className="shrink-0 h-5 w-5 flex items-center justify-center rounded-sm text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive hover:bg-destructive/10 transition-all"
+                  >
+                    {deleting === c.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                  </span>
+                </div>
+                {c.preview && (
+                  <p className="text-[8px] font-code text-muted-foreground/70 truncate mt-0.5 normal-case tracking-normal">
+                    {c.preview}
+                  </p>
+                )}
+                <div className="flex items-center gap-2 mt-1 text-[7px] font-code text-muted-foreground/60 uppercase tracking-wider">
+                  <span>{c.messageCount} msg</span>
+                  <span>·</span>
+                  <span>{new Date(c.updatedAt).toLocaleDateString('fr-FR')}</span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </ScrollArea>
+    </aside>
+  );
+}
+
+/* ─── Context Panel ─────────────────────────────────────────────── */
+function ContextPanel({ conversationId, messageCount, provider, mode }: {
+  conversationId: string;
+  messageCount: number;
+  provider: string;
+  mode: string;
+}) {
+  return (
+    <Card className="p-4 border-primary/20 bg-primary/5 shrink-0">
+      <div className="flex items-center gap-2 mb-2">
+        <Info className="w-3.5 h-3.5 text-primary" />
+        <span className="text-[9px] font-code font-bold text-primary uppercase">Contexte Session</span>
+      </div>
+      <div className="space-y-1.5 text-[8px] font-code text-muted-foreground uppercase">
+        <div className="flex justify-between gap-2">
+          <span>Mode</span>
+          <span className="text-primary">{mode || '—'}</span>
+        </div>
+        <div className="flex justify-between gap-2">
+          <span>Moteur</span>
+          <span className="text-secondary truncate max-w-[120px]">{provider}</span>
+        </div>
+        <div className="flex justify-between gap-2">
+          <span>Messages</span>
+          <span className="text-foreground/80">{messageCount}</span>
+        </div>
+        <Separator className="my-1 bg-border/50" />
+        <div className="flex flex-col gap-0.5">
+          <span className="text-muted-foreground/60">Session ID</span>
+          <span className="text-foreground/70 break-all normal-case tracking-normal">
+            {conversationId.slice(0, 8)}…{conversationId.slice(-4)}
+          </span>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 /* ─── Main Chat Page ─────────────────────────────────────────────── */
 export default function ChatPage() {
   const renderCountRef = useRef(0);
@@ -304,7 +451,7 @@ export default function ChatPage() {
   const autoSendTimerRef = useRef<NodeJS.Timeout | null>(null);
   const inputRef = useRef<string>('');
 
-  const { messages, sendMessage, clearChat, isLoading, currentProvider } = useChat((text) => {
+  const { messages, sendMessage, clearChat, isLoading, currentProvider, mode, conversationId, conversations, selectConversation, newConversation, deleteConversation } = useChat((text) => {
     if (autoSpeak && text) {
       const cancelled = voiceRef.current?.isSpeechCancelled?.();
       if (!cancelled) {
@@ -317,6 +464,8 @@ export default function ChatPage() {
   const [autoSpeak, setAutoSpeak] = useState(false);
   const [isVoiceInput, setIsVoiceInput] = useState(false);
   const [detectedCommand, setDetectedCommand] = useState<string | null>(null);
+  const [showHistory, setShowHistory] = useState(true);
+  const [expandedMedia, setExpandedMedia] = useState<{ type: 'image' | 'video'; url: string } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const voiceRef = useRef<ReturnType<typeof useVoice> | null>(null);
   const shouldGreetRef = useRef(false);
@@ -517,7 +666,29 @@ export default function ChatPage() {
 
   return (
     <div className="flex flex-col lg:flex-row h-screen bg-background overflow-hidden">
+      {/* ── History Sidebar (sessions) ─────────────────────── */}
+      <HistorySidebar
+        open={showHistory}
+        onClose={() => setShowHistory(false)}
+        conversations={conversations}
+        conversationId={conversationId}
+        onSelect={selectConversation}
+        onNew={newConversation}
+        onDelete={deleteConversation}
+      />
+
       <main className="flex-1 flex flex-col min-w-0 h-full">
+
+        {/* ── Toggle history (mobile / collapsed) ─────────── */}
+        {!showHistory && (
+          <button
+            onClick={() => setShowHistory(true)}
+            className="lg:hidden absolute top-20 left-3 z-20 h-9 w-9 flex items-center justify-center rounded-sm border border-border/50 bg-card/80 text-primary backdrop-blur-sm"
+            title="Afficher l'historique"
+          >
+            <PanelLeft className="w-4 h-4" />
+          </button>
+        )}
 
         {/* ── Header ───────────────────────────────────────────── */}
         <header className="h-16 border-b border-border bg-card/30 backdrop-blur-sm flex items-center justify-between px-6 shrink-0">
@@ -639,12 +810,22 @@ export default function ChatPage() {
                         {/* Media */}
                         {m.media && (
                           <div className="mt-4 border border-primary/20 rounded-sm overflow-hidden bg-black/40 shadow-xl max-w-sm">
-                            <div className="p-1 border-b border-primary/10 bg-primary/5 flex items-center gap-2">
-                              <ImageIcon className="w-3 h-3 text-primary" />
-                              <span className="text-[8px] font-bold text-primary uppercase">Fichier Registre Détecté</span>
+                            <div className="p-1 border-b border-primary/10 bg-primary/5 flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <ImageIcon className="w-3 h-3 text-primary shrink-0" />
+                                <span className="text-[8px] font-bold text-primary uppercase truncate">Fichier Registre Détecté</span>
+                              </div>
+                              <button
+                                onClick={() => setExpandedMedia({ type: m.media!.type, url: m.media!.url })}
+                                title="Afficher en grand plan"
+                                className="shrink-0 h-5 px-2 flex items-center gap-1 rounded-sm text-[7px] font-code font-bold uppercase border border-primary/30 text-primary hover:bg-primary/10 transition-colors"
+                              >
+                                <ExternalLink className="w-2.5 h-2.5" />
+                                Preview
+                              </button>
                             </div>
                             {m.media.type === 'image'
-                              ? <img src={m.media.url} className="w-full h-auto object-contain max-h-[300px]" alt="RAG Asset" />
+                              ? <img src={m.media.url} className="w-full h-auto object-contain max-h-[300px] cursor-pointer hover:opacity-90 transition-opacity" alt="RAG Asset" onClick={() => setExpandedMedia({ type: 'image', url: m.media!.url })} />
                               : <video src={m.media.url} controls className="w-full h-auto max-h-[300px]" />
                             }
                           </div>
@@ -968,10 +1149,42 @@ export default function ChatPage() {
             )}
 
             <ConnectionStatus service="GROQ" label="Moteur LPU" />
+            <ContextPanel
+              conversationId={conversationId}
+              messageCount={messages.length}
+              provider={currentProvider}
+              mode={mode}
+            />
             <ConnectionStatus service="FIREBASE" label="Base d'Audit" />
           </aside>
         </div>
       </main>
+
+      {/* ── Overlay grand plan (lightbox) ─────────────── */}
+      {expandedMedia && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-4 sm:p-8"
+          onClick={() => setExpandedMedia(null)}
+        >
+          <button
+            onClick={() => setExpandedMedia(null)}
+            title="Fermer"
+            className="absolute top-4 right-4 h-9 w-9 flex items-center justify-center rounded-sm border border-border/50 text-foreground/80 hover:text-foreground hover:bg-white/10 transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
+          <div className="max-w-[95vw] max-h-[90vh] flex flex-col items-center gap-3" onClick={(e) => e.stopPropagation()}>
+            {expandedMedia.type === 'image' ? (
+              <img src={expandedMedia.url} className="max-w-[95vw] max-h-[85vh] object-contain rounded-sm shadow-2xl" alt="Aperçu" />
+            ) : (
+              <video src={expandedMedia.url} controls autoPlay className="max-w-[95vw] max-h-[85vh] object-contain rounded-sm shadow-2xl" />
+            )}
+            <span className="text-[8px] font-code uppercase tracking-widest text-foreground/50">
+              {expandedMedia.type === 'image' ? 'Aperçu Image' : 'Aperçu Vidéo'} — cliquez hors de l'image pour fermer
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

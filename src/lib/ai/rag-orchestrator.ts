@@ -2,6 +2,7 @@ import { searchChromaLocalDB } from '@/lib/local-indexer';
 import { searchAcrossCollections } from '@/lib/chroma';
 import { tokenizeWithStems } from '@/lib/ai/tokenizer';
 import type { ChatMessage } from '@/lib/chat-storage/types';
+import { createRagTrace } from './rag/trace';
 
 export interface RAGResult {
   id: string;
@@ -36,6 +37,7 @@ export class RAGOrchestrator {
   }
 
   async search(query: string, history: ChatMessage[] = []): Promise<RAGResult[]> {
+    const trace = createRagTrace(query, process.env.VERCEL === '1' ? 'cloud' : 'local');
     const results: RAGResult[] = [];
     const seen = new Set<string>();
 
@@ -52,63 +54,66 @@ export class RAGOrchestrator {
       }
     };
 
+    const runStage = async (
+      stage: string,
+      label: string,
+      fn: () => Promise<any[]>,
+      opts: { skipped?: boolean; reason?: string } = {}
+    ) => {
+      const t0 = Date.now();
+      if (opts.skipped) {
+        trace.stage(stage, label, { count: 0, topScore: null, ms: 0, skipped: true, reason: opts.reason });
+        return;
+      }
+      try {
+        const r = await fn();
+        const top = r.length ? Math.max(...r.map((x) => x.score || 0)) : null;
+        for (const x of r) addResult(x);
+        trace.stage(stage, label, {
+          count: r.length,
+          topScore: top,
+          ms: Date.now() - t0,
+          reason: r.length === 0 ? (opts.reason || 'aucun résultat') : undefined,
+        });
+      } catch (e: any) {
+        trace.stage(stage, label, { count: 0, topScore: null, ms: Date.now() - t0, error: e?.message || String(e) });
+      }
+    };
+
     const historyTexts = history.slice(-4).map(m => m.content).filter(Boolean);
 
-    const stage1 = await searchChromaLocalDB(query, historyTexts, 6);
-    for (const r of stage1) addResult(r);
-
-    const stage2 = await searchAcrossCollections(query, 4);
-    for (const r of stage2) addResult(r);
-
-    const stage3 = await searchKnowledgeItemsWeb(query, history.slice(-4).map(m => m.content));
-    for (const r of stage3) addResult(r);
+    await runStage('stage1', 'Chroma LocalDB (vectoriel)', () => searchChromaLocalDB(query, historyTexts, 6));
+    await runStage('stage2', 'Chroma Collections', () => searchAcrossCollections(query, 4));
+    await runStage('stage3', 'Knowledge Items (web/DB)', () => searchKnowledgeItemsWeb(query, history.slice(-4).map(m => m.content)));
 
     const isCloud = process.env.VERCEL === '1';
     const weaviateConfigured = process.env.WEAVIATE_URL && process.env.WEAVIATE_API_KEY;
     if (isCloud && !weaviateConfigured) {
-      console.warn('[CHAT_RAG] [WEAVIATE_MISSING] WEAVIATE_URL/WEAVIATE_API_KEY absents en mode cloud — étages 4 et 4b désactivés. Repli lexical explicite activé (stage R).');
+      // Diagnostic unique via trace au lieu de console.warn dispersé.
+      trace.stage('weaviate', 'Weaviate (cloud)', {
+        count: 0, topScore: null, ms: 0, skipped: true,
+        reason: 'WEAVIATE_URL/WEAVIATE_API_KEY absents — étages cloud désactivés, repli lexical activé',
+      });
     }
 
-    // C2 — Repli lexical explicite : en mode cloud sans Weaviate (ou quand les
-    // étages vectoriels ne renvoient rien), le stage 1 (searchChromaLocalDB)
-    // est mort silencieusement. On scanne le registre FS local pour garantir
-    // un RAG non vide au lieu d'un contexte AUCUN_CONTEXTE systématique.
+    // C2 — Repli lexical explicite + enrichissement procédural.
     if (results.length === 0 || !weaviateConfigured) {
-      try {
-        const stageR = await searchRegistryLexicalFallback(query, historyTexts);
-        for (const r of stageR) addResult(r);
-      } catch (e: any) {
-        console.error('[CHAT_RAG] [LEXICAL_FALLBACK] Error:', e.message);
-      }
-      // C6 — Enrichissement procédural dédié (guidage pas-à-pas) : on
-      // l'ajoute dès que le contexte est pauvre, même si Weaviate répond,
-      // car il cible spécifiquement les `procedure.json` du registre.
-      try {
-        const stageP = await searchProceduresInRegistry(query, historyTexts);
-        for (const r of stageP) addResult(r);
-      } catch (e: any) {
-        console.error('[CHAT_RAG] [PROCEDURE_REGISTRY] Error:', e.message);
-      }
+      await runStage('stageR', 'Repli lexical registre FS', () => searchRegistryLexicalFallback(query, historyTexts),
+        { reason: 'contexte vide → scan FS local' });
+      await runStage('stageP', 'Procédures registre FS', () => searchProceduresInRegistry(query, historyTexts),
+        { reason: 'contexte pauvre → guidage pas-à-pas' });
     }
     if (results.length < this.maxResults && weaviateConfigured) {
-      try {
-        const stage4 = await searchWeaviateKnowledge(query, history.slice(-4).map(m => m.content));
-        for (const r of stage4) addResult(r);
-      } catch (e: any) {
-        console.error('[CHAT_RAG] [WEAVIATE_SEARCH] Error:', e.message);
-      }
-
-      try {
-        const stageBank = await searchBankRag(query);
-        for (const r of stageBank) addResult(r);
-      } catch (e: any) {
-        console.error('[CHAT_RAG] [WEAVIATE_BANK] Error:', e.message);
-      }
+      await runStage('stage4', 'Weaviate Knowledge', () => searchWeaviateKnowledge(query, history.slice(-4).map(m => m.content)));
+      await runStage('stageBank', 'Weaviate Bank', () => searchBankRag(query));
     }
 
     const sorted = results
       .sort((a, b) => (b.score || 0) - (a.score || 0))
       .slice(0, this.maxResults);
+
+    // Unique log consolidé (jamais en boucle) — diagnostic de non-accès IA.
+    trace.flush(sorted.length, this.getConfidence(sorted));
 
     return sorted;
   }
@@ -131,16 +136,24 @@ export class RAGOrchestrator {
     if (qaResults.length > 0) {
       sections.push(`RÉPONSES DIRECTES (${qaResults.length}):`);
       sections.push(qaResults.map(r => {
-        const cleaned = r.document.replace(/\[SOURCE:[^\]]*\]\s*/g, '').trim();
-        return `[Q/R ${r.metadata?.origin}] ${cleaned}`;
+        // Retire les marqueurs internes ([SOURCE:...], préfixes Q:/R:)
+        // pour que l'IA reformule au lieu de recracher le chunk brut.
+        const cleaned = r.document
+          .replace(/\[SOURCE:[^\]]*\]\s*/g, '')
+          .replace(/^\s*(Q|R)\s*[:：-]\s*/gi, '')
+          .trim();
+        return cleaned;
       }).join('\n\n'));
     }
 
     if (otherResults.length > 0) {
       sections.push(`CONNAISSANCES COMPLÉMENTAIRES (${otherResults.length}):`);
       sections.push(otherResults.map(r => {
-        const cleaned = r.document.replace(/\[SOURCE:[^\]]*\]\s*/g, '').trim();
-        return `[${r.metadata?.origin}] ${cleaned}`;
+        const cleaned = r.document
+          .replace(/\[SOURCE:[^\]]*\]\s*/g, '')
+          .replace(/^\s*(Q|R)\s*[:：-]\s*/gi, '')
+          .trim();
+        return cleaned;
       }).join('\n\n'));
     }
 
@@ -189,7 +202,6 @@ const searchWeaviateKnowledge = async (query: string, history: string[] = []): P
         distance: typeof item.distance === 'number' ? item.distance : 0,
       }));
   } catch (e: any) {
-    console.error('[CHAT_RAG] [WEAVIATE_SEARCH] Error:', e.message);
     return [];
   }
 };
@@ -216,7 +228,6 @@ const searchBankRag = async (query: string): Promise<RAGResult[]> => {
         distance: 0,
       }));
   } catch (e: any) {
-    console.error('[CHAT_RAG] [WEAVIATE_BANK] Error:', e.message);
     return [];
   }
 };
@@ -287,10 +298,8 @@ const collectRegistryFallbackItems = (existingTitles: Set<string>): ScoredItem[]
     const files = require('fs').readdirSync(REGISTRY_ITEMS).filter((f: string) => f.toLowerCase().endsWith('.json'));
     if (files.length === 0) {
       // R2 — En serverless (Vercel) le FS n'est pas déployé : le vide est
-      // normal, mais on le trace pour diagnostic. En local/hybride, un
-      // `.registry/items` vide signale un seed manquant → warning explicite.
-      const mode = process.env.VERCEL === '1' ? 'CLOUD' : 'LOCAL/HYBRIDE';
-      console.warn(`[CHAT_RAG] [REGISTRY_FALLBACK] ${mode} : .registry/items vide — RAG lexical local sans résultats.`);
+      // normal. En local/hybride, un `.registry/items` vide signale un seed
+      // manquant — signalé via le trace consolidé (stage R: ∅) côté appelant.
       return items;
     }
     for (const file of files) {
@@ -369,18 +378,15 @@ const searchKnowledgeItemsWeb = async (query: string, history: string[] = []): P
     }
     existingTitles = new Set(dbItems.map(i => (i.title || '').trim()));
   } catch (e: any) {
-    console.error('[CHAT_RAG] [WEB_SEARCH] Stage 3 (Prisma) échec:', e.message);
+    // DB/FS indisponible — l'échec est rapporté via le trace consolidé parent.
   }
 
   const fallbackItems = collectRegistryFallbackItems(existingTitles);
   const allItems = [...dbItems, ...fallbackItems];
 
   // R2 — Si la table knowledgeItem (cloud) ET le fallback FS sont vides, le
-  // RAG web renverra un contexte vide. On le signale explicitement pour ne
-  // pas masquer un seed manquant côté Vercel.
-  if (allItems.length === 0) {
-    console.warn('[CHAT_RAG] [WEB_SEARCH] Aucun élément RAG (DB vide + fallback FS vide) — vérifiez le seed Prisma de .registry.');
-  }
+  // RAG web renverra un contexte vide. Le trace consolidé parent le signale
+  // (stage3: ∅ + DIAGNOSTIC NON-ACCÈS) — pas besoin de console.warn ici.
   const scored: RAGResult[] = [];
   for (const item of allItems) {
     const result = scoreItemAgainstQuery(item, queryTokens);

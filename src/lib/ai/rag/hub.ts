@@ -12,12 +12,15 @@
 
 import type { RAGResult, RAGOptions } from '../rag-orchestrator';
 import { ragConnections } from './connections';
+import type { RagTrace } from './trace';
 
 export interface RAGHubOptions extends RAGOptions {
   /** Limite le fan-out à certaines connexions (sinon : toutes). */
   connectionIds?: string[];
   /** Active le re-rank lexical de secours si aucun résultat vectoriel. */
   enableLexicalFallback?: boolean;
+  /** Traceur RAG consolidé (optionnel) — reçoit un stage par connexion. */
+  trace?: RagTrace;
 }
 
 export class RAGHub {
@@ -63,11 +66,24 @@ export class RAGHub {
 
     await Promise.all(
       conns.map(async (conn) => {
+        const t0 = Date.now();
         try {
           const hits = await conn.search(query, ragOptions);
+          const top = hits.length ? Math.max(...hits.map((h) => h.score || 0)) : null;
           for (const h of hits) addResult(h);
+          options.trace?.stage(`conn:${conn.id}`, `Connexion ${conn.label} (${conn.mode})`, {
+            count: hits.length,
+            topScore: top,
+            ms: Date.now() - t0,
+            reason: hits.length === 0 ? 'aucun résultat (score < min ou index vide)' : undefined,
+          });
         } catch (e: any) {
-          console.error(`[RAG_HUB] Connexion '${conn.id}' en échec:`, e?.message || e);
+          options.trace?.stage(`conn:${conn.id}`, `Connexion ${conn.label} (${conn.mode})`, {
+            count: 0,
+            topScore: null,
+            ms: Date.now() - t0,
+            error: e?.message || String(e),
+          });
         }
       }),
     );

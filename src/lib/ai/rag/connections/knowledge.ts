@@ -33,8 +33,6 @@ function readRegistryItems(existingTitles: Set<string>): LexicalScorable[] {
     return items;
   }
   if (files.length === 0) {
-    const mode = process.env.VERCEL === '1' ? 'CLOUD' : 'LOCAL/HYBRIDE';
-    console.warn(`[RAG_CONN:knowledge] ${mode} : .registry/items vide — RAG lexical local sans résultats.`);
     return items;
   }
   for (const file of files) {
@@ -96,14 +94,16 @@ async function searchCloudKnowledge(query: string, history: string[]): Promise<L
       });
     }
   } catch (e: any) {
-    console.error('[RAG_CONN:knowledge] cloud Prisma échec:', e.message);
+    // L'échec DB est remonté au hub parent (trace consolidé), pas de log ici.
   }
 
   const existingTitles = new Set(dbItems.map((i) => (i.title || '').trim()));
-  if (dbItems.length === 0 && readRegistryItems(existingTitles).length === 0) {
-    console.warn('[RAG_CONN:knowledge] Aucun élément RAG (DB vide + fallback FS vide) — vérifiez le seed.');
+  const fsItems = readRegistryItems(existingTitles);
+  if (dbItems.length === 0 && fsItems.length === 0) {
+    // Signal unique (capturé par le hub → trace DIAGNOSTIC) : seed manquant.
+    throw new Error('Aucun élément RAG (DB vide + fallback FS vide) — vérifiez le seed Prisma de .registry.');
   }
-  return [...dbItems, ...readRegistryItems(existingTitles)];
+  return [...dbItems, ...fsItems];
 }
 
 const knowledgeConnection: RAGConnection = {
@@ -128,7 +128,7 @@ const knowledgeConnection: RAGConnection = {
         });
       }
     } catch (e: any) {
-      console.error('[RAG_CONN:knowledge] Chroma échec:', e.message);
+      // L'échec Chroma est remonté au hub parent (trace consolidé).
     }
 
     // 2. Fallback lexical (FS local + cloud Prisma) pour garantir un RAG non vide.
