@@ -105,6 +105,10 @@ temp/
 !.registry/**/*.yml
 .data/
 
+# Base de données locale (données + métadonnées) — ne pas versionner
+.local-db/
+.local-db/**
+
 # HuggingFace Transformers - cache des modèles locaux
 .cache/
 
