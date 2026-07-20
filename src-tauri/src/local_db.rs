@@ -356,6 +356,17 @@ pub fn local_db_write(app: tauri::AppHandle, rel_path: String, content: String) 
     if let Some(parent) = full.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
+    if content.starts_with("data:") && content.contains(";base64,") {
+        if let Some(pos) = content.find(";base64,") {
+            let base64_part = &content[pos + 8..];
+            use base64::Engine;
+            let decoded = base64::engine::general_purpose::STANDARD
+                .decode(base64_part)
+                .map_err(|e| format!("Échec décodage base64 : {}", e))?;
+            fs::write(&full, decoded).map_err(|e| e.to_string())?;
+            return Ok(());
+        }
+    }
     fs::write(&full, content).map_err(|e| e.to_string())?;
     Ok(())
 }

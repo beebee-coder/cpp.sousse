@@ -9,6 +9,7 @@ interface SyncResult {
   failedItems: string[];
   skippedDuplicates: number;
   purgedCount: number;
+  bankSyncedCount: number;
 }
 
 export const syncEngine = {
@@ -67,7 +68,7 @@ export const syncEngine = {
 
   async downloadAndInjectPhase(userId: string, projectId: string, localOnly?: boolean): Promise<SyncResult> {
     if (localOnly) {
-      return { injectedCount: 0, vectorizedCount: 0, failedItems: [], skippedDuplicates: 0, purgedCount: 0 };
+      return { injectedCount: 0, vectorizedCount: 0, failedItems: [], skippedDuplicates: 0, purgedCount: 0, bankSyncedCount: 0 };
     }
 
     const ts = new Date().toLocaleTimeString();
@@ -86,14 +87,14 @@ export const syncEngine = {
       items = res.items ?? [];
     } catch (e: any) {
       console.error(`❌ [SYNC_DOWN] [ERROR] Échec liaison Cloud :`, e.message);
-      return { injectedCount: 0, vectorizedCount: 0, failedItems: [], skippedDuplicates: 0, purgedCount: 0 };
+      return { injectedCount: 0, vectorizedCount: 0, failedItems: [], skippedDuplicates: 0, purgedCount: 0, bankSyncedCount: 0 };
     }
 
     if (items.length === 0) {
-      return { injectedCount: 0, vectorizedCount: 0, failedItems: [], skippedDuplicates: 0, purgedCount: 0 };
+      return { injectedCount: 0, vectorizedCount: 0, failedItems: [], skippedDuplicates: 0, purgedCount: 0, bankSyncedCount: 0 };
     }
 
-    let manifest = isDesktop ? await localDBBridge.getTree() : [];
+    let localManifest = await this.getManifest();
     const successIds: string[] = [];
     const failedItems: string[] = [];
     let skippedDuplicates = 0;
@@ -104,15 +105,7 @@ export const syncEngine = {
 
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
-          if (isDesktop) {
-            const alreadyInLocal = manifest.some(f => f.id === item.id || f.metadata?.cloudId === item.id);
-            if (alreadyInLocal) {
-              skippedDuplicates++;
-              console.log(`⏭️ [SYNC_SKIP] Item déjà synchronisé : ${item.id}`);
-              injected = true;
-              break;
-            }
-          } else if (this.isAlreadySynced(await this.getManifest(), item.id)) {
+          if (this.isAlreadySynced(localManifest, item.id)) {
             skippedDuplicates++;
             console.log(`⏭️ [SYNC_SKIP] Item déjà synchronisé : ${item.id}`);
             injected = true;
@@ -168,7 +161,7 @@ export const syncEngine = {
             });
           }
 
-          manifest = isDesktop ? await localDBBridge.getTree() : manifest;
+          localManifest = await this.getManifest();
           successIds.push(item.id);
           console.log(`✅ [SYNC_LOCAL_DB] [DONE] Item injecté : ${fileName}`);
           injected = true;
@@ -190,32 +183,21 @@ export const syncEngine = {
     let purgedCount = 0;
     if (successIds.length > 0) {
       const activeCloudIds = new Set<string>(successIds);
+      const manifest = await this.getManifest();
+      const toPurge = manifest.files.filter(f => f.cloudId && !activeCloudIds.has(f.cloudId));
 
-      if (isDesktop) {
-        const tree = await localDBBridge.getTree();
-        const toPurge = tree.filter(f => f.metadata?.cloudId && !activeCloudIds.has(f.metadata.cloudId));
-        for (const entry of toPurge) {
-          try {
-            await localDBBridge.deleteItem(entry.id);
-            purgedCount++;
-            console.log(`🗑️ [SYNC_PURGE_LOCAL] Élément local supprimé : ${entry.id}`);
-          } catch (e: any) {
-            console.warn(`⚠️ [SYNC_PURGE_LOCAL] Échec suppression ${entry.id} :`, e.message);
-          }
-        }
-      } else {
-        const manifest = await this.getManifest();
-        const toPurge = manifest.files.filter(f => f.cloudId && !activeCloudIds.has(f.cloudId));
-
-        for (const entry of toPurge) {
-          try {
+      for (const entry of toPurge) {
+        try {
+          if (isDesktop) {
+            await localDBBridge.deleteItem(entry.resolvedPath);
+          } else {
             const { localDB } = await import('./local-db');
             await localDB.deleteItem(entry.resolvedPath);
-            purgedCount++;
-            console.log(`🗑️ [SYNC_PURGE_LOCAL] Élément local supprimé : ${entry.resolvedPath}`);
-          } catch (e: any) {
-            console.warn(`⚠️ [SYNC_PURGE_LOCAL] Échec suppression ${entry.resolvedPath} :`, e.message);
           }
+          purgedCount++;
+          console.log(`🗑️ [SYNC_PURGE_LOCAL] Élément local supprimé : ${entry.resolvedPath}`);
+        } catch (e: any) {
+          console.warn(`⚠️ [SYNC_PURGE_LOCAL] Échec suppression ${entry.resolvedPath} :`, e.message);
         }
       }
     }
@@ -244,6 +226,7 @@ export const syncEngine = {
       failedItems,
       skippedDuplicates,
       purgedCount: purgedCount + cloudPurgedCount,
+      bankSyncedCount: 0,
     };
   },
 
@@ -356,13 +339,120 @@ export const syncEngine = {
     }
   },
 
+  /**
+   * Synchronise les actifs de la Banque d'Images (médias) depuis la BDD Web
+   * vers la BDD locale. Exécutée uniquement en mode Hybride (online + desktop
+   * ou online + web FS writable). Incrémentale : les actifs déjà présents
+   * localement sont ignorés (vérification par nom de fichier dans le manifest).
+   *
+   * Flux pour chaque actif :
+   *  1. Récupère la liste des métadonnées depuis /api/bank.
+   *  2. Pour chaque actif absent en local, télécharge le binaire via /api/registry.
+   *  3. Écrit le binaire et les métadonnées dans .local-db/bank/.
+   *  4. Déclenche l'indexation Chroma du fichier metadata.json.
+   */
+  async syncBankAssets(localOnly?: boolean): Promise<{ synced: number; skipped: number; failed: string[] }> {
+    if (localOnly || typeof window === 'undefined') {
+      return { synced: 0, skipped: 0, failed: [] };
+    }
+
+    const ts = new Date().toLocaleTimeString();
+    console.log(`🖼️ [SYNC_BANK] [INIT] [${ts}] Début sync banque de médias.`);
+
+    let cloudItems: any[] = [];
+    try {
+      const res = await apiClient.get<{ success: boolean; items: any[] }>('/api/bank?limit=500');
+      cloudItems = res.items ?? [];
+    } catch (e: any) {
+      console.warn('[SYNC_BANK] Impossible de récupérer la liste cloud :', e.message);
+      return { synced: 0, skipped: 0, failed: ['cloud_bank_unreachable'] };
+    }
+
+    if (cloudItems.length === 0) {
+      console.log(`🖼️ [SYNC_BANK] Aucun actif cloud à synchroniser.`);
+      return { synced: 0, skipped: 0, failed: [] };
+    }
+
+    // Récupère la liste locale existante pour éviter les doublons
+    const localManifest = await this.getManifest();
+    const localBankPaths = new Set(localManifest.files.map(f => f.resolvedPath));
+
+    let synced = 0;
+    let skipped = 0;
+    const failed: string[] = [];
+
+    for (const item of cloudItems) {
+      const safeName = (item.name || '').trim().toLowerCase().replace(/[^a-zA-Z0-9-]/g, '_');
+      if (!safeName) { failed.push('invalid_name'); continue; }
+
+      const ext = (item.mime || 'image/jpeg').split('/')[1] || 'jpg';
+      const assetRelPath = `bank/${safeName}/${safeName}.${ext}`;
+      const metaRelPath  = `bank/${safeName}/metadata.json`;
+
+      // Déjà présent localement → skip
+      if (localBankPaths.has(assetRelPath) || localBankPaths.has(metaRelPath)) {
+        skipped++;
+        console.log(`⏭️ [SYNC_BANK] Actif déjà local : ${safeName}`);
+        continue;
+      }
+
+      try {
+        // Téléchargement du binaire via le Registre cloud
+        const assetApiPath = item.path || assetRelPath;
+        const assetRes = await apiClient.get<any>(`/api/registry?path=${encodeURIComponent(assetApiPath)}`);
+        const binaryData: string | undefined = assetRes?.content ?? assetRes?.data;
+
+        if (!binaryData) {
+          console.warn(`⚠️ [SYNC_BANK] Pas de contenu binaire pour : ${safeName}`);
+          failed.push(safeName);
+          continue;
+        }
+
+        const metaContent = JSON.stringify(item, null, 2);
+
+        if (isDesktop) {
+          // Mode Desktop (Tauri) : écriture via le bridge qui déclenche le Rust
+          // local_db_write — qui décode le Data URI base64 nativement.
+          await localDBBridge.writeFile(assetRelPath, binaryData);
+          await localDBBridge.writeFile(metaRelPath, metaContent);
+        } else {
+          // Mode Web (FS Node) : écriture via l'API locale
+          const { localDB } = await import('./local-db');
+          await localDB.saveBankAsset(`${safeName}/${safeName}.${ext}`, binaryData);
+          await localDB.saveBankAsset(`${safeName}/metadata.json`, metaContent);
+        }
+
+        // Indexation sémantique locale du fichier metadata.json
+        try {
+          if (isDesktop) {
+            await apiClient.post('/api/local-db', { action: 'index', path: metaRelPath });
+          } else {
+            const { indexLocalDBFile } = await import('@/lib/local-indexer');
+            await indexLocalDBFile(metaRelPath);
+          }
+        } catch (idxErr: any) {
+          console.warn(`⚠️ [SYNC_BANK] Indexation ${safeName} ignorée :`, idxErr.message);
+        }
+
+        synced++;
+        console.log(`✅ [SYNC_BANK] Actif synchronisé : ${safeName}`);
+      } catch (err: any) {
+        console.error(`❌ [SYNC_BANK] Échec ${safeName} :`, err.message);
+        failed.push(safeName);
+      }
+    }
+
+    console.log(`🏁 [SYNC_BANK] Terminé. Sync: ${synced}, Skip: ${skipped}, Échecs: ${failed.length}`);
+    return { synced, skipped, failed };
+  },
+
   async syncAll(userId: string, projectId: string, localOnly?: boolean): Promise<SyncResult> {
     const state = await this.getSyncState(userId);
     try {
       state.status = 'syncing';
       await this.saveSyncState(state);
 
-      let injectResult: SyncResult = { injectedCount: 0, vectorizedCount: 0, failedItems: [], skippedDuplicates: 0, purgedCount: 0 };
+      let injectResult: SyncResult = { injectedCount: 0, vectorizedCount: 0, failedItems: [], skippedDuplicates: 0, purgedCount: 0, bankSyncedCount: 0 };
       if (!localOnly) {
         injectResult = await this.downloadAndInjectPhase(userId, projectId, localOnly);
       }
@@ -375,6 +465,23 @@ export const syncEngine = {
           configSync = await this.syncConfigFields(localOnly);
         } catch (e: any) {
           console.warn('[SYNC] Réconciliation config fields échouée (non fatal):', e.message);
+        }
+      }
+
+      // ── Phase Banque de Médias ─────────────────────────────────────────────
+      // Rapatrie les actifs binaires (images/vidéos) de la BDD Web vers la BDD
+      // locale. Non bloquant (échec isolé par actif). Uniquement en hybride en
+      // ligne : la BDD Web est le silo transitoire avant descente locale.
+      let bankSyncedCount = 0;
+      if (!localOnly) {
+        try {
+          const bankResult = await this.syncBankAssets(localOnly);
+          bankSyncedCount = bankResult.synced;
+          if (bankResult.failed.length > 0) {
+            console.warn(`[SYNC] Banque médias : ${bankResult.failed.length} actif(s) en échec.`);
+          }
+        } catch (e: any) {
+          console.warn('[SYNC] Synchronisation banque médias échouée (non fatal):', e.message);
         }
       }
 
@@ -404,9 +511,10 @@ export const syncEngine = {
       const result: SyncResult = {
         ...injectResult,
         vectorizedCount: vectorResult.indexed || 0,
+        bankSyncedCount,
       };
 
-      console.log(`🏁 [SYNC_COMPLETE] Injection: ${result.injectedCount}, Vectorisation: ${result.vectorizedCount}, Échecs: ${result.failedItems.length}, Doublons ignorés: ${result.skippedDuplicates}.`);
+      console.log(`🏁 [SYNC_COMPLETE] Injection: ${result.injectedCount}, Médias: ${result.bankSyncedCount}, Vectorisation: ${result.vectorizedCount}, Échecs: ${result.failedItems.length}, Doublons ignorés: ${result.skippedDuplicates}.`);
       return result;
     } catch (e: any) {
       state.status = 'error';

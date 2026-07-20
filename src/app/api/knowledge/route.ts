@@ -1,20 +1,17 @@
 export const dynamic = 'force-dynamic';
 export const revalidate = false;
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/db/prisma-client';
+import { getPrismaClient } from '@/lib/db/prisma-client';
 import { getSessionFromCookie } from '@/lib/session';
 
-
-/**
- * @fileOverview API de Gestion des Connaissances Sémantiques [KNOWLEDGE_API].
- * Gère les paires Q/R et les briques de savoir sémantique.
- */
+const isCloudServerless = !!process.env.VERCEL;
 
 export async function GET(request: NextRequest) {
   const ts = new Date().toLocaleTimeString();
   console.log(`🔍 [KNOWLEDGE_API] [INIT] Demande de lecture du registre sémantique à ${ts}`);
   
   try {
+    const prisma = isCloudServerless ? await getPrismaClient() : await import('@/lib/db/prisma-client').then(m => m.prisma);
     const session = await getSessionFromCookie();
     if (!session) return NextResponse.json({ success: false, error: 'NON_AUTHENTIFIÉ' }, { status: 401 });
 
@@ -40,6 +37,7 @@ export async function POST(request: NextRequest) {
   console.log(`🚀 [KNOWLEDGE_API] [INIT] Injection d'un nouvel item à ${ts}`);
 
   try {
+    const prisma = isCloudServerless ? await getPrismaClient() : await import('@/lib/db/prisma-client').then(m => m.prisma);
     const session = await getSessionFromCookie();
     if (!session) return NextResponse.json({ success: false, error: 'NON_AUTHENTIFIÉ' }, { status: 401 });
 

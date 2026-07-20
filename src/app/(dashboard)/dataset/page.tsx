@@ -310,7 +310,7 @@ export default function DatasetPage() {
             console.warn('[DATASET] Repli local échoué:', localErr);
           }
           if (!savedToLocal) {
-            throw new Error(cloudError);
+            throw new Error(cloudError ?? undefined);
           }
         }
       }
@@ -750,6 +750,7 @@ export default function DatasetPage() {
         `${result.injectedCount} item(s) transféré(s)`,
         `${result.vectorizedCount} fichier(s) vectorisé(s)`,
       ];
+      if ((result as any).bankSyncedCount > 0) parts.push(`${(result as any).bankSyncedCount} média(s) rapatrié(s)`);
       if (result.skippedDuplicates > 0) parts.push(`${result.skippedDuplicates} doublon(s) ignoré(s)`);
       if (result.failedItems.length > 0) parts.push(`${result.failedItems.length} échec(s)`);
 

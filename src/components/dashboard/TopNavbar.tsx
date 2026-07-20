@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { Activity, Bell, ExternalLink, Loader2, Menu } from 'lucide-react';
+import { Activity, Bell, ExternalLink, Loader2, Menu, RefreshCw } from 'lucide-react';
 import { StatusBadge } from '@/components/dashboard/StatusBadge';
 import { ProfilePhotoMenu } from '@/components/dashboard/ProfilePhotoMenu';
 import { useSession } from '@/components/SessionProvider';
@@ -125,6 +125,26 @@ export function TopNavbar({ onMenuClick, health, mounted, isDesktop, mode, role 
             >
               {isOpeningDesktop ? <Loader2 className="w-3 h-3 animate-spin" /> : <ExternalLink className="w-3 h-3" />}
               <span className="hidden sm:inline">Ouvrir Desktop</span>
+            </button>
+          )}
+          {mounted && isDesktop && mode === 'hybride' && (
+            <button
+              onClick={async (e) => {
+                const btn = e.currentTarget;
+                const originalText = btn.innerHTML;
+                btn.innerHTML = '<span class="animate-spin text-xs">↻</span> Lancement...';
+                try {
+                  await fetch('/api/system/update', { method: 'POST' });
+                  setTimeout(() => { btn.innerHTML = originalText; }, 2000);
+                } catch (err) {
+                  btn.innerHTML = originalText;
+                }
+              }}
+              className="rounded-md bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 transition-colors px-2 py-1 text-xs flex items-center gap-1 font-bold"
+              title="Lancer la mise à jour globale en arrière-plan"
+            >
+              <RefreshCw className="w-3 h-3" />
+              <span className="hidden sm:inline">Mettre à jour</span>
             </button>
           )}
           <ProfilePhotoMenu currentImage={userImage} onSave={handleSaveImage} size={32} />

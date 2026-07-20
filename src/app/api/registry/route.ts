@@ -182,6 +182,8 @@ export const POST = createHybridRoute<{ path: string; type: 'file' | 'folder'; c
   webHandler: async (req, body) => {
     if (isCloudServerless) {
       try {
+        const { getPrismaClient } = await import('@/lib/db/prisma-client');
+        const prisma = await getPrismaClient();
         const session = await getSessionFromCookie();
         if (!session) return { success: false, error: 'NON_AUTHENTIFIÉ' };
 

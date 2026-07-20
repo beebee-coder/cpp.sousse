@@ -21,6 +21,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { useAppMode } from '@/hooks/use-app-mode';
+import { resolveApiUrl } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
 import { TiltCard } from '@/components/three/TiltCard';
 import { Logo3D } from '@/components/three/Logo3D';
@@ -88,7 +89,8 @@ export function DownloadApp() {
     if (isLaunching) return;
     setIsLaunching(true);
     try {
-      const res = await fetch('/api/auth/desktop-token');
+      const url = resolveApiUrl('/api/auth/desktop-token');
+      const res = await fetch(url, { credentials: 'include' });
       const data = await res.json();
       if (data.success && data.token) {
         window.location.href = `visionode://auth?token=${data.token}`;
