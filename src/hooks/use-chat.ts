@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import type { ChatMessage } from '@/lib/chat-storage/types';
 import { getChatStorage, getSharedHistoryKey } from '@/lib/chat-storage';
 import { isDesktop } from '@/lib/platform';
+import { resolveApiUrl } from '@/lib/api-client';
 import { useAppMode } from '@/hooks/use-app-mode';
 import { useSession } from '@/components/SessionProvider';
 
@@ -441,7 +442,8 @@ export function useChat(onAiResponse?: (text: string) => void) {
   }, [isLoading, storage, onAiResponse, isDesktop, mode, online, user?.id, refreshConversations]);
 
   const callCloudAPI = async (message: string, history: any[], mode: string) => {
-    const fetchPromise = fetch('/api/chat', {
+    const apiUrl = resolveApiUrl('/api/chat');
+    const fetchPromise = fetch(apiUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
