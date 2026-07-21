@@ -17,6 +17,7 @@ pub struct ChatMessage {
 pub struct ChatOutput {
   pub text: String,
   pub provider: String,
+  pub groq_available: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -192,10 +193,11 @@ async fn call_groq(
             if let Ok(json) = response.json::<serde_json::Value>().await {
                 if let Some(text) = json["choices"][0]["message"]["content"].as_str() {
                     eprintln!("[NATIVE_GROQ] Réponse générée.");
-                    return Ok(ChatOutput {
-                        text: text.to_string(),
-                        provider: "GROQ/LLAMA-3.3 (NATIF)".to_string(),
-                    });
+                     return Ok(ChatOutput {
+                         text: text.to_string(),
+                         provider: "GROQ/LLAMA-3.3 (NATIF)".to_string(),
+                         groq_available: true,
+                     });
                 }
             }
             Err("ERREUR_REPONSE : Format de réponse invalide.".to_string())
@@ -280,12 +282,14 @@ async fn call_groq_stream(
                 result: Some(ChatOutput {
                     text: full_text.clone(),
                     provider: "GROQ/LLAMA-3.3 (NATIF STREAM)".to_string(),
+                    groq_available: true,
                 }),
             });
 
             Ok(ChatOutput {
                 text: full_text,
                 provider: "GROQ/LLAMA-3.3 (NATIF STREAM)".to_string(),
+                groq_available: true,
             })
         }
         Err(e) => {
@@ -466,6 +470,7 @@ fn offline_generate(docs: Vec<crate::vector_store::types::Document>, query: &str
     ChatOutput {
         text,
         provider: "VISIONODE_LOCAL (offline, modèle léger RAG)".to_string(),
+        groq_available: false,
     }
 }
 
@@ -685,10 +690,11 @@ async fn chat_with_ia(
         match call_groq_stream(&client, &groq_key, messages, &app).await {
             Ok(output) => {
                 eprintln!("✅ [{}] [SUCCÈS] Réponse générée par Groq Natif (stream).", timestamp);
-                Ok(ChatOutput {
-                    text: output.text,
-                    provider: format!("{} + RAG Local", output.provider),
-                })
+            Ok(ChatOutput {
+                text: output.text,
+                provider: format!("{} + RAG Local", output.provider),
+                groq_available: true,
+            })
             }
             Err(e) => {
                 eprintln!("❌ [{}] [ERREUR] {}", timestamp, e);
@@ -712,10 +718,11 @@ async fn chat_with_ia(
                     }
                 }
                 eprintln!("✅ [{}] [SUCCÈS] Réponse générée par Groq Natif (avec RAG local).", timestamp);
-                Ok(ChatOutput {
-                    text: output.text,
-                    provider: format!("{} + RAG Local", output.provider),
-                })
+            Ok(ChatOutput {
+                text: output.text,
+                provider: format!("{} + RAG Local", output.provider),
+                groq_available: true,
+            })
             }
             Err(e) => {
                 eprintln!("❌ [{}] [ERREUR] {}", timestamp, e);

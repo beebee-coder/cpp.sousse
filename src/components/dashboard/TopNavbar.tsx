@@ -60,6 +60,14 @@ export function TopNavbar({ onMenuClick, health, mounted, isDesktop, mode, role 
     console.log('[TOPBAR]', { mounted, isDesktop, mode, isOpeningDesktop });
   }
 
+  useEffect(() => {
+    if (!mounted) return;
+    const id = setInterval(() => {
+      console.log('[TOPBAR][POLL]', { mounted, isDesktop, mode });
+    }, 2000);
+    return () => clearInterval(id);
+  }, [mounted]);
+
   return (
     <header className="sticky top-0 z-40 h-14 shrink-0 flex items-center gap-3 px-3 sm:px-5 border-b border-border/70 bg-card/40 backdrop-blur-md">
       <button

@@ -337,10 +337,22 @@ export function useChat(onAiResponse?: (text: string) => void) {
               stream: streamingEnabled,
             }) as any;
 
-            commitNativeMessage((data as any)?.provider);
+            if ((data as any)?.groq_available === false) {
+              console.warn(`⚠️ [CHAT] [FALLBACK] Groq natif indisponible (clé absente), bascule cloud...`);
+              if (localOnly) {
+                throw new Error('Mode local uniquement : bascule cloud désactivée.');
+              }
+              if (!online) {
+                throw new Error('Mode hybride hors-ligne: impossible de basculer vers le cloud.');
+              }
+              setCurrentProvider('Groq LPU + Pro-Search (cloud) [fallback natif]');
+              data = await callCloudAPI(sanitized, history, mode);
+            } else {
+              commitNativeMessage((data as any)?.provider);
 
-            if (!streamingEnabled) {
-              console.log(`✅ [CHAT] [SUCCESS] Réponse générée par ${(data as any).provider} (natif).`);
+              if (!streamingEnabled) {
+                console.log(`✅ [CHAT] [SUCCESS] Réponse générée par ${(data as any).provider} (natif).`);
+              }
             }
           } finally {
             if (nativeStreamUnlisten) {
