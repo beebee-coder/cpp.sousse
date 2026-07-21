@@ -501,11 +501,14 @@ export const syncEngine = {
       if (vectorResult.success) {
         state.lastSync = new Date();
         state.status = 'idle';
+        state.pendingUploads = 0;
+        state.pendingDownloads = 0;
       } else {
         state.status = 'error';
+        state.pendingUploads = injectResult.failedItems.length;
+        state.pendingDownloads = injectResult.injectedCount + bankSyncedCount;
         console.error('[SYNC] Vectorisation échouée, lastSync non mis à jour:', vectorResult.errors);
       }
-      state.pendingDownloads = 0;
       await this.saveSyncState(state);
 
       const result: SyncResult = {

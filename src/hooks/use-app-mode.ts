@@ -10,8 +10,8 @@ export const LOCAL_ONLY_KEY = 'visionode-mode-local-only';
 /**
  * Détermine le mode opérationnel de l'application :
  *  - web      : exécuté dans le navigateur (URL Vercel / cloud)            → isDesktop = false
- *  - hybride  : application installée localement (Tauri) en mode auto      → isDesktop = true + !localOnly
- *  - locale   : application locale SANS connexion, ou l'utilisateur force le mode local uniquement
+ *  - hybride  : application installée localement (Tauri) en mode auto      → isDesktop = true + !localOnly + connecté
+ *  - locale   : soit hors-ligne détecté, soit forçage manuel               → isDesktop = true + (localOnly OU déconnecté)
  */
 function readLocalOnly(): boolean {
   try {
@@ -20,6 +20,8 @@ function readLocalOnly(): boolean {
     return false;
   }
 }
+
+let initialConnectivityCheck: Promise<boolean> | null = null;
 
 export function useAppMode() {
   const { isDesktop, isReady } = usePlatform();
@@ -41,6 +43,36 @@ export function useAppMode() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!isDesktop || !isReady) return;
+
+    let cancelled = false;
+
+    async function checkInitialConnectivity() {
+      if (!initialConnectivityCheck) {
+        initialConnectivityCheck = (async () => {
+          try {
+            const { invoke } = await import('@tauri-apps/api/core');
+            const isOnline = await invoke<boolean>('check_network_connectivity');
+            return isOnline;
+          } catch {
+            return typeof navigator !== 'undefined' ? navigator.onLine : false;
+          }
+        })();
+      }
+
+      const result = await initialConnectivityCheck;
+      if (!cancelled) {
+        setOnline(result);
+      }
+    }
+
+    checkInitialConnectivity();
+    return () => {
+      cancelled = true;
+    };
+  }, [isDesktop, isReady]);
+
   const setLocalOnly = useCallback((value: boolean) => {
     setLocalOnlyState(value);
     try {
@@ -60,16 +92,10 @@ export function useAppMode() {
   }, []);
 
   let mode: AppMode;
-  if (localOnly && isDesktop) mode = 'locale';
-  else if (!isDesktop) mode = 'web';
-  else mode = 'hybride';
+  if (!isDesktop) mode = 'web';
+  else if (localOnly) mode = 'locale';
+  else mode = online ? 'hybride' : 'locale';
 
-  /**
-   * La liaison cloud est possible dès qu'on est en ligne et non forcé en local
-   * — y compris en mode web (navigateur), où le sync-engine utilise les routes
-   * /api/local-db + /api/registry (branches !isDesktop). Le poste hybride
-   * (Tauri) garde bien sûr aussi la liaison activée.
-   */
   const cloudSyncEnabled = online && !localOnly;
 
   return { mode, isDesktop, isReady, online, localOnly, setLocalOnly, resetLocalOnly, cloudSyncEnabled };

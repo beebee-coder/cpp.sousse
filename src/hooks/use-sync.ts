@@ -35,29 +35,27 @@ export function useSync() {
     if (isSyncingRef.current || !isMounted.current) return;
     isSyncingRef.current = true;
     setIsSyncing(true);
-    // Garde réseau : en mode locale uniquement ou hors-ligne, on n'attaque pas le cloud.
-    if (localOnly || !online) {
-      setLastError("Liaison cloud désactivée (mode locale uniquement ou hors-ligne).");
-      isSyncingRef.current = false;
-      if (isMounted.current) setIsSyncing(false);
-      return;
-    }
     setLastError(null);
     const timeout = setTimeout(() => {
       if (isMounted.current) {
         setIsSyncing(false);
+        isSyncingRef.current = false;
         setLastError("Délai de synchronisation dépassé.");
       }
     }, SYNC_TIMEOUT_MS);
     try {
+      if (localOnly || !online) {
+        throw new Error("Liaison cloud désactivée (mode locale uniquement ou hors-ligne).");
+      }
       await syncEngine.syncAll(userId, 'project-001', localOnly);
-      await refreshState();
     } catch (e: any) {
-      setLastError(e.message || "Erreur de synchronisation");
+      const msg = e.message || "Erreur de synchronisation";
+      setLastError(msg);
     } finally {
       clearTimeout(timeout);
       isSyncingRef.current = false;
       if (isMounted.current) setIsSyncing(false);
+      await refreshState();
     }
   }, [refreshState, userId, localOnly, online]);
 

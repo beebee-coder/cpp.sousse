@@ -134,6 +134,29 @@ fn is_retryable_status(status: StatusCode) -> bool {
         || status == StatusCode::GATEWAY_TIMEOUT
 }
 
+#[tauri::command]
+async fn check_network_connectivity() -> Result<bool, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(3))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let endpoints = [
+        "https://api.groq.com/openai/v1/models",
+        "https://www.google.com",
+        "https://1.1.1.1",
+    ];
+
+    for endpoint in endpoints {
+        match client.head(endpoint).send().await {
+            Ok(_) => return Ok(true),
+            Err(_) => continue,
+        }
+    }
+
+    Ok(false)
+}
+
 async fn call_groq_with_retry(
     client: reqwest::Client,
     groq_key: &str,
@@ -749,6 +772,7 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            check_network_connectivity,
             chat_with_ia,
             get_local_db_root,
             get_registry_root,
