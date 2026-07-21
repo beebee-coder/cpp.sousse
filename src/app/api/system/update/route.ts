@@ -1,30 +1,29 @@
 import { NextResponse } from 'next/server';
-import { exec } from 'child_process';
 import path from 'path';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = false;
 
+const MANIFEST_PATH = path.join(process.cwd(), 'public', 'installers', 'installers.json');
+
 export async function POST() {
   try {
-    const scriptPath = path.resolve(process.cwd(), 'update-dev.ps1');
-    const command = `powershell.exe -ExecutionPolicy Bypass -File "${scriptPath}"`;
+    const manifestRaw = await import('node:fs').then(fs => fs.readFileSync(MANIFEST_PATH, 'utf8')).catch(() => null);
+    if (!manifestRaw) {
+      return NextResponse.json({ success: false, error: 'Manifeste des installateurs introuvable.' }, { status: 500 });
+    }
 
-    // Execute the process asynchronously, don't await its completion to avoid Vercel/Next.js timeouts
-    exec(command, (error, stdout, stderr) => {
-      if (error) {
-        console.error(`❌ [UPDATE] Erreur d'exécution: ${error.message}`);
-        return;
-      }
-      if (stderr) {
-        console.warn(`⚠️ [UPDATE] Avertissements: ${stderr}`);
-      }
-      console.log(`✅ [UPDATE] Processus terminé:\n${stdout}`);
-    });
+    const manifest = JSON.parse(manifestRaw);
+    const exeUrl = manifest?.windows?.exe;
 
-    return NextResponse.json({ 
-      success: true, 
-      message: 'Mise à jour lancée en arrière-plan.' 
+    if (!exeUrl) {
+      return NextResponse.json({ success: false, error: 'URL de l\'installateur Windows introuvable dans le manifeste.' }, { status: 500 });
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: 'Mise à jour disponible.',
+      downloadUrl: exeUrl,
     });
 
   } catch (error: any) {

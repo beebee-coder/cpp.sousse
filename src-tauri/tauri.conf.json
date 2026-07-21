@@ -44,6 +44,7 @@
     "shortDescription": "VisioNode Control Center - Industrial Vision Platform",
     "longDescription": "Plateforme de contrôle par vision industrielle hybride avec audit de flux intelligent.",
     "copyright": "© CCP Industrial Vision - Tous droits réservés",
+    "createUpdaterArtifacts": true,
 
     "windows": {
       "nsis": {
@@ -61,6 +62,12 @@
   "plugins": {
     "deep-link": {
       "schemes": ["visionode"]
+    },
+    "updater": {
+      "pubkey": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAQbXKCFlvXbpPhhopucoaZnCy1WzZkTUOpBx5+K/UVO4=\n-----END PUBLIC KEY-----",
+      "endpoints": [
+        "https://cpp-sousse.vercel.app/api/updates/latest.json"
+      ]
     }
   }
 }

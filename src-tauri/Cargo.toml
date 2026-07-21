@@ -19,6 +19,7 @@ dotenvy = "0.15"
 tokio = { version = "1", features = ["full"] }
 chrono = "0.4"
 tauri-plugin-deep-link = "2.4.9"
+tauri-plugin-updater = "2"
 uuid = { version = "1.0", features = ["v4"] }
 base64 = "0.22"
 unicode-normalization = "0.1"

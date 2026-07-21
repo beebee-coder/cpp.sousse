@@ -52,12 +52,23 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
+      - name: Setup Tauri signing key
+        if: secrets.TAURI_SIGNING_PRIVATE_KEY != ''
+        run: |
+          $tauriDir = Join-Path $env:USERPROFILE ".tauri"
+          New-Item -ItemType Directory -Path $tauriDir -Force | Out-Null
+          $keyPath = Join-Path $tauriDir "visionode.key"
+          [System.IO.File]::WriteAllText($keyPath, "${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}")
+          Write-Host "✅ [SIGNING] Clé privée écrite dans $keyPath"
+        shell: pwsh
+
       - name: Build Next.js Static Engine
         run: npm run build:tauri
 
       - name: Build Tauri Real Binary
         env:
           BLOB_READ_WRITE_TOKEN: ${{ secrets.BLOB_READ_WRITE_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         run: npm run desktop:build
 
       - name: Upload installers artifact
@@ -68,13 +79,13 @@ jobs:
           path: src-tauri/target/release/bundle/
           if-no-files-found: warn
 
-      - name: Commit installer manifest
+      - name: Commit installer manifests
         if: success()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add public/installers/installers.json
-          git diff --cached --quiet || git commit -m "chore: update installer manifest"
+          git add public/installers/installers.json public/installers/latest.json
+          git diff --cached --quiet || git commit -m "chore: update installer manifests"
           git pull --ff-only
           git push
         env:

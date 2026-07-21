@@ -35,6 +35,7 @@ pub struct StreamChunk {
 
 use tauri::Manager;
 use tauri_plugin_sql::{Builder, Migration, MigrationKind};
+use tauri_plugin_updater::UpdaterExt;
 
 mod vector_store;
 mod offline_generator;
@@ -740,7 +741,11 @@ fn main() {
                 .add_migrations(LOCAL_DB_URL, local_migrations())
                 .build(),
         )
-        .setup(|_app| {
+        .setup(|app| {
+            #[cfg(desktop)]
+            app.handle().plugin(
+                tauri_plugin_updater::Builder::new().build()
+            )?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

@@ -26,6 +26,9 @@ export function TopNavbar({ onMenuClick, health, mounted, isDesktop, mode, role 
   const userImage = session.user?.image;
   const pendingCount = session.pendingCount;
   const [isOpeningDesktop, setIsOpeningDesktop] = useState(false);
+  const [updateAvailable, setUpdateAvailable] = useState(false);
+  const [updateVersion, setUpdateVersion] = useState<string | null>(null);
+  const [isUpdating, setIsUpdating] = useState(false);
 
   const handleSaveImage = async (image: string | null) => {
     if (image === null) return;
@@ -61,12 +64,32 @@ export function TopNavbar({ onMenuClick, health, mounted, isDesktop, mode, role 
   }
 
   useEffect(() => {
-    if (!mounted) return;
-    const id = setInterval(() => {
-      console.log('[TOPBAR][POLL]', { mounted, isDesktop, mode });
-    }, 2000);
-    return () => clearInterval(id);
-  }, [mounted]);
+    if (!mounted || !isDesktop || mode !== 'hybride') return;
+
+    let cancelled = false;
+
+    const checkForUpdates = async () => {
+      try {
+        const { check } = await import('@tauri-apps/plugin-updater');
+        const update = await check();
+        if (cancelled) return;
+        if (update) {
+          setUpdateAvailable(true);
+          setUpdateVersion(update.version ?? null);
+        }
+      } catch (e) {
+        if (!cancelled) {
+          console.warn('[UPDATER] Vérification échouée:', e);
+        }
+      }
+    };
+
+    checkForUpdates();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [mounted, isDesktop, mode]);
 
   return (
     <header className="sticky top-0 z-40 h-14 shrink-0 flex items-center gap-3 px-3 sm:px-5 border-b border-border/70 bg-card/40 backdrop-blur-md">
@@ -141,22 +164,45 @@ export function TopNavbar({ onMenuClick, health, mounted, isDesktop, mode, role 
           )}
           {mounted && isDesktop && mode === 'hybride' && (
             <button
-              onClick={async (e) => {
-                const btn = e.currentTarget;
-                const originalText = btn.innerHTML;
-                btn.innerHTML = '<span class="animate-spin text-xs">↻</span> Lancement...';
+              onClick={async () => {
+                if (isUpdating) return;
+                setIsUpdating(true);
                 try {
-                  await fetch('/api/system/update', { method: 'POST' });
-                  setTimeout(() => { btn.innerHTML = originalText; }, 2000);
-                } catch (err) {
-                  btn.innerHTML = originalText;
+                  const [{ check }, { message }, { relaunch }] = await Promise.all([
+                    import('@tauri-apps/plugin-updater'),
+                    import('@tauri-apps/plugin-dialog'),
+                    import('@tauri-apps/plugin-process'),
+                  ]);
+
+                  const update = await check();
+                  if (!update) {
+                    await message('Aucune mise à jour disponible.', { title: 'VisioNode', kind: 'info' });
+                    return;
+                  }
+
+                  const confirm = await message(
+                    `Mise à jour ${update.version} disponible. Télécharger et installer ?`,
+                    { title: 'Mise à jour disponible', kind: 'info' }
+                  );
+
+                  if (confirm) {
+                    await update.downloadAndInstall();
+                    await relaunch();
+                  }
+                } catch (e) {
+                  console.error('[UPDATER] Échec:', e);
+                  await import('@tauri-apps/plugin-dialog').then(m => m.message('Échec de la mise à jour. Veuillez réessayer.', { title: 'Erreur', kind: 'error' }));
+                } finally {
+                  setIsUpdating(false);
                 }
               }}
               className="rounded-md bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 transition-colors px-2 py-1 text-xs flex items-center gap-1 font-bold"
-              title="Lancer la mise à jour globale en arrière-plan"
+              title="Vérifier et installer les mises à jour"
             >
-              <RefreshCw className="w-3 h-3" />
-              <span className="hidden sm:inline">Mettre à jour</span>
+              {isUpdating ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+              <span className="hidden sm:inline">
+                {updateAvailable ? `Mettre à jour (v${updateVersion})` : 'Mettre à jour'}
+              </span>
             </button>
           )}
           <ProfilePhotoMenu currentImage={userImage} onSave={handleSaveImage} size={32} />
