@@ -102,10 +102,15 @@ export async function getSessionFromCookie(): Promise<SessionPayload | null> {
 
     const session = payload as unknown as SessionPayload;
 
+    if (!session?.user?.id) {
+      authAudit.warn('SESSION_INVALID_PAYLOAD', { payload });
+      return null;
+    }
+
     authAudit.info('SESSION_RESTORED', {
       userId: session.user.id,
       role: session.user.role,
-      name: `${session.user.firstName} ${session.user.lastName}`,
+      name: `${session.user.firstName ?? ''} ${session.user.lastName ?? ''}`.trim() || session.user.id,
     });
 
     return session;
