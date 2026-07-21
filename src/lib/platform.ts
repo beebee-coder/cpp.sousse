@@ -2,6 +2,8 @@
  * @fileOverview Détection de plateforme et pont hybride Web/Desktop (Tauri).
  */
 
+let cachedIsDesktop: boolean | null = null;
+
 export const isBrowser = typeof window !== 'undefined';
 export const isDesktop = isBrowser && (
   (window as any).__TAURI_METADATA__ !== undefined ||
@@ -26,6 +28,29 @@ export function detectDesktop(): boolean {
     (window as any).__TAURI_INTERNALS__ !== undefined ||
     (window as any).__TAURI__ !== undefined
   );
+}
+
+export function waitForDesktopDetection(timeoutMs = 5000): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (!isBrowser) {
+      resolve(false);
+      return;
+    }
+    const start = Date.now();
+    const check = () => {
+      const detected = detectDesktop();
+      if (detected) {
+        cachedIsDesktop = true;
+        resolve(true);
+      } else if (Date.now() - start >= timeoutMs) {
+        cachedIsDesktop = false;
+        resolve(false);
+      } else {
+        setTimeout(check, 100);
+      }
+    };
+    check();
+  });
 }
 
 export function performHealthCheck() {

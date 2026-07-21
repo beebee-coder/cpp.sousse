@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { getPlatformInfo, type PlatformCapabilities, type PlatformType } from '@/lib/platform';
+import { getPlatformInfo, waitForDesktopDetection, type PlatformCapabilities, type PlatformType } from '@/lib/platform';
 
 interface PlatformContextType {
   isDesktop: boolean;
@@ -32,17 +32,15 @@ export function PlatformProvider({ children, initialIsDesktop = false }: Platfor
       isReady: true,
     });
 
-    const timeout = setTimeout(() => {
-      const delayed = getPlatformInfo();
-      setPlatformData((prev) => {
-        if (prev.isDesktop !== delayed.isDesktop || prev.platform !== delayed.platform) {
-          return { ...delayed, isReady: true };
-        }
-        return prev;
-      });
-    }, 600);
-
-    return () => clearTimeout(timeout);
+    waitForDesktopDetection(5000).then((detected) => {
+      if (detected) {
+        const delayed = getPlatformInfo();
+        setPlatformData({
+          ...delayed,
+          isReady: true,
+        });
+      }
+    });
   }, []);
 
   return (
