@@ -32,8 +32,8 @@ export function DownloadApp() {
   const [os, setOs] = useState<OS>('unknown');
   const [mounted, setMounted] = useState(false);
   const [isLaunching, setIsLaunching] = useState(false);
-  const [exeAvail, setExeAvail] = useState<boolean | null>(null);
-  const [msiAvail, setMsiAvail] = useState<boolean | null>(null);
+  const [exeAvail, setExeAvail] = useState(true);
+  const [msiAvail, setMsiAvail] = useState(true);
   const [manifest, setManifest] = useState<{ windows?: { exe?: string; msi?: string } } | null>(null);
   const { toast } = useToast();
   const { isDesktop, cloudSyncEnabled } = useAppMode();
@@ -53,22 +53,10 @@ export function DownloadApp() {
     else setOs('unknown');
 
     // Manifest des installers (URLs Vercel Blob), généré par scripts/upload-installers.mjs
-    fetch('/installers/installers.json')
+    fetch('/installers/installers.json', { cache: 'no-store' })
       .then((r) => (r.ok ? r.json() : null))
       .then(setManifest)
       .catch(() => {});
-
-    // Vérifie la disponibilité réelle (évite un 404 aveugle)
-    const check = async (url: string) => {
-      try {
-        const res = await fetch(url, { method: 'HEAD' });
-        return res.ok;
-      } catch {
-        return false;
-      }
-    };
-    check(exeUrl).then(setExeAvail);
-    check(msiUrl).then(setMsiAvail);
   }, [exeUrl, msiUrl]);
 
   // Téléchargement direct (URL Blob ou fallback statique)
