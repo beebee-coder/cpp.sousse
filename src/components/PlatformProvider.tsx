@@ -31,6 +31,18 @@ export function PlatformProvider({ children, initialIsDesktop = false }: Platfor
       ...info,
       isReady: true,
     });
+
+    const timeout = setTimeout(() => {
+      const delayed = getPlatformInfo();
+      setPlatformData((prev) => {
+        if (prev.isDesktop !== delayed.isDesktop || prev.platform !== delayed.platform) {
+          return { ...delayed, isReady: true };
+        }
+        return prev;
+      });
+    }, 600);
+
+    return () => clearTimeout(timeout);
   }, []);
 
   return (

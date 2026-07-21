@@ -18,10 +18,21 @@ export interface PlatformCapabilities {
   status: 'actif' | 'indisponible' | 'émulé';
 }
 
+export function detectDesktop(): boolean {
+  if (!isBrowser) return false;
+  return (
+    (window as any).__TAURI_METADATA__ !== undefined ||
+    (window as any).__TAURI_IPC__ !== undefined ||
+    (window as any).__TAURI_INTERNALS__ !== undefined ||
+    (window as any).__TAURI__ !== undefined
+  );
+}
+
 export function performHealthCheck() {
   const issues: string[] = [];
   if (!isBrowser) issues.push('ENV_SSR_DETECTE');
-  if (isDesktop && !(window as any).__TAURI__) issues.push('PONT_TAURI_INTROUVABLE');
+  const detected = detectDesktop();
+  if (detected && !(window as any).__TAURI__) issues.push('PONT_TAURI_INTROUVABLE');
   
   return {
     healthy: issues.length === 0,
@@ -31,9 +42,10 @@ export function performHealthCheck() {
 }
 
 export function getPlatformInfo() {
-  const platform: PlatformType = isDesktop ? 'Tauri Natif' : 'Vercel Web';
+  const detectedIsDesktop = detectDesktop();
+  const platform: PlatformType = detectedIsDesktop ? 'Tauri Natif' : 'Vercel Web';
   
-  const capabilities: PlatformCapabilities[] = isDesktop 
+  const capabilities: PlatformCapabilities[] = detectedIsDesktop 
     ? [
         { name: 'Système Fichiers Natif', status: 'actif' },
         { name: 'Accès Caméra USB', status: 'actif' },
@@ -47,5 +59,5 @@ export function getPlatformInfo() {
         { name: 'Traitement Local', status: 'émulé' }
       ];
 
-  return { isDesktop, isWeb, platform, capabilities };
+  return { isDesktop: detectedIsDesktop, isWeb: !detectedIsDesktop, platform, capabilities };
 }
