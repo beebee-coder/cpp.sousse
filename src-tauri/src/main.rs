@@ -138,7 +138,10 @@ async fn check_network_connectivity() -> Result<bool, String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(3))
         .build()
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| {
+            eprintln!("[NETWORK_CHECK] reqwest build error: {e}");
+            e.to_string()
+        })?;
 
     let endpoints = [
         "https://api.groq.com/openai/v1/models",
@@ -148,11 +151,18 @@ async fn check_network_connectivity() -> Result<bool, String> {
 
     for endpoint in endpoints {
         match client.head(endpoint).send().await {
-            Ok(_) => return Ok(true),
-            Err(_) => continue,
+            Ok(_) => {
+                eprintln!("[NETWORK_CHECK] reachable: {endpoint}");
+                return Ok(true);
+            }
+            Err(e) => {
+                eprintln!("[NETWORK_CHECK] failed: {endpoint} => {e}");
+                continue;
+            }
         }
     }
 
+    eprintln!("[NETWORK_CHECK] all endpoints unreachable");
     Ok(false)
 }
 

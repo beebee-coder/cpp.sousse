@@ -81,15 +81,17 @@ export const syncEngine = {
     let items: any[] = [];
 
     try {
+      console.info(`[DIAG_SYNC] /api/sync/download start userId=${userId} projectId=${projectId} lastSync=${state.lastSync.toISOString()}`);
       const res = await apiClient.post<{ items: any[]; count: number }>('/api/sync/download', {
         userId,
         projectId,
         lastSync: state.lastSync.toISOString(),
         scope: 'all',
       });
+      console.info(`[DIAG_SYNC] /api/sync/download result success=${res.success} count=${res.items?.length ?? 'n/a'} error=${res.error ?? 'none'}`);
       items = res.items ?? [];
     } catch (e: any) {
-      console.error(`❌ [SYNC_DOWN] [ERROR] Échec liaison Cloud :`, e.message);
+      console.error(`❌ [DIAG_SYNC] [ERROR] Échec liaison Cloud :`, e.message, e);
       return { injectedCount: 0, vectorizedCount: 0, failedItems: [], skippedDuplicates: 0, purgedCount: 0, bankSyncedCount: 0 };
     }
 

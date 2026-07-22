@@ -67,15 +67,20 @@ export function useAppMode() {
           try {
             const { invoke } = await import('@tauri-apps/api/core');
             const isOnline = await invoke<boolean>('check_network_connectivity');
+            console.info(`[DIAG_MODE] tauri check_network_connectivity -> ${isOnline}`);
             return isOnline;
-          } catch {
-            return typeof navigator !== 'undefined' ? navigator.onLine : false;
+          } catch (e: any) {
+            console.warn(`[DIAG_MODE] tauri check_network_connectivity failed: ${e?.message || e}`);
+            const browserOnline = typeof navigator !== 'undefined' ? navigator.onLine : false;
+            console.info(`[DIAG_MODE] navigator.onLine fallback -> ${browserOnline}`);
+            return browserOnline;
           }
         })();
       }
 
       const result = await initialConnectivityCheck;
       if (!cancelled) {
+        console.info(`[DIAG_MODE] initial hybrid connectivity state -> ${result}`);
         setOnline(result);
       }
     }
