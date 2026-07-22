@@ -26,6 +26,9 @@ export function useSync() {
       const state = await syncEngine.getSyncState(userId);
       state.localOnly = localOnly;
       setSyncState(state);
+      if (state.status === 'error' && state.errorMessage) {
+        setLastError(state.errorMessage);
+      }
     } catch (e) {
       console.warn("Sync refresh failed");
     }
@@ -59,12 +62,27 @@ export function useSync() {
     }
   }, [refreshState, userId, localOnly, online]);
 
+  const prevLocalOnlyRef = useRef(localOnly);
+
   useEffect(() => {
     if (isSyncingRef.current) {
       isSyncingRef.current = false;
       setIsSyncing(false);
     }
+    setLastError(null);
   }, [localOnly, online]);
+
+  useEffect(() => {
+    const wasLocalOnly = prevLocalOnlyRef.current;
+    prevLocalOnlyRef.current = localOnly;
+
+    if (wasLocalOnly || !localOnly) return;
+    if (!syncState || syncState.status !== 'error') return;
+
+    const cleared: SyncState = { ...syncState, status: 'idle', errorMessage: undefined };
+    setSyncState(cleared);
+    syncEngine.saveSyncState(cleared);
+  }, [localOnly, syncState]);
 
   useEffect(() => {
     isMounted.current = true;
@@ -72,7 +90,7 @@ export function useSync() {
 
     // Auto-sync polling every 60s (silencieux hors-ligne / locale uniquement)
     timerRef.current = setInterval(() => {
-      if (!localOnly && online) refreshState();
+      if (!localOnly && online && !isSyncingRef.current) refreshState();
     }, 60000);
 
     return () => {

@@ -278,11 +278,11 @@ export function useChat(onAiResponse?: (text: string) => void) {
         }
       } else if (isDesktop && mode === 'hybride') {
         console.log(`📡 [CHAT] [STEP] Mode hybride: tentative natif puis fallback cloud.`);
+        let nativeStreamUnlisten: (() => void) | undefined;
         try {
           const { invoke } = await import('@tauri-apps/api/core');
           const { listen } = await import('@tauri-apps/api/event');
           
-          let nativeStreamUnlisten: (() => void) | undefined;
           try {
             if (streamingEnabled) {
               setIsStreaming(true);
@@ -340,6 +340,10 @@ export function useChat(onAiResponse?: (text: string) => void) {
 
             if ((data as any)?.groq_available === false) {
               console.warn(`⚠️ [CHAT] [FALLBACK] Groq natif indisponible (clé absente), bascule cloud...`);
+              if (nativeStreamUnlisten) {
+                nativeStreamUnlisten();
+                nativeStreamUnlisten = undefined;
+              }
               if (localOnly) {
                 throw new Error('Mode local uniquement : bascule cloud désactivée.');
               }
@@ -358,10 +362,15 @@ export function useChat(onAiResponse?: (text: string) => void) {
           } finally {
             if (nativeStreamUnlisten) {
               nativeStreamUnlisten();
+              nativeStreamUnlisten = undefined;
             }
           }
         } catch (nativeError: any) {
           console.warn(`⚠️ [CHAT] [FALLBACK] Natif échoué (${nativeError.message}), bascule cloud...`);
+          if (nativeStreamUnlisten) {
+            nativeStreamUnlisten();
+            nativeStreamUnlisten = undefined;
+          }
           if (localOnly) {
             throw new Error('Mode local uniquement : bascule cloud désactivée.');
           }
@@ -476,6 +485,11 @@ export function useChat(onAiResponse?: (text: string) => void) {
     const contentType = res.headers.get('content-type');
     if (contentType?.includes('text/event-stream')) {
       return await handleStreamResponse(res);
+    }
+
+    if (!contentType?.includes('application/json')) {
+      const text = await res.text();
+      throw new Error(`Réponse inattendue (${contentType || 'vide'}) : ${text.slice(0, 200)}`);
     }
 
     const data = await res.json();

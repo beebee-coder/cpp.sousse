@@ -92,7 +92,7 @@ export default function BDDPage() {
     if (!webEnabled && mode === 'web') setMode(localeEnabled ? 'locale' : 'chroma');
     else if (!localeEnabled && mode === 'locale') setMode(webEnabled ? 'web' : 'chroma');
     else if (!chromaEnabled && mode === 'chroma') setMode(webEnabled ? 'web' : 'locale');
-  }, [appMode, webEnabled, localeEnabled, chromaEnabled, mode]);
+  }, [appMode, webEnabled, localeEnabled, chromaEnabled, setMode]);
 
   // Synchronisation de l'onglet UI avec le flag global localOnly (Desktop) :
   //  - localOnly actif sur desktop → on bascule sur l'onglet "locale".
@@ -486,7 +486,13 @@ export default function BDDPage() {
     setIndexing({ id: relPath, label: relPath, done: 0, total: 1 });
     toast({ title: "Vectorisation démarrée", description: `Indexation de ${relPath}…` });
     try {
-      const result = await indexLocalDBFile(relPath);
+      let result: any;
+      if (isDesktop) {
+        result = await indexLocalDBFile(relPath);
+      } else {
+        const res = await apiClient.post('/api/local-db', { action: 'index', targetPath: relPath });
+        result = res;
+      }
       if (result.success) {
         toast({ title: "✅ Fichier vectorisé avec succès", description: `${relPath} → Vecteurs ChromaDB (${result.chunkCount} chunks)` });
         if (result.evicted && result.evicted > 0) {
@@ -517,29 +523,41 @@ export default function BDDPage() {
 
     let ok = 0;
     const failures: string[] = [];
-    const CONCURRENCY = 5;
 
     try {
-      const processChunk = async (chunk: string[]) => {
-        const results = await Promise.allSettled(
-          chunk.map(f =>
-            indexLocalDBFile(f).then(res => ({ f, res }))
-          )
-        );
-        for (const r of results) {
-          if (r.status === 'fulfilled') {
-            const { f, res } = r.value;
-            if (res.success) ok++;
-            else failures.push(`${f}: ${res.error || res.message || 'ERREUR'}`);
-          } else {
-            failures.push(`${r.reason}`);
+      let result: any;
+      if (isDesktop) {
+        const CONCURRENCY = 5;
+        const processChunk = async (chunk: string[]) => {
+          const results = await Promise.allSettled(
+            chunk.map(f =>
+              indexLocalDBFile(f).then(res => ({ f, res }))
+            )
+          );
+          for (const r of results) {
+            if (r.status === 'fulfilled') {
+              const { f, res } = r.value;
+              if (res.success) ok++;
+              else failures.push(`${f}: ${res.error || res.message || 'ERREUR'}`);
+            } else {
+              failures.push(`${r.reason}`);
+            }
+            setIndexing(prev => ({ ...prev, done: prev.done + 1 }));
           }
-          setIndexing(prev => ({ ...prev, done: prev.done + 1 }));
-        }
-      };
+        };
 
-      for (let i = 0; i < files.length; i += CONCURRENCY) {
-        await processChunk(files.slice(i, i + CONCURRENCY));
+        for (let i = 0; i < files.length; i += CONCURRENCY) {
+          await processChunk(files.slice(i, i + CONCURRENCY));
+        }
+      } else {
+        const res = await apiClient.post('/api/local-db', { action: 'index-folder', targetPath: relPath });
+        result = res;
+        if (result.success) {
+          ok = result.indexed || 0;
+        } else {
+          failures.push(result.error || result.message || 'ERREUR');
+        }
+        setIndexing(prev => ({ ...prev, done: files.length }));
       }
     } catch (e: any) {
       failures.push(`global: ${e.message}`);
@@ -614,7 +632,7 @@ export default function BDDPage() {
               {node.type === 'folder' && (
                 <button onClick={(e) => { e.stopPropagation(); setNewModal({ isOpen: true, type: 'folder', parent: node.id }); }} title="Nouveau répertoire"><FolderPlus className="w-3 h-3 hover:text-primary" /></button>
               )}
-              {mode === 'locale' && (
+              {(mode === 'locale' || mode === 'web') && (
                 indexing.id === node.id ? (
                   <Loader2 className="w-3 h-3 animate-spin text-accent" />
                 ) : (

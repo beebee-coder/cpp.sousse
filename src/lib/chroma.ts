@@ -7,6 +7,7 @@ import path from 'path';
 import fs from 'fs';
 import { IS_CLOUD } from './config/env';
 import { tokenizeWithStems } from '@/lib/ai/tokenizer';
+import { getLocalDBRoot } from './db/local-db';
 
 export interface DocumentToAdd {
   id: string;
@@ -29,12 +30,14 @@ export interface SearchResult {
   score: number;
 }
 
-// R1 — Aligné sur la racine Rust via REGISTRY_ROOT_OVERRIDE (Desktop).
-const REGISTRY_OVERRIDE = process.env.REGISTRY_ROOT_OVERRIDE?.trim();
-const REGISTRY_ROOT = REGISTRY_OVERRIDE ? REGISTRY_OVERRIDE : path.join(process.cwd(), '.registry');
-const REGISTRY_ITEMS_DIR = path.join(REGISTRY_ROOT, 'items');
-const REGISTRY_BANK_DIR = path.join(REGISTRY_ROOT, 'bank');
-const LOCAL_DB_INDEX_CHROMA_DIR = path.join(process.cwd(), '.local-db', 'INDEX_CHROMA');
+// R1 — Aligné sur la racine Rust via la racine .local-db résolue (Desktop).
+const getRegistryRoot = () => {
+  const override = process.env.REGISTRY_ROOT_OVERRIDE?.trim();
+  return override ? override : path.join(path.dirname(getLocalDBRoot()), '.registry');
+};
+const getRegistryItemsDir = () => path.join(getRegistryRoot(), 'items');
+const getRegistryBankDir = () => path.join(getRegistryRoot(), 'bank');
+const getLocalDBIndexChromaDir = () => path.join(getLocalDBRoot(), 'INDEX_CHROMA');
 
 // "Cloud" = Vercel serverless (FS read-only, pas de Chroma local).
 // Le build desktop (EXE Tauri) tourne en NODE_ENV=production mais reste une
@@ -49,14 +52,14 @@ export async function getSystemContextSummary() {
     mode: IS_CLOUD ? 'CLOUD_DISTRIBUÉ' : 'STATION_LOCALE_FORGE',
   };
   try {
-    if (fs.existsSync(REGISTRY_ITEMS_DIR)) {
-      summary.ragDocuments = fs.readdirSync(REGISTRY_ITEMS_DIR).filter(f => f.endsWith('.json')).length;
+    if (fs.existsSync(getRegistryItemsDir())) {
+      summary.ragDocuments = fs.readdirSync(getRegistryItemsDir()).filter(f => f.endsWith('.json')).length;
     }
-    if (fs.existsSync(REGISTRY_BANK_DIR)) {
-      summary.bankAssets = fs.readdirSync(REGISTRY_BANK_DIR).length;
+    if (fs.existsSync(getRegistryBankDir())) {
+      summary.bankAssets = fs.readdirSync(getRegistryBankDir()).length;
     }
-    if (fs.existsSync(LOCAL_DB_INDEX_CHROMA_DIR)) {
-      const files = fs.readdirSync(LOCAL_DB_INDEX_CHROMA_DIR, { recursive: true, withFileTypes: false }) as string[];
+    if (fs.existsSync(getLocalDBIndexChromaDir())) {
+      const files = fs.readdirSync(getLocalDBIndexChromaDir(), { recursive: true, withFileTypes: false }) as string[];
       summary.localDBFiles = files.filter(f => f.endsWith('.json')).length;
     }
   } catch (e: any) {
@@ -75,11 +78,11 @@ export function fallbackSemanticSearch(query: string, nResults = 5, componentFil
   const lowerQuery = query.toLowerCase().trim();
   const isVisualRequest = lowerQuery.includes('photo') || lowerQuery.includes('image');
 
-  if (fs.existsSync(REGISTRY_ITEMS_DIR)) {
+  if (fs.existsSync(getRegistryItemsDir())) {
     try {
-      const files = fs.readdirSync(REGISTRY_ITEMS_DIR).filter(f => f.endsWith('.json'));
+      const files = fs.readdirSync(getRegistryItemsDir()).filter(f => f.endsWith('.json'));
       for (const file of files) {
-        const content = fs.readFileSync(path.join(REGISTRY_ITEMS_DIR, file), 'utf8');
+        const content = fs.readFileSync(path.join(getRegistryItemsDir(), file), 'utf8');
         const data = JSON.parse(content);
         let score = 0;
         const searchSpace = `${data.title} ${data.label} ${data.details} ${data.content}`.toLowerCase();
@@ -111,11 +114,11 @@ export function fallbackSemanticSearch(query: string, nResults = 5, componentFil
     }
   }
 
-  if (fs.existsSync(REGISTRY_BANK_DIR)) {
+  if (fs.existsSync(getRegistryBankDir())) {
     try {
-      const folders = fs.readdirSync(REGISTRY_BANK_DIR);
+      const folders = fs.readdirSync(getRegistryBankDir());
       for (const folder of folders) {
-        const metaPath = path.join(REGISTRY_BANK_DIR, folder, 'metadata.json');
+        const metaPath = path.join(getRegistryBankDir(), folder, 'metadata.json');
         if (!fs.existsSync(metaPath)) continue;
         const data = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
         const searchSpace = `${data.name} ${data.description} ${data.tags?.join(' ')}`.toLowerCase();
@@ -138,7 +141,7 @@ export function fallbackSemanticSearch(query: string, nResults = 5, componentFil
     }
   }
 
-  if (fs.existsSync(LOCAL_DB_INDEX_CHROMA_DIR)) {
+  if (fs.existsSync(getLocalDBIndexChromaDir())) {
     try {
       const scanForJson = (dir: string, baseRel: string) => {
         let jsonFiles: string[] = [];
@@ -155,9 +158,9 @@ export function fallbackSemanticSearch(query: string, nResults = 5, componentFil
         return jsonFiles;
       };
 
-      const jsonFiles = scanForJson(LOCAL_DB_INDEX_CHROMA_DIR, '');
+      const jsonFiles = scanForJson(getLocalDBIndexChromaDir(), '');
       for (const relFile of jsonFiles) {
-        const fullPath = path.join(LOCAL_DB_INDEX_CHROMA_DIR, relFile);
+        const fullPath = path.join(getLocalDBIndexChromaDir(), relFile);
         const content = fs.readFileSync(fullPath, 'utf8');
         let score = 0;
         if (content.toLowerCase().includes(lowerQuery)) score += 60;
@@ -239,7 +242,7 @@ let _chromaClient: any = null;
 let chromaClientPromise: Promise<any> | null = null;
 
 export async function getChromaClient(): Promise<any> {
-  if (IS_CLOUD) return null;
+  if (IS_CLOUD && typeof window !== 'undefined') return null;
 
   if (_chromaClient) return _chromaClient;
 

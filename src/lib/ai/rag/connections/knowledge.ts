@@ -15,10 +15,15 @@ import { ragConnections, type RAGConnection } from '../connections';
 import { scoreItemAgainstQuery, tokenizeQuery, type LexicalScorable } from '../scorer';
 import type { RAGResult, RAGOptions } from '../../rag-orchestrator';
 import { searchAcrossCollections } from '@/lib/chroma';
+import { getLocalDBRoot } from '@/lib/db/local-db';
 
 function registryRoot(): string {
   const override = process.env.REGISTRY_ROOT_OVERRIDE?.trim();
-  return override ? override : path.join(process.cwd(), '.registry');
+  if (override) return override;
+  const localRoot = getLocalDBRoot();
+  const candidate = path.join(path.dirname(localRoot), '.registry');
+  if (fs.existsSync(candidate)) return candidate;
+  return path.join(process.cwd(), '.registry');
 }
 
 function readRegistryItems(existingTitles: Set<string>): LexicalScorable[] {

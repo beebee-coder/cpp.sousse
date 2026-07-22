@@ -1,5 +1,6 @@
 ﻿import fs from 'fs';
 import path from 'path';
+import { getLocalDBRoot } from './local-db';
 
 /**
  * @fileOverview Liaison physique pour le Registre local [REGISTRY_FS].
@@ -7,9 +8,9 @@ import path from 'path';
  */
 
 const REGISTRY_ROOT = (() => {
-  // R1 — En Desktop, le launcher peut forcer la même racine physique que le
-  // moteur Rust via REGISTRY_ROOT_OVERRIDE (issue de get_registry_root) afin
-  // d'éviter toute divergence de chemin entre l'écriture JS et la lecture native.
+  const localRoot = getLocalDBRoot();
+  const candidate = path.join(path.dirname(localRoot), '.registry');
+  if (fs.existsSync(candidate)) return candidate;
   const override = process.env.REGISTRY_ROOT_OVERRIDE?.trim();
   if (override) return override;
   return path.join(process.cwd(), '.registry');

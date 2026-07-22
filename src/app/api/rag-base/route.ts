@@ -68,9 +68,8 @@ export async function POST(request: NextRequest) {
       }
 
       case 'clear-registre': {
-        // R1 — Aligné sur la racine Rust via REGISTRY_ROOT_OVERRIDE (Desktop).
-        const REGISTRY_OVERRIDE = process.env.REGISTRY_ROOT_OVERRIDE?.trim();
-        const REGISTRY_ROOT = REGISTRY_OVERRIDE ? REGISTRY_OVERRIDE : path.join(process.cwd(), '.registry');
+        const { getLocalDBRoot } = await import('@/lib/db/local-db');
+        const REGISTRY_ROOT = path.join(path.dirname(getLocalDBRoot()), '.registry');
         const dirsToClear = ['bank', 'items', 'procedures'];
         let cleared: string[] = [];
         let errors: string[] = [];

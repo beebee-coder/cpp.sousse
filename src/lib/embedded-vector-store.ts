@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { tokenizeWithStems } from '@/lib/ai/tokenizer';
 
 /**
  * @fileOverview Stockage vectoriel embarqué (sans serveur, sans Python).
@@ -29,17 +30,13 @@ const MAX_DOCUMENTS = 50000;
 const MAX_STORE_BYTES = 50 * 1024 * 1024;
 
 const EMBED_DIM = 384;
-const STOP_WORDS = new Set(['le', 'la', 'les', 'de', 'du', 'des', 'un', 'une', 'et', 'en', 'ce', 'ces', 'pour', 'sur', 'dans', 'avec', 'est', 'sont']);
 
-/** Tokenisation identique à celle de chroma.ts (cohérence du scoring). */
+/**
+ * Tokenisation canonique (partagée avec chroma.ts et le Rust).
+ * Utilise le stemming FR pour garantir un scoring cosinus cohérent.
+ */
 function embTokenize(text: string): string[] {
-  return text
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .split(/\s+/)
-    .filter((w) => w.length > 2 && !STOP_WORDS.has(w));
+  return tokenizeWithStems(text);
 }
 
 /**
@@ -82,15 +79,9 @@ function cosine(a: number[], b: number[]): number {
   return dot; // vecteurs déjà L2-normalisés
 }
 
-/** Tokenisation lexique (sans mots vides) pour la sur-pondération path-aware. */
+/** Tokenisation canonique (partagée avec chroma.ts et le Rust). */
 function tokenizeLocal(text: string): string[] {
-  return text
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/[^a-z0-9àâäéèêëïîôöùûüÿç\s]/g, ' ')
-    .split(/\s+/)
-    .filter((w) => w.length > 2 && !STOP_WORDS.has(w));
+  return tokenizeWithStems(text);
 }
 
 interface StoredDoc {

@@ -3,15 +3,15 @@ export const revalidate = false;
 import fs from 'fs';
 import path from 'path';
 import { createHybridRoute } from '@/lib/api-route-creator';
-import { localDB, LOCAL_DB_ROOT } from '@/lib/db/local-db';
+import { localDB, getLocalDBRoot } from '@/lib/db/local-db';
 import { getSessionFromCookie } from '@/lib/session';
 
 const sanitizeLocalDBPath = (inputPath: string): string => {
   const cleaned = inputPath.replace(/\\/g, '/').replace(/^\/+/, '');
   const segments = cleaned.split('/').filter(s => s !== '.' && s !== '');
   const safe = segments.join('/');
-  const full = path.join(LOCAL_DB_ROOT, safe);
-  if (!full.startsWith(LOCAL_DB_ROOT)) {
+  const full = path.join(getLocalDBRoot(), safe);
+  if (!full.startsWith(getLocalDBRoot())) {
     throw new Error('PATH_TRAVERSAL_DETECTED');
   }
   return safe;
@@ -76,7 +76,7 @@ export const POST = createHybridRoute<any, any>({
 
     if (targetPath && type) {
       const safeTarget = sanitizeLocalDBPath(targetPath);
-      const fullPath = path.join(LOCAL_DB_ROOT, safeTarget);
+      const fullPath = path.join(getLocalDBRoot(), safeTarget);
       if (type === 'folder') {
         fs.mkdirSync(fullPath, { recursive: true });
         return { success: true, path: targetPath };
@@ -98,7 +98,8 @@ export const POST = createHybridRoute<any, any>({
 
     try {
       const safeName = sanitizeLocalDBPath(fileName);
-      const result = await localDB.injectFile(safeName, content, metadata);
+      const safeTargetDir = targetDir ? sanitizeLocalDBPath(targetDir) : undefined;
+      const result = await localDB.injectFile(safeName, content, metadata, safeTargetDir);
       return result;
     } catch (e: any) {
       return { success: false, error: e.message };

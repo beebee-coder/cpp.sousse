@@ -1,6 +1,6 @@
 import path from 'path';
 import fs from 'fs';
-import { localDB } from './db/local-db';
+import { localDB, getLocalDBRoot } from './db/local-db';
 import { upsertDocuments, getChromaClient, listCollections, deleteCollection, SearchResult, fallbackSemanticSearch } from './chroma';
 import { getLastEvictionCount } from './embedded-vector-store';
 import { IS_CLOUD } from './config/env';
@@ -15,8 +15,7 @@ import { IS_CLOUD } from './config/env';
 // "Cloud" = Vercel serverless uniquement. Le build desktop (EXE) est en
 // NODE_ENV=production mais reste local et doit vectoriser via Chroma.
 
-const LOCAL_DB_ROOT = path.join(process.cwd(), '.local-db');
-const MIRROR_FILE = path.join(LOCAL_DB_ROOT, 'chroma-index.json');
+const getMirrorFile = () => path.join(getLocalDBRoot(), 'chroma-index.json');
 
 const TEXT_EXT = ['.json', '.txt', '.md', '.csv', '.xml', '.log', '.text', '.yaml', '.yml'];
 
@@ -50,8 +49,8 @@ interface MirrorData {
 
 const loadMirror = (): MirrorData => {
   try {
-    if (fs.existsSync(MIRROR_FILE)) {
-      return JSON.parse(fs.readFileSync(MIRROR_FILE, 'utf8'));
+    if (fs.existsSync(getMirrorFile())) {
+      return JSON.parse(fs.readFileSync(getMirrorFile(), 'utf8'));
     }
   } catch (e) {}
   return { version: '1.0.0', entries: [] };
@@ -59,10 +58,10 @@ const loadMirror = (): MirrorData => {
 
 const saveMirror = (data: MirrorData) => {
   try {
-    if (!fs.existsSync(LOCAL_DB_ROOT)) fs.mkdirSync(LOCAL_DB_ROOT, { recursive: true });
-    const tmpPath = `${MIRROR_FILE}.${process.pid}.${Date.now()}.tmp`;
+    if (!fs.existsSync(getLocalDBRoot())) fs.mkdirSync(getLocalDBRoot(), { recursive: true });
+    const tmpPath = `${getMirrorFile()}.${process.pid}.${Date.now()}.tmp`;
     fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), 'utf8');
-    fs.renameSync(tmpPath, MIRROR_FILE);
+    fs.renameSync(tmpPath, getMirrorFile());
   } catch (e) {
     console.warn('[LOCAL_INDEXER] Échec écriture miroir:', (e as Error).message);
   }
@@ -81,9 +80,22 @@ export const sanitizeCollectionName = (dirPath: string): string => {
     .replace(/[̀-ͯ]/g, '')
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
-  const name = `locdb-${slug}`;
-  return name.length > 63 ? name.slice(0, 63) : name;
+  const hash = fnv1aHash(base);
+  const name = `locdb-${slug}-${hash}`;
+  if (name.length <= 63) return name;
+  const maxSlug = Math.max(0, 63 - 1 - 6 - 1);
+  const truncatedSlug = slug.slice(0, maxSlug);
+  return `locdb-${truncatedSlug}-${hash}`;
 };
+
+function fnv1aHash(str: string): string {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = (h * 16777619) >>> 0;
+  }
+  return h.toString(16).padStart(8, '0').slice(0, 6);
+}
 
 import { tokenizeWithStems } from '@/lib/ai/tokenizer';
 
@@ -119,9 +131,10 @@ const chunkText = (text: string, maxChunk = 1200): string[] => {
  * La collection cible reproduit l'arborescence du fichier dans la BDD Locale.
  */
 export const indexLocalDBFile = async (relPath: string): Promise<{ success: boolean; collection?: string; chunkCount?: number; evicted?: number; error?: string; message?: string }> => {
-  if (IS_CLOUD) return { success: false, error: 'CHROMA_CLOUD_UNSUPPORTED' };
+  const chromaClient = await getChromaClient();
+  if (!chromaClient) return { success: false, error: 'CHROMA_UNAVAILABLE' };
 
-  const fullPath = path.join(LOCAL_DB_ROOT, relPath);
+  const fullPath = path.join(getLocalDBRoot(), relPath);
   const ext = path.extname(relPath).toLowerCase();
 
   if (!TEXT_EXT.includes(ext)) {
@@ -203,9 +216,10 @@ export const indexLocalDBFile = async (relPath: string): Promise<{ success: bool
  * de la BDD Locale.
  */
 export const indexLocalDBFolder = async (dirRelPath: string): Promise<{ success: boolean; indexed?: number; errors?: string[]; error?: string }> => {
-  if (IS_CLOUD) return { success: false, error: 'CHROMA_CLOUD_UNSUPPORTED' };
+  const chromaClient = await getChromaClient();
+  if (!chromaClient) return { success: false, error: 'CHROMA_UNAVAILABLE' };
 
-  const fullDir = path.join(LOCAL_DB_ROOT, dirRelPath);
+  const fullDir = path.join(getLocalDBRoot(), dirRelPath);
   if (!fs.existsSync(fullDir) || !fs.statSync(fullDir).isDirectory()) {
     return { success: false, error: 'DOSSIER_INTROUVABLE' };
   }
@@ -246,9 +260,10 @@ export const indexLocalDBFolderWithProgress = async (
   dirRelPath: string,
   onProgress?: (p: FolderIndexProgress) => void
 ): Promise<{ success: boolean; indexed?: number; errors?: string[]; error?: string }> => {
-  if (IS_CLOUD) return { success: false, error: 'CHROMA_CLOUD_UNSUPPORTED' };
+  const chromaClient = await getChromaClient();
+  if (!chromaClient) return { success: false, error: 'CHROMA_UNAVAILABLE' };
 
-  const fullDir = path.join(LOCAL_DB_ROOT, dirRelPath);
+  const fullDir = path.join(getLocalDBRoot(), dirRelPath);
   if (!fs.existsSync(fullDir) || !fs.statSync(fullDir).isDirectory()) {
     return { success: false, error: 'DOSSIER_INTROUVABLE' };
   }
@@ -368,7 +383,8 @@ export const getIndexedDocumentContent = async (relPath: string): Promise<string
  * vidées sont ensuite purgées.
  */
 export const deleteChromaItem = async (relPath: string): Promise<{ success: boolean; deleted?: number; error?: string }> => {
-  if (IS_CLOUD) return { success: false, error: 'CHROMA_CLOUD_UNSUPPORTED' };
+  const chromaClient = await getChromaClient();
+  if (!chromaClient) return { success: false, error: 'CHROMA_UNAVAILABLE' };
 
   const mirror = loadMirror();
   const matching = mirror.entries.filter(e => e.relPath === relPath || e.relPath.startsWith(`${relPath}/`));
@@ -426,24 +442,13 @@ export const searchChromaLocalDB = async (
   history: string[] = [],
   nResults = 5
 ): Promise<SearchResult[]> => {
-  if (IS_CLOUD) return [];
+  const client = await getChromaClient();
+  if (!client) return [];
   if (!query.trim() && history.length === 0) return [];
 
   const effectiveQuery = [...history.slice(-4), query].filter(Boolean).join(' ');
   const queryTokens = tokenizeText(effectiveQuery);
   if (queryTokens.length === 0) return [];
-
-  let client;
-  try {
-    client = await getChromaClient();
-  } catch (e: any) {
-    console.warn('[LOCAL_INDEXER] Client vectoriel indisponible, repli scan FS :', e?.message || e);
-    return fallbackSemanticSearch(query, nResults);
-  }
-  if (!client) {
-    console.warn('[LOCAL_INDEXER] Aucun moteur vectoriel local, repli scan FS.');
-    return fallbackSemanticSearch(query, nResults);
-  }
 
   let collections: any[] = [];
   try {

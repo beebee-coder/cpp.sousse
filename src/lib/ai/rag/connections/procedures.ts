@@ -16,12 +16,17 @@ import { scoreItemAgainstQuery, tokenizeQuery, type LexicalScorable } from '../s
 import type { RAGResult, RAGOptions } from '../../rag-orchestrator';
 import { upsertDocuments as upsertChroma, getCollectionIds, deleteDocuments } from '@/lib/chroma';
 import { IS_CLOUD } from '@/lib/config/env';
+import { getLocalDBRoot } from '@/lib/db/local-db';
 
 const COLLECTION = 'industrial_procedures';
 
 function registryRoot(): string {
   const override = process.env.REGISTRY_ROOT_OVERRIDE?.trim();
-  return override ? override : path.join(process.cwd(), '.registry');
+  if (override) return override;
+  const localRoot = getLocalDBRoot();
+  const candidate = path.join(path.dirname(localRoot), '.registry');
+  if (fs.existsSync(candidate)) return candidate;
+  return path.join(process.cwd(), '.registry');
 }
 
 function walkProcedureFiles(dir: string): string[] {

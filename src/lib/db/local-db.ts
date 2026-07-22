@@ -1,5 +1,6 @@
 ﻿import fs from 'fs';
 import path from 'path';
+import { isDesktop } from '../platform';
 
 /**
  * @fileOverview Base de données locale physique [LOCAL_DB].
@@ -17,14 +18,92 @@ import path from 'path';
  *                              dans l'arborescence Vecteurs ChromaDB.
  */
 
-const LOCAL_DB_ROOT = path.join(process.cwd(), '.local-db');
-const INDEX_CHROMA_DIR = path.join(LOCAL_DB_ROOT, 'INDEX_CHROMA');
-const CENTRALE_DIR = path.join(LOCAL_DB_ROOT, 'Centrale');
-const GROUPES_DIR = path.join(LOCAL_DB_ROOT, 'Groupes');
-const ALARMES_DIR = path.join(LOCAL_DB_ROOT, 'Alarmes');
-const RESSOURCES_HUMAINES_DIR = path.join(LOCAL_DB_ROOT, 'ressources humaines');
-const BANK_DIR = path.join(LOCAL_DB_ROOT, 'bank');
-const MANIFEST_FILE = path.join(LOCAL_DB_ROOT, 'local-db-manifest.json');
+const currentRoot_INITIAL = (() => {
+  const override = process.env.REGISTRY_ROOT_OVERRIDE?.trim();
+  if (override) {
+    const alignedRoot = path.join(path.dirname(override), '.local-db');
+    const cwdRoot = path.join(process.cwd(), '.local-db');
+    if (fs.existsSync(alignedRoot)) {
+      return alignedRoot;
+    }
+    if (fs.existsSync(cwdRoot)) {
+      try {
+        fs.mkdirSync(path.dirname(alignedRoot), { recursive: true });
+        fs.renameSync(cwdRoot, alignedRoot);
+        return alignedRoot;
+      } catch {
+        return cwdRoot;
+      }
+    }
+    return alignedRoot;
+  }
+  return path.join(process.cwd(), '.local-db');
+})();
+
+let currentRoot: string = currentRoot_INITIAL;
+
+let INDEX_CHROMA_DIR = path.join(currentRoot, 'INDEX_CHROMA');
+let CENTRALE_DIR = path.join(currentRoot, 'Centrale');
+let GROUPES_DIR = path.join(currentRoot, 'Groupes');
+let ALARMES_DIR = path.join(currentRoot, 'Alarmes');
+let RESSOURCES_HUMAINES_DIR = path.join(currentRoot, 'ressources humaines');
+let BANK_DIR = path.join(currentRoot, 'bank');
+let MANIFEST_FILE = path.join(currentRoot, 'local-db-manifest.json');
+let MANIFEST_LOCK_FILE = path.join(currentRoot, '.manifest.lock');
+let WEB_SYNC_DIR = path.join(currentRoot, 'web-sync');
+
+const updateDerivedPaths = () => {
+  INDEX_CHROMA_DIR = path.join(currentRoot, 'INDEX_CHROMA');
+  CENTRALE_DIR = path.join(currentRoot, 'Centrale');
+  GROUPES_DIR = path.join(currentRoot, 'Groupes');
+  ALARMES_DIR = path.join(currentRoot, 'Alarmes');
+  RESSOURCES_HUMAINES_DIR = path.join(currentRoot, 'ressources humaines');
+  BANK_DIR = path.join(currentRoot, 'bank');
+  MANIFEST_FILE = path.join(currentRoot, 'local-db-manifest.json');
+  MANIFEST_LOCK_FILE = path.join(currentRoot, '.manifest.lock');
+  WEB_SYNC_DIR = path.join(currentRoot, 'web-sync');
+};
+
+async function resolveLocalDBRoot(): Promise<string> {
+  if (currentRoot !== currentRoot_INITIAL) return currentRoot;
+
+  const override = process.env.REGISTRY_ROOT_OVERRIDE?.trim();
+  if (override) {
+    currentRoot = path.join(path.dirname(override), '.local-db');
+    updateDerivedPaths();
+    return currentRoot;
+  }
+
+  if (isDesktop) {
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const tauriRoot = await invoke<string>('get_local_db_root');
+      if (tauriRoot && tauriRoot !== currentRoot) {
+        const oldRoot = currentRoot;
+        currentRoot = tauriRoot;
+        updateDerivedPaths();
+        if (fs.existsSync(oldRoot) && !fs.existsSync(currentRoot)) {
+          try {
+            fs.mkdirSync(path.dirname(currentRoot), { recursive: true });
+            fs.renameSync(oldRoot, currentRoot);
+          } catch {
+            currentRoot = oldRoot;
+            updateDerivedPaths();
+          }
+        }
+      }
+      return currentRoot;
+    } catch {
+      return currentRoot;
+    }
+  }
+
+  return currentRoot;
+}
+
+export function getLocalDBRoot(): string {
+  return currentRoot;
+}
 
 // R1 — Aligne la racine `.registry` sur la même que le moteur Rust en Desktop
 // (REGISTRY_ROOT_OVERRIDE, issu de get_registry_root) pour éviter toute
@@ -34,7 +113,7 @@ const REGISTRY_ROOT_DIR = (() => {
   return override ? override : path.join(process.cwd(), '.registry');
 })();
 
-export { LOCAL_DB_ROOT };
+export { currentRoot as LOCAL_DB_ROOT, resolveLocalDBRoot };
 
 interface LocalDBManifestEntry {
   id: string;
@@ -74,12 +153,12 @@ interface FSNode {
 }
 
 const ensureLocalDB = () => {
-  // Résilient au FS read-only (ex: Vercel serverless) : on ignore l'échec de création.
+  const root = currentRoot;
   try {
-    if (!fs.existsSync(LOCAL_DB_ROOT)) {
-      fs.mkdirSync(LOCAL_DB_ROOT, { recursive: true });
+    if (!fs.existsSync(root)) {
+      fs.mkdirSync(root, { recursive: true });
     }
-    [INDEX_CHROMA_DIR, CENTRALE_DIR, GROUPES_DIR, ALARMES_DIR, RESSOURCES_HUMAINES_DIR, BANK_DIR].forEach(dir => {
+    [INDEX_CHROMA_DIR, CENTRALE_DIR, GROUPES_DIR, ALARMES_DIR, RESSOURCES_HUMAINES_DIR, BANK_DIR, WEB_SYNC_DIR].forEach(dir => {
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
       }
@@ -124,33 +203,50 @@ const generateId = () => {
 
 const MAX_DUPLICATE_VERSIONS = 5;
 
-const MANIFEST_LOCK_FILE = path.join(LOCAL_DB_ROOT, '.manifest.lock');
 let manifestLockDepth = 0;
+let manifestLockHeld = false;
 
-const withManifestLock = <T>(fn: () => T): T => {
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+const withManifestLock = async <T>(fn: () => T | Promise<T>): Promise<T> => {
   if (manifestLockDepth > 0) {
     manifestLockDepth++;
     return fn();
   }
 
-  const lockBuffer = new SharedArrayBuffer(4);
-  const lockView = new Int32Array(lockBuffer);
-  Atomics.store(lockView, 0, 0);
-
+  ensureLocalDB();
+  const lockPath = MANIFEST_LOCK_FILE;
   const deadline = Date.now() + 5000;
   while (Date.now() < deadline) {
-    if (Atomics.compareExchange(lockView, 0, 0, 1) === 0) {
-      manifestLockDepth = 1;
+    try {
+      const fd = fs.openSync(lockPath, 'wx');
+      manifestLockHeld = true;
       try {
-        return fn();
+        manifestLockDepth = 1;
+        return await fn();
       } finally {
-        manifestLockDepth--;
-        Atomics.store(lockView, 0, 0);
+        manifestLockDepth = 0;
+        if (manifestLockHeld) {
+          try { fs.closeSync(fd); } catch { /* ignore */ }
+          try { fs.unlinkSync(lockPath); } catch { /* ignore */ }
+          manifestLockHeld = false;
+        }
       }
+    } catch (e: any) {
+      if (e?.code === 'EEXIST' && Date.now() < deadline) {
+        await sleep(25);
+        continue;
+      }
+      break;
     }
-    Atomics.wait(lockView, 0, 1, 50);
   }
-  throw new Error('MANIFEST_LOCK_TIMEOUT');
+
+  try {
+    manifestLockDepth = 1;
+    return await fn();
+  } finally {
+    manifestLockDepth = 0;
+  }
 };
 
 let initializationPromise: Promise<void> | null = null;
@@ -158,6 +254,7 @@ let initializationPromise: Promise<void> | null = null;
 export async function ensureLocalDBInitialized(): Promise<void> {
   if (initializationPromise) return initializationPromise;
   initializationPromise = (async () => {
+    await resolveLocalDBRoot();
     await localDB.initialize();
   })();
   return initializationPromise;
@@ -212,6 +309,7 @@ export const localDB = {
     const alarmesTree: FSNode[] = scanDirectory(ALARMES_DIR, 'Alarmes');
     const ressourcesHumainesTree: FSNode[] = scanDirectory(RESSOURCES_HUMAINES_DIR, 'ressources humaines');
     const bankTree: FSNode[] = scanDirectory(BANK_DIR, 'bank');
+    const webSyncTree: FSNode[] = scanDirectory(WEB_SYNC_DIR, 'web-sync');
 
     const rootNodes: FSNode[] = [];
 
@@ -269,10 +367,19 @@ export const localDB = {
       metadata: { knowledgeType: 'bank' }
     });
 
+    rootNodes.push({
+      id: 'web-sync',
+      name: 'WEB SYNC',
+      type: 'folder',
+      isOpen: true,
+      children: webSyncTree,
+      metadata: { knowledgeType: 'web-sync' }
+    });
+
     // Marque les fichiers déjà indexés/vectorisés vers ChromaDB
     const indexedSet = (() => {
       try {
-        const mp = path.join(LOCAL_DB_ROOT, 'chroma-index.json');
+        const mp = path.join(currentRoot, 'chroma-index.json');
         if (fs.existsSync(mp)) {
           const data = JSON.parse(fs.readFileSync(mp, 'utf8'));
           return new Set<string>((data.entries || []).map((e: any) => e.relPath));
@@ -303,13 +410,13 @@ export const localDB = {
     ensureLocalDB();
 
     const baseDir = targetDir
-      ? (path.isAbsolute(targetDir) ? targetDir : path.join(INDEX_CHROMA_DIR, targetDir))
+      ? (path.isAbsolute(targetDir) ? targetDir : path.join(currentRoot, targetDir))
       : INDEX_CHROMA_DIR;
     const fullBasePath = path.join(baseDir, fileName);
 
     if (!fs.existsSync(fullBasePath)) {
       const fullPath = path.join(baseDir, fileName);
-      const targetPath = path.relative(LOCAL_DB_ROOT, fullPath).replace(/\\/g, '/');
+      const targetPath = path.relative(currentRoot, fullPath).replace(/\\/g, '/');
       const dir = path.dirname(fullPath);
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
@@ -323,7 +430,7 @@ export const localDB = {
       }
 
       const stats = fs.statSync(fullPath);
-      withManifestLock(() => {
+      await withManifestLock(async () => {
         const manifest = loadManifest();
         manifest.files.push({
           id: generateId(),
@@ -359,11 +466,11 @@ export const localDB = {
     const pathStat = fs.statSync(fullBasePath);
 
     if (pathStat.isFile()) {
-      // Première collision : convertir le fichier seul en répertoire versionné
       const folderPath = path.join(baseDir, fileName);
+      const tempBase = `${fullBasePath}.tmp_${Date.now()}`;
+      fs.renameSync(fullBasePath, tempBase);
       fs.mkdirSync(folderPath, { recursive: true });
-      // Déplacer l'existant comme version 1
-      fs.renameSync(fullBasePath, path.join(folderPath, `1_${fileName}`));
+      fs.renameSync(tempBase, path.join(folderPath, `1_${fileName}`));
       console.log(`📁 [LOCAL_DB] [DUPLICATE] Dossier versionné créé : ${fileName}/`);
     }
     // Après la création du dossier (ou s'il existait déjà), injecter la nouvelle version
@@ -379,7 +486,7 @@ export const localDB = {
     });
     const nextIndex = existingVersions.length + 1;
     const fullPath = path.join(folderPath, `${nextIndex}_${fileName}`);
-    const targetPath = path.relative(LOCAL_DB_ROOT, fullPath).replace(/\\/g, '/');
+    const targetPath = path.relative(currentRoot, fullPath).replace(/\\/g, '/');
 
     if (content.startsWith('data:')) {
       const base64Data = content.split(',')[1];
@@ -389,8 +496,8 @@ export const localDB = {
     }
 
     const fileStats = fs.statSync(fullPath);
-    withManifestLock(() => {
-      const manifest = loadManifest();
+      await withManifestLock(async () => {
+        const manifest = loadManifest();
       manifest.files.push({
         id: generateId(),
         originalName: fileName,
@@ -419,9 +526,9 @@ export const localDB = {
         const oldPath = path.join(folderPath, v.name);
         if (fs.existsSync(oldPath)) {
           fs.unlinkSync(oldPath);
-          withManifestLock(() => {
+          await withManifestLock(async () => {
             const manifest = loadManifest();
-            manifest.files = manifest.files.filter(f => f.resolvedPath !== path.relative(LOCAL_DB_ROOT, oldPath).replace(/\\/g, '/'));
+            manifest.files = manifest.files.filter(f => f.resolvedPath !== path.relative(currentRoot, oldPath).replace(/\\/g, '/'));
             saveManifest(manifest);
           });
           console.log(`🗑️ [LOCAL_DB] [PRUNE] Ancienne version supprimée : ${v.name}`);
@@ -438,7 +545,7 @@ export const localDB = {
    * Lit le contenu d'un fichier dans la BDD locale.
    */
   async getFile(relativePath: string): Promise<string> {
-    const fullPath = path.join(LOCAL_DB_ROOT, relativePath);
+    const fullPath = path.join(currentRoot, relativePath);
     if (!fs.existsSync(fullPath)) {
       throw new Error('FICHIER_INTROUVABLE');
     }
@@ -457,7 +564,7 @@ export const localDB = {
    * Supprime un fichier ou un dossier de la BDD locale.
    */
   async deleteItem(relativePath: string): Promise<boolean> {
-    const fullPath = path.join(LOCAL_DB_ROOT, relativePath);
+    const fullPath = path.join(currentRoot, relativePath);
     if (!fs.existsSync(fullPath)) return false;
 
     const stats = fs.statSync(fullPath);
@@ -467,8 +574,8 @@ export const localDB = {
       fs.unlinkSync(fullPath);
     }
 
-    withManifestLock(() => {
-      const manifest = loadManifest();
+      await withManifestLock(async () => {
+        const manifest = loadManifest();
       const prefix = `${relativePath}/`;
       manifest.files = manifest.files.filter(f => f.resolvedPath !== relativePath && !f.resolvedPath.startsWith(prefix));
       saveManifest(manifest);
@@ -489,17 +596,17 @@ export const localDB = {
    * Renomme un fichier ou un dossier dans la BDD locale.
    */
   async renameItem(oldPath: string, newName: string): Promise<{ success: boolean }> {
-    const oldFullPath = path.join(LOCAL_DB_ROOT, oldPath);
+    const oldFullPath = path.join(currentRoot, oldPath);
     const newFullPath = path.join(path.dirname(oldFullPath), newName);
     if (!fs.existsSync(oldFullPath)) {
       throw new Error('ELEMENT_INTROUVABLE');
     }
     const isDir = fs.statSync(oldFullPath).isDirectory();
     fs.renameSync(oldFullPath, newFullPath);
-    const newRelPath = path.relative(LOCAL_DB_ROOT, newFullPath).replace(/\\/g, '/');
+    const newRelPath = path.relative(currentRoot, newFullPath).replace(/\\/g, '/');
 
-    withManifestLock(() => {
-      const manifest = loadManifest();
+      await withManifestLock(async () => {
+        const manifest = loadManifest();
       const oldPrefix = isDir ? `${oldPath}/` : null;
       manifest.files.forEach(entry => {
         if (oldPrefix && entry.resolvedPath.startsWith(oldPrefix)) {
@@ -535,13 +642,18 @@ export const localDB = {
    */
   async writeFile(relativePath: string, content: string): Promise<{ success: boolean; path: string }> {
     ensureLocalDB();
-    const fullPath = path.join(LOCAL_DB_ROOT, relativePath);
+    const fullPath = path.join(currentRoot, relativePath);
     const dir = path.dirname(fullPath);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
-    fs.writeFileSync(fullPath, content, 'utf8');
-    const targetPath = path.relative(LOCAL_DB_ROOT, fullPath).replace(/\\/g, '/');
+    if (content.startsWith('data:') && content.includes(';base64,')) {
+      const base64Data = content.split(',')[1];
+      fs.writeFileSync(fullPath, Buffer.from(base64Data, 'base64'));
+    } else {
+      fs.writeFileSync(fullPath, content, 'utf8');
+    }
+    const targetPath = path.relative(currentRoot, fullPath).replace(/\\/g, '/');
     console.log(`✏️ [LOCAL_DB] [WRITE] ${targetPath}`);
     return { success: true, path: targetPath };
   },
@@ -565,7 +677,7 @@ export const localDB = {
     } else {
       fs.writeFileSync(fullPath, content, 'utf8');
     }
-    const targetPath = path.relative(LOCAL_DB_ROOT, fullPath).replace(/\\/g, '/');
+    const targetPath = path.relative(currentRoot, fullPath).replace(/\\/g, '/');
     console.log(`🏦 [LOCAL_DB] [BANK] Actif persisté : ${targetPath}`);
     return { success: true, path: targetPath };
   },
@@ -638,8 +750,8 @@ export const localDB = {
     let indexed: number | undefined;
 
     let shouldIndex = false;
-    withManifestLock(() => {
-      const manifest = loadManifest();
+      await withManifestLock(async () => {
+        const manifest = loadManifest();
       if (manifest.seededFromRegistry) {
         seeded = 0;
         return;
@@ -659,7 +771,7 @@ export const localDB = {
             } catch {
               continue;
             }
-            const targetDir = base || 'items';
+            const targetDir = base ? `INDEX_CHROMA/${base}` : 'INDEX_CHROMA/items';
             try {
               this.injectFile(ent.name, raw, {
                 knowledgeType: base.split('/')[0] || 'items',
@@ -680,7 +792,7 @@ export const localDB = {
       shouldIndex = true;
     });
 
-    if (shouldIndex && process.env.VERCEL !== '1') {
+    if (shouldIndex) {
       try {
         const { indexLocalDBFolder } = await import('@/lib/local-indexer');
         const res = await indexLocalDBFolder('INDEX_CHROMA');
@@ -751,13 +863,13 @@ export const localDB = {
         if (entry.isDirectory()) {
           if (!fs.existsSync(dest)) {
             fs.mkdirSync(dest, { recursive: true });
-            mirrored.push(path.relative(LOCAL_DB_ROOT, dest).replace(/\\/g, '/'));
+            mirrored.push(path.relative(currentRoot, dest).replace(/\\/g, '/'));
           }
           mirrorBankSubtree(src, dest);
         } else {
           if (!fs.existsSync(dest)) {
             fs.copyFileSync(src, dest);
-            mirrored.push(path.relative(LOCAL_DB_ROOT, dest).replace(/\\/g, '/'));
+            mirrored.push(path.relative(currentRoot, dest).replace(/\\/g, '/'));
           }
         }
       }

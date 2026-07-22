@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { getPlatformInfo, waitForDesktopDetection, type PlatformCapabilities, type PlatformType } from '@/lib/platform';
+import { useToast } from '@/hooks/use-toast';
 
 interface PlatformContextType {
   isDesktop: boolean;
@@ -13,17 +14,19 @@ interface PlatformContextType {
 interface PlatformProviderProps {
   children: React.ReactNode;
   initialIsDesktop?: boolean;
+  initialLocalDBReadOnly?: boolean;
 }
 
 const PlatformContext = createContext<PlatformContextType | undefined>(undefined);
 
-export function PlatformProvider({ children, initialIsDesktop = false }: PlatformProviderProps) {
+export function PlatformProvider({ children, initialIsDesktop = false, initialLocalDBReadOnly = false }: PlatformProviderProps) {
   const [platformData, setPlatformData] = useState<PlatformContextType>({
     isDesktop: initialIsDesktop,
     platform: initialIsDesktop ? 'Tauri Natif' : 'Vercel Web',
     capabilities: [],
     isReady: false,
   });
+  const { toast } = useToast();
 
   useEffect(() => {
     const info = getPlatformInfo();
@@ -41,7 +44,15 @@ export function PlatformProvider({ children, initialIsDesktop = false }: Platfor
         });
       }
     });
-  }, []);
+
+    if (initialLocalDBReadOnly) {
+      toast({
+        title: "BDD locale indisponible",
+        description: "Le système de fichiers du serveur est en lecture seule. Les fonctionnalités locales sont désactivées.",
+        variant: "destructive",
+      });
+    }
+  }, [initialLocalDBReadOnly, toast]);
 
   return (
     <PlatformContext.Provider value={platformData}>

@@ -12,11 +12,17 @@
 
 import fs from 'fs';
 import path from 'path';
+import { getLocalDBRoot } from '@/lib/db/local-db';
 
 const REGISTRY_OVERRIDE = process.env.REGISTRY_ROOT_OVERRIDE?.trim();
 const REGISTRY_ROOT = REGISTRY_OVERRIDE
   ? REGISTRY_OVERRIDE
-  : path.join(process.cwd(), '.registry');
+  : (() => {
+      const localRoot = getLocalDBRoot();
+      const candidate = path.join(path.dirname(localRoot), '.registry');
+      if (fs.existsSync(candidate)) return candidate;
+      return path.join(process.cwd(), '.registry');
+    })();
 const PROC_DIR = path.join(REGISTRY_ROOT, 'procedures');
 const TEMPLATE_DIR = path.join(REGISTRY_ROOT, 'procedure-templates');
 

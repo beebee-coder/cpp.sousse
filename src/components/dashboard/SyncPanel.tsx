@@ -7,6 +7,7 @@ import { useSync } from '@/hooks/use-sync';
 import { useAppMode } from '@/hooks/use-app-mode';
 import { useBddSelection } from '@/lib/bdd-selection-store';
 import { useToast } from '@/hooks/use-toast';
+import { useEvictionToast } from '@/hooks/use-eviction-toast';
 import { Progress } from '@/components/ui/progress';
 
 export function SyncPanel() {
@@ -14,8 +15,10 @@ export function SyncPanel() {
   const { mode, online, localOnly } = useAppMode();
   const selection = useBddSelection();
   const { toast } = useToast();
+  useEvictionToast();
 
   const isError = syncState?.status === 'error' || !!lastError;
+  const effectiveError = lastError || syncState?.errorMessage;
 
   const cloudDisabled = localOnly || !online;
 
@@ -197,10 +200,10 @@ export function SyncPanel() {
         </div>
       )}
 
-      {lastError && (
+      {effectiveError && (
         <div className="flex items-start gap-1.5 p-2 bg-destructive/5 border border-destructive/20 rounded-sm">
           <AlertCircle className="w-3 h-3 text-destructive shrink-0 mt-0.5" />
-          <p className="text-[9px] font-code text-destructive leading-tight uppercase">{lastError}</p>
+          <p className="text-[9px] font-code text-destructive leading-tight uppercase">{effectiveError}</p>
         </div>
       )}
     </div>

@@ -47,11 +47,13 @@ export default async function RootLayout({
 }>) {
   const isDesktop = process.env.TAURI_ENV === 'true';
 
+  let localDBReadOnly = false;
   if (!isDesktop) {
     try {
       await ensureLocalDBInitialized();
     } catch (e) {
-      console.warn('[LAYOUT] Initialisation .local-db ignorée (FS read-only):', e);
+      console.error('[LAYOUT] Initialisation .local-db échouée (FS read-only):', e);
+      localDBReadOnly = true;
     }
   }
 
@@ -76,7 +78,7 @@ export default async function RootLayout({
   return (
     <html lang="fr" className="dark">
       <body className={`${fontInter.variable} ${fontSpaceGrotesk.variable} ${fontSourceCodePro.variable} font-body antialiased selection:bg-primary/30 selection:text-primary`}>
-        <PlatformProvider initialIsDesktop={isDesktop}>
+        <PlatformProvider initialIsDesktop={isDesktop} initialLocalDBReadOnly={localDBReadOnly}>
           <SessionProvider initialUser={initialUser}>
             <ModeAwareLayout>
               <LazyAmbientBackground />

@@ -4,9 +4,10 @@ import { createHybridRoute } from '@/lib/api-route-creator';
 import { postgresClient } from '@/lib/db/postgres-client';
 import { prisma } from '@/lib/db/prisma-client';
 import { getSessionFromCookie } from '@/lib/session';
+import { getLocalDBRoot } from '@/lib/db/local-db';
 import path from 'path';
 
-const REGISTRY_ROOT = path.join(process.cwd(), '.registry');
+const REGISTRY_ROOT = path.join(path.dirname(getLocalDBRoot()), '.registry');
 
 const sanitizeRegistryPath = (inputPath: string): string => {
   const cleaned = inputPath.replace(/\\/g, '/').replace(/^\/+/, '');

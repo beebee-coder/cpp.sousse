@@ -194,6 +194,7 @@ fn ensure_dirs(root: &Path) {
         let _ = fs::create_dir_all(root.join("ressources humaines/equipes").join(eq));
     }
     let _ = fs::create_dir_all(root.join("bank"));
+    let _ = fs::create_dir_all(root.join("web-sync"));
 }
 
 /// Charge l'ensemble des `relPath` déjà vectorisés, depuis le miroir
@@ -308,7 +309,7 @@ pub fn local_db_tree(app: tauri::AppHandle) -> Result<Vec<FSNode>, String> {
     let indexed = load_indexed_rel_paths(&root);
     let mut tree = Vec::new();
 
-    for dir_name in ["INDEX_CHROMA", "Centrale", "Groupes", "Alarmes", "ressources humaines", "bank"] {
+    for dir_name in ["INDEX_CHROMA", "Centrale", "Groupes", "Alarmes", "ressources humaines", "bank", "web-sync"] {
         let dir_path = root.join(dir_name);
         if dir_path.exists() {
             let children = scan_dir_to_tree(&dir_path, dir_name, &manifest, &indexed);

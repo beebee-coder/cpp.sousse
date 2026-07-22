@@ -670,11 +670,8 @@ const desktopInterceptors: Record<string, (body: any, webFetch: () => Promise<an
   // intercepté → fetch cloud normal.
   '/api/bank': async (body: any, webFetch: () => Promise<any>, ctx?: { method?: string; params?: any; url?: string }) => {
     const method = ctx?.method || (body && Object.keys(body).length ? 'POST' : 'GET');
-    const { localDB } = await import('@/lib/db/local-db');
-    const REGISTRY_BANK = path.join(
-      process.env.REGISTRY_ROOT_OVERRIDE?.trim() || path.join(process.cwd(), '.registry'),
-      'bank'
-    );
+    const { localDB, getLocalDBRoot } = await import('@/lib/db/local-db');
+    const REGISTRY_BANK = path.join(path.dirname(getLocalDBRoot()), '.registry', 'bank');
 
     if (method === 'GET') {
       try {

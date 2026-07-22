@@ -12,8 +12,9 @@ import { getSessionFromCookie } from '@/lib/session';
 export async function GET(request: NextRequest) {
   try {
     const session = await getSessionFromCookie();
+    const user = session?.user;
 
-    if (!session?.user || session.user.role !== 'admin') {
+    if (!user || user.role !== 'admin') {
       return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
     }
 

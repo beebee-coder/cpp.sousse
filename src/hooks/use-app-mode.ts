@@ -7,12 +7,14 @@ export type AppMode = 'web' | 'hybride' | 'locale';
 
 export const LOCAL_ONLY_KEY = 'visionode-mode-local-only';
 
-/**
- * Détermine le mode opérationnel de l'application :
- *  - web      : exécuté dans le navigateur (URL Vercel / cloud)            → isDesktop = false
- *  - hybride  : application installée localement (Tauri) en mode auto      → isDesktop = true + !localOnly + connecté
- *  - locale   : soit hors-ligne détecté, soit forçage manuel               → isDesktop = true + (localOnly OU déconnecté)
- */
+function broadcastLocalOnlyChange() {
+  try {
+    window.dispatchEvent(new Event('localOnlyChanged'));
+  } catch {
+    /* ignore */
+  }
+}
+
 function readLocalOnly(): boolean {
   try {
     return typeof localStorage !== 'undefined' && localStorage.getItem(LOCAL_ONLY_KEY) === '1';
@@ -31,15 +33,26 @@ export function useAppMode() {
   const [localOnly, setLocalOnlyState] = useState<boolean>(() => readLocalOnly());
 
   useEffect(() => {
-    setLocalOnlyState(readLocalOnly());
-
+    const sync = () => setLocalOnlyState(readLocalOnly());
     const update = () => setOnline(navigator.onLine);
+
+    sync();
     update();
+
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === LOCAL_ONLY_KEY) sync();
+    };
+
     window.addEventListener('online', update);
     window.addEventListener('offline', update);
+    window.addEventListener('storage', handleStorage);
+    window.addEventListener('localOnlyChanged', sync);
+
     return () => {
       window.removeEventListener('online', update);
       window.removeEventListener('offline', update);
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('localOnlyChanged', sync);
     };
   }, []);
 
@@ -80,6 +93,7 @@ export function useAppMode() {
     } catch {
       /* ignore */
     }
+    broadcastLocalOnlyChange();
   }, []);
 
   const resetLocalOnly = useCallback(() => {
@@ -89,6 +103,7 @@ export function useAppMode() {
     } catch {
       /* ignore */
     }
+    broadcastLocalOnlyChange();
   }, []);
 
   let mode: AppMode;

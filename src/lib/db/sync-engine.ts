@@ -3,6 +3,8 @@ import { apiClient } from '../api-client';
 import { isDesktop } from '../platform';
 import { localDBBridge } from '../local-db-bridge';
 
+const WEB_SYNC_ROOT = 'web-sync';
+
 interface SyncResult {
   injectedCount: number;
   vectorizedCount: number;
@@ -30,7 +32,8 @@ export const syncEngine = {
       lastSync: new Date(0),
       pendingUploads: 0,
       pendingDownloads: 0,
-      status: 'idle'
+      status: 'idle',
+      errorMessage: undefined,
     };
   },
 
@@ -98,6 +101,7 @@ export const syncEngine = {
     const successIds: string[] = [];
     const failedItems: string[] = [];
     let skippedDuplicates = 0;
+    const allCloudIds = new Set<string>(items.map(item => item.id));
 
     for (const item of items) {
       const maxRetries = 2;
@@ -127,18 +131,18 @@ export const syncEngine = {
             ? item._registryPath.trim()
             : (typeof parsed.registryPath === 'string' && parsed.registryPath.trim() ? parsed.registryPath.trim() : null);
           const regPath = knowledgeType === 'procedure'
-            ? `procedures/${item.id}/procedure.json`
-            : (requestedPath || `items/${slug}-${item.id}.json`);
+            ? `${WEB_SYNC_ROOT}/procedures/${item.id}/procedure.json`
+            : (requestedPath ? `${WEB_SYNC_ROOT}/${requestedPath}` : `${WEB_SYNC_ROOT}/items/${slug}-${item.id}.json`);
           const registryDir = regPath.split('/').filter(Boolean);
           const fileName = registryDir.length > 1 ? registryDir[registryDir.length - 1] : `${knowledgeType}_${item.id}.json`;
-          const targetDir = registryDir.length > 1 ? registryDir.slice(0, -1).join('/') : 'items';
+          const targetDir = registryDir.length > 1 ? registryDir.slice(0, -1).join('/') : `${WEB_SYNC_ROOT}/items`;
 
           if (isDesktop) {
             await localDBBridge.injectFile(
               fileName,
               JSON.stringify(parsed, null, 2),
               { knowledge_type: knowledgeType, cloud_id: item.id, tags: item.tags || [title] },
-              knowledgeType === 'procedure' ? `procedures/${item.id}` : targetDir
+              knowledgeType === 'procedure' ? `${WEB_SYNC_ROOT}/procedures/${item.id}` : targetDir
             );
           } else {
             await apiClient.post('/api/registry', {
@@ -156,7 +160,7 @@ export const syncEngine = {
                 tags: item.tags || [title]
               },
               targetDir: knowledgeType === 'procedure'
-                ? `procedures/${item.id}`
+                ? `${WEB_SYNC_ROOT}/procedures/${item.id}`
                 : targetDir
             });
           }
@@ -181,24 +185,22 @@ export const syncEngine = {
 
     // Phase de purge bidirectionnelle : supprimer les éléments locaux absents du cloud
     let purgedCount = 0;
-    if (successIds.length > 0) {
-      const activeCloudIds = new Set<string>(successIds);
-      const manifest = await this.getManifest();
-      const toPurge = manifest.files.filter(f => f.cloudId && !activeCloudIds.has(f.cloudId));
+    const activeCloudIds = allCloudIds;
+    const manifest = await this.getManifest();
+    const toPurge = manifest.files.filter(f => f.cloudId && !activeCloudIds.has(f.cloudId));
 
-      for (const entry of toPurge) {
-        try {
-          if (isDesktop) {
-            await localDBBridge.deleteItem(entry.resolvedPath);
-          } else {
-            const { localDB } = await import('./local-db');
-            await localDB.deleteItem(entry.resolvedPath);
-          }
-          purgedCount++;
-          console.log(`🗑️ [SYNC_PURGE_LOCAL] Élément local supprimé : ${entry.resolvedPath}`);
-        } catch (e: any) {
-          console.warn(`⚠️ [SYNC_PURGE_LOCAL] Échec suppression ${entry.resolvedPath} :`, e.message);
+    for (const entry of toPurge) {
+      try {
+        if (isDesktop) {
+          await localDBBridge.deleteItem(entry.resolvedPath);
+        } else {
+          const { localDB } = await import('./local-db');
+          await localDB.deleteItem(entry.resolvedPath);
         }
+        purgedCount++;
+        console.log(`🗑️ [SYNC_PURGE_LOCAL] Élément local supprimé : ${entry.resolvedPath}`);
+      } catch (e: any) {
+        console.warn(`⚠️ [SYNC_PURGE_LOCAL] Échec suppression ${entry.resolvedPath} :`, e.message);
       }
     }
 
@@ -322,12 +324,16 @@ export const syncEngine = {
 
   async vectorizeLocalItems(folder: 'items' | 'procedures' | 'INDEX_CHROMA/items' = 'INDEX_CHROMA/items'): Promise<{ success: boolean; indexed?: number; errors?: string[] }> {
     if (typeof window === 'undefined') return { success: false, errors: ['Server environment'] };
-    // La vectorisation via local-indexer s'appuie sur le module Node `fs`, qui
-    // n'existe pas en mode web (navigateur). Elle n'est donc possible qu'en
-    // poste de bureau (Tauri/Node) où `fs` est disponible. En web, on court-circuite
-    // proprement pour ne pas provoquer l'erreur « fs.existsSync is not a function ».
     if (!isDesktop) {
-      return { success: true, indexed: 0 };
+      try {
+        const res = await apiClient.post('/api/local-db', { action: 'index-folder', targetPath: folder });
+        if (res.success) {
+          return { success: true, indexed: (res as any).indexed || 0 };
+        }
+        return { success: false, errors: [res.error || res.message || 'ERREUR'] };
+      } catch (e: any) {
+        return { success: false, errors: [e.message] };
+      }
     }
 
     try {
@@ -386,8 +392,9 @@ export const syncEngine = {
       if (!safeName) { failed.push('invalid_name'); continue; }
 
       const ext = (item.mime || 'image/jpeg').split('/')[1] || 'jpg';
-      const assetRelPath = `bank/${safeName}/${safeName}.${ext}`;
-      const metaRelPath  = `bank/${safeName}/metadata.json`;
+      const cloudAssetPath = `bank/${safeName}/${safeName}.${ext}`;
+      const assetRelPath = `${WEB_SYNC_ROOT}/bank/${safeName}/${safeName}.${ext}`;
+      const metaRelPath  = `${WEB_SYNC_ROOT}/bank/${safeName}/metadata.json`;
 
       // Déjà présent localement → skip
       if (localBankPaths.has(assetRelPath) || localBankPaths.has(metaRelPath)) {
@@ -397,30 +404,30 @@ export const syncEngine = {
       }
 
       try {
-        // Téléchargement du binaire via le Registre cloud
-        const assetApiPath = item.path || assetRelPath;
-        const assetRes = await apiClient.get<any>(`/api/registry?path=${encodeURIComponent(assetApiPath)}`);
-        const binaryData: string | undefined = assetRes?.content ?? assetRes?.data;
+         // Téléchargement du binaire via le Registre cloud
+         const assetRes = await apiClient.get<any>(`/api/registry?path=${encodeURIComponent(cloudAssetPath)}`);
+         const binaryData: string | undefined = assetRes?.content ?? assetRes?.data;
 
-        if (!binaryData) {
-          console.warn(`⚠️ [SYNC_BANK] Pas de contenu binaire pour : ${safeName}`);
-          failed.push(safeName);
-          continue;
-        }
+         if (!binaryData) {
+           console.warn(`⚠️ [SYNC_BANK] Pas de contenu binaire pour : ${safeName}`);
+           failed.push(safeName);
+           continue;
+         }
 
-        const metaContent = JSON.stringify(item, null, 2);
+         const metaContent = JSON.stringify(item, null, 2);
 
-        if (isDesktop) {
-          // Mode Desktop (Tauri) : écriture via le bridge qui déclenche le Rust
-          // local_db_write — qui décode le Data URI base64 nativement.
-          await localDBBridge.writeFile(assetRelPath, binaryData);
-          await localDBBridge.writeFile(metaRelPath, metaContent);
-        } else {
-          // Mode Web (FS Node) : écriture via l'API locale
-          const { localDB } = await import('./local-db');
-          await localDB.saveBankAsset(`${safeName}/${safeName}.${ext}`, binaryData);
-          await localDB.saveBankAsset(`${safeName}/metadata.json`, metaContent);
-        }
+         if (isDesktop) {
+           // Mode Desktop (Tauri) : écriture via le bridge qui déclenche le Rust
+           // local_db_write — qui décode le Data URI base64 nativement.
+           await localDBBridge.writeFile(assetRelPath, binaryData);
+           await localDBBridge.writeFile(metaRelPath, metaContent);
+         } else {
+           // Mode Web (FS Node) : écriture via l'API locale dans web-sync/bank/…
+           // pour que l'arborescence BDD Web soit bien contenue dans la BDD Locale.
+           const { localDB } = await import('./local-db');
+           await localDB.writeFile(assetRelPath, binaryData);
+           await localDB.writeFile(metaRelPath, metaContent);
+         }
 
         // Indexation sémantique locale du fichier metadata.json
         try {
@@ -503,11 +510,12 @@ export const syncEngine = {
         state.status = 'idle';
         state.pendingUploads = 0;
         state.pendingDownloads = 0;
+        state.errorMessage = undefined;
       } else {
         state.status = 'error';
         state.pendingUploads = injectResult.failedItems.length;
         state.pendingDownloads = injectResult.injectedCount + bankSyncedCount;
-        console.error('[SYNC] Vectorisation échouée, lastSync non mis à jour:', vectorResult.errors);
+        state.errorMessage = vectorResult.errors?.[0] || 'Échec de la vectorisation locale';
       }
       await this.saveSyncState(state);
 
@@ -521,6 +529,7 @@ export const syncEngine = {
       return result;
     } catch (e: any) {
       state.status = 'error';
+      state.errorMessage = e?.message || 'Erreur inattendue pendant la synchronisation';
       await this.saveSyncState(state);
       throw e;
     }

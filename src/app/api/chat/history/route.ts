@@ -24,15 +24,22 @@ export async function GET(req: Request) {
     const conversationId = url.searchParams.get('conversationId');
 
     if (!conversationId) {
-      // R1 — Pas de groupBy Prisma (incompatible avec la clé unique
-      // nullable clientId → 500 systématique). On récupère les messages
-      // et on regroupe en JS : une entrée par conversationId avec le
-      // compte et le timestamp max.
-      const rows = await prisma.chatMessage.findMany({
-        where: { userId: session.user.id },
-        select: { conversationId: true, timestamp: true },
-        orderBy: { timestamp: 'desc' },
-      });
+      let rows: { conversationId: string; timestamp: Date | null }[] = [];
+      try {
+        rows = await prisma.chatMessage.findMany({
+          where: { userId: session.user.id },
+          select: { conversationId: true, timestamp: true },
+          orderBy: { timestamp: 'desc' },
+        });
+      } catch {
+        return new Response(JSON.stringify({ conversations: [] }), {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json',
+            ...getSecurityHeaders(),
+          },
+        });
+      }
 
       const map = new Map<string, { messages: number; updatedAt: Date | null }>();
       for (const row of rows) {
@@ -68,10 +75,21 @@ export async function GET(req: Request) {
       });
     }
 
-    const messages = await prisma.chatMessage.findMany({
-      where: { userId: session.user.id, conversationId },
-      orderBy: { timestamp: 'asc' },
-    });
+    let messages: any[] = [];
+    try {
+      messages = await prisma.chatMessage.findMany({
+        where: { userId: session.user.id, conversationId },
+        orderBy: { timestamp: 'asc' },
+      });
+    } catch {
+      return new Response(JSON.stringify({ messages: [] }), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          ...getSecurityHeaders(),
+        },
+      });
+    }
 
     return new Response(JSON.stringify({ messages }), {
       status: 200,
@@ -113,9 +131,16 @@ export async function DELETE(req: Request) {
       });
     }
 
-    await prisma.chatMessage.deleteMany({
-      where: { userId: session.user.id, conversationId },
-    });
+    try {
+      await prisma.chatMessage.deleteMany({
+        where: { userId: session.user.id, conversationId },
+      });
+    } catch {
+      return new Response(JSON.stringify({ success: true }), {
+        status: 200,
+        headers: getSecurityHeaders(),
+      });
+    }
 
     return new Response(JSON.stringify({ success: true }), {
       status: 200,
@@ -163,30 +188,35 @@ export async function POST(req: Request) {
     // au lieu de deleteMany+createMany, pour éviter doublons et races.
     for (const m of messages) {
       const clientId = m.id || `hist-${conversationId}-${m.timestamp || Date.now()}`;
-      await prisma.chatMessage.upsert({
-        where: { conversationId_userId_clientId: { conversationId, userId: session.user.id, clientId } },
-        create: {
-          clientId,
-          conversationId,
-          userId: session.user.id,
-          role: m.role,
-          content: m.content,
-          provider: m.provider || null,
-          timestamp: new Date(m.timestamp || Date.now()),
-          media: m.media || null,
-          procedureId: m.procedureId || null,
-          source: m.source || null,
-        },
-        update: {
-          role: m.role,
-          content: m.content,
-          provider: m.provider || null,
-          timestamp: new Date(m.timestamp || Date.now()),
-          media: m.media || null,
-          procedureId: m.procedureId || null,
-          source: m.source || null,
-        },
-      });
+      try {
+        await prisma.chatMessage.upsert({
+          where: { conversationId_userId_clientId: { conversationId, userId: session.user.id, clientId } },
+          create: {
+            clientId,
+            conversationId,
+            userId: session.user.id,
+            role: m.role,
+            content: m.content,
+            provider: m.provider || null,
+            timestamp: new Date(m.timestamp || Date.now()),
+            media: m.media || null,
+            procedureId: m.procedureId || null,
+            source: m.source || null,
+          },
+          update: {
+            role: m.role,
+            content: m.content,
+            provider: m.provider || null,
+            timestamp: new Date(m.timestamp || Date.now()),
+            media: m.media || null,
+            procedureId: m.procedureId || null,
+            source: m.source || null,
+          },
+        });
+      } catch {
+        // L'historique est hors-ligne-first : si la table n'existe pas encore,
+        // on ne bloque pas le POST.
+      }
     }
 
     return new Response(JSON.stringify({ success: true }), {
