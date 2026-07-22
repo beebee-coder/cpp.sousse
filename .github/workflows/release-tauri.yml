@@ -53,7 +53,7 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: Setup Tauri signing key
-        if: secrets.TAURI_SIGNING_PRIVATE_KEY != ''
+        if: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
         run: |
           $tauriDir = Join-Path $env:USERPROFILE ".tauri"
           New-Item -ItemType Directory -Path $tauriDir -Force | Out-Null
