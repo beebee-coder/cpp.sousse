@@ -377,6 +377,13 @@ export function useChat(onAiResponse?: (text: string) => void) {
           if (!online) {
             throw new Error('Mode hybride hors-ligne: impossible de basculer vers le cloud.');
           }
+          const cloudApiUrl = resolveApiUrl('/api/chat');
+          const hasCloudBackend = isDesktop
+            ? !!process.env.NEXT_PUBLIC_API_URL && cloudApiUrl.startsWith('http')
+            : true;
+          if (!hasCloudBackend) {
+            throw new Error('Bascule cloud indisponible (aucun backend cloud configuré pour ce desktop).');
+          }
           // R3 — transparence : le RAG local Rust n'est pas transmis au cloud,
           // qui reconstruit son propre RAG JS. On signale la dégradation à
           // l'utilisateur plutôt que de basculer silencieusement.
@@ -492,7 +499,13 @@ export function useChat(onAiResponse?: (text: string) => void) {
       throw new Error(`Réponse inattendue (${contentType || 'vide'}) : ${text.slice(0, 200)}`);
     }
 
-    const data = await res.json();
+    let data: any;
+    try {
+      data = await res.json();
+    } catch {
+      const text = await res.text();
+      throw new Error(`Réponse JSON invalide (${contentType || 'vide'}) : ${text.slice(0, 200)}`);
+    }
     return {
       text: sanitizeOutput(data.text),
       provider: data.provider,
