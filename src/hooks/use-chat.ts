@@ -230,32 +230,36 @@ export function useChat(onAiResponse?: (text: string) => void) {
             });
 
             nativeStreamUnlisten = await listen<string>('chat-stream-chunk', (event) => {
-              const chunk: StreamChunk = JSON.parse(event.payload);
-              if (!chunk.done && chunk.chunk) {
-                streamBufferRef.current += chunk.chunk;
-                setMessages(prev => {
-                  const updated = [...prev];
-                  const last = updated[updated.length - 1];
-                  if (last && last.role === 'model') {
-                    last.content = streamBufferRef.current;
-                  }
-                  messagesRef.current = updated;
-                  return updated;
-                });
-              } else if (chunk.done && chunk.result) {
-                const resultChunk = chunk.result;
-                streamBufferRef.current = resultChunk.text;
-                setMessages(prev => {
-                  const updated = [...prev];
-                  const last = updated[updated.length - 1];
-                  if (last && last.role === 'model') {
-                    last.content = sanitizeOutput(resultChunk.text);
-                    last.provider = resultChunk.provider;
-                    last.timestamp = Date.now();
-                  }
-                  messagesRef.current = updated;
-                  return updated;
-                });
+              try {
+                const chunk: StreamChunk = JSON.parse(event.payload);
+                if (!chunk.done && chunk.chunk) {
+                  streamBufferRef.current += chunk.chunk;
+                  setMessages(prev => {
+                    const updated = [...prev];
+                    const last = updated[updated.length - 1];
+                    if (last && last.role === 'model') {
+                      last.content = streamBufferRef.current;
+                    }
+                    messagesRef.current = updated;
+                    return updated;
+                  });
+                } else if (chunk.done && chunk.result) {
+                  const resultChunk = chunk.result;
+                  streamBufferRef.current = resultChunk.text;
+                  setMessages(prev => {
+                    const updated = [...prev];
+                    const last = updated[updated.length - 1];
+                    if (last && last.role === 'model') {
+                      last.content = sanitizeOutput(resultChunk.text);
+                      last.provider = resultChunk.provider;
+                      last.timestamp = Date.now();
+                    }
+                    messagesRef.current = updated;
+                    return updated;
+                  });
+                }
+              } catch (e) {
+                console.warn('[CHAT] Stream chunk malformed:', event.payload, e);
               }
             });
           }
@@ -302,32 +306,36 @@ export function useChat(onAiResponse?: (text: string) => void) {
               });
 
               nativeStreamUnlisten = await listen<string>('chat-stream-chunk', (event) => {
-                const chunk: StreamChunk = JSON.parse(event.payload);
-                if (!chunk.done && chunk.chunk) {
-                  streamBufferRef.current += chunk.chunk;
-                  setMessages(prev => {
-                    const updated = [...prev];
-                    const last = updated[updated.length - 1];
-                    if (last && last.role === 'model') {
-                      last.content = streamBufferRef.current;
-                    }
-                    messagesRef.current = updated;
-                    return updated;
-                  });
-              } else if (chunk.done && chunk.result) {
-                const resultChunk = chunk.result;
-                streamBufferRef.current = resultChunk.text;
-                setMessages(prev => {
-                  const updated = [...prev];
-                  const last = updated[updated.length - 1];
-                  if (last && last.role === 'model') {
-                    last.content = sanitizeOutput(resultChunk.text);
-                    last.provider = resultChunk.provider;
-                    last.timestamp = Date.now();
+                try {
+                  const chunk: StreamChunk = JSON.parse(event.payload);
+                  if (!chunk.done && chunk.chunk) {
+                    streamBufferRef.current += chunk.chunk;
+                    setMessages(prev => {
+                      const updated = [...prev];
+                      const last = updated[updated.length - 1];
+                      if (last && last.role === 'model') {
+                        last.content = streamBufferRef.current;
+                      }
+                      messagesRef.current = updated;
+                      return updated;
+                    });
+                  } else if (chunk.done && chunk.result) {
+                    const resultChunk = chunk.result;
+                    streamBufferRef.current = resultChunk.text;
+                    setMessages(prev => {
+                      const updated = [...prev];
+                      const last = updated[updated.length - 1];
+                      if (last && last.role === 'model') {
+                        last.content = sanitizeOutput(resultChunk.text);
+                        last.provider = resultChunk.provider;
+                        last.timestamp = Date.now();
+                      }
+                      messagesRef.current = updated;
+                      return updated;
+                    });
                   }
-                    messagesRef.current = updated;
-                    return updated;
-                  });
+                } catch (e) {
+                  console.warn('[CHAT] Stream chunk malformed:', event.payload, e);
                 }
               });
             }
@@ -494,16 +502,14 @@ export function useChat(onAiResponse?: (text: string) => void) {
       return await handleStreamResponse(res);
     }
 
+    const text = await res.text();
     if (!contentType?.includes('application/json')) {
-      const text = await res.text();
       throw new Error(`Réponse inattendue (${contentType || 'vide'}) : ${text.slice(0, 200)}`);
     }
-
     let data: any;
     try {
-      data = await res.json();
+      data = JSON.parse(text);
     } catch {
-      const text = await res.text();
       throw new Error(`Réponse JSON invalide (${contentType || 'vide'}) : ${text.slice(0, 200)}`);
     }
     return {

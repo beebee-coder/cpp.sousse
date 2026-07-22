@@ -35,7 +35,6 @@ pub struct StreamChunk {
 
 use tauri::Manager;
 use tauri_plugin_sql::{Builder, Migration, MigrationKind};
-use tauri_plugin_updater::UpdaterExt;
 
 mod vector_store;
 mod offline_generator;

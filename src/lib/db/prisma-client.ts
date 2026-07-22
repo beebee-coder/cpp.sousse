@@ -62,6 +62,7 @@ let prismaInstance: PrismaClient | undefined;
 export async function getPrismaClient(): Promise<PrismaClient> {
   if (!prismaInstance) {
     prismaInstance = await createPrismaClient();
+    globalForPrisma.prisma = prismaInstance;
   }
   return prismaInstance;
 }
@@ -73,6 +74,6 @@ export async function disconnectPrisma(): Promise<void> {
   }
 }
 
-export const prisma = globalForPrisma.prisma ?? (undefined as any);
+export const prisma = globalForPrisma.prisma ?? prismaInstance;
 
 export default prisma;

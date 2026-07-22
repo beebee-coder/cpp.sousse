@@ -13,7 +13,7 @@
 //
 // Note: a plain rename fails on Windows for the `[...nextauth]` folder, so we
 // copy to a backup and delete the original instead.
-import { cpSync, rmSync, existsSync } from 'node:fs';
+import { cpSync, rmSync, existsSync, renameSync, mkdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 
 const apiDir = 'src/app/api';
@@ -22,8 +22,14 @@ const backupDir = '.tauri-api-backup';
 const middlewareBackup = '.tauri-middleware-backup.ts';
 const excluded = [];
 
+let apiBackupReady = false;
+let middlewareBackupReady = false;
+
 if (existsSync(apiDir)) {
+  if (existsSync(backupDir)) rmSync(backupDir, { recursive: true, force: true });
+  mkdirSync(backupDir, { recursive: true });
   cpSync(apiDir, backupDir, { recursive: true });
+  apiBackupReady = true;
   rmSync(apiDir, { recursive: true, force: true });
   excluded.push('api');
   console.log('ℹ️  Dossier API ignoré pour l\'export statique Tauri.');
@@ -31,9 +37,18 @@ if (existsSync(apiDir)) {
 
 if (existsSync(middlewareFile)) {
   cpSync(middlewareFile, middlewareBackup);
+  middlewareBackupReady = true;
   rmSync(middlewareFile, { force: true });
   excluded.push('middleware');
   console.log('ℹ️  middleware.ts ignoré (non supporté en export statique).');
+}
+
+const cleanDirs = ['.next', 'node_modules/.cache'];
+for (const dir of cleanDirs) {
+  if (existsSync(dir)) {
+    rmSync(dir, { recursive: true, force: true });
+    console.log(`ℹ️  ${dir} nettoyé.`);
+  }
 }
 
 let exitCode = 1;
@@ -45,20 +60,24 @@ try {
   });
   exitCode = result.status ?? 1;
 } finally {
-  if (excluded.includes('api')) {
-    rmSync(apiDir, { recursive: true, force: true });
-    if (existsSync(backupDir)) {
-      cpSync(backupDir, apiDir, { recursive: true });
-      rmSync(backupDir, { recursive: true, force: true });
+  if (excluded.includes('api') && apiBackupReady) {
+    try {
+      rmSync(apiDir, { recursive: true, force: true });
+      if (existsSync(backupDir)) {
+        renameSync(backupDir, apiDir);
+      }
+    } catch (e) {
+      console.error('❌ Impossible de restaurer src/app/api :', e);
     }
-    console.log('ℹ️  Dossier API restauré.');
   }
-  if (excluded.includes('middleware')) {
-    if (existsSync(middlewareBackup)) {
-      cpSync(middlewareBackup, middlewareFile);
-      rmSync(middlewareBackup, { force: true });
+  if (excluded.includes('middleware') && middlewareBackupReady) {
+    try {
+      if (existsSync(middlewareBackup)) {
+        renameSync(middlewareBackup, middlewareFile);
+      }
+    } catch (e) {
+      console.error('❌ Impossible de restaurer middleware.ts :', e);
     }
-    console.log('ℹ️  middleware.ts restauré.');
   }
 }
 
