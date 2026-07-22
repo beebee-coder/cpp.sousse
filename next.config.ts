@@ -27,6 +27,16 @@ const nextConfig: NextConfig = {
           '@neondatabase/serverless',
           '@prisma/adapter-neon',
         ]];
+        const tauriExternalFn = (ctx: any, req: string, cb: any) => {
+          if (req.startsWith('@tauri-apps/')) {
+            return cb(null, 'commonjs ' + req);
+          }
+          cb();
+        };
+        config.externals = [
+          ...(Array.isArray(config.externals) ? config.externals : [config.externals].filter(Boolean)),
+          tauriExternalFn,
+        ];
       }
     }
     return config;

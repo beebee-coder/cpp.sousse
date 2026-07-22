@@ -10,18 +10,26 @@
  * En web (Vercel) ce module est inactif : tout passe par le cloud (Prisma/Neon).
  */
 
-import Database from '@tauri-apps/plugin-sql';
 import bcrypt from 'bcryptjs';
 import { isDesktop } from './platform';
+import type { Database } from '@tauri-apps/plugin-sql';
 
 export const LOCAL_DB_URL = 'sqlite:visionode.sqlite';
 
-let dbPromise: Promise<any> | null = null;
+let dbPromise: Promise<Database | null> | null = null;
 
-export async function getLocalDb(): Promise<any | null> {
+export async function getLocalDb(): Promise<Database | null> {
   if (!isDesktop) return null;
   if (!dbPromise) {
-    dbPromise = Database.load(LOCAL_DB_URL);
+    dbPromise = (async () => {
+      try {
+        const mod = await import('@tauri-apps/plugin-sql');
+        return await mod.default.load(LOCAL_DB_URL);
+      } catch (e) {
+        console.error('[LOCAL_SQL] Échec chargement DB:', e);
+        return null;
+      }
+    })();
   }
   try {
     return await dbPromise;
